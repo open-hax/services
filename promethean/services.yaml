@@ -1,0 +1,147 @@
+version: 1
+updated: "2026-06-01"
+
+hosts:
+  proxx-promethean:
+    ssh: error@proxx.promethean.rest
+    publicAddress: 104.130.159.19
+    notes:
+      - Current production ingress host for knoxx, proxx, openplanner, and axxium.
+
+services:
+  nginx-ingress:
+    kind: ingress
+    host: proxx-promethean
+    runtime: docker-compose
+    composeProject: knoxx
+    container: knoxx-nginx-1
+    ownsPorts: [80, 443]
+    config: promethean/nginx/promethean.conf
+    sourceOfTruth: this-repo
+
+  proxx-production:
+    kind: app
+    appRepo: open-hax/proxx
+    host: proxx-promethean
+    runtime: docker-compose
+    runtimeRoot: /home/error/devel/services/proxx-production
+    composeProject: proxx-production
+    ingress:
+      hostname: proxx.promethean.rest
+      outerTarget: http://host.docker.internal:8891
+      innerContainer: proxx-production-federation-nginx-1
+    dependencies:
+      - local-proxx-bridge
+    notes:
+      - Production Proxx should broker OpenAI OAuth through the localhost bridge, not store local refresh tokens.
+      - Federation nginx must route to project-specific container names; bare service aliases collide with staging on the shared Docker network.
+
+  proxx-staging:
+    kind: app
+    appRepo: open-hax/proxx
+    host: proxx-promethean
+    runtime: docker-compose
+    runtimeRoot: /home/error/devel/services/proxx-staging
+    composeProject: proxx-staging
+    ingress:
+      hostname: staging-proxx.promethean.rest
+      outerTarget: http://host.docker.internal:8890
+      innerContainer: proxx-staging-federation-nginx-1
+    notes:
+      - Federation nginx must route to project-specific container names; bare service aliases collide with production on the shared Docker network.
+
+  knoxx-production:
+    kind: app
+    appRepo: open-hax/knoxx
+    host: proxx-promethean
+    runtime: docker-compose
+    runtimeRoot: /home/error/devel/services/openplanner
+    sourceRoot: /home/error/devel/services/knoxx-production/source
+    composeProject: knoxx
+    ingress:
+      hostname: knoxx.promethean.rest
+      outerTarget: http://frontend:80
+      backendTarget: http://127.0.0.1:8000
+    requiredEnv:
+      - KNOXX_API_KEY
+      - KNOXX_API_KEY_USER_EMAIL
+      - PROXX_BASE_URL
+      - PROXX_AUTH_TOKEN
+      - PROXX_DEFAULT_MODEL
+    desiredProxxBaseUrl: https://proxx.promethean.rest
+
+  knoxx-staging:
+    kind: app
+    appRepo: open-hax/knoxx
+    host: proxx-promethean
+    runtime: docker-compose
+    runtimeRoot: /home/error/devel/services/openplanner
+    sourceRoot: /home/error/devel/services/knoxx-staging/source
+    composeProject: knoxx-staging
+    ingress:
+      hostname: staging-knoxx.promethean.rest
+      backendTarget: http://127.0.0.1:18000
+    requiredEnv:
+      - KNOXX_API_KEY
+      - KNOXX_API_KEY_USER_EMAIL
+      - PROXX_BASE_URL
+      - PROXX_AUTH_TOKEN
+      - PROXX_DEFAULT_MODEL
+    desiredProxxBaseUrl: https://proxx.promethean.rest
+
+  openplanner-production:
+    kind: app
+    appRepo: open-hax/openplanner
+    host: proxx-promethean
+    runtime: pm2
+    runtimeRoot: /home/error/devel/orgs/open-hax/openplanner
+    processName: cloud-openplanner
+    ingress:
+      hostname: openplanner.promethean.rest
+      outerTarget: http://host.docker.internal:7777
+    requiredEnv:
+      - OPENPLANNER_API_KEY
+      - OPENPLANNER_PORT
+      - OPENPLANNER_STORAGE_BACKEND
+      - MONGODB_URI
+
+  openplanner-staging:
+    kind: app
+    appRepo: open-hax/openplanner
+    host: proxx-promethean
+    runtime: pm2
+    runtimeRoot: /home/error/devel/services/openplanner-staging/source
+    processName: cloud-openplanner-staging
+    ingress:
+      hostname: staging-openplanner.promethean.rest
+      outerTarget: http://host.docker.internal:17777
+    requiredEnv:
+      - OPENPLANNER_API_KEY
+      - OPENPLANNER_PORT
+      - OPENPLANNER_STORAGE_BACKEND
+      - MONGODB_URI
+
+  local-proxx-bridge:
+    kind: bridge
+    host: localhost
+    runtime: pm2
+    processName: proxx-host
+    publicRelay: wss://proxx.promethean.rest/api/ui/federation/bridge/ws
+    advertisedAgent: localhost-openai-oauth-lease-agent
+    ownerSubject: did:web:proxx.promethean.rest
+
+routes:
+  - hostname: proxx.promethean.rest
+    service: proxx-production
+  - hostname: staging-proxx.promethean.rest
+    service: proxx-staging
+  - hostname: "*.staging-proxx.promethean.rest"
+    service: proxx-staging
+  - hostname: knoxx.promethean.rest
+    service: knoxx-production
+  - hostname: staging-knoxx.promethean.rest
+    service: knoxx-staging
+  - hostname: openplanner.promethean.rest
+    service: openplanner-production
+  - hostname: staging-openplanner.promethean.rest
+    service: openplanner-staging

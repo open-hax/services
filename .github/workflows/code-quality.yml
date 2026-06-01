@@ -1,0 +1,28 @@
+name: Code Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main, staging]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate service definitions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate YAML and scripts
+        run: |
+          python - <<'PY'
+          import pathlib, yaml
+          for p in pathlib.Path('.').rglob('*.yaml'):
+              yaml.safe_load(p.read_text())
+              print('yaml ok', p)
+          for p in pathlib.Path('.').rglob('*.yml'):
+              yaml.safe_load(p.read_text())
+              print('yaml ok', p)
+          PY
+          bash -n promethean/scripts/*.sh

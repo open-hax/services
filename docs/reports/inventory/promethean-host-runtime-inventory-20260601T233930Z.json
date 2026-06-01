@@ -1,0 +1,251 @@
+{
+  "generatedAt": "2026-06-01T23:39:33.399489+00:00",
+  "sshTarget": "error@proxx.promethean.rest",
+  "host": "prod-instance-17793092821202662",
+  "runtime": {
+    "dockerRunningCount": 25,
+    "pm2ProcessCount": 2
+  },
+  "containers": [
+    {
+      "name": "axxium-db",
+      "image": "postgres:16-alpine",
+      "status": "Up 22 hours (healthy)",
+      "ports": "5432/tcp"
+    },
+    {
+      "name": "axxium",
+      "image": "axxium-axxium",
+      "status": "Up 8 hours (unhealthy)",
+      "ports": "0.0.0.0:8787->8787/tcp, [::]:8787->8787/tcp"
+    },
+    {
+      "name": "knoxx-backend-1",
+      "image": "knoxx-backend",
+      "status": "Up 45 minutes (healthy)",
+      "ports": "127.0.0.1:8000->8000/tcp"
+    },
+    {
+      "name": "knoxx-certbot-1",
+      "image": "certbot/dns-cloudflare:latest",
+      "status": "Up 5 days",
+      "ports": "80/tcp, 443/tcp"
+    },
+    {
+      "name": "knoxx-frontend-1",
+      "image": "knoxx-frontend",
+      "status": "Up 5 days",
+      "ports": "80/tcp"
+    },
+    {
+      "name": "knoxx-knoxx-ingestion-1",
+      "image": "knoxx-knoxx-ingestion",
+      "status": "Up 2 days (healthy)",
+      "ports": "3003/tcp"
+    },
+    {
+      "name": "knoxx-knoxx-postgres-1",
+      "image": "postgres:16-bookworm",
+      "status": "Up 5 days (healthy)",
+      "ports": "127.0.0.1:5432->5432/tcp"
+    },
+    {
+      "name": "knoxx-knoxx-redis-1",
+      "image": "redis:7-alpine",
+      "status": "Up 5 days (healthy)",
+      "ports": "127.0.0.1:6379->6379/tcp"
+    },
+    {
+      "name": "knoxx-nginx-1",
+      "image": "nginx:1.27-alpine",
+      "status": "Up 2 hours (healthy)",
+      "ports": "0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp"
+    },
+    {
+      "name": "proxx-local-proxx-1",
+      "image": "proxx-local-proxx",
+      "status": "Up 41 hours (healthy)",
+      "ports": "127.0.0.1:5174->5174/tcp, 0.0.0.0:8789->8789/tcp, 127.0.0.1:1455->8789/tcp"
+    },
+    {
+      "name": "proxx-local-proxx-local-db-1",
+      "image": "postgres:16-bookworm",
+      "status": "Up 2 days (healthy)",
+      "ports": "0.0.0.0:15432->5432/tcp, [::]:15432->5432/tcp"
+    },
+    {
+      "name": "proxx-production-federation-nginx-1",
+      "image": "nginx:1.27-alpine",
+      "status": "Up 2 hours",
+      "ports": "0.0.0.0:8891->80/tcp"
+    },
+    {
+      "name": "proxx-production-federation-proxx-a1-1",
+      "image": "proxx-production-federation-proxx-a1",
+      "status": "Up 2 hours (healthy)",
+      "ports": "5174/tcp, 8789/tcp"
+    },
+    {
+      "name": "proxx-production-federation-proxx-a2-1",
+      "image": "proxx-production-federation-proxx-a2",
+      "status": "Up 2 hours (healthy)",
+      "ports": "5174/tcp, 8789/tcp"
+    },
+    {
+      "name": "proxx-production-federation-proxx-b1-1",
+      "image": "proxx-production-federation-proxx-b1",
+      "status": "Up 2 hours (healthy)",
+      "ports": "5174/tcp, 8789/tcp"
+    },
+    {
+      "name": "proxx-production-federation-proxx-b2-1",
+      "image": "proxx-production-federation-proxx-b2",
+      "status": "Up 2 hours (healthy)",
+      "ports": "5174/tcp, 8789/tcp"
+    },
+    {
+      "name": "proxx-production-open-hax-openai-proxy-db-1",
+      "image": "postgres:16-bookworm",
+      "status": "Up 5 hours (healthy)",
+      "ports": "5432/tcp"
+    },
+    {
+      "name": "proxx-production-open-hax-openai-proxy-db-b-1",
+      "image": "postgres:16-bookworm",
+      "status": "Up 5 hours (healthy)",
+      "ports": "5432/tcp"
+    },
+    {
+      "name": "proxx-staging-federation-nginx-1",
+      "image": "nginx:1.27-alpine",
+      "status": "Up 4 hours",
+      "ports": "0.0.0.0:8890->80/tcp"
+    },
+    {
+      "name": "proxx-staging-federation-proxx-a1-1",
+      "image": "proxx-staging-federation-proxx-a1",
+      "status": "Up 4 hours (healthy)",
+      "ports": "5174/tcp, 8789/tcp"
+    },
+    {
+      "name": "proxx-staging-federation-proxx-a2-1",
+      "image": "proxx-staging-federation-proxx-a2",
+      "status": "Up 4 hours (healthy)",
+      "ports": "5174/tcp, 8789/tcp"
+    },
+    {
+      "name": "proxx-staging-federation-proxx-b1-1",
+      "image": "proxx-staging-federation-proxx-b1",
+      "status": "Up 4 hours (healthy)",
+      "ports": "5174/tcp, 8789/tcp"
+    },
+    {
+      "name": "proxx-staging-federation-proxx-b2-1",
+      "image": "proxx-staging-federation-proxx-b2",
+      "status": "Up 4 hours (healthy)",
+      "ports": "5174/tcp, 8789/tcp"
+    },
+    {
+      "name": "proxx-staging-open-hax-openai-proxy-db-1",
+      "image": "postgres:16-bookworm",
+      "status": "Up 7 hours (healthy)",
+      "ports": "5432/tcp"
+    },
+    {
+      "name": "proxx-staging-open-hax-openai-proxy-db-b-1",
+      "image": "postgres:16-bookworm",
+      "status": "Up 7 hours (healthy)",
+      "ports": "5432/tcp"
+    }
+  ],
+  "pm2Processes": [
+    {
+      "name": "cloud-mongodb",
+      "status": "online",
+      "pid": "278898",
+      "cwd": "/home/error/devel/services/openplanner",
+      "execPath": "/home/error/.local/opt/mongodb-linux-x86_64-ubuntu2404-8.0.14/bin/mongod"
+    },
+    {
+      "name": "cloud-openplanner",
+      "status": "online",
+      "pid": "278909",
+      "cwd": "/home/error/devel/orgs/open-hax/openplanner",
+      "execPath": "/home/error/devel/orgs/open-hax/openplanner/dist/main.js"
+    }
+  ],
+  "routes": [
+    {
+      "serverNames": [
+        "knoxx.promethean.rest",
+        "proxx.promethean.rest",
+        "openplanner.promethean.rest",
+        "axxium.promethean.rest",
+        "staging-knoxx.promethean.rest",
+        "staging-openplanner.promethean.rest"
+      ],
+      "proxyPassTargets": []
+    },
+    {
+      "serverNames": [
+        "staging-proxx.promethean.rest",
+        "*.staging-proxx.promethean.rest"
+      ],
+      "proxyPassTargets": [
+        "http://host.docker.internal:8890"
+      ]
+    },
+    {
+      "serverNames": [
+        "knoxx.promethean.rest"
+      ],
+      "proxyPassTargets": [
+        "http://frontend:80",
+        "http://frontend:80/ws/"
+      ]
+    },
+    {
+      "serverNames": [
+        "staging-knoxx.promethean.rest"
+      ],
+      "proxyPassTargets": [
+        "http://host.docker.internal:18000"
+      ]
+    },
+    {
+      "serverNames": [
+        "proxx.promethean.rest"
+      ],
+      "proxyPassTargets": [
+        "http://host.docker.internal:8891"
+      ]
+    },
+    {
+      "serverNames": [
+        "openplanner.promethean.rest"
+      ],
+      "proxyPassTargets": [
+        "http://host.docker.internal:7777"
+      ]
+    },
+    {
+      "serverNames": [
+        "staging-openplanner.promethean.rest"
+      ],
+      "proxyPassTargets": [
+        "http://host.docker.internal:17777"
+      ]
+    },
+    {
+      "serverNames": [
+        "axxium.promethean.rest"
+      ],
+      "proxyPassTargets": [
+        "http://host.docker.internal:8787"
+      ]
+    }
+  ],
+  "notes": [
+    "PM2 environment variables intentionally omitted to avoid leaking secrets."
+  ]
+}

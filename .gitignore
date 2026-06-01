@@ -1,0 +1,21 @@
+# Secrets and runtime state
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+cloudflare.ini
+secrets/
+runtime/
+state/
+*.log
+
+# Generated/local
+.DS_Store
+node_modules/
+.tmp/
+.cache/
