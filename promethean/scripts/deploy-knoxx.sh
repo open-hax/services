@@ -44,18 +44,6 @@ ssh -i "${PROMETHEAN_SSH_KEY_PATH}" "$remote" \
   'bash -s' <<'REMOTE'
 set -euo pipefail
 cd "$OPENPLANNER_SERVICE_PATH"
-# Temporary operational compatibility shim until open-hax/knoxx#26 or equivalent lands:
-# gpt-5.5 projected 128k output tokens caused bridged OpenAI Responses timeouts.
-# Keep deployments runnable by capping the deployed contract copy.
-python3 - "$KNOXX_REMOTE_SOURCE_PATH/contracts/models/gpt_5_5.edn" <<'PY'
-from pathlib import Path
-import sys
-p=Path(sys.argv[1])
-if p.exists():
-    text=p.read_text()
-    text=text.replace(':model/max-tokens 128000', ':model/max-tokens 8192')
-    p.write_text(text)
-PY
 ENV_FILE=".env.${DEPLOY_ENV}"
 [ "$DEPLOY_ENV" = production ] && ENV_FILE=".env.vps"
 [ -f "$ENV_FILE" ] || cp .env.vps "$ENV_FILE"
