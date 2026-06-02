@@ -10,6 +10,10 @@
 - public conversation id: `914bb531-c33a-4afc-877e-d2cd0fe9ea29`
 - response marker: `KNOXX_SYNC_FULL_GPT55_BRIDGE_OK`
 - response: `KNOXX_SYNC_FULL_GPT55_BRIDGE_OK. Then say Proxx leased through the bridge for OpenPlanner.`
+- post-merge public run id: `9c1a64b9-325a-420f-866a-055f1fe9f263`
+- post-merge public session id: `31bc8b76-5d2c-4c35-8d69-c1b18defbbd1`
+- post-merge public conversation id: `254d98a6-674a-44e9-947f-01c97fccebc9`
+- post-merge response marker: `KNOXX_POST_MERGE_FULL_GPT55_BRIDGE_OK`
 
 Runtime state verified before the public response:
 
@@ -29,7 +33,10 @@ Proxx bridge verification in the same run window:
 Root-cause fix under PR:
 
 - Proxx PR: https://github.com/open-hax/proxx/pull/257
-- Head at verification: `09d37bcb7cbd0c5ab0c03a7933b4fba32a6d5cae`
+- Follow-up PR: https://github.com/open-hax/proxx/pull/259
+- Production promotion PR: https://github.com/open-hax/proxx/pull/258
+- Production merge commit at post-merge verification: `3cfd2f32439a1fff7c01254ac94a213bbdf14fc5`
+- Head at pre-merge verification: `09d37bcb7cbd0c5ab0c03a7933b4fba32a6d5cae`
 - Fixes included:
   - Bridge capabilities and health omit unavailable accounts/providers.
   - Bridge leasing account/provider/export endpoints only expose usable accounts and reject unavailable exports.
