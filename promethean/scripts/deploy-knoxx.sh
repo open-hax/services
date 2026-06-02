@@ -95,6 +95,9 @@ services:
       KNOXX_API_KEY: \${KNOXX_API_KEY:?KNOXX_API_KEY is required}
       KNOXX_API_KEY_USER_EMAIL: \${KNOXX_API_KEY_USER_EMAIL:-foamy125@gmail.com}
       KNOXX_PUBLIC_BASE_URL: ${KNOXX_PUBLIC_BASE_URL}
+      # Proxx/OpenAI Responses currently rejects prompt_cache_retention for gpt-5.5.
+      # Keep agent verification paths compatible until cache semantics are policy-driven.
+      PI_CACHE_RETENTION: short
     ports: !reset
       - "127.0.0.1:${KNOXX_BACKEND_PORT}:8000"
     volumes:
