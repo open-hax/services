@@ -1,0 +1,97 @@
+[;; ----------------------------------------------------------------------------
+ ;; Relay access policy — Promethean relay node.
+ ;;
+ ;; This node is the central relay of a federated, community-pooled system.
+ ;; Community members lease provider credentials (gemini, ollama, openai oauth)
+ ;; to the relay; the relay grants access back out according to these clauses.
+ ;;
+ ;; Identity model (axxium forward-spec — see README):
+ ;; - Subjects are identified by an axxium DID created from discord and/or
+ ;;   github oauth.
+ ;; - Every fact referenced by a clause below MUST be derivable from the
+ ;;   authentication sources linked to that DID.
+ ;; - Peer-node actions are attributed to the owning user's DID. Policy never
+ ;;   sees, and must never decide on, a subject's IP address.
+ ;; ----------------------------------------------------------------------------
+
+ {:contract/id :relay/identity-fact-sources
+  :contract/kind :identity-fact-sources
+  :identity/subject :axxium/did
+  :identity/sources [:discord :github]
+  :facts/derivable [:discord/username
+                    :discord/member-of-server
+                    :discord/role-in-server
+                    :github/org-membership
+                    :github/org-role
+                    :auth.source.api/any-derivable-fact]
+  :facts/forbidden [:net/ip-address]}
+
+ {:contract/id :relay/community
+  :contract/kind :constant
+  :discord/server "ussyverse"
+  :discord/trust-role "Trust"}
+
+ ;; --- Access tiers ------------------------------------------------------------
+ ;; More-specific clauses precede catch-all clauses (manifest invariant).
+
+ ;; Trust members: unlimited gemma4:31b.
+ {:contract/id :relay-access/trust-gemma4-31b
+  :contract/kind :relay-access-clause
+  :authz/domain :model
+  :match/model-pattern "(?i)^gemma4:31b$"
+  :authz/allow-when [:subject.discord/has-role {:server "ussyverse" :role "Trust"}]
+  :rate-limit/window-ms 600000
+  :rate-limit/avg-requests-per-window :unlimited}
+
+ ;; Trust members: all models, rate-limited, when available on the relay.
+ {:contract/id :relay-access/trust-all-models
+  :contract/kind :relay-access-clause
+  :authz/domain :model
+  :match/model-pattern ".*"
+  :authz/allow-when [:subject.discord/has-role {:server "ussyverse" :role "Trust"}
+                     :requested-model-available-on-relay]
+  :rate-limit/window-ms 600000
+  :rate-limit/avg-requests-per-window 30}
+
+ ;; All ussyverse server members: gemma4:31b with a generous average limit.
+ ;; Served via the pooled gemini + ollama accounts leased to the relay.
+ {:contract/id :relay-access/member-gemma4-31b
+  :contract/kind :relay-access-clause
+  :authz/domain :model
+  :match/model-pattern "(?i)^gemma4:31b$"
+  :authz/allow-when [:subject.discord/member-of-server "ussyverse"]
+  :rate-limit/window-ms 600000
+  :rate-limit/avg-requests-per-window 60}
+
+ ;; Catch-all: subjects not matched above get nothing from the relay.
+ {:contract/id :relay-access/default-deny
+  :contract/kind :relay-access-clause
+  :authz/domain :model
+  :authz/default :deny}
+
+ ;; --- Peer admission ----------------------------------------------------------
+
+ ;; Trust members may register their nodes as relay peers. Node keypairs are
+ ;; generated node-side; the relay only ever holds public keys (SSH tunnel
+ ;; established with the public key — private keys never reach the relay).
+ {:contract/id :relay-peer/trust-may-connect
+  :contract/kind :peer-admission-clause
+  :admit/default :deny
+  :admit/allow-when [:peer.owner.discord/has-role {:server "ussyverse" :role "Trust"}]
+  :peer/keying :ssh-public-key
+  :peer/private-keys-on-relay? false
+  :peer/must-be-associated-with-user? true
+  :peer/decisions-from [:peer.owner/did-derivable-facts]
+  :peer/decisions-never-from [:net/ip-address]}
+
+ ;; --- Specialization rule -----------------------------------------------------
+
+ ;; Member nodes that lease credentials to the relay MAY apply policies
+ ;; stricter than this relay policy (for example "only users on this whitelist
+ ;; can use these keys"). Stricter member policies are more-specific cases that
+ ;; remain admissible under this relay policy and must be honored when routing
+ ;; a request to that member's leased credentials.
+ {:contract/id :relay/member-policy-specialization
+  :contract/kind :policy-meta
+  :meta/rule :member-policies-may-be-stricter
+  :meta/scope :leased-credentials}]
