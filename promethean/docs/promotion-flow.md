@@ -67,7 +67,7 @@ Application deploy workflows call it with:
 uses: open-hax/services/.github/workflows/deploy-promethean.yml@main
 with:
   environment: staging | production
-  service: proxx-federation-nginx | knoxx | openplanner | axxium
+  service: proxx | proxx-federation-nginx | knoxx | openplanner | axxium
   source_repository: ${{ github.repository }}
   source_ref: ${{ github.sha }}
   checkout_submodules: true | false
