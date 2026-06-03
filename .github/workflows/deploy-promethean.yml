@@ -166,6 +166,8 @@ jobs:
           printf '%s\n' "$deploy_key" > ~/.ssh/promethean
           unset deploy_key
           chmod 600 ~/.ssh/promethean
+          printf 'Host *\n  IdentityFile ~/.ssh/promethean\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
           ssh-keyscan -H "${PROMETHEAN_SSH_HOST}" >> ~/.ssh/known_hosts
         env:
           PROMETHEAN_SSH_HOST: ${{ vars.PROMETHEAN_SSH_HOST || 'proxx.promethean.rest' }}

@@ -29,6 +29,7 @@ case "$DEPLOY_ENV" in
 esac
 
 remote="${PROMETHEAN_SSH_USER}@${PROMETHEAN_SSH_HOST}"
+ssh -i "${PROMETHEAN_SSH_KEY_PATH}" "$remote" "mkdir -p '${AXXIUM_REMOTE_SOURCE_PATH}'"
 rsync -az --delete \
   --exclude '.git' \
   --exclude 'node_modules' \
