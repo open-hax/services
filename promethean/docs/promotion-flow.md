@@ -1,59 +1,92 @@
 # Promethean promotion flow
 
-Target workflow for service/runtime changes:
+Target workflow for application changes:
 
 ```text
-feature branch -> PR -> staging branch -> deploy staging -> PR staging to main -> deploy production
+feature branch -> PR -> staging branch -> service-owned deploy module -> live staging checks -> PR staging to main -> service-owned deploy module -> live production checks
 ```
 
-Application code changes still originate in application repositories. Runtime ownership lives here.
+The important boundary is not "the service topology repo deploys every app by itself." The boundary is:
+
+- each application repository owns its deployment workflow and quality gates;
+- each deployment workflow calls the Promethean service module for host-aware deployment mechanics;
+- `open-hax/services` owns shared topology, ingress, runtime roots, and deploy modules that must know about the host layout;
+- application source remains loosely coupled across services and should interact through public/internal APIs, not shared source imports.
 
 ## Branches
 
-- `main`: production deployment definitions.
-- `staging`: staging deployment definitions.
-- `devops/*`, `feat/*`, `fix/*`, `chore/*`: ordinary feature branches.
+For app repositories (`open-hax/proxx`, `open-hax/knoxx`, `open-hax/openplanner`, `open-hax/axxium`):
+
+- `main`: production source branch. A merge to `main` deploys production after production gates pass.
+- `staging`: staging source branch. A merge to `staging` deploys staging after staging gates pass.
+- `feat/*`, `fix/*`, `chore/*`, `devops/*`: ordinary feature branches that enter through PRs.
+
+For `open-hax/services`:
+
+- `main`: canonical Promethean topology and deploy modules consumed by app workflows.
+- `staging`: optional rehearsal branch for topology/deploy-module changes.
+- feature branches: edit service modules, scripts, nginx, docs, and runtime declarations.
 
 ## Environments
 
-GitHub environments required in this repository:
+App repositories use GitHub environments named:
 
 - `staging`
 - `production`
 
-Common variables:
+Common variables consumed by the service module:
 
 - `PROMETHEAN_SSH_HOST=proxx.promethean.rest`
 - `PROMETHEAN_SSH_USER=error`
 
-Common secrets:
+Common secrets consumed by the service module:
 
-- `PROMETHEAN_SSH_PRIVATE_KEY`
+- `PROMETHEAN_SSH_PRIVATE_KEY` preferred, or `PROMETHEAN_DEPLOY_KEY` for legacy repos.
 
-No Proxx/Knoxx/OpenPlanner tokens are stored in this repository. Deploy scripts read deployed host secrets where possible and keep values off stdout.
+App-specific tokens/secrets stay in the app's GitHub environment or on the deployed host. The shared service module must not print them and should prefer reading deployed host secrets when possible.
 
-## Service deploy ownership
+## Ownership model
 
-- `nginx`: deploys only the public routing config.
-- `proxx`: deploys through the Proxx app repo until its deploy script is imported here.
-- `knoxx`: syncs a selected Knoxx checkout into the declared remote source root and recreates the backend service with env alignment.
-- `openplanner`: syncs a selected OpenPlanner checkout into the declared remote source root and restarts the declared PM2 process.
+- `proxx`: owns Proxx quality gates and deploy trigger. Its workflow deploys Proxx runtime and can call the service module for host/topology pieces such as federation nginx.
+- `knoxx`: owns Knoxx quality gates and deploy trigger. Its workflow calls the `knoxx` service module, which knows the remote source root, compose project, ports, env alignment, and Proxx API dependency.
+- `openplanner`: owns OpenPlanner quality gates and deploy trigger. Its workflow calls the `openplanner` service module, which knows the remote PM2 process, ports, data roots, and health checks.
+- `axxium`: owns Axxium quality gates and deploy trigger. Its workflow calls the `axxium` service module, which knows the remote source root, compose project, ports, secrets file, and health checks.
+- `nginx`: is the shared ingress service. It must be aware of all public hostnames and upstream ports, but it owns routing only, not app behavior.
 
-## Current gap
+## Service module contract
 
-The service repo is now the intended owner, but existing app-repo workflow PRs may exist from the bootstrap period. Prefer migrating those deployment workflows here and leaving app repos with CI/build/image responsibilities only.
+The reusable workflow is:
 
-## Proxx app-change promotion runbook
+```text
+open-hax/services/.github/workflows/deploy-promethean.yml@main
+```
 
-Until the Proxx deploy script is imported into this service-topology repo, Proxx source changes still deploy from `open-hax/proxx`:
+Application deploy workflows call it with:
 
-1. Create a feature branch in `open-hax/proxx`.
+```yaml
+uses: open-hax/services/.github/workflows/deploy-promethean.yml@main
+with:
+  environment: staging | production
+  service: proxx | proxx-federation-nginx | knoxx | openplanner | axxium
+  source_repository: ${{ github.repository }}
+  source_ref: ${{ github.sha }}
+  checkout_submodules: true | false
+secrets: inherit
+```
+
+Manual topology/ingress deploys may still be dispatched from `open-hax/services`, especially for `nginx` or emergency service-module repair.
+
+## Promotion runbook
+
+1. Create a feature branch in the app repository.
 2. Open a PR into `staging`.
-3. Let the Proxx `staging-pr` checks pass.
-4. Merge the PR into `staging`; the Proxx `deploy-staging` workflow deploys staging and runs live staging checks.
-5. Open the canonical promotion PR from `staging` to `main`.
-6. Let `main-pr-gate` verify the staging branch and staging deploy checks.
-7. Merge the promotion PR into `main`; the Proxx `deploy-production` workflow deploys production and verifies production health.
-8. Use this service repo only for topology/ingress follow-up, such as dispatching `Deploy Promethean Service` for `proxx-federation-nginx` if nginx topology changed.
+3. Let that app's staging PR checks pass.
+4. Merge the PR into `staging`.
+5. The app repository's deploy workflow runs its preflight gates, checks out the source SHA, calls the Promethean service module, and verifies live staging.
+6. Open the promotion PR from `staging` to `main`.
+7. Let production/promotion gates verify the staging state and source quality.
+8. Merge the promotion PR into `main`.
+9. The app repository's production deploy workflow calls the same service module against the production environment and verifies live production.
+10. If routes, ports, TLS, or shared upstreams changed, deploy `nginx` from `open-hax/services` after the app deployment module is in place.
 
-Important: do not edit Proxx runtime provider/model routing in TypeScript during this flow. Provider/model facts and rules belong in Proxx EDN policy files interpreted by CLJS.
+Important: Proxx provider/model routing belongs in Proxx EDN policy files interpreted by CLJS, not TypeScript conditionals or deploy-time environment switches.
