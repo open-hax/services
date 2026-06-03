@@ -53,6 +53,8 @@ ssh -i "${PROMETHEAN_SSH_KEY_PATH}" "$remote" \
 set -euo pipefail
 export PATH=/usr/local/bin:$HOME/.local/bin:$PATH
 cd "$AXXIUM_REMOTE_SOURCE_PATH"
+npm ci
+npm run build
 
 ENV_FILE=".env.${DEPLOY_ENV}"
 if [ ! -f "$ENV_FILE" ]; then
