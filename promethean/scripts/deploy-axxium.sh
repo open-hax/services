@@ -5,6 +5,7 @@ set -euo pipefail
 : "${PROMETHEAN_SSH_HOST:=proxx.promethean.rest}"
 : "${PROMETHEAN_SSH_USER:=error}"
 : "${PROMETHEAN_SSH_KEY_PATH:=${HOME}/.ssh/id_ed25519}"
+PROMETHEAN_SSH_KEY_PATH="${PROMETHEAN_SSH_KEY_PATH/#\~/$HOME}"
 : "${AXXIUM_SOURCE_ROOT:?Path to local open-hax/axxium checkout is required}"
 
 case "$DEPLOY_ENV" in
