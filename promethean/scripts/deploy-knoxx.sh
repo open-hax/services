@@ -59,6 +59,26 @@ ssh -i "${PROMETHEAN_SSH_KEY_PATH}" "$remote" \
   KNOXX_PUBLIC_BASE_URL="$KNOXX_PUBLIC_BASE_URL" \
   'bash -s' <<'REMOTE'
 set -euo pipefail
+export PATH=/usr/local/bin:$HOME/.local/bin:$PATH
+# The backend Dockerfile COPYs a prebuilt dist/ ("Compiled by `shadow-cljs
+# release server` before `docker build`"), but rsync ships raw source.
+# Build it host-side; shadow-cljs needs a JVM, and non-interactive ssh
+# shells miss sdkman/jvm PATH entries.
+if ! command -v java >/dev/null 2>&1; then
+  for jdir in "$HOME/.sdkman/candidates/java/current/bin" /usr/lib/jvm/*/bin /opt/java/*/bin; do
+    if [ -x "$jdir/java" ]; then
+      export PATH="$jdir:$PATH"
+      break
+    fi
+  done
+fi
+if ! command -v java >/dev/null 2>&1; then
+  echo "ERROR: no java found on deploy host (needed by shadow-cljs builds); install a JDK 21+ or expose it on PATH" >&2
+  exit 3
+fi
+cd "$KNOXX_REMOTE_SOURCE_PATH"
+pnpm -C backend install --frozen-lockfile
+pnpm -C backend run build
 cd "$OPENPLANNER_SERVICE_PATH"
 ENV_FILE=".env.${DEPLOY_ENV}"
 [ "$DEPLOY_ENV" = production ] && ENV_FILE=".env.vps"
