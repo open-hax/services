@@ -159,5 +159,9 @@ for _ in $(seq 1 30); do
   sleep 6
 done
 echo "Knoxx backend did not become healthy" >&2
+echo "--- backend container state ---" >&2
+docker inspect -f '{{json .State}}' "${KNOXX_COMPOSE_PROJECT}-backend-1" >&2 || true
+echo "--- backend logs (last 120 lines) ---" >&2
+docker logs --tail 120 "${KNOXX_COMPOSE_PROJECT}-backend-1" >&2 || true
 exit 1
 REMOTE
