@@ -4,6 +4,7 @@ set -euo pipefail
 : "${PROMETHEAN_SSH_HOST:=proxx.promethean.rest}"
 : "${PROMETHEAN_SSH_USER:=error}"
 : "${PROMETHEAN_SSH_KEY_PATH:=${HOME}/.ssh/id_ed25519}"
+PROMETHEAN_SSH_KEY_PATH="${PROMETHEAN_SSH_KEY_PATH/#\~/$HOME}"
 : "${REMOTE_NGINX_CONF:=/home/error/devel/services/openplanner/cloud/nginx/promethean.conf}"
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
