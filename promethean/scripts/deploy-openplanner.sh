@@ -41,6 +41,20 @@ ssh -i "${PROMETHEAN_SSH_KEY_PATH}" "$remote" \
   'bash -s' <<'REMOTE'
 set -euo pipefail
 export PATH=/usr/local/bin:$HOME/.local/bin:$PATH
+# shadow-cljs (graph-claim-core build) needs a JVM; non-interactive ssh
+# shells miss sdkman/jvm PATH entries, so detect one explicitly.
+if ! command -v java >/dev/null 2>&1; then
+  for jdir in "$HOME/.sdkman/candidates/java/current/bin" /usr/lib/jvm/*/bin /opt/java/*/bin; do
+    if [ -x "$jdir/java" ]; then
+      export PATH="$jdir:$PATH"
+      break
+    fi
+  done
+fi
+if ! command -v java >/dev/null 2>&1; then
+  echo "ERROR: no java found on deploy host (needed by shadow-cljs builds); install a JDK 21+ or expose it on PATH" >&2
+  exit 3
+fi
 cd "$OPENPLANNER_REMOTE_SOURCE_PATH"
 pnpm install --frozen-lockfile
 pnpm run build
