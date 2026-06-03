@@ -78,7 +78,10 @@ if ! command -v java >/dev/null 2>&1; then
 fi
 cd "$KNOXX_REMOTE_SOURCE_PATH"
 pnpm -C backend install --frozen-lockfile
-pnpm -C backend run build
+# The :server build sets :optimizations :none, so `shadow-cljs release`
+# refuses to run ("optimizations set to :none, can't optimize"); the
+# deployable dist/ is produced by a plain compile.
+pnpm -C backend exec shadow-cljs compile server
 cd "$OPENPLANNER_SERVICE_PATH"
 ENV_FILE=".env.${DEPLOY_ENV}"
 [ "$DEPLOY_ENV" = production ] && ENV_FILE=".env.vps"
