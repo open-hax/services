@@ -144,7 +144,7 @@ jobs:
           repository: ${{ steps.source.outputs.repository }}
           ref: ${{ steps.source.outputs.ref }}
           path: source
-          submodules: ${{ (inputs.checkout_submodules || inputs.service == 'openplanner') && 'recursive' || 'false' }}
+          submodules: ${{ inputs.checkout_submodules && 'recursive' || 'false' }}
 
       - name: Configure SSH
         run: |
