@@ -8,15 +8,23 @@ set -euo pipefail
 : "${KNOXX_SOURCE_ROOT:?Path to local open-hax/knoxx checkout is required}"
 : "${OPENPLANNER_SERVICE_PATH:=/home/error/devel/services/openplanner}"
 
+# Contracts are owned by this services repo (contracts/knoxx), not the app
+# source tree. They are rsynced separately and mounted read-only.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+: "${SERVICES_CONTRACTS_ROOT:=${SCRIPT_DIR}/../../contracts}"
+[ -d "${SERVICES_CONTRACTS_ROOT}/knoxx" ] || { echo "services-owned contracts not found at ${SERVICES_CONTRACTS_ROOT}/knoxx" >&2; exit 2; }
+
 case "$DEPLOY_ENV" in
   production)
     : "${KNOXX_REMOTE_SOURCE_PATH:=/home/error/devel/services/knoxx-production/source}"
+    : "${KNOXX_REMOTE_CONTRACTS_PATH:=/home/error/devel/services/knoxx-production/contracts}"
     : "${KNOXX_COMPOSE_PROJECT:=knoxx}"
     : "${KNOXX_BACKEND_PORT:=8000}"
     : "${KNOXX_PUBLIC_BASE_URL:=https://knoxx.promethean.rest}"
     ;;
   staging)
     : "${KNOXX_REMOTE_SOURCE_PATH:=/home/error/devel/services/knoxx-staging/source}"
+    : "${KNOXX_REMOTE_CONTRACTS_PATH:=/home/error/devel/services/knoxx-staging/contracts}"
     : "${KNOXX_COMPOSE_PROJECT:=knoxx-staging}"
     : "${KNOXX_BACKEND_PORT:=18000}"
     : "${KNOXX_PUBLIC_BASE_URL:=https://staging-knoxx.promethean.rest}"
@@ -34,10 +42,17 @@ rsync -az --delete \
   -e "ssh -i ${PROMETHEAN_SSH_KEY_PATH}" \
   "${KNOXX_SOURCE_ROOT}/" "${remote}:${KNOXX_REMOTE_SOURCE_PATH}/"
 
+# Ship the services-owned contract tree (deploys only ship contracts; they
+# never rewrite them — contract changes land in this repo via PR).
+rsync -az --delete \
+  -e "ssh -i ${PROMETHEAN_SSH_KEY_PATH}" \
+  "${SERVICES_CONTRACTS_ROOT}/knoxx/" "${remote}:${KNOXX_REMOTE_CONTRACTS_PATH}/"
+
 ssh -i "${PROMETHEAN_SSH_KEY_PATH}" "$remote" \
   DEPLOY_ENV="$DEPLOY_ENV" \
   OPENPLANNER_SERVICE_PATH="$OPENPLANNER_SERVICE_PATH" \
   KNOXX_REMOTE_SOURCE_PATH="$KNOXX_REMOTE_SOURCE_PATH" \
+  KNOXX_REMOTE_CONTRACTS_PATH="$KNOXX_REMOTE_CONTRACTS_PATH" \
   KNOXX_COMPOSE_PROJECT="$KNOXX_COMPOSE_PROJECT" \
   KNOXX_BACKEND_PORT="$KNOXX_BACKEND_PORT" \
   KNOXX_PUBLIC_BASE_URL="$KNOXX_PUBLIC_BASE_URL" \
@@ -102,7 +117,7 @@ services:
       - knoxx-runs:/runs/knoxx-agent
       - /var/run/docker.sock:/var/run/docker.sock
       - \${KNOXX_SANDBOX_ROOT_DIR:-/home/error/devel/services/openplanner/runtime/knoxx-sandboxes}:\${KNOXX_SANDBOX_ROOT_DIR:-/home/error/devel/services/openplanner/runtime/knoxx-sandboxes}
-      - ${KNOXX_REMOTE_SOURCE_PATH}/contracts:/app/contracts:ro
+      - ${KNOXX_REMOTE_CONTRACTS_PATH}:/app/contracts:ro
       - ./cloud/github-app-key.pem:/run/secrets/github-app-key.pem:ro
   frontend:
     build:

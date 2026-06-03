@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit is a required gate on this repo. The org-level default only
+# auto-reviews PRs that target the default branch; this repo's flow PRs into
+# `staging` first, so enable auto review for both promotion bases.
+reviews:
+  auto_review:
+    enabled: true
+    base_branches:
+      - main
+      - staging
