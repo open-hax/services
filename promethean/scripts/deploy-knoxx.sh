@@ -34,7 +34,7 @@ case "$DEPLOY_ENV" in
 esac
 
 remote="${PROMETHEAN_SSH_USER}@${PROMETHEAN_SSH_HOST}"
-rsync -az --delete \
+rsync -az --delete --mkpath \
   --exclude '.git' \
   --exclude 'node_modules' \
   --exclude '.shadow-cljs' \
@@ -45,7 +45,7 @@ rsync -az --delete \
 
 # Ship the services-owned contract tree (deploys only ship contracts; they
 # never rewrite them — contract changes land in this repo via PR).
-rsync -az --delete \
+rsync -az --delete --mkpath \
   -e "ssh -i ${PROMETHEAN_SSH_KEY_PATH}" \
   "${SERVICES_CONTRACTS_ROOT}/knoxx/" "${remote}:${KNOXX_REMOTE_CONTRACTS_PATH}/"
 

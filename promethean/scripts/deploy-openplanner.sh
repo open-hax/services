@@ -25,7 +25,7 @@ case "$DEPLOY_ENV" in
 esac
 
 remote="${PROMETHEAN_SSH_USER}@${PROMETHEAN_SSH_HOST}"
-rsync -az --delete \
+rsync -az --delete --mkpath \
   --exclude '.git' \
   --exclude 'node_modules' \
   --exclude 'dist' \
