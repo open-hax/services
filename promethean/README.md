@@ -16,4 +16,4 @@ openplanner    memory / graph / planning API
 knoxx          agent backend / frontend / policy runtime
 ```
 
-The design target is one declared owner per public hostname and one declared runtime root per service. Avoid app repos mutating shared host nginx or shared compose state independently.
+The design target is one declared owner per public hostname and one declared runtime root per service. App repositories own deploy triggers and quality gates, then call these Promethean service modules for host-aware deployment mechanics. Avoid app repos mutating shared host nginx or shared compose state independently.

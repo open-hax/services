@@ -25,6 +25,7 @@ services:
     host: proxx-promethean
     runtime: docker-compose
     runtimeRoot: /home/error/devel/services/proxx-production
+    sourceRoot: /home/error/devel/services/proxx-production
     composeProject: proxx-production
     ingress:
       hostname: proxx.promethean.rest
@@ -42,6 +43,7 @@ services:
     host: proxx-promethean
     runtime: docker-compose
     runtimeRoot: /home/error/devel/services/proxx-staging
+    sourceRoot: /home/error/devel/services/proxx-staging
     composeProject: proxx-staging
     ingress:
       hostname: staging-proxx.promethean.rest
@@ -121,6 +123,36 @@ services:
       - OPENPLANNER_STORAGE_BACKEND
       - MONGODB_URI
 
+  axxium-production:
+    kind: app
+    appRepo: open-hax/axxium
+    host: proxx-promethean
+    runtime: docker-compose
+    runtimeRoot: /home/error/devel/services/axxium-production/source
+    sourceRoot: /home/error/devel/services/axxium-production/source
+    composeProject: axxium
+    ingress:
+      hostname: axxium.promethean.rest
+      outerTarget: http://host.docker.internal:8787
+    requiredEnv:
+      - DB_PASSWORD
+      - JWT_SECRET
+
+  axxium-staging:
+    kind: app
+    appRepo: open-hax/axxium
+    host: proxx-promethean
+    runtime: docker-compose
+    runtimeRoot: /home/error/devel/services/axxium-staging/source
+    sourceRoot: /home/error/devel/services/axxium-staging/source
+    composeProject: axxium-staging
+    ingress:
+      hostname: staging-axxium.promethean.rest
+      outerTarget: http://host.docker.internal:18787
+    requiredEnv:
+      - DB_PASSWORD
+      - JWT_SECRET
+
   local-proxx-bridge:
     kind: bridge
     host: localhost
@@ -145,3 +177,7 @@ routes:
     service: openplanner-production
   - hostname: staging-openplanner.promethean.rest
     service: openplanner-staging
+  - hostname: axxium.promethean.rest
+    service: axxium-production
+  - hostname: staging-axxium.promethean.rest
+    service: axxium-staging
