@@ -153,6 +153,36 @@ services:
       - DB_PASSWORD
       - JWT_SECRET
 
+  website-production:
+    kind: app
+    appRepo: open-hax/website
+    host: proxx-promethean
+    runtime: docker-compose
+    runtimeRoot: /home/error/devel/services/website-production
+    sourceRoot: /home/error/devel/services/website-production
+    composeProject: website
+    ingress:
+      hostname: open-hax.promethean.rest
+      outerTarget: http://host.docker.internal:8888
+    notes:
+      - Static site served by nginx container.
+      - Built artifacts are rsynced from CI; no build happens on the host.
+
+  website-staging:
+    kind: app
+    appRepo: open-hax/website
+    host: proxx-promethean
+    runtime: docker-compose
+    runtimeRoot: /home/error/devel/services/website-staging
+    sourceRoot: /home/error/devel/services/website-staging
+    composeProject: website-staging
+    ingress:
+      hostname: staging-open-hax.promethean.rest
+      outerTarget: http://host.docker.internal:18888
+    notes:
+      - Static site served by nginx container.
+      - Built artifacts are rsynced from CI; no build happens on the host.
+
   local-proxx-bridge:
     kind: bridge
     host: localhost
@@ -181,3 +211,7 @@ routes:
     service: axxium-production
   - hostname: staging-axxium.promethean.rest
     service: axxium-staging
+  - hostname: open-hax.promethean.rest
+    service: website-production
+  - hostname: staging-open-hax.promethean.rest
+    service: website-staging

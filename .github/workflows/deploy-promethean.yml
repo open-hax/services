@@ -64,7 +64,7 @@ on:
         description: service module to deploy
         required: true
         type: choice
-        options: [nginx, proxx, proxx-federation-nginx, knoxx, openplanner, axxium]
+        options: [nginx, proxx, proxx-federation-nginx, knoxx, openplanner, axxium, website]
       source_repository:
         description: Optional app source repository override, e.g. open-hax/openplanner
         required: false
@@ -100,7 +100,7 @@ jobs:
       - name: Validate inputs
         run: |
           case "${DEPLOY_ENV}" in staging|production) ;; *) echo "environment must be staging or production" >&2; exit 2 ;; esac
-          case "${SERVICE}" in nginx|proxx|proxx-federation-nginx|knoxx|openplanner|axxium) ;; *) echo "unsupported service: ${SERVICE}" >&2; exit 2 ;; esac
+          case "${SERVICE}" in nginx|proxx|proxx-federation-nginx|knoxx|openplanner|axxium|website) ;; *) echo "unsupported service: ${SERVICE}" >&2; exit 2 ;; esac
         env:
           DEPLOY_ENV: ${{ inputs.environment }}
           SERVICE: ${{ inputs.service }}
@@ -123,6 +123,7 @@ jobs:
               knoxx) repo="open-hax/knoxx" ;;
               openplanner) repo="open-hax/openplanner" ;;
               axxium) repo="open-hax/axxium" ;;
+              website) repo="open-hax/website" ;;
               *) repo="" ;;
             esac
           fi
@@ -235,3 +236,13 @@ jobs:
           PROMETHEAN_SSH_KEY_PATH: ~/.ssh/promethean
           AXXIUM_SOURCE_ROOT: ${{ github.workspace }}/source
         run: services/promethean/scripts/deploy-axxium.sh
+
+      - name: Deploy Website
+        if: ${{ inputs.service == 'website' }}
+        env:
+          DEPLOY_ENV: ${{ inputs.environment }}
+          PROMETHEAN_SSH_HOST: ${{ vars.PROMETHEAN_SSH_HOST || 'proxx.promethean.rest' }}
+          PROMETHEAN_SSH_USER: ${{ vars.PROMETHEAN_SSH_USER || 'error' }}
+          PROMETHEAN_SSH_KEY_PATH: ~/.ssh/promethean
+          WEBSITE_SOURCE_ROOT: ${{ github.workspace }}/source
+        run: services/promethean/scripts/deploy-website.sh
