@@ -28,6 +28,11 @@ if ! id "$DEPLOY_USER" >/dev/null 2>&1; then
 fi
 usermod -aG docker "$DEPLOY_USER"
 
+if [ -s /root/.ssh/authorized_keys ]; then
+  install -d -m 0700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "/home/$DEPLOY_USER/.ssh"
+  install -m 0600 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /root/.ssh/authorized_keys "/home/$DEPLOY_USER/.ssh/authorized_keys"
+fi
+
 install -d -m 0755 "$RUNTIME_ROOT"
 install -d -m 0750 -o "$DEPLOY_USER" -g "$DEPLOY_USER" \
   "$RUNTIME_ROOT/services" "$RUNTIME_ROOT/state" "$RUNTIME_ROOT/config" "$RUNTIME_ROOT/reports"
