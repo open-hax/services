@@ -1,0 +1,70 @@
+name: DigitalOcean Host
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Host operation
+        required: true
+        type: choice
+        options: [bootstrap, verify]
+      host:
+        description: Droplet IPv4 address
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: digitalocean-production-host
+  cancel-in-progress: false
+
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate host
+        env:
+          HOST: ${{ inputs.host }}
+        run: |
+          python3 - <<'PY'
+          import ipaddress, os
+          address = ipaddress.ip_address(os.environ['HOST'])
+          if not isinstance(address, ipaddress.IPv4Address) or address.is_private:
+              raise SystemExit('host must be a public IPv4 address')
+          PY
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+          HOST: ${{ inputs.host }}
+        run: |
+          test -n "$SSH_PRIVATE_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/digitalocean
+          chmod 600 ~/.ssh/digitalocean
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+
+      - name: Bootstrap host
+        if: ${{ inputs.operation == 'bootstrap' }}
+        env:
+          HOST: ${{ inputs.host }}
+        run: |
+          ssh -i ~/.ssh/digitalocean root@"$HOST" 'bash -s' < digitalocean/scripts/bootstrap-host.sh
+
+      - name: Verify host
+        env:
+          HOST: ${{ inputs.host }}
+        run: |
+          scp -i ~/.ssh/digitalocean digitalocean/scripts/verify-host.sh root@"$HOST":/tmp/verify-open-hax-host.sh
+          ssh -i ~/.ssh/digitalocean root@"$HOST" 'chmod 700 /tmp/verify-open-hax-host.sh && REPORT=/tmp/host-verification.json /tmp/verify-open-hax-host.sh'
+          scp -i ~/.ssh/digitalocean root@"$HOST":/tmp/host-verification.json host-verification.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digitalocean-host-verification
+          path: host-verification.json
