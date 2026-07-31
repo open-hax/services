@@ -16,6 +16,10 @@ check() {
   fi
 }
 
+firewall_active() {
+  ufw status | grep -q '^Status: active'
+}
+
 results=$(mktemp)
 check docker command -v docker >> "$results"
 check compose docker compose version >> "$results"
@@ -23,7 +27,7 @@ check java command -v java >> "$results"
 check git command -v git >> "$results"
 check jq command -v jq >> "$results"
 check runtime-root test -d "$RUNTIME_ROOT" >> "$results"
-check firewall-active ufw status | grep -q '^Status: active' >> "$results"
+check firewall-active firewall_active >> "$results"
 
 python3 - "$results" "$REPORT" "$status" <<'PY'
 import json, platform, socket, sys
