@@ -1,16 +1,26 @@
 name: DigitalOcean Host
 
 on:
+  pull_request:
+    paths:
+      - digitalocean/**
+      - .github/workflows/digitalocean-host.yml
+  push:
+    branches: [main]
+    paths:
+      - digitalocean/**
+      - .github/workflows/digitalocean-host.yml
   workflow_dispatch:
     inputs:
       operation:
         description: Host operation
         required: true
+        default: verify
         type: choice
         options: [bootstrap, verify]
       host:
-        description: Droplet IPv4 address
-        required: true
+        description: Optional Droplet IPv4 override
+        required: false
         type: string
 
 permissions:
@@ -21,50 +31,109 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    name: Validate DigitalOcean host definition
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate scripts and inventory
+        run: |
+          bash -n digitalocean/scripts/bootstrap-host.sh
+          bash -n digitalocean/scripts/verify-host.sh
+          python3 - <<'PY'
+          import ipaddress
+          from pathlib import Path
+
+          values = {}
+          for raw in Path('digitalocean/hosts/production.yaml').read_text().splitlines():
+              line = raw.strip()
+              if ':' not in line or line.startswith('-'):
+                  continue
+              key, value = line.split(':', 1)
+              value = value.strip()
+              if value and key not in values:
+                  values[key] = value
+
+          required = ['dropletId', 'publicAddress', 'region', 'image', 'size']
+          missing = [key for key in required if not values.get(key) or values[key] == 'null']
+          if missing:
+              raise SystemExit(f'missing host inventory fields: {missing}')
+
+          address = ipaddress.ip_address(values['publicAddress'])
+          if not isinstance(address, ipaddress.IPv4Address) or not address.is_global:
+              raise SystemExit('publicAddress must be a global IPv4 address')
+          PY
+
   host:
+    name: Bootstrap and verify production host
+    if: github.event_name != 'pull_request'
+    needs: validate
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v5
 
-      - name: Validate host
+      - name: Resolve target
+        id: target
         env:
-          HOST: ${{ inputs.host }}
+          INPUT_HOST: ${{ github.event_name == 'workflow_dispatch' && inputs.host || '' }}
+          INPUT_OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'bootstrap' }}
         run: |
-          python3 - <<'PY'
+          host="$INPUT_HOST"
+          if [ -z "$host" ]; then
+            host=$(awk '$1 == "publicAddress:" { print $2; exit }' digitalocean/hosts/production.yaml)
+          fi
+          HOST="$host" python3 - <<'PY'
           import ipaddress, os
           address = ipaddress.ip_address(os.environ['HOST'])
-          if not isinstance(address, ipaddress.IPv4Address) or address.is_private:
-              raise SystemExit('host must be a public IPv4 address')
+          if not isinstance(address, ipaddress.IPv4Address) or not address.is_global:
+              raise SystemExit('host must be a global IPv4 address')
           PY
+          case "$INPUT_OPERATION" in bootstrap|verify) ;; *) exit 2 ;; esac
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "operation=$INPUT_OPERATION" >> "$GITHUB_OUTPUT"
 
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
-          HOST: ${{ inputs.host }}
+          HOST: ${{ steps.target.outputs.host }}
         run: |
           test -n "$SSH_PRIVATE_KEY"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/digitalocean
           chmod 600 ~/.ssh/digitalocean
-          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+          for _ in $(seq 1 60); do
+            if ssh-keyscan -T 5 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "SSH did not become reachable" >&2
+          exit 1
 
       - name: Bootstrap host
-        if: ${{ inputs.operation == 'bootstrap' }}
+        if: steps.target.outputs.operation == 'bootstrap'
         env:
-          HOST: ${{ inputs.host }}
+          HOST: ${{ steps.target.outputs.host }}
         run: |
-          ssh -i ~/.ssh/digitalocean root@"$HOST" 'bash -s' < digitalocean/scripts/bootstrap-host.sh
+          ssh -o BatchMode=yes -i ~/.ssh/digitalocean root@"$HOST" 'bash -s' < digitalocean/scripts/bootstrap-host.sh
 
       - name: Verify host
         env:
-          HOST: ${{ inputs.host }}
+          HOST: ${{ steps.target.outputs.host }}
         run: |
           scp -i ~/.ssh/digitalocean digitalocean/scripts/verify-host.sh root@"$HOST":/tmp/verify-open-hax-host.sh
+          set +e
           ssh -i ~/.ssh/digitalocean root@"$HOST" 'chmod 700 /tmp/verify-open-hax-host.sh && REPORT=/tmp/host-verification.json /tmp/verify-open-hax-host.sh'
-          scp -i ~/.ssh/digitalocean root@"$HOST":/tmp/host-verification.json host-verification.json
+          status=$?
+          scp -i ~/.ssh/digitalocean root@"$HOST":/tmp/host-verification.json host-verification.json || true
+          exit "$status"
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload verification report
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: digitalocean-host-verification
           path: host-verification.json
+          if-no-files-found: error
