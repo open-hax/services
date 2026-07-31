@@ -9,6 +9,7 @@ host:
   privateAddress: 10.108.0.2
   sshUser: deploy
   bootstrapUser: root
+  hostKeyFingerprint: SHA256:HKUMqjMeeJsIlZRqO++z5xx0pBqtLi8GOBFKZ6GomQY
   region: nyc3
   image: ubuntu-24-04-x64
   size: s-4vcpu-8gb
