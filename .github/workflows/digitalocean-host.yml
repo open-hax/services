@@ -39,7 +39,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate scripts and inventory
+      - name: Validate scripts, inventory, and pinned host key
         run: |
           bash -n digitalocean/scripts/bootstrap-host.sh
           bash -n digitalocean/scripts/verify-host.sh
@@ -57,7 +57,7 @@ jobs:
               if value and key not in values:
                   values[key] = value
 
-          required = ['dropletId', 'publicAddress', 'region', 'image', 'size']
+          required = ['dropletId', 'publicAddress', 'hostKeyFingerprint', 'region', 'image', 'size']
           missing = [key for key in required if not values.get(key) or values[key] == 'null']
           if missing:
               raise SystemExit(f'missing host inventory fields: {missing}')
@@ -67,37 +67,11 @@ jobs:
               raise SystemExit('publicAddress must be a global unicast IPv4 address')
           PY
 
-  probe-host-key:
-    name: Probe untrusted host key
-    if: github.event_name == 'pull_request'
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-
-      - name: Capture host key for out-of-band review
-        run: |
           host=$(awk '$1 == "publicAddress:" { print $2; exit }' digitalocean/hosts/production.yaml)
-          for _ in $(seq 1 60); do
-            if ssh-keyscan -T 5 -t ed25519 "$host" > digitalocean-host-key 2>/dev/null && [ -s digitalocean-host-key ]; then
-              cat digitalocean-host-key
-              ssh-keygen -lf digitalocean-host-key
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "SSH host key did not become reachable" >&2
-          exit 1
-
-      - name: Upload untrusted host key
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: digitalocean-untrusted-host-key
-          path: digitalocean-host-key
-          if-no-files-found: error
+          declared_fingerprint=$(awk '$1 == "hostKeyFingerprint:" { print $2; exit }' digitalocean/hosts/production.yaml)
+          actual_fingerprint=$(ssh-keygen -lf digitalocean/known_hosts/production | awk '{print $2}')
+          test "$declared_fingerprint" = "$actual_fingerprint"
+          ssh-keygen -F "$host" -f digitalocean/known_hosts/production >/dev/null
 
   host:
     name: Bootstrap and verify production host
@@ -130,7 +104,7 @@ jobs:
           echo "host=$host" >> "$GITHUB_OUTPUT"
           echo "operation=$INPUT_OPERATION" >> "$GITHUB_OUTPUT"
 
-      - name: Configure SSH
+      - name: Configure pinned SSH trust
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
           HOST: ${{ steps.target.outputs.host }}
@@ -139,32 +113,33 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/digitalocean
           chmod 600 ~/.ssh/digitalocean
-          for _ in $(seq 1 60); do
-            if ssh-keyscan -T 5 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "SSH did not become reachable" >&2
-          exit 1
+          install -m 600 digitalocean/known_hosts/production ~/.ssh/known_hosts
+          ssh-keygen -F "$HOST" -f ~/.ssh/known_hosts >/dev/null
+          cat > ~/.ssh/config <<EOF
+          Host production-droplet
+            HostName $HOST
+            User root
+            IdentityFile ~/.ssh/digitalocean
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          EOF
+          chmod 600 ~/.ssh/config
 
       - name: Bootstrap host
         if: steps.target.outputs.operation == 'bootstrap'
-        env:
-          HOST: ${{ steps.target.outputs.host }}
         run: |
-          ssh -o BatchMode=yes -i ~/.ssh/digitalocean root@"$HOST" 'bash -s' < digitalocean/scripts/bootstrap-host.sh
+          ssh production-droplet 'bash -s' < digitalocean/scripts/bootstrap-host.sh
 
       - name: Verify host
-        env:
-          HOST: ${{ steps.target.outputs.host }}
         run: |
-          scp -i ~/.ssh/digitalocean digitalocean/scripts/verify-host.sh root@"$HOST":/tmp/verify-open-hax-host.sh
+          scp digitalocean/scripts/verify-host.sh production-droplet:/tmp/verify-open-hax-host.sh
           set +e
-          ssh -i ~/.ssh/digitalocean root@"$HOST" 'chmod 700 /tmp/verify-open-hax-host.sh && REPORT=/tmp/host-verification.json /tmp/verify-open-hax-host.sh'
+          ssh production-droplet 'chmod 700 /tmp/verify-open-hax-host.sh && REPORT=/tmp/host-verification.json /tmp/verify-open-hax-host.sh'
           status=$?
           set -e
-          scp -i ~/.ssh/digitalocean root@"$HOST":/tmp/host-verification.json host-verification.json || true
+          scp production-droplet:/tmp/host-verification.json host-verification.json || true
           exit "$status"
 
       - name: Remove deployment credentials
