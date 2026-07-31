@@ -35,7 +35,9 @@ jobs:
     name: Validate DigitalOcean host definition
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Validate scripts and inventory
         run: |
@@ -61,9 +63,41 @@ jobs:
               raise SystemExit(f'missing host inventory fields: {missing}')
 
           address = ipaddress.ip_address(values['publicAddress'])
-          if not isinstance(address, ipaddress.IPv4Address) or not address.is_global:
-              raise SystemExit('publicAddress must be a global IPv4 address')
+          if not isinstance(address, ipaddress.IPv4Address) or not address.is_global or address.is_multicast:
+              raise SystemExit('publicAddress must be a global unicast IPv4 address')
           PY
+
+  probe-host-key:
+    name: Probe untrusted host key
+    if: github.event_name == 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Capture host key for out-of-band review
+        run: |
+          host=$(awk '$1 == "publicAddress:" { print $2; exit }' digitalocean/hosts/production.yaml)
+          for _ in $(seq 1 60); do
+            if ssh-keyscan -T 5 -t ed25519 "$host" > digitalocean-host-key 2>/dev/null && [ -s digitalocean-host-key ]; then
+              cat digitalocean-host-key
+              ssh-keygen -lf digitalocean-host-key
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "SSH host key did not become reachable" >&2
+          exit 1
+
+      - name: Upload untrusted host key
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: digitalocean-untrusted-host-key
+          path: digitalocean-host-key
+          if-no-files-found: error
 
   host:
     name: Bootstrap and verify production host
@@ -72,7 +106,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Resolve target
         id: target
@@ -87,8 +123,8 @@ jobs:
           HOST="$host" python3 - <<'PY'
           import ipaddress, os
           address = ipaddress.ip_address(os.environ['HOST'])
-          if not isinstance(address, ipaddress.IPv4Address) or not address.is_global:
-              raise SystemExit('host must be a global IPv4 address')
+          if not isinstance(address, ipaddress.IPv4Address) or not address.is_global or address.is_multicast:
+              raise SystemExit('host must be a global unicast IPv4 address')
           PY
           case "$INPUT_OPERATION" in bootstrap|verify) ;; *) exit 2 ;; esac
           echo "host=$host" >> "$GITHUB_OUTPUT"
@@ -127,12 +163,17 @@ jobs:
           set +e
           ssh -i ~/.ssh/digitalocean root@"$HOST" 'chmod 700 /tmp/verify-open-hax-host.sh && REPORT=/tmp/host-verification.json /tmp/verify-open-hax-host.sh'
           status=$?
+          set -e
           scp -i ~/.ssh/digitalocean root@"$HOST":/tmp/host-verification.json host-verification.json || true
           exit "$status"
 
+      - name: Remove deployment credentials
+        if: always()
+        run: rm -f ~/.ssh/digitalocean
+
       - name: Upload verification report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: digitalocean-host-verification
           path: host-verification.json
