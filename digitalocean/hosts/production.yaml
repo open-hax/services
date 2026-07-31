@@ -1,0 +1,42 @@
+version: 1
+provider: digitalocean
+environment: production
+
+host:
+  name: open-hax-services-production
+  dropletId: 588977221
+  publicAddress: 157.245.125.134
+  privateAddress: 10.108.0.2
+  sshUser: deploy
+  bootstrapUser: root
+  hostKeyFingerprint: SHA256:HKUMqjMeeJsIlZRqO++z5xx0pBqtLi8GOBFKZ6GomQY
+  region: nyc3
+  image: ubuntu-24-04-x64
+  size: s-4vcpu-8gb
+  backups: true
+  monitoring: true
+  tags:
+    - open-hax
+    - services
+    - production
+
+storage:
+  mongodb:
+    required: true
+    mode: external
+    connectionSecret: MONGODB_URI
+  vectors:
+    required: false
+    backend: disabled
+    connectionSecret: VECTOR_DATABASE_URL
+
+inference:
+  gateway: proxx
+  providerSecrets:
+    - REQUESTY_API_KEY
+
+roles:
+  - ingress
+  - proxx
+  - openplanner
+  - knoxx
