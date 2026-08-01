@@ -34,6 +34,14 @@ on:
         required: false
         default: ""
         type: string
+      extra_env:
+        description: >-
+          Additional non-secret NAME=value pairs as a JSON object, exported
+          before the env template is rendered. Used for services that deploy
+          more than one image.
+        required: false
+        default: "{}"
+        type: string
     secrets:
       DIGITALOCEAN_SSH_PRIVATE_KEY: { required: true }
       MONGODB_URI: { required: false }
@@ -61,6 +69,11 @@ on:
         description: Fully qualified image reference to deploy
         required: false
         default: ""
+        type: string
+      extra_env:
+        description: Additional non-secret NAME=value pairs as a JSON object
+        required: false
+        default: "{}"
         type: string
 
 permissions:
@@ -155,8 +168,15 @@ jobs:
           PROXX_POSTGRES_PASSWORD: ${{ secrets.PROXX_POSTGRES_PASSWORD }}
           OPENPLANNER_API_KEY: ${{ secrets.OPENPLANNER_API_KEY }}
           KNOXX_API_KEY: ${{ secrets.KNOXX_API_KEY }}
+          EXTRA_ENV: ${{ inputs.extra_env }}
         run: |
           set -euo pipefail
+          # Process substitution keeps the loop in this shell so the exports
+          # survive into envsubst.
+          while IFS='=' read -r key value; do
+            [ -n "$key" ] && export "$key=$value"
+          done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"${EXTRA_ENV:-\{\}}")
+
           # Substitute only the names the template declares, so nginx/caddy
           # style $variables in adjacent config survive untouched. grep already
           # yields the ${NAME} form that envsubst wants as SHELL-FORMAT.
@@ -187,11 +207,22 @@ jobs:
           RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
           STATE_PATH: ${{ steps.contract.outputs.state_path }}
           SERVICE_DIR: ${{ steps.contract.outputs.service_dir }}
+          SERVICE: ${{ inputs.service }}
         run: |
           set -euo pipefail
           ssh open-hax-target "mkdir -p '${RUNTIME_PATH}' '${STATE_PATH}'"
-          rsync -az --delete --exclude '.env' -e ssh \
+          rsync -az --delete --exclude '.env' --exclude 'contracts' -e ssh \
             "${SERVICE_DIR}/" "open-hax-target:${RUNTIME_PATH}/"
+
+          # Services-owned contracts ship read-only alongside the service.
+          # Deploys ship contracts; they never rewrite them (receipts.edn,
+          # 2026-06-02, commit 91dd693).
+          if [ -d "contracts/${SERVICE}" ]; then
+            ssh open-hax-target "mkdir -p '${RUNTIME_PATH}/contracts'"
+            rsync -az --delete -e ssh \
+              "contracts/${SERVICE}/" "open-hax-target:${RUNTIME_PATH}/contracts/"
+            echo "shipped $(find "contracts/${SERVICE}" -type f | wc -l) contract files"
+          fi
           # .env is written separately so --delete never removes it and it
           # never travels through the repo.
           scp rendered.env "open-hax-target:${RUNTIME_PATH}/.env"
@@ -209,6 +240,9 @@ jobs:
           runtime_path=$1
           service=$2
           cd "$runtime_path"
+          # Every service shares one user-defined network so Knoxx can reach
+          # Proxx by name across compose projects. Creation is idempotent.
+          docker network inspect open-hax >/dev/null 2>&1 || docker network create open-hax
           docker compose --project-name "$service" --env-file .env pull
           docker compose --project-name "$service" --env-file .env up -d --remove-orphans
           REMOTE

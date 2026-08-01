@@ -1,0 +1,96 @@
+# Proxx — the inference gateway, and the only service holding provider
+# credentials. Downstream services receive a Proxx base URL and PROXY_AUTH_TOKEN,
+# never the Requesty or DigitalOcean key.
+#
+# Single node, not the four-node federation in the app repo's
+# docker-compose.federation-runtime.yml. One node is enough here, and the
+# duplicated bare network aliases across federation projects were the root
+# cause of the 2026-06-01 /v1/models flap recorded in
+# promethean/docs/drift-notes.md.
+#
+# Bound to loopback. The caddy service owns 80/443.
+
+name: proxx
+
+services:
+  proxx-db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: openai_proxy
+      POSTGRES_USER: openai_proxy
+      POSTGRES_PASSWORD: ${PROXX_POSTGRES_PASSWORD:?PROXX_POSTGRES_PASSWORD must be set}
+    volumes:
+      - ${PROXX_STATE_PATH}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openai_proxy -d openai_proxy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  proxx:
+    image: ${PROXX_IMAGE:?PROXX_IMAGE must be set}
+    restart: unless-stopped
+    depends_on:
+      proxx-db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PROXY_HOST: 0.0.0.0
+      PROXY_PORT: "8789"
+      PORT: "8789"
+
+      # Admin bearer. Also the credential OpenPlanner and Knoxx present.
+      PROXY_AUTH_TOKEN: ${PROXY_AUTH_TOKEN:?PROXY_AUTH_TOKEN must be set}
+      # Defaults to SESSION_SECRET and then to PROXY_AUTH_TOKEN if unset;
+      # rotating it silently invalidates every issued tenant API key, so it is
+      # pinned explicitly.
+      PROXY_TOKEN_PEPPER: ${PROXY_TOKEN_PEPPER:?PROXY_TOKEN_PEPPER must be set}
+      SESSION_SECRET: ${PROXX_SESSION_SECRET:?PROXX_SESSION_SECRET must be set}
+
+      # With DATABASE_URL set, Proxx ignores provider credentials from the
+      # environment entirely (key-pool.ts preferAccountStoreProviders) and
+      # serves them from the SQL credential store instead. Provider
+      # registration therefore happens post-boot, in verify.sh.
+      DATABASE_URL: postgresql://openai_proxy:${PROXX_POSTGRES_PASSWORD}@proxx-db:5432/openai_proxy
+
+      PROXX_CLJS_RUNTIME_REQUIRED: "true"
+      PROXX_CLJS_POLICY_AUTHORITATIVE: "true"
+
+      PROXY_REQUEST_LOGS_FILE: /app/data/request-logs.jsonl
+      PROXY_PROMPT_AFFINITY_FILE: /app/data/prompt-affinity.json
+      PROXY_SETTINGS_FILE: /app/data/proxy-settings.json
+
+      # The web console rejects any Host not on this list.
+      VITE_ALLOWED_HOSTS: ${PROXX_PUBLIC_HOST}
+    ports:
+      - "127.0.0.1:8789:8789"
+      - "127.0.0.1:5174:5174"
+    volumes:
+      - ${PROXX_STATE_PATH}/data:/app/data
+    healthcheck:
+      # /health always returns HTTP 200, even when the key pool is broken, so
+      # the body has to be parsed. verify.sh does the fuller check.
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          fetch('http://127.0.0.1:8789/health')
+            .then(r => r.json())
+            .then(b => process.exit(b.ok ? 0 : 1))
+            .catch(() => process.exit(1))
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      default:
+        aliases:
+          - proxx
+
+networks:
+  default:
+    name: open-hax
+    external: true

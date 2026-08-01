@@ -1,0 +1,123 @@
+# Knoxx — the user-facing application, and the thing the demo is actually for.
+#
+# Isolated from the OpenPlanner HTTP service. KNOXX_OPENPLANNER_CLIENT_MODE is
+# "mongo", so the data plane — health, events, sessions, vector search, mongo
+# browse — runs in-process through @open-hax/openplanner-sdk straight against
+# Atlas. Verified: the backend reports openplanner {reachable: true, transport:
+# "sdk"} with no OpenPlanner service running anywhere.
+#
+# Operations not yet ported to the SDK still delegate to a REST client:
+# graph-memory, graph-export, upsert-document, documents-stats,
+# graph-monitoring, build-semantic-edges, record-labels, record-reaction and
+# the translation endpoints. Those degrade while no OpenPlanner service exists.
+# Chat, sessions and search — the demo path — do not.
+#
+# No knoxx-postgres and no knoxx-redis. The pinned backend is Mongo-only
+# (infra/db/policy.cljs, infra/mongo_client.cljs; backend/package.json carries
+# neither pg nor redis). They only remain a dependency of knoxx-ingestion,
+# which is not deployed here. Dropping them removes two service_healthy gates
+# from startup.
+
+name: knoxx
+
+services:
+  knoxx-backend:
+    image: ${KNOXX_BACKEND_IMAGE:?KNOXX_BACKEND_IMAGE must be set}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "8000"
+
+      # In production the pi@open-hax.local fallback identity is suppressed,
+      # so a missing user email turns every API-key request into a 401.
+      KNOXX_API_KEY: ${KNOXX_API_KEY:?KNOXX_API_KEY must be set}
+      KNOXX_API_KEY_USER_EMAIL: ${KNOXX_API_KEY_USER_EMAIL:?KNOXX_API_KEY_USER_EMAIL must be set}
+      KNOXX_PUBLIC_BASE_URL: https://${KNOXX_PUBLIC_HOST}
+      KNOXX_BASE_URL: https://${KNOXX_PUBLIC_HOST}
+
+      # Shipped read-only from this repo. Deploys ship contracts; they never
+      # rewrite them (receipts.edn 2026-06-02, commit 91dd693).
+      CONTRACTS_DIR: /app/contracts
+
+      MONGODB_URI: ${MONGODB_URI:?MONGODB_URI must be set}
+      MONGODB_DB: ${MONGODB_DB}
+
+      # Inference goes through Proxx, which owns the provider credentials.
+      PROXX_BASE_URL: http://proxx:8789
+      PROXX_AUTH_TOKEN: ${PROXY_AUTH_TOKEN:?PROXY_AUTH_TOKEN must be set}
+      PROXX_DEFAULT_MODEL: ${PROXX_DEFAULT_MODEL}
+
+      # The SDK sources its own embeddings, also via Proxx.
+      KNOXX_OPENPLANNER_CLIENT_MODE: mongo
+      EMBED_PROVIDER_BASE_URL: http://proxx:8789
+      EMBED_PROVIDER_API_KEY: ${PROXY_AUTH_TOKEN}
+      EMBED_PROVIDER_MODEL: ${EMBED_PROVIDER_MODEL}
+      EMBED_PROVIDER_DIMENSIONS: ${EMBED_PROVIDER_DIMENSIONS}
+
+      # Off for the demo: background compaction, the NPU rescorer (no such
+      # hardware on a Droplet), and audio indexing.
+      SEMANTIC_COMPACTION_ENABLED: "false"
+      VEXX_BASE_URL: ""
+      VEXX_ENFORCE: "false"
+      AUDIO_INDEXING_ENABLED: "false"
+      KNOXX_STT_BASE_URL: ""
+
+      # Defaults to /home/err/devel in source-hydration.ts; declare it.
+      OPENPLANNER_SOURCE_ROOT: /app/workspace
+      OPENPLANNER_HYDRATION_LMDB_PATH: /app/state/source-hydration-lmdb
+    volumes:
+      - ./contracts:/app/contracts:ro
+      - ${KNOXX_STATE_PATH}/backend:/app/state
+      - ${KNOXX_STATE_PATH}/runs:/runs/knoxx-agent
+    # No /var/run/docker.sock. The agent sandbox needs it, but it is a
+    # root-equivalent grant and this host is about to be public.
+    healthcheck:
+      # 401 counts as healthy: it proves the process is up and enforcing auth.
+      # A 503 does not — it means Proxx is unreachable.
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          fetch('http://127.0.0.1:8000/health', {headers: {'X-API-Key': process.env.KNOXX_API_KEY || ''}})
+            .then(r => process.exit(r.ok || r.status === 401 ? 0 : 1))
+            .catch(() => process.exit(1))
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      # The first probe is slow: it waits on the Proxx dependency check.
+      start_period: 120s
+    networks:
+      default:
+        aliases:
+          # The frontend image's baked nginx.conf hardcodes
+          # `proxy_pass http://backend:8000/`, and nginx resolves that at
+          # config load — without this alias the frontend dies on startup with
+          # "host not found in upstream".
+          - backend
+          - knoxx-backend
+
+  knoxx-frontend:
+    image: ${KNOXX_FRONTEND_IMAGE:?KNOXX_FRONTEND_IMAGE must be set}
+    restart: unless-stopped
+    depends_on:
+      knoxx-backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      default:
+        aliases:
+          - knoxx-frontend
+
+networks:
+  default:
+    name: open-hax
+    external: true

@@ -1,0 +1,90 @@
+name: Deploy Stack
+
+# Brings the production stack up in dependency order.
+#
+#   proxx ──> knoxx ──> caddy
+#
+# Ordering is enforced here rather than with depends_on, because these are
+# separate compose projects. It is load-bearing: the Knoxx backend's /health
+# returns 503 until Proxx is reachable, and its healthcheck gates the frontend.
+#
+# OpenPlanner's HTTP service is deliberately absent. Knoxx runs the OpenPlanner
+# data plane in-process through @open-hax/openplanner-sdk
+# (KNOXX_OPENPLANNER_CLIENT_MODE=mongo) straight against Atlas, so chat,
+# sessions and vector search need no OpenPlanner service. Graph, translation
+# and document-stats operations still delegate to REST and degrade until one
+# is deployed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      proxx_ref:
+        description: open-hax/proxx ref to deploy
+        required: false
+        default: main
+        type: string
+      knoxx_ref:
+        description: open-hax/knoxx ref to deploy
+        required: false
+        default: main
+        type: string
+      include_ingress:
+        description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-stack-production
+  cancel-in-progress: false
+
+jobs:
+  build-proxx:
+    uses: ./.github/workflows/build-images.yml
+    with:
+      service: proxx
+      source_ref: ${{ inputs.proxx_ref }}
+
+  deploy-proxx:
+    needs: build-proxx
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: proxx
+      image: ${{ needs.build-proxx.outputs.image }}
+      source_sha: ${{ needs.build-proxx.outputs.source_sha }}
+    secrets: inherit
+
+  # Both Knoxx images build while Proxx deploys.
+  build-knoxx-backend:
+    uses: ./.github/workflows/build-images.yml
+    with:
+      service: knoxx-backend
+      source_ref: ${{ inputs.knoxx_ref }}
+
+  build-knoxx-frontend:
+    uses: ./.github/workflows/build-images.yml
+    with:
+      service: knoxx-frontend
+      source_ref: ${{ inputs.knoxx_ref }}
+
+  deploy-knoxx:
+    needs: [deploy-proxx, build-knoxx-backend, build-knoxx-frontend]
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: knoxx
+      image: ${{ needs.build-knoxx-backend.outputs.image }}
+      source_sha: ${{ needs.build-knoxx-backend.outputs.source_sha }}
+      extra_env: >-
+        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}"}
+    secrets: inherit
+
+  deploy-caddy:
+    needs: deploy-knoxx
+    if: inputs.include_ingress
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: caddy
+    secrets: inherit
