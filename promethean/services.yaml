@@ -74,7 +74,7 @@ services:
     desiredProxxBaseUrl: https://proxx.promethean.rest
     notes:
       - The durable workspace backs CMS drafts, Studio media/playlists, and source hydration.
-      - Translation and CMS compatibility operations use the host OpenPlanner HTTP service.
+      - CMS compatibility operations use the host OpenPlanner HTTP service; translation is in-process.
 
   knoxx-staging:
     kind: app
@@ -96,7 +96,7 @@ services:
       - PROXX_DEFAULT_MODEL
     desiredProxxBaseUrl: https://proxx.promethean.rest
     notes:
-      - CMS, Studio, and translation require the same durable workspace and OpenPlanner bridge as production.
+      - CMS and Studio use the durable workspace; translation is in-process and has no OpenPlanner REST dependency.
 
   openplanner-production:
     kind: app
