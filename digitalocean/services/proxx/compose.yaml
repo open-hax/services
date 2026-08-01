@@ -64,9 +64,12 @@ services:
 
       # The web console rejects any Host not on this list.
       VITE_ALLOWED_HOSTS: ${PROXX_PUBLIC_HOST}
+    # Loopback only, for host-side debugging; Caddy reaches proxx over the
+    # compose network. 5174 is deliberately absent — the production image runs
+    # a single process on 8789 and serves the console from it, so publishing
+    # 5174 only advertised a port nothing binds.
     ports:
       - "127.0.0.1:8789:8789"
-      - "127.0.0.1:5174:5174"
     volumes:
       - ${PROXX_STATE_PATH}/data:/app/data
     healthcheck:
