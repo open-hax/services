@@ -167,6 +167,16 @@ jobs:
           test -f backend/dist/server.js
           test -d backend/dist/cljs-runtime
 
+      # The workflow repository itself is NOT implicitly present on the
+      # runner of a reusable workflow call. Dockerfile.backend-sdk lives in
+      # this repo (digitalocean/services/knoxx/), so check it out explicitly.
+      - name: Check out service contracts
+        if: inputs.service == 'knoxx-backend'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          path: contracts
+          persist-credentials: false
+
       - name: Vendor openplanner-sdk for the backend image
         if: inputs.service == 'knoxx-backend'
         run: |
@@ -186,7 +196,7 @@ jobs:
           mkdir -p sdk-layer/vendor
           # -L dereferences: the tree must contain real files, not links out.
           cp -RL sdk-deploy sdk-layer/vendor/openplanner-sdk
-          cp digitalocean/services/knoxx/Dockerfile.backend-sdk sdk-layer/Dockerfile
+          cp contracts/digitalocean/services/knoxx/Dockerfile.backend-sdk sdk-layer/Dockerfile
           test -f sdk-layer/vendor/openplanner-sdk/dist/index.js
           test -d sdk-layer/vendor/openplanner-sdk/node_modules/@textlint/ast-node-types
 
