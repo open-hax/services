@@ -1,0 +1,350 @@
+name: Deploy to DigitalOcean
+
+# Deploys one service to the DigitalOcean production host.
+#
+# The host address, SSH user, and runtime/state roots come from
+# digitalocean/hosts/<environment>.yaml via digitalocean/lib/host-contract.sh.
+# Nothing here defaults to a home directory, and every SSH connection is
+# checked against the committed host key before it is made.
+#
+# Each service contributes three files under digitalocean/services/<service>/:
+#   compose.yaml   the runtime topology, referencing GHCR images
+#   env.template   the secret/variable contract, placeholders only
+#   verify.sh      the post-deploy health gate, run on the host
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: Service to deploy
+        required: true
+        type: string
+      environment:
+        description: Target environment
+        required: false
+        default: production
+        type: string
+      image:
+        description: Fully qualified image reference to deploy
+        required: false
+        default: ""
+        type: string
+      source_sha:
+        description: Application source commit being deployed
+        required: false
+        default: ""
+        type: string
+      extra_env:
+        description: >-
+          Additional non-secret NAME=value pairs as a JSON object, exported
+          before the env template is rendered. Used for services that deploy
+          more than one image.
+        required: false
+        default: "{}"
+        type: string
+    secrets:
+      DIGITALOCEAN_SSH_PRIVATE_KEY: { required: true }
+      MONGODB_URI: { required: false }
+      REQUESTY_API_KEY: { required: false }
+      DO_INFERENCE_API_KEY: { required: false }
+      PROXY_AUTH_TOKEN: { required: false }
+      PROXY_TOKEN_PEPPER: { required: false }
+      PROXX_SESSION_SECRET: { required: false }
+      PROXX_POSTGRES_PASSWORD: { required: false }
+      OPENPLANNER_API_KEY: { required: false }
+      KNOXX_API_KEY: { required: false }
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Service to deploy
+        required: true
+        type: choice
+        options: [smoke, proxx, openplanner, knoxx, caddy]
+      environment:
+        description: Target environment
+        required: false
+        default: production
+        type: string
+      image:
+        description: Fully qualified image reference to deploy
+        required: false
+        default: ""
+        type: string
+      extra_env:
+        description: Additional non-secret NAME=value pairs as a JSON object
+        required: false
+        default: "{}"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: digitalocean-${{ inputs.environment }}-${{ inputs.service }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Load and validate host contract
+        id: contract
+        env:
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+          SERVICE: ${{ inputs.service }}
+        run: |
+          set -euo pipefail
+          . digitalocean/lib/host-contract.sh
+          load_host_contract "$DEPLOY_ENVIRONMENT"
+          assert_pinned_host_key
+
+          dir="digitalocean/services/${SERVICE}"
+          for required in compose.yaml env.template verify.sh; do
+            test -f "${dir}/${required}" || {
+              echo "service ${SERVICE} is missing ${dir}/${required}" >&2
+              exit 2
+            }
+          done
+
+          {
+            echo "host=${OPEN_HAX_HOST}"
+            echo "ssh_user=${OPEN_HAX_SSH_USER}"
+            echo "service_dir=${dir}"
+            echo "runtime_path=$(service_runtime_path "$SERVICE")"
+            echo "state_path=$(service_state_path "$SERVICE")"
+            echo "reports_root=${OPEN_HAX_REPORTS_ROOT}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure pinned SSH trust
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+          HOST: ${{ steps.contract.outputs.host }}
+          SSH_USER: ${{ steps.contract.outputs.ssh_user }}
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/digitalocean
+          chmod 600 ~/.ssh/digitalocean
+          install -m 600 "digitalocean/known_hosts/${DEPLOY_ENVIRONMENT}" ~/.ssh/known_hosts
+          ssh-keygen -F "$HOST" -f ~/.ssh/known_hosts >/dev/null
+          cat > ~/.ssh/config <<EOF
+          Host open-hax-target
+            HostName $HOST
+            User $SSH_USER
+            IdentityFile ~/.ssh/digitalocean
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Render runtime environment
+        env:
+          SERVICE_DIR: ${{ steps.contract.outputs.service_dir }}
+          # Non-secret runtime facts.
+          OPEN_HAX_SERVICE_IMAGE: ${{ inputs.image }}
+          OPEN_HAX_SOURCE_SHA: ${{ inputs.source_sha }}
+          OPEN_HAX_STATE_PATH: ${{ steps.contract.outputs.state_path }}
+          OPEN_HAX_HOST_ADDRESS: ${{ steps.contract.outputs.host }}
+          KNOXX_API_KEY_USER_EMAIL: ${{ vars.KNOXX_API_KEY_USER_EMAIL }}
+          # Secrets. Absent ones stay empty and are caught by the placeholder
+          # check below rather than silently deploying a blank credential.
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          REQUESTY_API_KEY: ${{ secrets.REQUESTY_API_KEY }}
+          DO_INFERENCE_API_KEY: ${{ secrets.DO_INFERENCE_API_KEY }}
+          PROXY_AUTH_TOKEN: ${{ secrets.PROXY_AUTH_TOKEN }}
+          PROXY_TOKEN_PEPPER: ${{ secrets.PROXY_TOKEN_PEPPER }}
+          PROXX_SESSION_SECRET: ${{ secrets.PROXX_SESSION_SECRET }}
+          PROXX_POSTGRES_PASSWORD: ${{ secrets.PROXX_POSTGRES_PASSWORD }}
+          OPENPLANNER_API_KEY: ${{ secrets.OPENPLANNER_API_KEY }}
+          KNOXX_API_KEY: ${{ secrets.KNOXX_API_KEY }}
+          EXTRA_ENV: ${{ inputs.extra_env }}
+        run: |
+          set -euo pipefail
+          # Process substitution keeps the loop in this shell so the exports
+          # survive into envsubst.
+          while IFS='=' read -r key value; do
+            [ -n "$key" ] && export "$key=$value"
+          done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"${EXTRA_ENV:-\{\}}")
+
+          # Substitute only the names the template declares, so nginx/caddy
+          # style $variables in adjacent config survive untouched. grep already
+          # yields the ${NAME} form that envsubst wants as SHELL-FORMAT.
+          mapfile -t declared < <(grep -oE '\$\{[A-Z0-9_]+\}' "${SERVICE_DIR}/env.template" | sort -u)
+          envsubst "${declared[*]}" < "${SERVICE_DIR}/env.template" > rendered.env
+
+          # An unset secret renders as `NAME=''` — refuse rather than deploy a
+          # blank credential into production.
+          if grep -nE "^[A-Z0-9_]+=''$" rendered.env; then
+            echo "::error::the above variables rendered empty; check the ${{ inputs.environment }} environment" >&2
+            exit 2
+          fi
+
+          # Templates single-quote every value so the file is parseable both by
+          # docker compose --env-file (which strips the quotes) and by `.` in
+          # the health gate. A value containing a single quote would break the
+          # latter, so reject it rather than ship a mis-parsed credential.
+          if grep -nE "^[A-Z0-9_]+='.*'.*'" rendered.env; then
+            echo "::error::the above values contain a single quote, which the env file cannot represent" >&2
+            exit 2
+          fi
+
+          chmod 600 rendered.env
+          echo "rendered $(grep -cE '^[A-Z0-9_]+=' rendered.env) variables"
+
+      - name: Sync service definition
+        env:
+          RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
+          STATE_PATH: ${{ steps.contract.outputs.state_path }}
+          SERVICE_DIR: ${{ steps.contract.outputs.service_dir }}
+          SERVICE: ${{ inputs.service }}
+        run: |
+          set -euo pipefail
+          ssh open-hax-target "mkdir -p '${RUNTIME_PATH}' '${STATE_PATH}'"
+          rsync -az --delete --exclude '.env' --exclude 'contracts' -e ssh \
+            "${SERVICE_DIR}/" "open-hax-target:${RUNTIME_PATH}/"
+
+          # Services-owned contracts ship read-only alongside the service.
+          # Deploys ship contracts; they never rewrite them (receipts.edn,
+          # 2026-06-02, commit 91dd693).
+          if [ -d "contracts/${SERVICE}" ]; then
+            ssh open-hax-target "mkdir -p '${RUNTIME_PATH}/contracts'"
+            rsync -az --delete -e ssh \
+              "contracts/${SERVICE}/" "open-hax-target:${RUNTIME_PATH}/contracts/"
+            echo "shipped $(find "contracts/${SERVICE}" -type f | wc -l) contract files"
+          fi
+          # .env is written separately so --delete never removes it and it
+          # never travels through the repo.
+          scp rendered.env "open-hax-target:${RUNTIME_PATH}/.env"
+          ssh open-hax-target "chmod 600 '${RUNTIME_PATH}/.env' && chmod +x '${RUNTIME_PATH}/verify.sh'"
+
+      - name: Authenticate the host to GHCR
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          # Short-lived, job-scoped: the images are private to the org and the
+          # Droplet holds no standing registry credential.
+          printf '%s' "$REGISTRY_TOKEN" \
+            | ssh open-hax-target "docker login ghcr.io -u '$REGISTRY_USER' --password-stdin" >/dev/null
+
+      - name: Deploy
+        env:
+          RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
+          SERVICE: ${{ inputs.service }}
+        run: |
+          set -euo pipefail
+          # Quoted heredoc: the script is opaque to the runner's shell and the
+          # two values arrive as positional arguments on the host.
+          ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$SERVICE'" <<'REMOTE'
+          runtime_path=$1
+          service=$2
+          cd "$runtime_path"
+
+          # docker compose resolves ${VAR} from the shell environment BEFORE
+          # --env-file. A stray value in the host environment would silently
+          # override a rendered credential and the container would come up with
+          # the wrong one, healthy and wrong. Clear every name the template
+          # declares so --env-file is the only source.
+          while IFS='=' read -r key _; do
+            [ -n "$key" ] && unset "$key"
+          done < <(grep -E '^[A-Z0-9_]+=' .env)
+
+          # Every service shares one user-defined network so Knoxx can reach
+          # Proxx by name across compose projects. Creation is idempotent.
+          docker network inspect open-hax >/dev/null 2>&1 || docker network create open-hax
+          docker compose --project-name "$service" --env-file .env pull
+          docker compose --project-name "$service" --env-file .env up -d --remove-orphans
+          REMOTE
+
+
+      - name: Health gate
+        id: health
+        env:
+          RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
+          SERVICE: ${{ inputs.service }}
+        run: |
+          set -euo pipefail
+          ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$SERVICE'" <<'REMOTE'
+          runtime_path=$1
+          service=$2
+          cd "$runtime_path"
+          # verify.sh reads the service's own credentials to make an
+          # authenticated probe; nothing is echoed.
+          set -a; . ./.env; set +a
+          for _ in $(seq 1 30); do
+            if ./verify.sh; then exit 0; fi
+            sleep 6
+          done
+          echo "--- $service did not become healthy; container state ---" >&2
+          docker compose --project-name "$service" --env-file .env ps >&2
+          docker compose --project-name "$service" --env-file .env logs --tail 120 --no-color >&2
+          exit 1
+          REMOTE
+
+      - name: Collect deployment report
+        if: always()
+        env:
+          RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
+          REPORTS_ROOT: ${{ steps.contract.outputs.reports_root }}
+          SERVICE: ${{ inputs.service }}
+          IMAGE: ${{ inputs.image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          HEALTH_RESULT: ${{ steps.health.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          ssh open-hax-target \
+            "bash -euo pipefail -s -- '$SERVICE' '$RUNTIME_PATH' '$IMAGE' '$SOURCE_SHA' '$HEALTH_RESULT' '$RUN_URL'" \
+            <<'REMOTE' > report.json
+          service=$1; runtime_path=$2; image=$3; source_sha=$4; health=$5; run_url=$6
+          cd "$runtime_path"
+          containers=$(docker compose --project-name "$service" ps --format json 2>/dev/null | jq -sc '.' || echo '[]')
+          listening=$(ss -ltnH 2>/dev/null | awk '{print $4}' | sort -u \
+            | jq -Rsc 'split("\n") | map(select(length > 0))' || echo '[]')
+          jq -n \
+            --arg service "$service" \
+            --arg image "$image" \
+            --arg sourceSha "$source_sha" \
+            --arg health "$health" \
+            --arg runUrl "$run_url" \
+            --arg host "$(hostname)" \
+            --arg deployedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson containers "$containers" \
+            --argjson listening "$listening" \
+            '{service: $service, image: $image, sourceSha: $sourceSha,
+              health: $health, runUrl: $runUrl, host: $host,
+              deployedAt: $deployedAt, containers: $containers,
+              listeningSockets: $listening}'
+          REMOTE
+          jq . report.json
+          ssh open-hax-target "mkdir -p '$REPORTS_ROOT'"
+          scp report.json "open-hax-target:${REPORTS_ROOT}/${SERVICE}-$(date -u +%Y%m%dT%H%M%SZ).json"
+
+      - name: Remove deployment credentials
+        if: always()
+        run: |
+          ssh open-hax-target 'docker logout ghcr.io' >/dev/null 2>&1 || true
+          rm -f ~/.ssh/digitalocean rendered.env
+
+      - name: Upload deployment report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: digitalocean-deployment-${{ inputs.service }}
+          path: report.json
+          if-no-files-found: error

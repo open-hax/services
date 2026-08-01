@@ -1,0 +1,29 @@
+# Smoke service.
+#
+# Deploys nothing real. It exists so the deployment contract — host key
+# pinning, env rendering, rsync, compose pull/up, the health gate, and the
+# verification report — can be exercised end to end against the production
+# host before any application is placed on it (#22).
+#
+# Keep it dependency-free: a public base image, no credentials, no volumes
+# outside the declared state root.
+
+name: smoke
+
+services:
+  smoke:
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    restart: unless-stopped
+    # Loopback only. Nothing in this repo publishes to 0.0.0.0 until the
+    # ingress service owns 80/443.
+    ports:
+      - "127.0.0.1:${SMOKE_PORT}:8080"
+    volumes:
+      # Proves the declared state root is writable and survives a redeploy.
+      - ${SMOKE_STATE_PATH}:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s

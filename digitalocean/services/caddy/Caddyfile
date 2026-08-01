@@ -1,0 +1,70 @@
+# Production ingress. Caddy terminates TLS and is the only thing bound to
+# host 80/443; every service behind it publishes to loopback or nothing.
+#
+# Note the $-escaping: docker compose does not interpolate this file (it is a
+# read-only bind mount, not a template), so {$VAR} is Caddy's own environment
+# placeholder syntax, resolved at Caddy startup.
+{
+	email {$CADDY_ACME_EMAIL}
+	# Uncomment to exercise issuance without burning Let's Encrypt rate limits:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+(common) {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stderr
+		format console
+		level INFO
+	}
+}
+
+# Knoxx — the demo surface. The frontend image's own nginx handles /api/ and
+# /ws/ internally, so everything routes to it.
+{$CADDY_KNOXX_HOST} {
+	import common
+
+	reverse_proxy knoxx-frontend:80 {
+		# Proxx grants owner-level auth to requests carrying this header from a
+		# trusted local address. Strip it so it can never arrive from outside.
+		header_up -x-open-hax-bridge-auth
+
+		# Agent turns stream for a long time; do not cut them off.
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+		}
+	}
+}
+
+# Proxx — API and web console. Split matches the app repo's own
+# deploy/Caddyfile.template.
+{$CADDY_PROXX_HOST} {
+	import common
+
+	@api path /v1* /api* /auth* /health
+	handle @api {
+		reverse_proxy proxx:8789 {
+			header_up -x-open-hax-bridge-auth
+			transport http {
+				read_timeout 3600s
+				write_timeout 3600s
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy proxx:5174 {
+			header_up -x-open-hax-bridge-auth
+		}
+	}
+}

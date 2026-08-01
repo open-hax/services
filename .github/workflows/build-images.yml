@@ -1,0 +1,272 @@
+name: Build Service Image
+
+# Builds one service image and pushes it to GHCR.
+#
+# Images are built here, in CI, and never on the Droplet. The Droplet has no
+# Node toolchain, both Knoxx images consume a pre-built dist/, and the Knoxx
+# CLJS build needs open-hax/openplanner's contract-runtime laid out as a
+# sibling of the Knoxx checkout. Building once in CI removes the host-build
+# failure class that produced 2f193ee, 8a663f9, e3a8ca0 and 71c443a.
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: Service image to build
+        required: true
+        type: string
+      source_ref:
+        description: Ref of the application repository to build
+        required: false
+        default: main
+        type: string
+    outputs:
+      image:
+        description: Fully qualified image reference including tag
+        value: ${{ jobs.build.outputs.image }}
+      digest:
+        description: Image digest as pushed
+        value: ${{ jobs.build.outputs.digest }}
+      source_sha:
+        description: Resolved application source commit
+        value: ${{ jobs.build.outputs.source_sha }}
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Service image to build
+        required: true
+        type: choice
+        options: [proxx, openplanner, knoxx-backend, knoxx-frontend]
+      source_ref:
+        description: Ref of the application repository to build
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ inputs.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.source.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Resolve service definition
+        id: service
+        env:
+          SERVICE: ${{ inputs.service }}
+        run: |
+          set -euo pipefail
+          case "$SERVICE" in
+            proxx)          repo=open-hax/proxx;       context=source;          dockerfile=source/Dockerfile ;;
+            openplanner)    repo=open-hax/openplanner; context=source;          dockerfile=source/Dockerfile ;;
+            knoxx-backend)  repo=open-hax/knoxx;       context=source/backend;  dockerfile=source/backend/Dockerfile ;;
+            knoxx-frontend) repo=open-hax/knoxx;       context=source/frontend; dockerfile=source/frontend/Dockerfile ;;
+            *) echo "unknown service: $SERVICE" >&2; exit 2 ;;
+          esac
+          {
+            echo "repo=$repo"
+            echo "context=$context"
+            echo "dockerfile=$dockerfile"
+          } >> "$GITHUB_OUTPUT"
+
+      # Checked out at `source/` on purpose: the Knoxx backend's shadow-cljs
+      # source path is ../../contract-runtime/src/cljs relative to
+      # source/backend, which resolves to <workspace>/contract-runtime.
+      - name: Checkout application source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: ${{ steps.service.outputs.repo }}
+          ref: ${{ inputs.source_ref }}
+          path: source
+          persist-credentials: false
+          # open-hax/openplanner declares a file:/// submodule
+          # (packages/stores/migrations/openplanner-migration-tools) that
+          # cannot be cloned on a hosted runner.
+          submodules: false
+
+      - name: Record resolved source commit
+        id: source
+        run: |
+          set -euo pipefail
+          sha=$(git -C source rev-parse HEAD)
+          {
+            echo "sha=$sha"
+            echo "image=ghcr.io/open-hax/${{ inputs.service }}:$sha"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building ${{ inputs.service }} from ${{ steps.service.outputs.repo }}@$sha"
+
+      # --- Knoxx-only: build prerequisites -------------------------------
+      # Both Knoxx Dockerfiles COPY a pre-built dist/; neither compiles.
+
+      # The Knoxx backend depends on two unpublished openplanner packages:
+      # contract-runtime (a shadow-cljs source path) and openplanner-sdk (a
+      # pnpm `link:` dependency). Both need the openplanner tree on disk.
+      - name: Check out openplanner
+        if: inputs.service == 'knoxx-backend'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/openplanner
+          ref: main
+          path: openplanner
+          persist-credentials: false
+          submodules: false
+
+      - name: Stage contract-runtime as a sibling of the Knoxx checkout
+        if: inputs.service == 'knoxx-backend'
+        run: |
+          set -euo pipefail
+          # backend/shadow-cljs.edn declares source path
+          # "../../contract-runtime/src/cljs", which from source/backend
+          # resolves to <workspace>/contract-runtime. @open-hax/contract-runtime
+          # is private and unpublished, so it has to be laid out on disk.
+          cp -R openplanner/packages/contract-runtime ./contract-runtime
+          test -d contract-runtime/src/cljs
+          echo "staged $(find contract-runtime/src/cljs -name '*.cljs' | wc -l) cljs files"
+
+      - name: Setup Java
+        if: startsWith(inputs.service, 'knoxx-')
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup pnpm
+        if: startsWith(inputs.service, 'knoxx-')
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10.14.0
+
+      - name: Setup Node.js
+        if: startsWith(inputs.service, 'knoxx-')
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Build Knoxx backend bundle
+        if: inputs.service == 'knoxx-backend'
+        working-directory: source
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm -C backend install --frozen-lockfile
+          # `compile`, not `release`. backend/package.json's build script runs
+          # `shadow-cljs release server`, which fails with "optimizations set to
+          # :none, can't optimize" because the :server build declares
+          # :optimizations :none. Same finding as e3a8ca0.
+          pnpm -C backend exec shadow-cljs compile server
+          # :none emits a multi-file ESM tree; the Dockerfile COPYs all of dist.
+          test -f backend/dist/server.js
+          test -d backend/dist/cljs-runtime
+
+      - name: Vendor openplanner-sdk for the backend image
+        if: inputs.service == 'knoxx-backend'
+        run: |
+          set -euo pipefail
+          # The compiled bundle imports @open-hax/openplanner-sdk, which
+          # backend/package.json pins to link:../../openplanner/... — a path
+          # that cannot exist in a container. Produce a self-contained copy.
+          # --config.node-linker=hoisted is required: the default layout leaves
+          # transitive deps (e.g. @textlint/ast-node-types via
+          # sentence-splitter) unresolvable at runtime.
+          cd openplanner
+          pnpm install --frozen-lockfile --filter @open-hax/openplanner-sdk...
+          pnpm --filter @open-hax/openplanner-sdk... run build
+          pnpm deploy --filter @open-hax/openplanner-sdk --prod --legacy \
+            --config.node-linker=hoisted "${GITHUB_WORKSPACE}/sdk-deploy"
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p sdk-layer/vendor
+          # -L dereferences: the tree must contain real files, not links out.
+          cp -RL sdk-deploy sdk-layer/vendor/openplanner-sdk
+          cp digitalocean/services/knoxx/Dockerfile.backend-sdk sdk-layer/Dockerfile
+          test -f sdk-layer/vendor/openplanner-sdk/dist/index.js
+          test -d sdk-layer/vendor/openplanner-sdk/node_modules/@textlint/ast-node-types
+
+      - name: Build Knoxx frontend bundle
+        if: inputs.service == 'knoxx-frontend'
+        working-directory: source
+        env:
+          # Inlined into the browser bundle at build time — must stay unset so
+          # an OpenPlanner key is never shipped to clients. Production traffic
+          # reaches OpenPlanner through the backend, not the browser.
+          VITE_OPENPLANNER_API_KEY: ""
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm -C frontend install --frozen-lockfile
+          # vite bridge -> vite app-bridge -> shadow-cljs release app -> tailwind.
+          # Order is load-bearing: the CLJS build resolves the Vite bundles as files.
+          pnpm -C frontend run build
+
+          # The build emits app.css, bridge/ and cljs/ but no top-level
+          # index.html, while frontend/Dockerfile serves dist/ directly from
+          # nginx with `index index.html`. Dev never hits this because
+          # shadow-cljs dev-http serves :roots ["." "dist"]. Stage the same
+          # shell the dev server uses; its /app.css, /bridge/style.css and
+          # /cljs/app.js references already match the build output.
+          cp frontend/index.html frontend/dist/index.html
+
+          test -f frontend/dist/index.html
+          test -f frontend/dist/app.css
+          test -f frontend/dist/cljs/app.js
+          test -f frontend/dist/bridge/style.css
+
+      # --- Build and push -------------------------------------------------
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # Plain docker rather than buildx: knoxx-backend is a two-stage build
+      # whose second stage does FROM the first stage's local image, which a
+      # docker-container buildx driver cannot resolve without a registry
+      # round-trip. Uniform tooling across services is worth more here than
+      # layer caching.
+      - name: Build and push
+        id: push
+        env:
+          SERVICE: ${{ inputs.service }}
+          CONTEXT: ${{ steps.service.outputs.context }}
+          DOCKERFILE: ${{ steps.service.outputs.dockerfile }}
+          IMAGE: ${{ steps.source.outputs.image }}
+          MOVING_TAG: ghcr.io/open-hax/${{ inputs.service }}:main
+        run: |
+          set -euo pipefail
+          if [ "$SERVICE" = knoxx-backend ]; then
+            docker build -t knoxx-backend-base:local -f "$DOCKERFILE" "$CONTEXT"
+            docker build -t "$IMAGE" -t "$MOVING_TAG" \
+              --build-arg BASE_IMAGE=knoxx-backend-base:local \
+              -f sdk-layer/Dockerfile sdk-layer
+          else
+            docker build -t "$IMAGE" -t "$MOVING_TAG" -f "$DOCKERFILE" "$CONTEXT"
+          fi
+          docker push "$IMAGE"
+          docker push "$MOVING_TAG"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE")
+          echo "digest=${digest##*@}" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize
+        env:
+          IMAGE: ${{ steps.source.outputs.image }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### ${{ inputs.service }}"
+            echo
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| source | \`${{ steps.service.outputs.repo }}@${{ steps.source.outputs.sha }}\` |"
+            echo "| image | \`$IMAGE\` |"
+            echo "| digest | \`${{ steps.push.outputs.digest }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

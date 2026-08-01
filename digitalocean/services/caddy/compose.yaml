@@ -1,0 +1,44 @@
+# Caddy — the single owner of host ports 80 and 443.
+#
+# Chosen over the legacy nginx path (promethean/nginx/promethean.conf plus a
+# certbot/dns-cloudflare sidecar) because that arrangement needs Cloudflare API
+# credentials resident on the host and a wildcard certificate held as host
+# state. Three hostnames and HTTP-01 need neither. The promethean.rest records
+# are DNS-only rather than proxied, so ACME reaches the origin directly.
+#
+# Exactly one ingress owner, per #27.
+
+name: caddy
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_KNOXX_HOST: ${KNOXX_PUBLIC_HOST:?KNOXX_PUBLIC_HOST must be set}
+      CADDY_PROXX_HOST: ${PROXX_PUBLIC_HOST:?PROXX_PUBLIC_HOST must be set}
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?CADDY_ACME_EMAIL must be set}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account state. Losing this means re-issuing, and
+      # Let's Encrypt rate limits are per-hostname-per-week.
+      - ${CADDY_STATE_PATH}/data:/data
+      - ${CADDY_STATE_PATH}/config:/config
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      default:
+        aliases:
+          - caddy
+
+networks:
+  default:
+    name: open-hax
+    external: true
