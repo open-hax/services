@@ -28,20 +28,53 @@
 	}
 }
 
-# Knoxx — the demo surface. The frontend image's own nginx handles /api/ and
-# /ws/ internally, so everything routes to it.
-{$CADDY_KNOXX_HOST} {
-	import common
-
-	reverse_proxy knoxx-frontend:80 {
-		# Proxx grants owner-level auth to requests carrying this header from a
-		# trusted local address. Strip it so it can never arrive from outside.
+(knoxx_mcp_backend) {
+	reverse_proxy knoxx-backend:8000 {
 		header_up -x-open-hax-bridge-auth
+		flush_interval -1
 
-		# Agent turns stream for a long time; do not cut them off.
 		transport http {
 			read_timeout 3600s
 			write_timeout 3600s
+		}
+	}
+}
+
+# Knoxx — the demo surface plus its MCP Streamable HTTP endpoint.
+{$CADDY_KNOXX_HOST} {
+	import common
+
+	# MCP discovery and transport must reach Fastify directly. Sending these
+	# through the frontend nginx layer risks buffering the SSE response and does
+	# not expose the root-level /.well-known discovery documents.
+	handle /.well-known/oauth-* {
+		reverse_proxy knoxx-backend:8000 {
+			header_up -x-open-hax-bridge-auth
+		}
+	}
+
+	handle /mcp* {
+		import knoxx_mcp_backend
+	}
+
+	# OAuth registration, authorization, token exchange, and token management.
+	handle /api/mcp/* {
+		import knoxx_mcp_backend
+	}
+
+	# The frontend image's own nginx handles the remaining /api/ and /ws/
+	# routes internally.
+	handle {
+		reverse_proxy knoxx-frontend:80 {
+			# Proxx grants owner-level auth to requests carrying this header from a
+			# trusted local address. Strip it so it can never arrive from outside.
+			header_up -x-open-hax-bridge-auth
+
+			# Agent turns stream for a long time; do not cut them off.
+			transport http {
+				read_timeout 3600s
+				write_timeout 3600s
+			}
 		}
 	}
 }
