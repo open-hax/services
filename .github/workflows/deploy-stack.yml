@@ -14,8 +14,15 @@ name: Deploy Stack
 # sessions and vector search need no OpenPlanner service. Graph, translation
 # and document-stats operations still delegate to REST and degrade until one
 # is deployed.
+#
+# Adding the `deploy` label to a same-repository PR targeting main deploys the
+# PR revision. Fork PRs are explicitly rejected because this workflow inherits
+# production secrets in its reusable deploy jobs.
 
 on:
+  pull_request:
+    branches: [main]
+    types: [labeled]
   workflow_dispatch:
     inputs:
       proxx_ref:
@@ -46,11 +53,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  authorize:
+    name: Authorize deployment
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'deploy' &&
+       github.event.pull_request.state == 'open' &&
+       github.event.pull_request.base.ref == 'main' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Deploying PR #${{ github.event.pull_request.number }} at ${{ github.event.pull_request.head.sha }}"
+          else
+            echo "Deploying manually requested refs"
+          fi
+
   build-proxx:
+    needs: authorize
     uses: ./.github/workflows/build-images.yml
     with:
       service: proxx
-      source_ref: ${{ inputs.proxx_ref }}
+      source_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.proxx_ref || 'main' }}
 
   deploy-proxx:
     needs: build-proxx
@@ -63,16 +88,18 @@ jobs:
 
   # Both Knoxx images build while Proxx deploys.
   build-knoxx-backend:
+    needs: authorize
     uses: ./.github/workflows/build-images.yml
     with:
       service: knoxx-backend
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
 
   build-knoxx-frontend:
+    needs: authorize
     uses: ./.github/workflows/build-images.yml
     with:
       service: knoxx-frontend
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
 
   deploy-knoxx:
     needs: [deploy-proxx, build-knoxx-backend, build-knoxx-frontend]
@@ -87,7 +114,7 @@ jobs:
 
   deploy-caddy:
     needs: deploy-knoxx
-    if: inputs.include_ingress
+    if: github.event_name == 'pull_request' || inputs.include_ingress
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: caddy
