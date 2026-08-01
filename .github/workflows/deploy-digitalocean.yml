@@ -53,6 +53,10 @@ on:
       PROXX_POSTGRES_PASSWORD: { required: false }
       OPENPLANNER_API_KEY: { required: false }
       KNOXX_API_KEY: { required: false }
+      KNOXX_SESSION_SECRET: { required: false }
+      KNOXX_GITHUB_OAUTH_CLIENT_ID: { required: false }
+      KNOXX_GITHUB_OAUTH_CLIENT_SECRET: { required: false }
+      CADDY_ACME_EMAIL: { required: false }
   workflow_dispatch:
     inputs:
       service:
@@ -171,6 +175,14 @@ jobs:
           PROXX_POSTGRES_PASSWORD: ${{ secrets.PROXX_POSTGRES_PASSWORD }}
           OPENPLANNER_API_KEY: ${{ secrets.OPENPLANNER_API_KEY }}
           KNOXX_API_KEY: ${{ secrets.KNOXX_API_KEY }}
+          KNOXX_SESSION_SECRET: ${{ secrets.KNOXX_SESSION_SECRET }}
+          KNOXX_GITHUB_OAUTH_CLIENT_ID: ${{ secrets.KNOXX_GITHUB_OAUTH_CLIENT_ID }}
+          KNOXX_GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.KNOXX_GITHUB_OAUTH_CLIENT_SECRET }}
+          # Let's Encrypt expiry contact. No longer borrowed from
+          # KNOXX_API_KEY_USER_EMAIL, which now names a service identity nobody
+          # reads mail for. A secret rather than a variable because this repo is
+          # public and Actions prints non-secret vars verbatim into run logs.
+          CADDY_ACME_EMAIL: ${{ secrets.CADDY_ACME_EMAIL }}
           EXTRA_ENV: ${{ inputs.extra_env }}
         run: |
           set -euo pipefail
@@ -250,7 +262,19 @@ jobs:
           set -euo pipefail
           # Quoted heredoc: the script is opaque to the runner's shell and the
           # two values arrive as positional arguments on the host.
+          #
+          # The body is wrapped in `{ ... } </dev/null` because it reaches the
+          # remote bash on stdin, and `bash -s` parses that stream lazily. Any
+          # command inside that reads stdin swallows the not-yet-parsed
+          # remainder of the script; bash then hits a premature EOF and exits
+          # with the status of the last command it managed to run — silently
+          # skipping everything after, including the failure paths. The group
+          # forces a full parse before execution and hands every command inside
+          # an empty stdin, so neither half of that can happen. See the health
+          # gate below, where this produced a green deploy over 30 failed
+          # probes (run 30679331293, 2026-08-01).
           ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$SERVICE'" <<'REMOTE'
+          {
           runtime_path=$1
           service=$2
           cd "$runtime_path"
@@ -285,6 +309,7 @@ jobs:
           docker network inspect open-hax >/dev/null 2>&1 || docker network create open-hax
           docker compose --project-name "$service" --env-file .env pull
           docker compose --project-name "$service" --env-file .env up -d --remove-orphans
+          } </dev/null
           REMOTE
 
 
@@ -295,7 +320,12 @@ jobs:
           SERVICE: ${{ inputs.service }}
         run: |
           set -euo pipefail
+          # `{ ... } </dev/null` for the reason documented on the Deploy step:
+          # knoxx's verify.sh calls `docker compose exec -T`, which consumed
+          # the rest of this script and turned 30 consecutive failed probes
+          # into a successful deploy.
           ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$SERVICE'" <<'REMOTE'
+          {
           runtime_path=$1
           service=$2
           cd "$runtime_path"
@@ -310,6 +340,7 @@ jobs:
           docker compose --project-name "$service" --env-file .env ps >&2
           docker compose --project-name "$service" --env-file .env logs --tail 120 --no-color >&2
           exit 1
+          } </dev/null
           REMOTE
 
       - name: Collect deployment report
@@ -327,6 +358,7 @@ jobs:
           ssh open-hax-target \
             "bash -euo pipefail -s -- '$SERVICE' '$RUNTIME_PATH' '$IMAGE' '$SOURCE_SHA' '$HEALTH_RESULT' '$RUN_URL'" \
             <<'REMOTE' > report.json
+          {
           service=$1; runtime_path=$2; image=$3; source_sha=$4; health=$5; run_url=$6
           cd "$runtime_path"
           containers=$(docker compose --project-name "$service" ps --format json 2>/dev/null | jq -sc '.' || echo '[]')
@@ -346,6 +378,7 @@ jobs:
               health: $health, runUrl: $runUrl, host: $host,
               deployedAt: $deployedAt, containers: $containers,
               listeningSockets: $listening}'
+          } </dev/null
           REMOTE
           jq . report.json
           ssh open-hax-target "mkdir -p '$REPORTS_ROOT'"

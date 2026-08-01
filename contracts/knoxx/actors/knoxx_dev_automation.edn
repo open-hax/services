@@ -1,0 +1,10 @@
+{:actor/id "knoxx_dev_automation"
+ :actor/kind :user
+ :actor/email "knoxx-dev-automation@promethean.rest"
+ :actor/username "knoxx-dev-automation@promethean.rest"
+ :actor/org "open-hax"
+ :actor/label "Knoxx Deploy Automation"
+ :actor/roles [:role/system-admin]
+ :actor/policy {:principal :actor
+                :source-of-truth :contract
+                :notes "Non-human actor for KNOXX_API_KEY on the DigitalOcean host. Knoxx resolves an API-key request to a membership by looking KNOXX_API_KEY_USER_EMAIL up in these contracts; an email with no contract syncs nothing and every request 401s as request_context_unresolved. Distinct from pi, which is the development API-key actor, and from the human contracts, so machine activity is never attributed to a person. Mirrors pi's system-admin grant: the deploy health gate reads /health and /api/config, and the same key drives org-level automation."}}

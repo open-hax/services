@@ -10,13 +10,18 @@ set -euo pipefail
 FRONTEND=http://127.0.0.1:8080
 
 # The backend is not published to the host; reach it on the compose network.
+#
+# Every `exec -T` closes its stdin explicitly. It does not need one, and it
+# would otherwise inherit the caller's — which for the deploy health gate is
+# the pipe carrying that gate's own unparsed script. See
+# .github/workflows/deploy-digitalocean.yml.
 backend_curl() {
   docker compose --project-name knoxx --env-file .env \
     exec -T knoxx-backend node -e "
       fetch('http://127.0.0.1:8000$1', {headers: {'X-API-Key': process.env.KNOXX_API_KEY || ''}})
         .then(async r => { process.stdout.write(JSON.stringify({status: r.status, body: await r.text()})); })
         .catch(e => { process.stdout.write(JSON.stringify({status: 0, body: String(e)})); });
-    "
+    " </dev/null
 }
 
 # 1. Backend health. Reports 503 until Proxx is reachable, which is the point:
@@ -52,7 +57,7 @@ unauth=$(docker compose --project-name knoxx --env-file .env \
     fetch('http://127.0.0.1:8000/api/config')
       .then(r => process.stdout.write(String(r.status)))
       .catch(() => process.stdout.write('0'));
-  ")
+  " </dev/null)
 case "$unauth" in
   401|403) ;;
   *) echo "knoxx: unauthenticated /api/config returned ${unauth}, expected 401/403" >&2; exit 1 ;;

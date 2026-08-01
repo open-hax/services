@@ -36,6 +36,15 @@ services:
       KNOXX_PUBLIC_BASE_URL: https://${KNOXX_PUBLIC_HOST}
       KNOXX_BASE_URL: https://${KNOXX_PUBLIC_HOST}
 
+      # Browser login. The callback URL is derived from KNOXX_PUBLIC_BASE_URL as
+      # /api/auth/callback/github, so the GitHub OAuth app must be registered
+      # against the public hostname, not localhost.
+      KNOXX_GITHUB_OAUTH_CLIENT_ID: ${KNOXX_GITHUB_OAUTH_CLIENT_ID:?KNOXX_GITHUB_OAUTH_CLIENT_ID must be set}
+      KNOXX_GITHUB_OAUTH_CLIENT_SECRET: ${KNOXX_GITHUB_OAUTH_CLIENT_SECRET:?KNOXX_GITHUB_OAUTH_CLIENT_SECRET must be set}
+
+      # Session cookies survive a redeploy only if this is pinned.
+      KNOXX_SESSION_SECRET: ${KNOXX_SESSION_SECRET:?KNOXX_SESSION_SECRET must be set}
+
       # Shipped read-only from this repo. Deploys ship contracts; they never
       # rewrite them (receipts.edn 2026-06-02, commit 91dd693).
       CONTRACTS_DIR: /app/contracts
