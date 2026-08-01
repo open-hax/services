@@ -10,8 +10,12 @@ set -euo pipefail
 : "${PROXX_PUBLIC_HOST:?PROXX_PUBLIC_HOST missing from the rendered environment}"
 
 # 1. Config is valid and the process is serving.
+# `exec -T` still attaches stdin, so it is closed explicitly: when this script
+# runs under a caller whose own script arrives on stdin, an unredirected exec
+# eats it. See the health gate in .github/workflows/deploy-digitalocean.yml.
 docker compose --project-name caddy --env-file .env \
-  exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+  exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile \
+  >/dev/null </dev/null
 
 # 2. Plain HTTP either redirects to HTTPS or answers the ACME challenge.
 for host in "$KNOXX_PUBLIC_HOST" "$PROXX_PUBLIC_HOST"; do

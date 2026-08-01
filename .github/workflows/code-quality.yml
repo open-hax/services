@@ -26,3 +26,84 @@ jobs:
               print('yaml ok', p)
           PY
           bash -n promethean/scripts/*.sh
+          bash -n digitalocean/lib/*.sh digitalocean/scripts/*.sh
+          bash -n digitalocean/services/*/verify.sh
+
+      # A remote script piped to `bash -s` over ssh is parsed lazily from the
+      # same stdin the script's own commands inherit. One `docker compose exec
+      # -T` in a verify.sh was enough to swallow a health gate's failure
+      # branch, so the gate exited 0 after 30 failed probes and reported a
+      # green deploy (run 30679331293, 2026-08-01). Two invariants close it:
+      # the heredoc body is a `{ ... } </dev/null` group, and no verify.sh
+      # leaves an `exec` attached to stdin.
+      - name: Guard remote scripts against stdin consumption
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+
+          failures = []
+
+          opener = re.compile(r"ssh\b.*\bbash\b.*(?<!\w)-s(?!\w).*<<'(?P<eof>[A-Z_]+)'")
+          for wf in sorted(pathlib.Path('.github/workflows').glob('*.y*ml')):
+              lines = wf.read_text().splitlines()
+              i = 0
+              while i < len(lines):
+                  m = opener.search(lines[i])
+                  if not m:
+                      i += 1
+                      continue
+                  eof = m.group('eof')
+                  body = []
+                  i += 1
+                  while i < len(lines) and lines[i].strip() != eof:
+                      body.append(lines[i].strip())
+                      i += 1
+                  body = [b for b in body if b and not b.startswith('#')]
+                  where = f'{wf}: heredoc <<{eof}'
+                  if not body or body[0] != '{':
+                      failures.append(f'{where} does not open with a `{{` group')
+                  if not body or body[-1] != '} </dev/null':
+                      failures.append(f'{where} does not close with `}} </dev/null`')
+                  i += 1
+
+          def statements(text):
+              """Split on statement newlines only.
+
+              Line continuations are joined and newlines inside quotes are kept,
+              so a `node -e "<multi-line>"` argument stays part of its command
+              and the trailing redirect is seen alongside the `exec`.
+              """
+              out, buf, quote, i = [], [], None, 0
+              while i < len(text):
+                  ch = text[i]
+                  if quote:
+                      if ch == '\\' and quote == '"' and i + 1 < len(text):
+                          buf.append(ch); buf.append(text[i + 1]); i += 2; continue
+                      if ch == quote:
+                          quote = None
+                      buf.append(ch)
+                  elif ch in '"\'':
+                      quote = ch; buf.append(ch)
+                  elif ch == '\\' and i + 1 < len(text) and text[i + 1] == '\n':
+                      buf.append(' '); i += 2; continue
+                  elif ch == '\n':
+                      out.append(''.join(buf)); buf = []
+                  else:
+                      buf.append(ch)
+                  i += 1
+              out.append(''.join(buf))
+              return out
+
+          for vs in sorted(pathlib.Path('digitalocean/services').glob('*/verify.sh')):
+              for stmt in statements(vs.read_text()):
+                  stmt = stmt.strip()
+                  if stmt.startswith('#') or not re.search(r'docker compose\b.*\bexec\b', stmt):
+                      continue
+                  if not re.search(r'<\s*/dev/null', stmt):
+                      failures.append(f'{vs}: `docker compose exec` does not redirect stdin: {stmt[:70]}')
+
+          if failures:
+              print('\n'.join(f'::error::{f}' for f in failures))
+              sys.exit(1)
+          print('remote scripts and verify hooks keep stdin closed')
+          PY
