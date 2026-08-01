@@ -56,6 +56,7 @@ on:
       KNOXX_SESSION_SECRET: { required: false }
       KNOXX_GITHUB_OAUTH_CLIENT_ID: { required: false }
       KNOXX_GITHUB_OAUTH_CLIENT_SECRET: { required: false }
+      CADDY_ACME_EMAIL: { required: false }
   workflow_dispatch:
     inputs:
       service:
@@ -163,10 +164,6 @@ jobs:
           OPEN_HAX_STATE_PATH: ${{ steps.contract.outputs.state_path }}
           OPEN_HAX_HOST_ADDRESS: ${{ steps.contract.outputs.host }}
           KNOXX_API_KEY_USER_EMAIL: ${{ vars.KNOXX_API_KEY_USER_EMAIL }}
-          # Let's Encrypt expiry contact. Deliberately its own variable: it is
-          # an operational address for a human, not the API-key service
-          # identity it used to be borrowed from.
-          CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
           # Secrets. Absent ones stay empty and are caught by the placeholder
           # check below rather than silently deploying a blank credential.
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
@@ -181,6 +178,11 @@ jobs:
           KNOXX_SESSION_SECRET: ${{ secrets.KNOXX_SESSION_SECRET }}
           KNOXX_GITHUB_OAUTH_CLIENT_ID: ${{ secrets.KNOXX_GITHUB_OAUTH_CLIENT_ID }}
           KNOXX_GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.KNOXX_GITHUB_OAUTH_CLIENT_SECRET }}
+          # Let's Encrypt expiry contact. No longer borrowed from
+          # KNOXX_API_KEY_USER_EMAIL, which now names a service identity nobody
+          # reads mail for. A secret rather than a variable because this repo is
+          # public and Actions prints non-secret vars verbatim into run logs.
+          CADDY_ACME_EMAIL: ${{ secrets.CADDY_ACME_EMAIL }}
           EXTRA_ENV: ${{ inputs.extra_env }}
         run: |
           set -euo pipefail
