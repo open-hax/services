@@ -45,9 +45,18 @@ jobs:
 
           opener = re.compile(r"ssh\b.*\bbash\b.*(?<!\w)-s(?!\w).*<<'(?P<eof>[A-Z_]+)'")
           for wf in sorted(pathlib.Path('.github/workflows').glob('*.y*ml')):
-              lines = wf.read_text().splitlines()
+              # Join shell line-continuations before matching. The report step
+              # splits `ssh`, the `bash -s` command and the `<<'REMOTE'` across
+              # three physical lines, and a per-line regex would never see that
+              # heredoc at all.
+              lines = re.sub(r'\\\n\s*', ' ', wf.read_text()).splitlines()
               i = 0
               while i < len(lines):
+                  # Commented-out invocations run nothing, and this file
+                  # describes the pattern in prose.
+                  if lines[i].lstrip().startswith('#'):
+                      i += 1
+                      continue
                   m = opener.search(lines[i])
                   if not m:
                       i += 1
