@@ -218,6 +218,7 @@ jobs:
           echo "rendered $(grep -cE '^[A-Z0-9_]+=' rendered.env) variables"
 
       - name: Sync service definition
+        id: sync
         env:
           RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
           STATE_PATH: ${{ steps.contract.outputs.state_path }}
@@ -226,8 +227,18 @@ jobs:
         run: |
           set -euo pipefail
           ssh open-hax-target "mkdir -p '${RUNTIME_PATH}' '${STATE_PATH}'"
-          rsync -az --delete --exclude '.env' --exclude 'contracts' -e ssh \
-            "${SERVICE_DIR}/" "open-hax-target:${RUNTIME_PATH}/"
+          # --itemize-changes so the deploy can tell whether any part of the
+          # definition actually moved. compose hashes the image and the
+          # environment, never the contents of a bind mount, so without this a
+          # changed config file leaves the old container running untouched.
+          rsync -az --delete --itemize-changes --exclude '.env' --exclude 'contracts' -e ssh \
+            "${SERVICE_DIR}/" "open-hax-target:${RUNTIME_PATH}/" | tee rsync.out
+          if grep -qE '^[<>ch]' rsync.out; then
+            echo "definition_changed=1" >> "$GITHUB_OUTPUT"
+            echo "service definition changed; the container will be recreated"
+          else
+            echo "definition_changed=0" >> "$GITHUB_OUTPUT"
+          fi
 
           # Services-owned contracts ship read-only alongside the service.
           # Deploys ship contracts; they never rewrite them (receipts.edn,
@@ -258,10 +269,11 @@ jobs:
         env:
           RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
           SERVICE: ${{ inputs.service }}
+          DEFINITION_CHANGED: ${{ steps.sync.outputs.definition_changed }}
         run: |
           set -euo pipefail
           # Quoted heredoc: the script is opaque to the runner's shell and the
-          # two values arrive as positional arguments on the host.
+          # three values arrive as positional arguments on the host.
           #
           # The body is wrapped in `{ ... } </dev/null` because it reaches the
           # remote bash on stdin, and `bash -s` parses that stream lazily. Any
@@ -273,10 +285,11 @@ jobs:
           # an empty stdin, so neither half of that can happen. See the health
           # gate below, where this produced a green deploy over 30 failed
           # probes (run 30679331293, 2026-08-01).
-          ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$SERVICE'" <<'REMOTE'
+          ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$SERVICE' '$DEFINITION_CHANGED'" <<'REMOTE'
           {
           runtime_path=$1
           service=$2
+          definition_changed=$3
           cd "$runtime_path"
 
           # docker compose resolves ${VAR} from the shell environment BEFORE
@@ -308,7 +321,22 @@ jobs:
           # Proxx by name across compose projects. Creation is idempotent.
           docker network inspect open-hax >/dev/null 2>&1 || docker network create open-hax
           docker compose --project-name "$service" --env-file .env pull
-          docker compose --project-name "$service" --env-file .env up -d --remove-orphans
+
+          # compose decides whether to recreate a container from the image and
+          # the environment; the contents of a bind mount are invisible to it.
+          # Worse, rsync writes a replacement and renames it, so a bind-mounted
+          # *file* keeps pointing at the original inode and the running process
+          # cannot see the new bytes even if it re-read them. Caddy hit both at
+          # once: a corrected Caddyfile landed on the host and the container
+          # went on serving the old routes, healthy and wrong (run
+          # 30696778888). Recreating whenever the definition moved covers every
+          # service without needing to know which files are mounted where.
+          recreate=""
+          if [ "$definition_changed" = "1" ]; then
+            recreate="--force-recreate"
+            echo "definition changed; recreating containers"
+          fi
+          docker compose --project-name "$service" --env-file .env up -d --remove-orphans $recreate
           } </dev/null
           REMOTE
 
