@@ -264,6 +264,22 @@ jobs:
             [ -n "$key" ] && unset "$key"
           done < <(grep -E '^[A-Z0-9_]+=' .env)
 
+          # docker creates missing bind-mount sources as root, and a
+          # container running unprivileged then EACCESes on its own state
+          # directory (proxx /app/data, 2026-08-01). Pre-create every
+          # absolute or ${VAR}-rooted volume source as the deploy user so
+          # ownership is right before compose ever runs. Relative sources
+          # (./Caddyfile) already exist post-rsync; named volumes are
+          # docker-managed; both are skipped.
+          set -a; . ./.env; set +a
+          grep -oE '^[[:space:]]+- [^#"'"'"'][^:" ]*:' compose.yaml \
+            | sed -E 's/^[[:space:]]+- ([^:" ]+):/\1/' \
+            | while IFS= read -r src; do
+                case "$src" in
+                  /*|\$\{*) mkdir -p "$(eval echo "$src")" ;;
+                esac
+              done
+
           # Every service shares one user-defined network so Knoxx can reach
           # Proxx by name across compose projects. Creation is idempotent.
           docker network inspect open-hax >/dev/null 2>&1 || docker network create open-hax
