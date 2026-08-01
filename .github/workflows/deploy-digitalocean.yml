@@ -89,6 +89,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -228,6 +231,17 @@ jobs:
           scp rendered.env "open-hax-target:${RUNTIME_PATH}/.env"
           ssh open-hax-target "chmod 600 '${RUNTIME_PATH}/.env' && chmod +x '${RUNTIME_PATH}/verify.sh'"
 
+      - name: Authenticate the host to GHCR
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          # Short-lived, job-scoped: the images are private to the org and the
+          # Droplet holds no standing registry credential.
+          printf '%s' "$REGISTRY_TOKEN" \
+            | ssh open-hax-target "docker login ghcr.io -u '$REGISTRY_USER' --password-stdin" >/dev/null
+
       - name: Deploy
         env:
           RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
@@ -246,6 +260,7 @@ jobs:
           docker compose --project-name "$service" --env-file .env pull
           docker compose --project-name "$service" --env-file .env up -d --remove-orphans
           REMOTE
+
 
       - name: Health gate
         id: health
@@ -312,7 +327,9 @@ jobs:
 
       - name: Remove deployment credentials
         if: always()
-        run: rm -f ~/.ssh/digitalocean rendered.env
+        run: |
+          ssh open-hax-target 'docker logout ghcr.io' >/dev/null 2>&1 || true
+          rm -f ~/.ssh/digitalocean rendered.env
 
       - name: Upload deployment report
         if: always()
