@@ -46,25 +46,23 @@
 	}
 }
 
-# Proxx — API and web console. Split matches the app repo's own
-# deploy/Caddyfile.template.
+# Proxx — API and web console, both on 8789.
+#
+# No /v1*-vs-console split here. That split comes from the app repo's
+# deploy/Caddyfile.template, which assumes a separate Vite dev server on 5174;
+# the production image runs one process and serves the console from 8789 too.
+# Nothing has ever listened on 5174 in this deployment, so the catch-all handle
+# sent every non-API path — including `/` — to a closed port and Caddy answered
+# 502.
 {$CADDY_PROXX_HOST} {
 	import common
 
-	@api path /v1* /api* /auth* /health
-	handle @api {
-		reverse_proxy proxx:8789 {
-			header_up -x-open-hax-bridge-auth
-			transport http {
-				read_timeout 3600s
-				write_timeout 3600s
-			}
-		}
-	}
+	reverse_proxy proxx:8789 {
+		header_up -x-open-hax-bridge-auth
 
-	handle {
-		reverse_proxy proxx:5174 {
-			header_up -x-open-hax-bridge-auth
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
 		}
 	}
 }
