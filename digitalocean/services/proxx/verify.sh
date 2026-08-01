@@ -9,7 +9,8 @@ set -euo pipefail
 : "${REQUESTY_API_KEY:?REQUESTY_API_KEY missing from the rendered environment}"
 : "${PROXX_DEFAULT_MODEL:?PROXX_DEFAULT_MODEL missing from the rendered environment}"
 
-API=http://127.0.0.1:8789
+# Overridable so the gate can be exercised against a non-default port.
+API="${PROXX_API_URL:-http://127.0.0.1:8789}"
 auth=(-H "Authorization: Bearer ${PROXY_AUTH_TOKEN}")
 
 # 1. Process is up. /health always returns HTTP 200 — the body carries the
@@ -59,15 +60,28 @@ if ! curl -fsS --max-time 30 "${auth[@]}" "${API}/v1/models" \
 fi
 
 # 5. End to end: a real completion through Requesty. Only metadata is logged.
-completion=$(curl -fsS --max-time 60 -X POST "${API}/v1/chat/completions" \
+#
+# max_tokens has to be generous. gemma-4 is a reasoning model and spends its
+# budget thinking before it emits any content: at max_tokens 8 it returns
+# finish_reason=length with an empty message and 20 characters of reasoning.
+# 64 is the observed floor for a clean stop on a one-word answer.
+completion=$(curl -fsS --max-time 90 -X POST "${API}/v1/chat/completions" \
   "${auth[@]}" -H 'Content-Type: application/json' \
   -d "$(jq -nc --arg m "$PROXX_DEFAULT_MODEL" \
-        '{model: $m, max_tokens: 8, messages: [{role: "user", content: "reply with the single word: ok"}]}')")
+        '{model: $m, max_tokens: 128, messages: [{role: "user", content: "reply with the single word: ok"}]}')")
 finish=$(printf '%s' "$completion" | jq -r '.choices[0].finish_reason // "none"')
 chars=$(printf '%s' "$completion" | jq -r '.choices[0].message.content // "" | length')
-if [ "$chars" -lt 1 ]; then
-  echo "proxx: inference returned no content (finish_reason=${finish})" >&2
+thinking=$(printf '%s' "$completion" \
+  | jq -r '.choices[0].message.reasoning_content // .choices[0].message.reasoning // "" | length')
+
+# Either channel proves the provider round-trip completed.
+if [ "$chars" -lt 1 ] && [ "$thinking" -lt 1 ]; then
+  echo "proxx: inference returned nothing (finish_reason=${finish})" >&2
+  exit 1
+fi
+if [ "$finish" = "length" ]; then
+  echo "proxx: inference truncated at max_tokens (finish_reason=length)" >&2
   exit 1
 fi
 
-echo "proxx: healthy; ${PROXX_DEFAULT_MODEL} responded (${chars} chars, finish_reason=${finish})"
+echo "proxx: healthy; ${PROXX_DEFAULT_MODEL} responded (${chars} content chars, ${thinking} reasoning chars, finish_reason=${finish})"

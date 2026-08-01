@@ -254,6 +254,16 @@ jobs:
           runtime_path=$1
           service=$2
           cd "$runtime_path"
+
+          # docker compose resolves ${VAR} from the shell environment BEFORE
+          # --env-file. A stray value in the host environment would silently
+          # override a rendered credential and the container would come up with
+          # the wrong one, healthy and wrong. Clear every name the template
+          # declares so --env-file is the only source.
+          while IFS='=' read -r key _; do
+            [ -n "$key" ] && unset "$key"
+          done < <(grep -E '^[A-Z0-9_]+=' .env)
+
           # Every service shares one user-defined network so Knoxx can reach
           # Proxx by name across compose projects. Creation is idempotent.
           docker network inspect open-hax >/dev/null 2>&1 || docker network create open-hax
