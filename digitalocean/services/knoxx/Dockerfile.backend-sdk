@@ -1,0 +1,34 @@
+# Adds @open-hax/openplanner-sdk to the Knoxx backend image.
+#
+# WORKAROUND. open-hax/knoxx's backend/package.json pins the SDK to
+#   "@open-hax/openplanner-sdk": "link:../../openplanner/packages/openplanner-sdk"
+# a path that cannot exist inside a container. `pnpm install --prod` in the app
+# Dockerfile happily creates a dangling symlink, and the container then dies at
+# load with ERR_MODULE_NOT_FOUND because the compiled bundle imports the SDK
+# statically. The image has never been runnable from main.
+#
+# Rather than fork the app's Dockerfile, this layers the SDK onto whatever it
+# produced. The vendored tree comes from `pnpm deploy` in the openplanner
+# workspace (see .github/workflows/build-images.yml) and is fully
+# self-contained, including the workspace-only @open-hax/openplanner-document-
+# hydration dependency and native lmdb binaries.
+#
+# The durable fix belongs upstream in open-hax/knoxx: make the backend image
+# self-contained. Delete this file when that lands.
+
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+USER 0
+
+# Staged beside the target, then moved into place. Copying straight onto
+# /app/node_modules/@open-hax/openplanner-sdk would follow the dangling symlink
+# pnpm left behind and write the files outside /app entirely.
+COPY --chown=1000:1000 vendor/openplanner-sdk /app/vendor/openplanner-sdk
+
+RUN rm -rf /app/node_modules/@open-hax/openplanner-sdk \
+ && mkdir -p /app/node_modules/@open-hax \
+ && mv /app/vendor/openplanner-sdk /app/node_modules/@open-hax/openplanner-sdk \
+ && rmdir /app/vendor
+
+USER 1000

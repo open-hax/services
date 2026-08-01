@@ -20,6 +20,13 @@ host:
     - services
     - production
 
+runtime:
+  root: /srv/open-hax
+  servicesRoot: /srv/open-hax/services
+  stateRoot: /srv/open-hax/state
+  configRoot: /srv/open-hax/config
+  reportsRoot: /srv/open-hax/reports
+
 storage:
   mongodb:
     required: true
