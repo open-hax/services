@@ -34,8 +34,12 @@ on:
         default: true
         type: boolean
 
+# packages: write is required here, not just in build-images.yml: a reusable
+# workflow's jobs can never hold more than the caller's top-level permissions,
+# and GitHub refuses to start the run on the mismatch.
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: deploy-stack-production
