@@ -50,11 +50,10 @@ if [ "$transport" != "sdk" ]; then
   exit 1
 fi
 
-# 1b. CMS and translations have REST-only OpenPlanner operations. A 200 here
-# proves the host gateway, API key, and OpenPlanner API are all wired.
+# 1b. CMS has REST-only compatibility operations. A 200 proves the host
+# gateway, API key, and OpenPlanner API are all wired.
 for surface in \
   "CMS:/api/openplanner/v1/cms/documents?limit=1" \
-  "translations:/api/translations/segments?limit=1" \
   "studio:/api/studio/audio-library?path=Music&depth=0"; do
   name=${surface%%:*}
   path=${surface#*:}
@@ -67,6 +66,17 @@ for surface in \
     exit 1
   fi
 done
+
+# Translation is served by Knoxx's in-process Mongo client. Its endpoint must
+# remain healthy without treating the host OpenPlanner API as a dependency.
+translation=$(backend_curl "/api/translations/segments?limit=1")
+translation_status=$(printf '%s' "$translation" | jq -r '.status')
+translation_body=$(printf '%s' "$translation" | jq -r '.body')
+if [ "$translation_status" != "200" ]; then
+  echo "knoxx: translation surface returned ${translation_status}" >&2
+  printf '%s\n' "$translation_body" >&2
+  exit 1
+fi
 
 # 2. Auth is actually enforced. A backend that answers unauthenticated
 #    requests would expose the whole vault.
