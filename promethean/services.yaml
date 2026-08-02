@@ -67,10 +67,14 @@ services:
     requiredEnv:
       - KNOXX_API_KEY
       - KNOXX_API_KEY_USER_EMAIL
+      - OPENPLANNER_API_KEY
       - PROXX_BASE_URL
       - PROXX_AUTH_TOKEN
       - PROXX_DEFAULT_MODEL
     desiredProxxBaseUrl: https://proxx.promethean.rest
+    notes:
+      - The durable workspace backs CMS drafts, Studio media/playlists, and source hydration.
+      - CMS compatibility operations use the host OpenPlanner HTTP service; translation is in-process.
 
   knoxx-staging:
     kind: app
@@ -86,10 +90,13 @@ services:
     requiredEnv:
       - KNOXX_API_KEY
       - KNOXX_API_KEY_USER_EMAIL
+      - OPENPLANNER_API_KEY
       - PROXX_BASE_URL
       - PROXX_AUTH_TOKEN
       - PROXX_DEFAULT_MODEL
     desiredProxxBaseUrl: https://proxx.promethean.rest
+    notes:
+      - CMS and Studio use the durable workspace; translation is in-process and has no OpenPlanner REST dependency.
 
   openplanner-production:
     kind: app

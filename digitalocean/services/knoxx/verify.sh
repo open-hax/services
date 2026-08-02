@@ -15,10 +15,34 @@ FRONTEND=http://127.0.0.1:8080
 # would otherwise inherit the caller's — which for the deploy health gate is
 # the pipe carrying that gate's own unparsed script. See
 # .github/workflows/deploy-digitalocean.yml.
+# A stalled backend or a hung upstream must fail the gate rather than hold the
+# deploy open, so every probe is bounded end to end. AbortSignal covers the body
+# read as well as the connect, and the abort surfaces as status 0.
+BACKEND_PROBE_TIMEOUT_MS=${BACKEND_PROBE_TIMEOUT_MS:-15000}
+
+# AbortSignal.timeout throws synchronously for negative, fractional, infinite or
+# oversized values, which would escape the probe's own .catch and abort the gate
+# with a stack trace instead of a configuration error. Validate before use.
+case "$BACKEND_PROBE_TIMEOUT_MS" in
+  ''|*[!0-9]*)
+    echo "knoxx: BACKEND_PROBE_TIMEOUT_MS must be a positive integer of milliseconds, got '${BACKEND_PROBE_TIMEOUT_MS}'" >&2
+    exit 1
+    ;;
+esac
+if [ "$BACKEND_PROBE_TIMEOUT_MS" -lt 1 ] || [ "$BACKEND_PROBE_TIMEOUT_MS" -gt 600000 ]; then
+  echo "knoxx: BACKEND_PROBE_TIMEOUT_MS must be between 1 and 600000, got '${BACKEND_PROBE_TIMEOUT_MS}'" >&2
+  exit 1
+fi
+
 backend_curl() {
   docker compose --project-name knoxx --env-file .env \
-    exec -T knoxx-backend node -e "
-      fetch('http://127.0.0.1:8000$1', {headers: {'X-API-Key': process.env.KNOXX_API_KEY || ''}})
+    exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
+    knoxx-backend node -e "
+      const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
+      fetch('http://127.0.0.1:8000$1', {
+        headers: {'X-API-Key': process.env.KNOXX_API_KEY || ''},
+        signal: AbortSignal.timeout(ms),
+      })
         .then(async r => { process.stdout.write(JSON.stringify({status: r.status, body: await r.text()})); })
         .catch(e => { process.stdout.write(JSON.stringify({status: 0, body: String(e)})); });
     " </dev/null
@@ -47,6 +71,101 @@ transport=$(printf '%s' "$body" | jq -r '.dependencies.openplanner.detail.transp
 # REST hop to a service that is not deployed.
 if [ "$transport" != "sdk" ]; then
   echo "knoxx: expected the in-process sdk data plane, got '${transport}'" >&2
+  exit 1
+fi
+
+# 1b. Studio is served locally and is always required.
+for surface in \
+  "studio:/api/studio/audio-library?path=Music&depth=0"; do
+  name=${surface%%:*}
+  path=${surface#*:}
+  result=$(backend_curl "$path")
+  route_status=$(printf '%s' "$result" | jq -r '.status')
+  route_body=$(printf '%s' "$result" | jq -r '.body')
+  if [ "$route_status" != "200" ]; then
+    echo "knoxx: ${name} surface returned ${route_status}" >&2
+    printf '%s\n' "$route_body" >&2
+    exit 1
+  fi
+done
+
+# 1c. CMS compatibility operations are REST-only and reach the host OpenPlanner
+# API. deploy-stack.yml deliberately does not deploy that service, so requiring
+# a 200 unconditionally would fail every deployment on a stack-built host.
+#
+# Reachability is probed directly against the upstream rather than inferred from
+# the CMS status. Reading Knoxx's status alone cannot tell an absent upstream
+# from a deployed one that is failing: both surface as 502/503/504, so skipping
+# on those would hide exactly the regression this check exists to catch.
+openplanner_base=$(docker compose --project-name knoxx --env-file .env \
+  exec -T knoxx-backend node -e "process.stdout.write(process.env.OPENPLANNER_BASE_URL || '')" </dev/null)
+
+if [ -z "$openplanner_base" ]; then
+  echo "knoxx: CMS surface skipped — OPENPLANNER_BASE_URL is unset" >&2
+else
+  upstream=$(docker compose --project-name knoxx --env-file .env \
+    exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
+    knoxx-backend node -e "
+      const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
+      const base = (process.env.OPENPLANNER_BASE_URL || '').replace(/\/+\$/, '');
+      // Only an undeployed listener counts as absent. The topology is fixed —
+      // host.docker.internal is mapped to host-gateway in compose — so nothing
+      // deployed produces ECONNREFUSED, while ENOTFOUND means that mapping did
+      // not apply and EHOSTUNREACH/ENETUNREACH/TimeoutError mean the route or
+      // the service is broken. Those are infrastructure failures, not an
+      // intentionally absent OpenPlanner, and must fail the gate.
+      const ABSENT = new Set(['ECONNREFUSED']);
+      fetch(base + '/v1/health', {signal: AbortSignal.timeout(ms)})
+        .then(r => { process.stdout.write(JSON.stringify({reachable: true, status: r.status})); })
+        .catch(e => {
+          const code = e && e.cause && e.cause.code;
+          const absent = ABSENT.has(code);
+          process.stdout.write(JSON.stringify({
+            reachable: false, absent, code: code || e.name || 'unknown', error: String(e),
+          }));
+        });
+    " </dev/null)
+  upstream_reachable=$(printf '%s' "$upstream" | jq -r '.reachable // false')
+
+  upstream_absent=$(printf '%s' "$upstream" | jq -r '.absent // false')
+  upstream_code=$(printf '%s' "$upstream" | jq -r '.code // "unknown"')
+
+  if [ "$upstream_reachable" != "true" ] && [ "$upstream_absent" = "true" ] \
+     && [ "${KNOXX_EXPECT_OPENPLANNER_REST:-false}" != "true" ]; then
+    # Nothing listening, and this host does not expect anything to be. REST-only
+    # compatibility operations stay degraded until OpenPlanner exists.
+    echo "knoxx: CMS surface skipped — no host OpenPlanner API at ${openplanner_base} (${upstream_code}), and KNOXX_EXPECT_OPENPLANNER_REST is not true" >&2
+  elif [ "$upstream_reachable" != "true" ]; then
+    # Either the host expects OpenPlanner and it is refusing connections — a
+    # crashed or stopped process — or it answered in a way that is not usable.
+    # Both are failures rather than intentional absence.
+    echo "knoxx: host OpenPlanner API at ${openplanner_base} did not answer (${upstream_code}); expected=${KNOXX_EXPECT_OPENPLANNER_REST:-false}" >&2
+    printf '%s\n' "$upstream" >&2
+    exit 1
+  else
+    # OpenPlanner answered, so any non-200 from the CMS route is a real failure,
+    # including 502/503/504 raised by the proxy or its dependencies.
+    cms=$(backend_curl "/api/openplanner/v1/cms/documents?limit=1")
+    cms_status=$(printf '%s' "$cms" | jq -r '.status')
+    cms_body=$(printf '%s' "$cms" | jq -r '.body')
+    if [ "$cms_status" != "200" ]; then
+      echo "knoxx: CMS surface returned ${cms_status} with OpenPlanner reachable at ${openplanner_base}" >&2
+      printf '%s\n' "$cms_body" >&2
+      exit 1
+    fi
+    echo "knoxx: CMS surface ok via the host OpenPlanner API"
+  fi
+fi
+
+# 1d. Translation is served by Knoxx's in-process Mongo data plane, so it must
+# be healthy regardless of whether the host OpenPlanner API is deployed. This is
+# a hard requirement and deliberately sits outside the CMS reachability branch.
+translation=$(backend_curl "/api/translations/segments?limit=1")
+translation_status=$(printf '%s' "$translation" | jq -r '.status')
+translation_body=$(printf '%s' "$translation" | jq -r '.body')
+if [ "$translation_status" != "200" ]; then
+  echo "knoxx: translation surface returned ${translation_status}" >&2
+  printf '%s\n' "$translation_body" >&2
   exit 1
 fi
 
