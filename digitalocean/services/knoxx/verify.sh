@@ -15,10 +15,20 @@ FRONTEND=http://127.0.0.1:8080
 # would otherwise inherit the caller's — which for the deploy health gate is
 # the pipe carrying that gate's own unparsed script. See
 # .github/workflows/deploy-digitalocean.yml.
+# A stalled backend or a hung upstream must fail the gate rather than hold the
+# deploy open, so every probe is bounded end to end. AbortSignal covers the body
+# read as well as the connect, and the abort surfaces as status 0.
+BACKEND_PROBE_TIMEOUT_MS=${BACKEND_PROBE_TIMEOUT_MS:-15000}
+
 backend_curl() {
   docker compose --project-name knoxx --env-file .env \
-    exec -T knoxx-backend node -e "
-      fetch('http://127.0.0.1:8000$1', {headers: {'X-API-Key': process.env.KNOXX_API_KEY || ''}})
+    exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
+    knoxx-backend node -e "
+      const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
+      fetch('http://127.0.0.1:8000$1', {
+        headers: {'X-API-Key': process.env.KNOXX_API_KEY || ''},
+        signal: AbortSignal.timeout(ms),
+      })
         .then(async r => { process.stdout.write(JSON.stringify({status: r.status, body: await r.text()})); })
         .catch(e => { process.stdout.write(JSON.stringify({status: 0, body: String(e)})); });
     " </dev/null
@@ -50,10 +60,8 @@ if [ "$transport" != "sdk" ]; then
   exit 1
 fi
 
-# 1b. CMS has REST-only compatibility operations. A 200 proves the host
-# gateway, API key, and OpenPlanner API are all wired.
+# 1b. Studio is served locally and is always required.
 for surface in \
-  "CMS:/api/openplanner/v1/cms/documents?limit=1" \
   "studio:/api/studio/audio-library?path=Music&depth=0"; do
   name=${surface%%:*}
   path=${surface#*:}
@@ -66,6 +74,28 @@ for surface in \
     exit 1
   fi
 done
+
+# 1c. CMS compatibility operations are REST-only and reach the host OpenPlanner
+# API. deploy-stack.yml deliberately does not deploy that service, so requiring
+# a 200 here would fail every deployment on a stack-built host. Probe it, gate
+# on it only where it is actually reachable, and say plainly when it is skipped
+# so a real CMS regression is still caught wherever OpenPlanner does run.
+cms=$(backend_curl "/api/openplanner/v1/cms/documents?limit=1")
+cms_status=$(printf '%s' "$cms" | jq -r '.status')
+cms_body=$(printf '%s' "$cms" | jq -r '.body')
+case "$cms_status" in
+  200)
+    echo "knoxx: CMS surface ok via the host OpenPlanner API"
+    ;;
+  502|503|504|0)
+    echo "knoxx: CMS surface skipped — host OpenPlanner API unreachable (${cms_status}); REST-only compatibility operations stay degraded until it is deployed" >&2
+    ;;
+  *)
+    echo "knoxx: CMS surface returned ${cms_status}" >&2
+    printf '%s\n' "$cms_body" >&2
+    exit 1
+    ;;
+esac
 
 # Translation is served by Knoxx's in-process Mongo client. Its endpoint must
 # remain healthy without treating the host OpenPlanner API as a dependency.

@@ -309,8 +309,13 @@ jobs:
           # (./Caddyfile) already exist post-rsync; named volumes are
           # docker-managed; both are skipped.
           set -a; . ./.env; set +a
-          grep -oE '^[[:space:]]+- [^#"'"'"'][^:" ]*:' compose.yaml \
-            | sed -E 's/^[[:space:]]+- ([^:" ]+):/\1/' \
+          # The source may itself contain colons through required- or
+          # default-value interpolation (${VAR:?msg}, ${VAR:-fallback}), so the
+          # ${...} form is matched as a unit before the container path is
+          # stripped. Splitting on the first colon instead yielded a truncated
+          # `${VAR` whose eval failed and left mkdir with an empty argument,
+          # aborting the deploy before compose ever ran.
+          sed -nE 's/^[[:space:]]+- (\$\{[^}]*\}[^:"[:space:]]*|[^:"[:space:]]+):.*/\1/p' compose.yaml \
             | while IFS= read -r src; do
                 case "$src" in
                   /*|\$\{*) mkdir -p "$(eval echo "$src")" ;;
