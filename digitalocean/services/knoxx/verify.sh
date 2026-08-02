@@ -133,6 +133,18 @@ else
   fi
 fi
 
+# 1d. Translation is served by Knoxx's in-process Mongo data plane, so it must
+# be healthy regardless of whether the host OpenPlanner API is deployed. This is
+# a hard requirement and deliberately sits outside the CMS reachability branch.
+translation=$(backend_curl "/api/translations/segments?limit=1")
+translation_status=$(printf '%s' "$translation" | jq -r '.status')
+translation_body=$(printf '%s' "$translation" | jq -r '.body')
+if [ "$translation_status" != "200" ]; then
+  echo "knoxx: translation surface returned ${translation_status}" >&2
+  printf '%s\n' "$translation_body" >&2
+  exit 1
+fi
+
 # 2. Auth is actually enforced. A backend that answers unauthenticated
 #    requests would expose the whole vault.
 unauth=$(docker compose --project-name knoxx --env-file .env \
