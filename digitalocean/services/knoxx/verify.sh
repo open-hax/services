@@ -103,55 +103,33 @@ openplanner_base=$(docker compose --project-name knoxx --env-file .env \
 if [ -z "$openplanner_base" ]; then
   echo "knoxx: CMS surface skipped — OPENPLANNER_BASE_URL is unset" >&2
 else
+  # probe-openplanner.js ships beside this script and is read here on the host,
+  # then evaluated inside the container so the container's network view applies.
+  # Keeping it a real file rather than an inline string is what lets CI run
+  # `node --check` and its classifier self-test against the same source the gate
+  # executes. Its contract: `absent` is true only for a failure to establish a
+  # TCP connection, so a hung deployed service can never be mistaken for one
+  # that was never deployed.
   upstream=$(docker compose --project-name knoxx --env-file .env \
     exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
-    knoxx-backend node -e "
-      const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
-      const base = (process.env.OPENPLANNER_BASE_URL || '').replace(/\/+\$/, '');
-      // Only a failure to establish a connection counts as absent.
-      //
-      // ECONNREFUSED is what a closed port answers on an unfiltered host.
-      // This host is not unfiltered: bootstrap-host.sh runs
-      // 'ufw default deny incoming', and traffic from the bridge network to
-      // host-gateway traverses INPUT, so ufw DROPs it and the connect attempt
-      // times out instead. An absent OpenPlanner therefore surfaces as
-      // UND_ERR_CONNECT_TIMEOUT here, never as ECONNREFUSED — treating only
-      // the latter as absent failed every Knoxx deploy on this host
-      // (run 30758885732, 2026-08-02), which in turn skipped deploy-caddy and
-      // silently froze the ingress configuration.
-      //
-      // Everything else still fails the gate. ENOTFOUND means the
-      // host.docker.internal mapping did not apply, EHOSTUNREACH/ENETUNREACH
-      // mean the route is broken, and a bare TimeoutError means the connection
-      // was established and then the response never came — a deployed service
-      // hanging, which is exactly what commit 727cabc exists to catch.
-      const ABSENT = new Set(['ECONNREFUSED', 'UND_ERR_CONNECT_TIMEOUT', 'ETIMEDOUT']);
-      fetch(base + '/v1/health', {signal: AbortSignal.timeout(ms)})
-        .then(r => { process.stdout.write(JSON.stringify({reachable: true, status: r.status})); })
-        .catch(e => {
-          const code = e && e.cause && e.cause.code;
-          const absent = ABSENT.has(code);
-          process.stdout.write(JSON.stringify({
-            reachable: false, absent, code: code || e.name || 'unknown', error: String(e),
-          }));
-        });
-    " </dev/null)
+    knoxx-backend node -e "$(cat ./probe-openplanner.js)" </dev/null)
   upstream_reachable=$(printf '%s' "$upstream" | jq -r '.reachable // false')
 
   upstream_absent=$(printf '%s' "$upstream" | jq -r '.absent // false')
   upstream_code=$(printf '%s' "$upstream" | jq -r '.code // "unknown"')
+  upstream_phase=$(printf '%s' "$upstream" | jq -r '.phase // "unknown"')
 
   if [ "$upstream_reachable" != "true" ] && [ "$upstream_absent" = "true" ] \
      && [ "${KNOXX_EXPECT_OPENPLANNER_REST:-false}" != "true" ]; then
     # Nothing listening, and this host does not expect anything to be. REST-only
     # compatibility operations stay degraded until OpenPlanner exists.
-    echo "knoxx: CMS surface skipped — no host OpenPlanner API at ${openplanner_base} (${upstream_code}), and KNOXX_EXPECT_OPENPLANNER_REST is not true" >&2
+    echo "knoxx: CMS surface skipped — no host OpenPlanner API at ${openplanner_base} (${upstream_phase}/${upstream_code}), and KNOXX_EXPECT_OPENPLANNER_REST is not true" >&2
   elif [ "$upstream_reachable" != "true" ]; then
     # Either the host expects OpenPlanner and nothing is accepting connections —
-    # a crashed or stopped process — or the connection was established and the
-    # service then failed to answer. Both are failures rather than intentional
-    # absence.
-    echo "knoxx: host OpenPlanner API at ${openplanner_base} did not answer (${upstream_code}); expected=${KNOXX_EXPECT_OPENPLANNER_REST:-false}" >&2
+    # a crashed or stopped process — or a connection was established and the
+    # service then failed to answer, which the probe reports as phase=response.
+    # Both are failures rather than intentional absence.
+    echo "knoxx: host OpenPlanner API at ${openplanner_base} did not answer (${upstream_phase}/${upstream_code}); expected=${KNOXX_EXPECT_OPENPLANNER_REST:-false}" >&2
     printf '%s\n' "$upstream" >&2
     exit 1
   else

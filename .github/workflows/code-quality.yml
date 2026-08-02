@@ -29,6 +29,28 @@ jobs:
           bash -n digitalocean/lib/*.sh digitalocean/scripts/*.sh
           bash -n digitalocean/services/*/verify.sh
 
+      # Helper scripts a verify.sh evaluates inside a container. They only ever
+      # run on the production host, so a syntax error in one would surface as a
+      # failed health gate mid-deploy rather than here.
+      - name: Check service helper scripts
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for js in digitalocean/services/*/*.js; do
+            node --check "$js"
+            echo "node --check ok $js"
+          done
+
+      # The Knoxx gate has to tell an OpenPlanner that was never deployed from
+      # one that is deployed and broken, and it gets that wrong in a way nothing
+      # else catches: too strict and every deploy fails (run 30758885732), too
+      # loose and a crashed upstream ships green. The probe carries its own
+      # classifier matrix; run it against the same file the gate executes.
+      - name: Self-test the OpenPlanner reachability classifier
+        env:
+          PROBE_SELFTEST: "1"
+        run: node digitalocean/services/knoxx/probe-openplanner.js
+
       # A remote script piped to `bash -s` over ssh is parsed lazily from the
       # same stdin the script's own commands inherit. One `docker compose exec
       # -T` in a verify.sh was enough to swallow a health gate's failure
