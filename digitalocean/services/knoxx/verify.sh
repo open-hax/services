@@ -108,16 +108,35 @@ else
     knoxx-backend node -e "
       const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
       const base = (process.env.OPENPLANNER_BASE_URL || '').replace(/\/+\$/, '');
+      // Absence and ill health must not share a branch. A refused connection or
+      // an unresolvable name means no service is deployed; a timeout means one
+      // is listening and hanging, which has to fail the gate.
+      const ABSENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
       fetch(base + '/v1/health', {signal: AbortSignal.timeout(ms)})
         .then(r => { process.stdout.write(JSON.stringify({reachable: true, status: r.status})); })
-        .catch(e => { process.stdout.write(JSON.stringify({reachable: false, error: String(e)})); });
+        .catch(e => {
+          const code = e && e.cause && e.cause.code;
+          const absent = ABSENT.has(code);
+          process.stdout.write(JSON.stringify({
+            reachable: false, absent, code: code || e.name || 'unknown', error: String(e),
+          }));
+        });
     " </dev/null)
   upstream_reachable=$(printf '%s' "$upstream" | jq -r '.reachable // false')
 
-  if [ "$upstream_reachable" != "true" ]; then
-    # A refused connection or DNS failure is the absent-service case. REST-only
-    # compatibility operations stay degraded until OpenPlanner is deployed.
-    echo "knoxx: CMS surface skipped — host OpenPlanner API unreachable at ${openplanner_base} ($(printf '%s' "$upstream" | jq -r '.error // "unknown"'))" >&2
+  upstream_absent=$(printf '%s' "$upstream" | jq -r '.absent // false')
+  upstream_code=$(printf '%s' "$upstream" | jq -r '.code // "unknown"')
+
+  if [ "$upstream_reachable" != "true" ] && [ "$upstream_absent" = "true" ]; then
+    # No service deployed. REST-only compatibility operations stay degraded
+    # until OpenPlanner exists.
+    echo "knoxx: CMS surface skipped — no host OpenPlanner API at ${openplanner_base} (${upstream_code})" >&2
+  elif [ "$upstream_reachable" != "true" ]; then
+    # Listening but not answering — a timeout, TLS failure or protocol error.
+    # That is a deployed upstream in trouble, not an absent one.
+    echo "knoxx: host OpenPlanner API at ${openplanner_base} did not answer (${upstream_code})" >&2
+    printf '%s\n' "$upstream" >&2
+    exit 1
   else
     # OpenPlanner answered, so any non-200 from the CMS route is a real failure,
     # including 502/503/504 raised by the proxy or its dependencies.
