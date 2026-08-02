@@ -130,14 +130,16 @@ else
   upstream_absent=$(printf '%s' "$upstream" | jq -r '.absent // false')
   upstream_code=$(printf '%s' "$upstream" | jq -r '.code // "unknown"')
 
-  if [ "$upstream_reachable" != "true" ] && [ "$upstream_absent" = "true" ]; then
-    # No service deployed. REST-only compatibility operations stay degraded
-    # until OpenPlanner exists.
-    echo "knoxx: CMS surface skipped — no host OpenPlanner API at ${openplanner_base} (${upstream_code})" >&2
+  if [ "$upstream_reachable" != "true" ] && [ "$upstream_absent" = "true" ] \
+     && [ "${KNOXX_EXPECT_OPENPLANNER_REST:-false}" != "true" ]; then
+    # Nothing listening, and this host does not expect anything to be. REST-only
+    # compatibility operations stay degraded until OpenPlanner exists.
+    echo "knoxx: CMS surface skipped — no host OpenPlanner API at ${openplanner_base} (${upstream_code}), and KNOXX_EXPECT_OPENPLANNER_REST is not true" >&2
   elif [ "$upstream_reachable" != "true" ]; then
-    # Listening but not answering — a timeout, TLS failure or protocol error.
-    # That is a deployed upstream in trouble, not an absent one.
-    echo "knoxx: host OpenPlanner API at ${openplanner_base} did not answer (${upstream_code})" >&2
+    # Either the host expects OpenPlanner and it is refusing connections — a
+    # crashed or stopped process — or it answered in a way that is not usable.
+    # Both are failures rather than intentional absence.
+    echo "knoxx: host OpenPlanner API at ${openplanner_base} did not answer (${upstream_code}); expected=${KNOXX_EXPECT_OPENPLANNER_REST:-false}" >&2
     printf '%s\n' "$upstream" >&2
     exit 1
   else
