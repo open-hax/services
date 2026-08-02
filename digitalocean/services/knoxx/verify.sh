@@ -108,13 +108,24 @@ else
     knoxx-backend node -e "
       const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
       const base = (process.env.OPENPLANNER_BASE_URL || '').replace(/\/+\$/, '');
-      // Only an undeployed listener counts as absent. The topology is fixed —
-      // host.docker.internal is mapped to host-gateway in compose — so nothing
-      // deployed produces ECONNREFUSED, while ENOTFOUND means that mapping did
-      // not apply and EHOSTUNREACH/ENETUNREACH/TimeoutError mean the route or
-      // the service is broken. Those are infrastructure failures, not an
-      // intentionally absent OpenPlanner, and must fail the gate.
-      const ABSENT = new Set(['ECONNREFUSED']);
+      // Only a failure to establish a connection counts as absent.
+      //
+      // ECONNREFUSED is what a closed port answers on an unfiltered host.
+      // This host is not unfiltered: bootstrap-host.sh runs
+      // 'ufw default deny incoming', and traffic from the bridge network to
+      // host-gateway traverses INPUT, so ufw DROPs it and the connect attempt
+      // times out instead. An absent OpenPlanner therefore surfaces as
+      // UND_ERR_CONNECT_TIMEOUT here, never as ECONNREFUSED — treating only
+      // the latter as absent failed every Knoxx deploy on this host
+      // (run 30758885732, 2026-08-02), which in turn skipped deploy-caddy and
+      // silently froze the ingress configuration.
+      //
+      // Everything else still fails the gate. ENOTFOUND means the
+      // host.docker.internal mapping did not apply, EHOSTUNREACH/ENETUNREACH
+      // mean the route is broken, and a bare TimeoutError means the connection
+      // was established and then the response never came — a deployed service
+      // hanging, which is exactly what commit 727cabc exists to catch.
+      const ABSENT = new Set(['ECONNREFUSED', 'UND_ERR_CONNECT_TIMEOUT', 'ETIMEDOUT']);
       fetch(base + '/v1/health', {signal: AbortSignal.timeout(ms)})
         .then(r => { process.stdout.write(JSON.stringify({reachable: true, status: r.status})); })
         .catch(e => {
@@ -136,9 +147,10 @@ else
     # compatibility operations stay degraded until OpenPlanner exists.
     echo "knoxx: CMS surface skipped — no host OpenPlanner API at ${openplanner_base} (${upstream_code}), and KNOXX_EXPECT_OPENPLANNER_REST is not true" >&2
   elif [ "$upstream_reachable" != "true" ]; then
-    # Either the host expects OpenPlanner and it is refusing connections — a
-    # crashed or stopped process — or it answered in a way that is not usable.
-    # Both are failures rather than intentional absence.
+    # Either the host expects OpenPlanner and nothing is accepting connections —
+    # a crashed or stopped process — or the connection was established and the
+    # service then failed to answer. Both are failures rather than intentional
+    # absence.
     echo "knoxx: host OpenPlanner API at ${openplanner_base} did not answer (${upstream_code}); expected=${KNOXX_EXPECT_OPENPLANNER_REST:-false}" >&2
     printf '%s\n' "$upstream" >&2
     exit 1
