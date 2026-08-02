@@ -108,10 +108,13 @@ else
     knoxx-backend node -e "
       const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
       const base = (process.env.OPENPLANNER_BASE_URL || '').replace(/\/+\$/, '');
-      // Absence and ill health must not share a branch. A refused connection or
-      // an unresolvable name means no service is deployed; a timeout means one
-      // is listening and hanging, which has to fail the gate.
-      const ABSENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
+      // Only an undeployed listener counts as absent. The topology is fixed —
+      // host.docker.internal is mapped to host-gateway in compose — so nothing
+      // deployed produces ECONNREFUSED, while ENOTFOUND means that mapping did
+      // not apply and EHOSTUNREACH/ENETUNREACH/TimeoutError mean the route or
+      // the service is broken. Those are infrastructure failures, not an
+      // intentionally absent OpenPlanner, and must fail the gate.
+      const ABSENT = new Set(['ECONNREFUSED']);
       fetch(base + '/v1/health', {signal: AbortSignal.timeout(ms)})
         .then(r => { process.stdout.write(JSON.stringify({reachable: true, status: r.status})); })
         .catch(e => {
