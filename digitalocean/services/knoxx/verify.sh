@@ -20,6 +20,20 @@ FRONTEND=http://127.0.0.1:8080
 # read as well as the connect, and the abort surfaces as status 0.
 BACKEND_PROBE_TIMEOUT_MS=${BACKEND_PROBE_TIMEOUT_MS:-15000}
 
+# AbortSignal.timeout throws synchronously for negative, fractional, infinite or
+# oversized values, which would escape the probe's own .catch and abort the gate
+# with a stack trace instead of a configuration error. Validate before use.
+case "$BACKEND_PROBE_TIMEOUT_MS" in
+  ''|*[!0-9]*)
+    echo "knoxx: BACKEND_PROBE_TIMEOUT_MS must be a positive integer of milliseconds, got '${BACKEND_PROBE_TIMEOUT_MS}'" >&2
+    exit 1
+    ;;
+esac
+if [ "$BACKEND_PROBE_TIMEOUT_MS" -lt 1 ] || [ "$BACKEND_PROBE_TIMEOUT_MS" -gt 600000 ]; then
+  echo "knoxx: BACKEND_PROBE_TIMEOUT_MS must be between 1 and 600000, got '${BACKEND_PROBE_TIMEOUT_MS}'" >&2
+  exit 1
+fi
+
 backend_curl() {
   docker compose --project-name knoxx --env-file .env \
     exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
@@ -77,35 +91,46 @@ done
 
 # 1c. CMS compatibility operations are REST-only and reach the host OpenPlanner
 # API. deploy-stack.yml deliberately does not deploy that service, so requiring
-# a 200 here would fail every deployment on a stack-built host. Probe it, gate
-# on it only where it is actually reachable, and say plainly when it is skipped
-# so a real CMS regression is still caught wherever OpenPlanner does run.
-cms=$(backend_curl "/api/openplanner/v1/cms/documents?limit=1")
-cms_status=$(printf '%s' "$cms" | jq -r '.status')
-cms_body=$(printf '%s' "$cms" | jq -r '.body')
-case "$cms_status" in
-  200)
-    echo "knoxx: CMS surface ok via the host OpenPlanner API"
-    ;;
-  502|503|504|0)
-    echo "knoxx: CMS surface skipped — host OpenPlanner API unreachable (${cms_status}); REST-only compatibility operations stay degraded until it is deployed" >&2
-    ;;
-  *)
-    echo "knoxx: CMS surface returned ${cms_status}" >&2
-    printf '%s\n' "$cms_body" >&2
-    exit 1
-    ;;
-esac
+# a 200 unconditionally would fail every deployment on a stack-built host.
+#
+# Reachability is probed directly against the upstream rather than inferred from
+# the CMS status. Reading Knoxx's status alone cannot tell an absent upstream
+# from a deployed one that is failing: both surface as 502/503/504, so skipping
+# on those would hide exactly the regression this check exists to catch.
+openplanner_base=$(docker compose --project-name knoxx --env-file .env \
+  exec -T knoxx-backend node -e "process.stdout.write(process.env.OPENPLANNER_BASE_URL || '')" </dev/null)
 
-# Translation is served by Knoxx's in-process Mongo client. Its endpoint must
-# remain healthy without treating the host OpenPlanner API as a dependency.
-translation=$(backend_curl "/api/translations/segments?limit=1")
-translation_status=$(printf '%s' "$translation" | jq -r '.status')
-translation_body=$(printf '%s' "$translation" | jq -r '.body')
-if [ "$translation_status" != "200" ]; then
-  echo "knoxx: translation surface returned ${translation_status}" >&2
-  printf '%s\n' "$translation_body" >&2
-  exit 1
+if [ -z "$openplanner_base" ]; then
+  echo "knoxx: CMS surface skipped — OPENPLANNER_BASE_URL is unset" >&2
+else
+  upstream=$(docker compose --project-name knoxx --env-file .env \
+    exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
+    knoxx-backend node -e "
+      const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
+      const base = (process.env.OPENPLANNER_BASE_URL || '').replace(/\/+\$/, '');
+      fetch(base + '/v1/health', {signal: AbortSignal.timeout(ms)})
+        .then(r => { process.stdout.write(JSON.stringify({reachable: true, status: r.status})); })
+        .catch(e => { process.stdout.write(JSON.stringify({reachable: false, error: String(e)})); });
+    " </dev/null)
+  upstream_reachable=$(printf '%s' "$upstream" | jq -r '.reachable // false')
+
+  if [ "$upstream_reachable" != "true" ]; then
+    # A refused connection or DNS failure is the absent-service case. REST-only
+    # compatibility operations stay degraded until OpenPlanner is deployed.
+    echo "knoxx: CMS surface skipped — host OpenPlanner API unreachable at ${openplanner_base} ($(printf '%s' "$upstream" | jq -r '.error // "unknown"'))" >&2
+  else
+    # OpenPlanner answered, so any non-200 from the CMS route is a real failure,
+    # including 502/503/504 raised by the proxy or its dependencies.
+    cms=$(backend_curl "/api/openplanner/v1/cms/documents?limit=1")
+    cms_status=$(printf '%s' "$cms" | jq -r '.status')
+    cms_body=$(printf '%s' "$cms" | jq -r '.body')
+    if [ "$cms_status" != "200" ]; then
+      echo "knoxx: CMS surface returned ${cms_status} with OpenPlanner reachable at ${openplanner_base}" >&2
+      printf '%s\n' "$cms_body" >&2
+      exit 1
+    fi
+    echo "knoxx: CMS surface ok via the host OpenPlanner API"
+  fi
 fi
 
 # 2. Auth is actually enforced. A backend that answers unauthenticated
