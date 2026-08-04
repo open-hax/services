@@ -27,8 +27,15 @@
    Credentials are NOT declared here. This repository is public, and tool
    credentials are actor-owned state in the policy DB — domain.actor.credentials
    deliberately refuses to read them from process env. They are written through
-   PUT /api/admin/actors/open-hax/credentials/:provider, which requires
+   PUT /api/admin/actors/:userId/credentials/:provider, which requires
    org.user_policy.update in this org.
+
+   :userId there is the id of the *user* behind this actor's membership, not
+   this :actor/id. The write keys on (user_id, org_id, provider, kind) and the
+   read keys on memberships.actor_id, so the two meet through the membership
+   this contract materializes. Resolve it after deploying, never guess it:
+   GET /api/admin/orgs/:orgId/memberships and take the user_id of the row whose
+   actor_id is \"open_hax\".
 
    Why this actor exists: tools called over MCP currently resolve no actor at
    all. agent-context is set only on the agent-spawn path, and
