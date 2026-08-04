@@ -227,6 +227,18 @@ jobs:
         run: |
           set -euo pipefail
           ssh open-hax-target "mkdir -p '${RUNTIME_PATH}' '${STATE_PATH}'"
+
+          # Did an --itemize-changes log move anything? Transfers are itemized
+          # as an 11-flag word (`>f+++++++++`, `cd+++++++++`, `hf`), but a
+          # --delete removal is reported as `*deleting <path>` instead, so a
+          # transfer-only pattern reads a pure deletion as "nothing changed".
+          # Attribute-only lines are deliberately not counted: a leading `.`
+          # means nothing was transferred, so `.f...p.....` is a chmod and
+          # changes nothing the container reads at startup.
+          moved() {
+            grep -qE '^([<>ch][fdLDS]|\*deleting )' "$1"
+          }
+
           # --itemize-changes so the deploy can tell whether any part of the
           # definition actually moved. compose hashes the image and the
           # environment, never the contents of a bind mount, so without this a
@@ -237,7 +249,7 @@ jobs:
           # to the same GITHUB_OUTPUT key would resolve by last-write-wins,
           # which happens to be correct here but hides the dependency.
           definition_changed=0
-          if grep -qE '^[<>ch]' rsync.out; then
+          if moved rsync.out; then
             definition_changed=1
             echo "service definition changed; the container will be recreated"
           fi
@@ -250,14 +262,16 @@ jobs:
           # contract is read at startup, so shipping one without recreating the
           # container leaves the running process on the old contract set — a
           # new actor would land on disk and never materialize into a
-          # membership. The main rsync above excludes contracts, so without
-          # this a contract-only deploy reports no change and recreates nothing.
+          # membership, and a withdrawn actor, role or policy would keep being
+          # honoured after its file is gone. The main rsync above excludes
+          # contracts, so without this a contract-only deploy reports no change
+          # and recreates nothing.
           if [ -d "contracts/${SERVICE}" ]; then
             ssh open-hax-target "mkdir -p '${RUNTIME_PATH}/contracts'"
             rsync -az --delete --itemize-changes -e ssh \
               "contracts/${SERVICE}/" "open-hax-target:${RUNTIME_PATH}/contracts/" \
               | tee contracts-rsync.out
-            if grep -qE '^[<>ch]' contracts-rsync.out; then
+            if moved contracts-rsync.out; then
               definition_changed=1
               echo "contracts changed; the container will be recreated"
             fi
