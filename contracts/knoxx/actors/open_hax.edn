@@ -4,19 +4,23 @@
  :actor/label "Open-Hax"
 
  ;; :role/open-hax is a pure personality layer with no capabilities, so it is
- ;; composed with the functional role that actually grants tools. This mirrors
+ ;; composed with the functional roles that actually grant tools. This mirrors
  ;; discord_automation's grant (:role/discord-user); widen it deliberately per
  ;; capability rather than by adding roles speculatively.
- :actor/roles [:role/open-hax :role/discord-user]
-
+ ;;
  ;; :role/discord-user grants :cap/discord :cap/websearch :cap/memory
  ;; :cap/semantic — no Bluesky. The local credential set includes a Bluesky
- ;; app-password, so the capability is granted directly here rather than by
- ;; composing :role/bluesky-influencer, which would also pull in :cap/music,
- ;; :cap/voice-synth, :cap/graphics, :cap/animation, :cap/canvas and
- ;; :cap/workspace-media. A production automation actor should hold what it
- ;; uses and nothing more.
- :actor/capabilities [:cap/bluesky]
+ ;; app-password, so :role/bluesky-publisher carries that one capability.
+ ;;
+ ;; It has to be a role, not :actor/capabilities. The actor projection
+ ;; (infra.db.policy/project-actor-via-store!) derives membership roles from
+ ;; :actor/roles alone and never reads :actor/capabilities, and a request
+ ;; context's tool policies come from role and membership policies only. An
+ ;; actor-level capability would therefore grant no bluesky.* allow policy and
+ ;; the tools would stay filtered out with the credential sitting right there.
+ ;; :actor/capabilities is read on the contract-resolution path
+ ;; (domain.contracts.resolve), which is not the path that gates tools.
+ :actor/roles [:role/open-hax :role/discord-user :role/bluesky-publisher]
 
  :actor/policy
  {:principal :actor
