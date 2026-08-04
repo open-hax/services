@@ -19,7 +19,7 @@ gate is the only place several of these contracts are checked against reality.
 The knoxx health gate carries a conditional branch that exists only for a service
 production does not run:
 
-```
+```text
 knoxx: CMS surface skipped — no host OpenPlanner API at http://host.docker.internal:7777
 ```
 

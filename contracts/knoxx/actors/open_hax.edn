@@ -1,4 +1,4 @@
-{:actor/id "open-hax"
+{:actor/id "open_hax"
  :actor/kind :agent
  :actor/org "open-hax"
  :actor/label "Open-Hax"
@@ -8,6 +8,15 @@
  ;; discord_automation's grant (:role/discord-user); widen it deliberately per
  ;; capability rather than by adding roles speculatively.
  :actor/roles [:role/open-hax :role/discord-user]
+
+ ;; :role/discord-user grants :cap/discord :cap/websearch :cap/memory
+ ;; :cap/semantic — no Bluesky. The local credential set includes a Bluesky
+ ;; app-password, so the capability is granted directly here rather than by
+ ;; composing :role/bluesky-influencer, which would also pull in :cap/music,
+ ;; :cap/voice-synth, :cap/graphics, :cap/animation, :cap/canvas and
+ ;; :cap/workspace-media. A production automation actor should hold what it
+ ;; uses and nothing more.
+ :actor/capabilities [:cap/bluesky]
 
  :actor/policy
  {:principal :actor
@@ -28,6 +37,12 @@
    non-functional over MCP. This actor is the production half of that fix; the
    application half is carding as knoxx-mcp-actor-ascription, which must carry
    an actorId through the OAuth code and token records.
+
+   Deploy note: a contract-only change does not reload contracts by itself.
+   deploy-digitalocean.yml computes definition_changed from the service rsync,
+   which excludes contracts, and only passes --force-recreate when that flag is
+   set — while EDN changes take effect on restart. The contracts rsync is now
+   itemized and folded into that flag so this actor actually materializes.
 
    Shape note: katamorph.schema/ActorContract already declares :actor/accounts
    with :discord {:username :user-id} and :bluesky {:handle :did}. Knoxx cannot
