@@ -1,0 +1,36 @@
+{:actor/id "open-hax"
+ :actor/kind :agent
+ :actor/org "open-hax"
+ :actor/label "Open-Hax"
+
+ ;; :role/open-hax is a pure personality layer with no capabilities, so it is
+ ;; composed with the functional role that actually grants tools. This mirrors
+ ;; discord_automation's grant (:role/discord-user); widen it deliberately per
+ ;; capability rather than by adding roles speculatively.
+ :actor/roles [:role/open-hax :role/discord-user]
+
+ :actor/policy
+ {:principal :actor
+  :notes
+  "The DigitalOcean production automation actor. Owns the same tool credentials
+   as the local PM2 Knoxx deployment's discord_automation actor.
+
+   Credentials are NOT declared here. This repository is public, and tool
+   credentials are actor-owned state in the policy DB — domain.actor.credentials
+   deliberately refuses to read them from process env. They are written through
+   PUT /api/admin/actors/open-hax/credentials/:provider, which requires
+   org.user_policy.update in this org.
+
+   Why this actor exists: tools called over MCP currently resolve no actor at
+   all. agent-context is set only on the agent-spawn path, and
+   domain.actor.credentials reads nothing else, so get-credential! throws
+   'No current actor_id is available'. Discord and Bluesky tools are therefore
+   non-functional over MCP. This actor is the production half of that fix; the
+   application half is carding as knoxx-mcp-actor-ascription, which must carry
+   an actorId through the OAuth code and token records.
+
+   Shape note: katamorph.schema/ActorContract already declares :actor/accounts
+   with :discord {:username :user-id} and :bluesky {:handle :did}. Knoxx cannot
+   require katamorph yet — it builds a fork of it that lacks schema.cljs — so
+   per-platform account identity is not expressed here. Add it when the cutover
+   lands rather than inventing a local shape for it now."}}
