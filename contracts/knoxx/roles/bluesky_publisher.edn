@@ -1,0 +1,17 @@
+{:role/id :role/bluesky-publisher
+ :role/name "Bluesky Publisher"
+ :role/description "Bluesky tool access and nothing else. The minimal functional role for an actor that publishes to Bluesky without taking on a creative-production persona."
+
+ ;; Exists because a role is the only unit the actor projection carries.
+ ;; infra.db.policy/project-actor-via-store! derives membership roles from
+ ;; :actor/roles alone; :actor/capabilities is never read on that path, so an
+ ;; actor-level capability grants no tool policies. Role capabilities do get
+ ;; expanded — sync-contract-role-record! resolves :role/capabilities through
+ ;; the capability contracts into allow policies per :cap/tools.
+ ;;
+ ;; :role/bluesky-influencer already grants :cap/bluesky, but also :cap/music,
+ ;; :cap/voice-synth, :cap/graphics, :cap/animation, :cap/canvas and
+ ;; :cap/workspace-media, plus an influencer system prompt. This role is the
+ ;; capability without the persona.
+ :role/capabilities [:cap/bluesky]
+ :role/permissions []}

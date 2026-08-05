@@ -1,5 +1,8 @@
 # OpenHax Services
 
+> **Roadmap:** [`ROADMAP.md`](ROADMAP.md) — this repo's slice. The hub, with the
+> seam, ownership table and sequencing rule, is [eta-mu/ROADMAP.md](https://github.com/open-hax/eta-mu/blob/main/ROADMAP.md).
+
 This repository owns Promethean deployment definitions, ingress routing, host inventory, and operational runbooks.
 
 Application repositories own application code and tests:

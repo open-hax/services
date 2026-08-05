@@ -227,32 +227,62 @@ jobs:
         run: |
           set -euo pipefail
           ssh open-hax-target "mkdir -p '${RUNTIME_PATH}' '${STATE_PATH}'"
+
+          # Did an --itemize-changes log move anything? Transfers are itemized
+          # as an 11-flag word (`>f+++++++++`, `cd+++++++++`, `hf`), but a
+          # --delete removal is reported as `*deleting <path>` instead, so a
+          # transfer-only pattern reads a pure deletion as "nothing changed".
+          # Attribute-only lines are deliberately not counted: a leading `.`
+          # means nothing was transferred, so `.f...p.....` is a chmod and
+          # changes nothing the container reads at startup.
+          moved() {
+            grep -qE '^([<>ch][fdLDS]|\*deleting )' "$1"
+          }
+
           # --itemize-changes so the deploy can tell whether any part of the
           # definition actually moved. compose hashes the image and the
           # environment, never the contents of a bind mount, so without this a
           # changed config file leaves the old container running untouched.
           rsync -az --delete --itemize-changes --exclude '.env' --exclude 'contracts' -e ssh \
             "${SERVICE_DIR}/" "open-hax-target:${RUNTIME_PATH}/" | tee rsync.out
-          if grep -qE '^[<>ch]' rsync.out; then
-            echo "definition_changed=1" >> "$GITHUB_OUTPUT"
+          # Accumulated, then written once at the end of this step. Two writes
+          # to the same GITHUB_OUTPUT key would resolve by last-write-wins,
+          # which happens to be correct here but hides the dependency.
+          definition_changed=0
+          if moved rsync.out; then
+            definition_changed=1
             echo "service definition changed; the container will be recreated"
-          else
-            echo "definition_changed=0" >> "$GITHUB_OUTPUT"
           fi
 
           # Services-owned contracts ship read-only alongside the service.
           # Deploys ship contracts; they never rewrite them (receipts.edn,
           # 2026-06-02, commit 91dd693).
+          #
+          # Contracts are itemized and folded into definition_changed. A
+          # contract is read at startup, so shipping one without recreating the
+          # container leaves the running process on the old contract set — a
+          # new actor would land on disk and never materialize into a
+          # membership, and a withdrawn actor, role or policy would keep being
+          # honoured after its file is gone. The main rsync above excludes
+          # contracts, so without this a contract-only deploy reports no change
+          # and recreates nothing.
           if [ -d "contracts/${SERVICE}" ]; then
             ssh open-hax-target "mkdir -p '${RUNTIME_PATH}/contracts'"
-            rsync -az --delete -e ssh \
-              "contracts/${SERVICE}/" "open-hax-target:${RUNTIME_PATH}/contracts/"
+            rsync -az --delete --itemize-changes -e ssh \
+              "contracts/${SERVICE}/" "open-hax-target:${RUNTIME_PATH}/contracts/" \
+              | tee contracts-rsync.out
+            if moved contracts-rsync.out; then
+              definition_changed=1
+              echo "contracts changed; the container will be recreated"
+            fi
             echo "shipped $(find "contracts/${SERVICE}" -type f | wc -l) contract files"
           fi
           # .env is written separately so --delete never removes it and it
           # never travels through the repo.
           scp rendered.env "open-hax-target:${RUNTIME_PATH}/.env"
           ssh open-hax-target "chmod 600 '${RUNTIME_PATH}/.env' && chmod +x '${RUNTIME_PATH}/verify.sh'"
+
+          echo "definition_changed=${definition_changed}" >> "$GITHUB_OUTPUT"
 
       - name: Authenticate the host to GHCR
         env:
