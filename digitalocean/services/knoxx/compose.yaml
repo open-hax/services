@@ -45,8 +45,10 @@ services:
       timeout: 5s
       retries: 30
       start_period: 20s
+    # Never join the shared open-hax network: this unauthenticated API is
+    # reachable only by Knoxx backend on the internal sandbox-control network.
     networks:
-      default:
+      sandbox-control:
         aliases:
           - knoxx-sandboxd
 
@@ -162,6 +164,7 @@ services:
           # "host not found in upstream".
           - backend
           - knoxx-backend
+      sandbox-control: {}
 
   # The devtools image runs a second shadow-cljs config whose :server build is a
   # side-effect-free Node runtime. Sharing the backend network namespace keeps
@@ -214,3 +217,5 @@ networks:
   default:
     name: open-hax
     external: true
+  sandbox-control:
+    internal: true
