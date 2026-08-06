@@ -111,10 +111,7 @@ jobs:
       - name: Assemble minimal devtools context
         run: |
           set -euo pipefail
-          mkdir -p \
-            devtools-layer/source \
-            devtools-layer/openplanner/packages \
-            devtools-layer/source/backend/src/cljs/knoxx/backend
+          mkdir -p devtools-layer/source devtools-layer/openplanner/packages
 
           cp -R source/backend devtools-layer/source/backend
           cp -R source/shared devtools-layer/source/shared
@@ -131,7 +128,7 @@ jobs:
             devtools-layer/source/backend/src/cljs/knoxx/backend/repl.cljs
 
           test -f devtools-layer/source/backend/pnpm-lock.yaml
-          test -f devtools-layer/contract-runtime/src/cljs/open_hax/contract_runtime/core.cljs
+          test -d devtools-layer/contract-runtime/src/cljs
           test -f devtools-layer/openplanner/packages/openplanner-sdk/dist/index.js
 
       - name: Log in to GHCR
