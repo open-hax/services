@@ -86,7 +86,7 @@ jobs:
       source_sha: ${{ needs.build-proxx.outputs.source_sha }}
     secrets: inherit
 
-  # Both Knoxx images build while Proxx deploys.
+  # All Knoxx images build while Proxx deploys.
   build-knoxx-backend:
     needs: authorize
     uses: ./.github/workflows/build-images.yml
@@ -101,8 +101,18 @@ jobs:
       service: knoxx-frontend
       source_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
 
+  build-knoxx-devtools:
+    needs: authorize
+    uses: ./.github/workflows/build-knoxx-devtools.yml
+    with:
+      source_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
+
   deploy-knoxx:
-    needs: [deploy-proxx, build-knoxx-backend, build-knoxx-frontend]
+    needs:
+      - deploy-proxx
+      - build-knoxx-backend
+      - build-knoxx-frontend
+      - build-knoxx-devtools
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: knoxx
@@ -114,7 +124,7 @@ jobs:
       # production credential. If a listener unexpectedly appears, the CMS
       # probe sends this sentinel, receives a non-200 response, and fails.
       extra_env: >-
-        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_EXPECT_OPENPLANNER_REST": "false", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream"}
+        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}", "KNOXX_EXPECT_OPENPLANNER_REST": "false", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream"}
     secrets: inherit
 
   deploy-caddy:
