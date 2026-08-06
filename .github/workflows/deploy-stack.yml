@@ -35,6 +35,11 @@ on:
         required: false
         default: main
         type: string
+      openplanner_ref:
+        description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
+        required: false
+        default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
+        type: string
       include_ingress:
         description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
         required: false
@@ -106,6 +111,7 @@ jobs:
     uses: ./.github/workflows/build-knoxx-devtools.yml
     with:
       source_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
+      openplanner_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.openplanner_ref || '8b425c1690ada78f3f1bc5dfa28c3151e3a4fede' }}
 
   deploy-knoxx:
     needs:
@@ -124,7 +130,7 @@ jobs:
       # production credential. If a listener unexpectedly appears, the CMS
       # probe sends this sentinel, receives a non-200 response, and fails.
       extra_env: >-
-        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}", "KNOXX_EXPECT_OPENPLANNER_REST": "false", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream"}
+        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}@${{ needs.build-knoxx-devtools.outputs.digest }}", "KNOXX_EXPECT_OPENPLANNER_REST": "false", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream"}
     secrets: inherit
 
   deploy-caddy:
