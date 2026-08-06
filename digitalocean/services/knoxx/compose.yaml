@@ -21,9 +21,41 @@
 name: knoxx
 
 services:
+  # Agent sandboxes run against a private nested Docker daemon. The backend gets
+  # no host Docker socket and therefore cannot create or mutate host containers.
+  # Root inside a nested sandbox maps to the unprivileged rootless-daemon user.
+  knoxx-sandboxd:
+    image: docker:27.5.1-dind-rootless
+    privileged: true
+    restart: unless-stopped
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    command:
+      - --host=tcp://0.0.0.0:2375
+      - --host=unix:///run/user/1000/docker.sock
+      - --tls=false
+    volumes:
+      - ${KNOXX_STATE_PATH}/sandbox-engine:/home/rootless/.local/share/docker
+      - ${KNOXX_SANDBOX_ROOT_PATH:?KNOXX_SANDBOX_ROOT_PATH must be set}:/sandboxes
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - DOCKER_HOST=tcp://127.0.0.1:2375 docker info >/dev/null 2>&1
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      default:
+        aliases:
+          - knoxx-sandboxd
+
   knoxx-backend:
     image: ${KNOXX_BACKEND_IMAGE:?KNOXX_BACKEND_IMAGE must be set}
     restart: unless-stopped
+    depends_on:
+      knoxx-sandboxd:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -82,17 +114,29 @@ services:
       KNOXX_MUSIC_LIBRARY_ROOT: /app/workspace/Music
       OPENPLANNER_SOURCE_ROOT: /app/workspace
       OPENPLANNER_HYDRATION_LMDB_PATH: /app/state/source-hydration-lmdb
+
+      # Sandboxes use the private rootless daemon above. The same host path is
+      # mounted at /sandboxes in both containers so nested bind mounts resolve
+      # inside the daemon rather than against the DigitalOcean host.
+      DOCKER_HOST: tcp://knoxx-sandboxd:2375
+      DOCKER_USER: "0:0"
+      KNOXX_SANDBOX_ROOT_DIR: /sandboxes
+      KNOXX_SANDBOX_IMAGE: knoxx-sandbox:latest
+      KNOXX_SANDBOX_DOCKERFILE: /runtime/sandbox/Dockerfile
+      KNOXX_SANDBOX_BUILD_CONTEXT: /runtime/sandbox
+      KNOXX_SANDBOX_TTL_SECONDS: "3600"
+      KNOXX_SANDBOX_MAX_TTL_SECONDS: "86400"
     volumes:
       - ./contracts:/app/contracts:ro
+      - ./sandbox:/runtime/sandbox:ro
       - ${KNOXX_WORKSPACE_PATH:?KNOXX_WORKSPACE_PATH must be set}:/app/workspace
       - ${KNOXX_STATE_PATH}/backend:/app/state
       - ${KNOXX_STATE_PATH}/runs:/runs/knoxx-agent
+      - ${KNOXX_SANDBOX_ROOT_PATH:?KNOXX_SANDBOX_ROOT_PATH must be set}:/sandboxes
     # OpenPlanner runs as a host PM2 process; map the Linux host gateway
     # explicitly instead of relying on Docker Desktop's implicit alias.
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # No /var/run/docker.sock. The agent sandbox needs it, but it is a
-    # root-equivalent grant and this host is about to be public.
     healthcheck:
       # 401 counts as healthy: it proves the process is up and enforcing auth.
       # A 503 does not — it means Proxx is unreachable.
@@ -118,6 +162,32 @@ services:
           # "host not found in upstream".
           - backend
           - knoxx-backend
+
+  # The devtools image runs a second shadow-cljs config whose :server build is a
+  # side-effect-free Node runtime. Sharing the backend network namespace keeps
+  # nREPL on 127.0.0.1:4500 and prevents any host or public port exposure.
+  knoxx-devtools:
+    image: ${KNOXX_DEVTOOLS_IMAGE:?KNOXX_DEVTOOLS_IMAGE must be set}
+    restart: unless-stopped
+    depends_on:
+      knoxx-backend:
+        condition: service_started
+    network_mode: "service:knoxx-backend"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          const net = require('node:net');
+          const socket = net.createConnection({host: '127.0.0.1', port: 4500});
+          socket.once('connect', () => { socket.end(); process.exit(0); });
+          socket.once('error', () => process.exit(1));
+          setTimeout(() => process.exit(1), 3000);
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
 
   knoxx-frontend:
     image: ${KNOXX_FRONTEND_IMAGE:?KNOXX_FRONTEND_IMAGE must be set}
