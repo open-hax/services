@@ -46,7 +46,8 @@ services:
       retries: 30
       start_period: 20s
     # Never join the shared open-hax network: this unauthenticated API is
-    # reachable only by Knoxx backend on the internal sandbox-control network.
+    # reachable only by Knoxx backend on a project-private bridge. The bridge
+    # keeps normal NAT egress so the nested daemon can pull and build images.
     networks:
       sandbox-control:
         aliases:
@@ -217,5 +218,4 @@ networks:
   default:
     name: open-hax
     external: true
-  sandbox-control:
-    internal: true
+  sandbox-control: {}
