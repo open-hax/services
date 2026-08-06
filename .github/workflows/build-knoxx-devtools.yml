@@ -12,9 +12,14 @@ on:
         required: false
         default: main
         type: string
+      openplanner_ref:
+        description: Immutable open-hax/openplanner ref supplying compiler sources and SDK
+        required: false
+        default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
+        type: string
     outputs:
       image:
-        description: Fully qualified image reference including source SHA
+        description: Fully qualified image reference including both source revisions
         value: ${{ jobs.build.outputs.image }}
       digest:
         description: Image digest as pushed
@@ -28,6 +33,11 @@ on:
         description: open-hax/knoxx ref to compile against
         required: false
         default: main
+        type: string
+      openplanner_ref:
+        description: Immutable open-hax/openplanner ref supplying compiler sources and SDK
+        required: false
+        default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
         type: string
 
 permissions:
@@ -43,7 +53,7 @@ jobs:
     outputs:
       image: ${{ steps.source.outputs.image }}
       digest: ${{ steps.push.outputs.digest }}
-      source_sha: ${{ steps.source.outputs.sha }}
+      source_sha: ${{ steps.source.outputs.knoxx_sha }}
     steps:
       - name: Checkout Knoxx
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -54,24 +64,27 @@ jobs:
           persist-credentials: false
           submodules: false
 
-      - name: Record source revision
-        id: source
-        run: |
-          set -euo pipefail
-          sha=$(git -C source rev-parse HEAD)
-          {
-            echo "sha=$sha"
-            echo "image=ghcr.io/open-hax/knoxx-devtools:$sha"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Checkout OpenPlanner compiler dependencies
+      - name: Checkout pinned OpenPlanner compiler dependencies
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: open-hax/openplanner
-          ref: main
+          ref: ${{ inputs.openplanner_ref }}
           path: openplanner
           persist-credentials: false
           submodules: false
+
+      - name: Record source revisions
+        id: source
+        run: |
+          set -euo pipefail
+          knoxx_sha=$(git -C source rev-parse HEAD)
+          openplanner_sha=$(git -C openplanner rev-parse HEAD)
+          {
+            echo "knoxx_sha=$knoxx_sha"
+            echo "openplanner_sha=$openplanner_sha"
+            echo "image=ghcr.io/open-hax/knoxx-devtools:${knoxx_sha}-${openplanner_sha}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building Knoxx devtools from knoxx@$knoxx_sha and openplanner@$openplanner_sha"
 
       # A reusable workflow does not implicitly contain its caller repository.
       # This checkout resolves to the services revision that triggered the run,
@@ -160,7 +173,8 @@ jobs:
             echo
             echo "| field | value |"
             echo "| --- | --- |"
-            echo "| source | \`open-hax/knoxx@${{ steps.source.outputs.sha }}\` |"
+            echo "| Knoxx source | \`open-hax/knoxx@${{ steps.source.outputs.knoxx_sha }}\` |"
+            echo "| OpenPlanner source | \`open-hax/openplanner@${{ steps.source.outputs.openplanner_sha }}\` |"
             echo "| image | \`$IMAGE\` |"
             echo "| digest | \`${{ steps.push.outputs.digest }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
