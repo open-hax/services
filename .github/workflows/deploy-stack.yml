@@ -16,13 +16,15 @@ name: Deploy Stack
 # is deployed.
 #
 # Adding the `deploy` label to a same-repository PR targeting main deploys the
-# PR revision. Fork PRs are explicitly rejected because this workflow inherits
-# production secrets in its reusable deploy jobs.
+# PR revision. A later update to that still-labeled PR deploys its new revision,
+# so fixing a failed canary does not depend on a second label webhook. Fork PRs
+# are explicitly rejected because this workflow inherits production secrets in
+# its reusable deploy jobs.
 
 on:
   pull_request:
     branches: [main]
-    types: [labeled]
+    types: [labeled, synchronize]
   workflow_dispatch:
     inputs:
       proxx_ref:
@@ -62,10 +64,11 @@ jobs:
     name: Authorize deployment
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.label.name == 'deploy' &&
-       github.event.pull_request.state == 'open' &&
+      (github.event.pull_request.state == 'open' &&
        github.event.pull_request.base.ref == 'main' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       ((github.event.action == 'labeled' && github.event.label.name == 'deploy') ||
+        (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'deploy'))))
     runs-on: ubuntu-latest
     steps:
       - run: |
