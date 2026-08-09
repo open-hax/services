@@ -159,6 +159,92 @@ if [ "$translation_status" != "200" ]; then
   exit 1
 fi
 
+# 1e. The MCP tool surface. A healthy backend with a broken tool surface is a
+# real and previously undetectable failure: schema conversion producing nothing
+# callable, a tool vanishing from the catalog, or an actor credential that no
+# longer resolves. None of it moves /health.
+#
+# Reached through the :trusted-loopback method in
+# contracts/authentication/mcp_http.edn, which requires the caller to be on
+# 127.0.0.1 — true here because the probe runs inside the backend container.
+# The method is inert without KNOXX_MCP_LOOPBACK_TOKEN, so a host that has not
+# provisioned the secret skips this section rather than failing, unless it says
+# it expects to run it.
+if [ -z "${KNOXX_MCP_LOOPBACK_TOKEN:-}" ]; then
+  if [ "${KNOXX_EXPECT_MCP_VERIFY:-false}" = "true" ]; then
+    echo "knoxx: KNOXX_EXPECT_MCP_VERIFY=true but KNOXX_MCP_LOOPBACK_TOKEN is unset" >&2
+    exit 1
+  fi
+  echo "knoxx: MCP surface skipped — KNOXX_MCP_LOOPBACK_TOKEN is unset" >&2
+else
+  # Read-only tools only, and each one proves a different subsystem end to end:
+  # semantic_query the corpus data plane, events_status the events runtime,
+  # discord_list_servers that the verifier actor's credential still resolves.
+  # Writes are deliberately absent — a deploy gate must not publish anything.
+  MCP_PROBE_TOOL_CALLS=${MCP_PROBE_TOOL_CALLS:-'{
+    "semantic_query": {"query": "knoxx", "topK": 1},
+    "events_status": {},
+    "discord_list_servers": {}
+  }'}
+
+  mcp=$(docker compose --project-name knoxx --env-file .env \
+    exec -T \
+      -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
+      -e MCP_PROBE_TOOL_CALLS="$MCP_PROBE_TOOL_CALLS" \
+    knoxx-backend node -e "$(cat ./probe-mcp.js)" </dev/null)
+
+  mcp_ok=$(printf '%s' "$mcp" | jq -r '.ok // false')
+  if [ "$mcp_ok" != "true" ]; then
+    echo "knoxx: MCP surface unavailable ($(printf '%s' "$mcp" | jq -r '.reason // "unknown"'))" >&2
+    printf '%s' "$mcp" | jq -r '.detail // .' >&2
+    exit 1
+  fi
+
+  # A catalog that collapsed is the loudest symptom of a broken grant or a
+  # registration that threw before any tool landed.
+  mcp_tool_count=$(printf '%s' "$mcp" | jq -r '.toolCount // 0')
+  if [ "$mcp_tool_count" -lt "${KNOXX_MCP_MIN_TOOLS:-20}" ]; then
+    echo "knoxx: MCP served only ${mcp_tool_count} tools, expected at least ${KNOXX_MCP_MIN_TOOLS:-20}" >&2
+    printf '%s' "$mcp" | jq -c '.tools' >&2
+    exit 1
+  fi
+
+  # Present but unusable. A model handed a tool with no schema simply never
+  # calls it correctly, and nothing logs an error when that happens.
+  if [ "$(printf '%s' "$mcp" | jq -r '.degraded | length')" != "0" ]; then
+    echo "knoxx: MCP tools arrived degraded" >&2
+    printf '%s' "$mcp" | jq -r '.degraded | to_entries[] | "  \(.key): \(.value | join("; "))"' >&2
+    exit 1
+  fi
+
+  if [ "$(printf '%s' "$mcp" | jq -r '.duplicates | length')" != "0" ]; then
+    echo "knoxx: MCP registered duplicate tool names; earlier ones are unreachable" >&2
+    printf '%s' "$mcp" | jq -c '.duplicates' >&2
+    exit 1
+  fi
+
+  # rpc-error means the server refused or threw — always a failure. A
+  # tool-error means the tool ran and reported a problem, which is legitimate
+  # when its dependency is not configured on this host, so it is reported and
+  # not fatal.
+  mcp_refused=$(printf '%s' "$mcp" | jq -r '[.calls | to_entries[] | select(.value.status == "rpc-error")] | length')
+  if [ "$mcp_refused" != "0" ]; then
+    echo "knoxx: MCP tools refused their own probe arguments" >&2
+    printf '%s' "$mcp" | jq -r '.calls | to_entries[] | select(.value.status == "rpc-error") | "  \(.key): \(.value.detail)"' >&2
+    exit 1
+  fi
+
+  mcp_absent=$(printf '%s' "$mcp" | jq -r '[.calls | to_entries[] | select(.value.status == "absent")] | length')
+  if [ "$mcp_absent" != "0" ]; then
+    echo "knoxx: MCP tools the gate probes are missing from the catalog" >&2
+    printf '%s' "$mcp" | jq -r '.calls | to_entries[] | select(.value.status == "absent") | "  \(.key)"' >&2
+    exit 1
+  fi
+
+  printf '%s' "$mcp" | jq -r '.calls | to_entries[] | "knoxx: mcp \(.key) -> \(.value.status)"'
+  echo "knoxx: MCP surface ok; ${mcp_tool_count} tools served, none degraded"
+fi
+
 # 2. Auth is actually enforced. A backend that answers unauthenticated
 #    requests would expose the whole vault.
 unauth=$(docker compose --project-name knoxx --env-file .env \

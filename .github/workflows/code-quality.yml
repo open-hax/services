@@ -51,6 +51,16 @@ jobs:
           PROBE_SELFTEST: "1"
         run: node digitalocean/services/knoxx/probe-openplanner.js
 
+      # The MCP gate decodes a transport that answers text/event-stream by
+      # default and classifies a tool's own failure, which MCP reports as a
+      # *successful* JSON-RPC result carrying isError. Both are easy to get
+      # wrong in the direction that ships green: a JSON-only reader sees an
+      # empty body and a 200-means-pass reader marks every broken tool healthy.
+      - name: Self-test the MCP surface decoder and classifier
+        env:
+          PROBE_SELFTEST: "1"
+        run: node digitalocean/services/knoxx/probe-mcp.js
+
       # A remote script piped to `bash -s` over ssh is parsed lazily from the
       # same stdin the script's own commands inherit. One `docker compose exec
       # -T` in a verify.sh was enough to swallow a health gate's failure
