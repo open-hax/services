@@ -27,6 +27,7 @@
 
 const MCP_PATH = '/mcp';
 const PROTOCOL_VERSION = '2025-06-18';
+const SUPPORTED_PROTOCOL_VERSIONS = new Set(['2024-11-05', '2025-03-26', '2025-06-18']);
 
 // The probe set is fixed and read-only. MCP_PROBE_TOOL_CALLS comes from the
 // environment, so every requested name is checked against this set before any
@@ -87,6 +88,9 @@ function schemaFaults(tool) {
 }
 
 function callOutcome(status, reply) {
+  if (status && (status < 200 || status >= 300)) {
+    return {status: 'rpc-error', detail: `HTTP ${status}: transport failure regardless of the JSON-RPC body`};
+  }
   if (!reply || reply.jsonrpc !== '2.0') return {status: 'rpc-error', detail: `HTTP ${status} without a JSON-RPC 2.0 reply`};
   if (reply.error) return {status: 'rpc-error', detail: reply.error.message || JSON.stringify(reply.error)};
   // A call result carries a content array (possibly empty) per the MCP
@@ -102,6 +106,23 @@ function callOutcome(status, reply) {
     .replace(/\s+/g, ' ')
     .trim();
   return {status: result.isError ? 'tool-error' : 'ok', detail: text.slice(0, 200)};
+}
+
+// An initialize result must name its protocol version, capabilities, and
+// serverInfo, and the negotiated version must be one this client speaks.
+// Waving a malformed handshake through would validate a surface conforming
+// clients refuse at the first step.
+function initializeFault(result) {
+  if (!result || typeof result !== 'object') return 'initialize returned no result';
+  if (typeof result.protocolVersion !== 'string' || !result.protocolVersion) {
+    return 'initialize result named no protocolVersion';
+  }
+  if (!SUPPORTED_PROTOCOL_VERSIONS.has(result.protocolVersion)) {
+    return `unsupported protocolVersion ${result.protocolVersion}`;
+  }
+  if (!result.capabilities || typeof result.capabilities !== 'object') return 'initialize result named no capabilities';
+  if (!result.serverInfo || typeof result.serverInfo !== 'object') return 'initialize result named no serverInfo';
+  return null;
 }
 
 // ── the probe ────────────────────────────────────────────────
@@ -177,11 +198,13 @@ async function probe(baseUrl, token, toolCalls, timeoutMs) {
     };
   }
 
-  // The negotiated version governs every follow-up POST: a server that
-  // answered with a different version than the client offered expects that
-  // one back, and 2025-06-18 requires the notifications/initialized
-  // handshake before any operational call.
-  const negotiated = (init.reply.result && init.reply.result.protocolVersion) || PROTOCOL_VERSION;
+  // The negotiated version governs every follow-up POST, and it only counts
+  // if the handshake itself was well-formed.
+  const initFault = initializeFault(init.reply && init.reply.result);
+  if (initFault) {
+    return {ok: false, reason: 'initialize-malformed', detail: initFault};
+  }
+  const negotiated = init.reply.result.protocolVersion;
 
   const acknowledged = await notify(baseUrl, token, 'notifications/initialized', timeoutMs, negotiated);
   if (!acknowledged.status || acknowledged.status >= 400) {
@@ -272,6 +295,20 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(callOutcome(500, null).status, 'rpc-error');
   // Any version but 2.0 is not a reply an MCP client may accept.
   assert.equal(callOutcome(200, {jsonrpc: '1.0', result: {content: []}}).status, 'rpc-error');
+  // A well-formed body does not rescue a transport failure.
+  assert.equal(callOutcome(500, {jsonrpc: '2.0', result: {content: []}}).status, 'rpc-error');
+
+  // The initialize handshake is validated before anything continues on it.
+  const goodInit = {protocolVersion: '2025-06-18', capabilities: {}, serverInfo: {name: 'knoxx'}};
+  assert.equal(initializeFault(goodInit), null);
+  assert.equal(initializeFault(null), 'initialize returned no result');
+  assert.equal(initializeFault({capabilities: {}, serverInfo: {}}), 'initialize result named no protocolVersion');
+  assert.equal(initializeFault({...goodInit, protocolVersion: '1999-01-01'}),
+    'unsupported protocolVersion 1999-01-01');
+  assert.equal(initializeFault({protocolVersion: '2025-06-18', serverInfo: {}}),
+    'initialize result named no capabilities');
+  assert.equal(initializeFault({protocolVersion: '2025-06-18', capabilities: {}}),
+    'initialize result named no serverInfo');
 
   // A 200 whose result is null, absent, or content-less is a broken surface,
   // not an empty success — the classifier must not wave it through as ok.
