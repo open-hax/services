@@ -129,6 +129,81 @@ Every non-production phase should also refuse to be indexed and refuse to send
 real messages. A `review` stack that posts to Discord under the production
 actor is worse than no review stack.
 
+## The `deploy` label deploys now, not after merge
+
+Worth writing down because it is the opposite of the intent, and it cost a
+production deploy to discover.
+
+`deploy-stack.yml` triggers on `pull_request: types: [labeled]` against `main`,
+and its own header says so: "Adding the `deploy` label to a same-repository PR
+targeting main deploys the PR revision." Labelling an open PR ships that PR's
+revision to production immediately. Nothing waits for the merge.
+
+That forecloses the whole design below. Gates only mean something if they sit
+between the label and the deploy, and today there is no gap for them to sit in.
+The change is small — trigger on `push: branches: [main]` filtered to merges
+that carried the label, or keep the label as intent and let a merge queue run
+the deploy — but everything else here assumes it.
+
+## The pipeline
+
+Two repositories, in order. Nothing crosses a boundary without a gate.
+
+### In `open-hax/knoxx`, on a PR into `main`
+
+```
+  simple checks          lint, typecheck, unit tests
+        │
+        ▼
+  testing deployment     an isolated stack for this PR
+        │
+        ▼
+  e2e against it         the real suite, against a real server
+        │
+        ▼
+  staging deployment     `stage-for-deploy` label, every other check green
+        │
+        ▼
+  review cycle complete
+        │
+        ▼
+      merge
+```
+
+The staging step calls this repo's workflow directly:
+
+```yaml
+uses: open-hax/services/.github/workflows/deploy-digitalocean.yml@<sha>
+```
+
+Pinned to a SHA, not `@main`. A floating ref means the deployment mechanism can
+change under a PR between its staging run and its merge, which is exactly the
+drift the gate downstream exists to prevent. (Today `knoxx/deploy-staging.yml`
+uses `@main`, and points at the dead Promethean workflow besides.)
+
+`deploy-digitalocean.yml` is already `workflow_call` with `service`,
+`environment`, `image` and `source_sha` inputs, so it is callable as-is. What it
+does not yet have is a non-production environment to target — see the ordering.
+
+### On failure
+
+The staging job relabels rather than only going red:
+
+- `staging-failed` on the PR
+- one label per failed check, so the failure is legible from the PR list
+- a comment explaining what broke
+
+The comment is written by a **read-only** agent workflow — the repo already runs
+`anomalyco/opencode/github` for PR review, so this is the same action with a
+different model and prompt, fed the workflow run ids and their end states and
+given `contents: read` plus permission to comment. Read-only matters: a job that
+can explain a failed deploy should not be able to cause one.
+
+### In `open-hax/services`, afterwards
+
+A production PR bumps the Knoxx image SHA. The gate described below requires
+that SHA to be one staging actually ran. Merging deploys.
+
 ## The production gate
 
 The mechanism works. The data source is the part that needs deciding, and the
@@ -167,25 +242,28 @@ Two limits worth stating before anyone relies on it:
 
 ## Order of work
 
-1. **Stand up a staging that deploys**, on the DigitalOcean host, through
+1. **Move the `deploy` label's deploy to after the merge.** Every gate below is
+   worthless while labelling an open PR ships it. Smallest change here, and it
+   blocks nothing else.
+2. **Stand up a staging that deploys**, on the DigitalOcean host, through
    `deploy-digitalocean.yml` rather than the dead Promethean path. Everything
    else depends on this: the gate has nothing to compare against without it,
    and `dev`/`testing`/`review` are all variations on a working non-production
    stack.
-2. **Record the deployed source SHA where it can be queried** — see the gate
+3. **Record the deployed source SHA where it can be queried** — see the gate
    section. Small, and it unblocks the check.
-3. **The gate**, once there is a truthful answer to "what did staging run".
-4. **Generalise `environment`.** `deploy-promethean.yml` validates
+4. **The gate**, once there is a truthful answer to "what did staging run".
+5. **Generalise `environment`.** `deploy-promethean.yml` validates
    `staging|production` on one line and selects secrets with a binary ternary
    (`production ? PRODUCTION_* : STAGING_*`). Both need a per-phase mapping, and
    each phase needs a GitHub Environment so its secrets and protection rules
    are its own. Note this workflow targets the abandoned Promethean host; the
    generalisation may belong in `deploy-digitalocean.yml` instead.
-5. **Parameterise the stack** — project name, state path, hostname.
-6. **`testing` per PR**, replacing the shared-slot behaviour that
+6. **Parameterise the stack** — project name, state path, hostname.
+7. **`testing` per PR**, replacing the shared-slot behaviour that
    `deploy-testing.yml` documents. Creation and teardown must be symmetric from
    the first commit; a leaked stack per abandoned PR fills a disk quietly.
-7. **`review` and `dev`**, which are `testing` with different lifetimes.
+8. **`review` and `dev`**, which are `testing` with different lifetimes.
 
 ## Open questions
 
