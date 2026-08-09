@@ -140,6 +140,11 @@ function callOutcome(status, reply) {
   if (itemFault) {
     return {status: 'rpc-error', detail: `malformed content item: ${itemFault}`};
   }
+  // isError is an optional boolean; a schema-invalid falsey value like 0 or
+  // null must not read as a pass.
+  if ('isError' in result && typeof result.isError !== 'boolean') {
+    return {status: 'rpc-error', detail: 'malformed result: isError is not a boolean'};
+  }
   const text = result.content
     .map((part) => (part && part.type === 'text' ? part.text : `[${part && part.type}]`))
     .join(' ')
@@ -413,6 +418,15 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(withContent([{type: 'resource_link', name: 'x', uri: 'https://x/'}]), 'ok');
   // A type outside the closed per-version union is a schema violation.
   assert.equal(withContent([{type: 'future_block'}]), 'rpc-error');
+
+  // isError is an optional boolean — invalid falsey values are malformed,
+  // not passes.
+  const withResult = (result) => callOutcome(200, {jsonrpc: '2.0', result}).status;
+  assert.equal(withResult({content: [], isError: 0}), 'rpc-error');
+  assert.equal(withResult({content: [], isError: null}), 'rpc-error');
+  assert.equal(withResult({content: [], isError: 'true'}), 'rpc-error');
+  assert.equal(withResult({content: [], isError: false}), 'ok');
+  assert.equal(withResult({content: [], isError: true}), 'tool-error');
 
   // The notification contract is exactly 202 with an empty body.
   assert.equal(notificationFault(202, ''), null);
