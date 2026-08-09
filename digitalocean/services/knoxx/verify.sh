@@ -241,6 +241,20 @@ else
     exit 1
   fi
 
+  # Exactly the probe set, not merely at least it. A fourth served tool means
+  # role or capability resolution leaked a surface this long-lived token must
+  # not reach, and the floor above would wave it through. Same space-padded
+  # whole-name matching as the optional-tools filter below.
+  mcp_expected_tools=${MCP_EXPECTED_TOOLS:-semantic_query events_status discord_list_servers}
+  mcp_unexpected=$(printf '%s' "$mcp" | jq -r --arg allowed " $mcp_expected_tools " \
+    '[.tools[] | . as $t | select(($allowed | contains(" " + $t + " ")) | not)] | length')
+  if [ "$mcp_unexpected" != "0" ]; then
+    echo "knoxx: MCP served tools outside the verifier's read-only set" >&2
+    printf '%s' "$mcp" | jq -r --arg allowed " $mcp_expected_tools " \
+      '.tools[] | . as $t | select(($allowed | contains(" " + $t + " ")) | not) | "  \($t)"' >&2
+    exit 1
+  fi
+
   # Present but unusable. A model handed a tool with no schema simply never
   # calls it correctly, and nothing logs an error when that happens.
   if [ "$(printf '%s' "$mcp" | jq -r '.degraded | length')" != "0" ]; then
