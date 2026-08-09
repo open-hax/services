@@ -120,8 +120,15 @@ function initializeFault(result) {
   if (!SUPPORTED_PROTOCOL_VERSIONS.has(result.protocolVersion)) {
     return `unsupported protocolVersion ${result.protocolVersion}`;
   }
-  if (!result.capabilities || typeof result.capabilities !== 'object') return 'initialize result named no capabilities';
-  if (!result.serverInfo || typeof result.serverInfo !== 'object') return 'initialize result named no serverInfo';
+  if (!result.capabilities || typeof result.capabilities !== 'object' || Array.isArray(result.capabilities)) {
+    return 'initialize result named no capabilities object';
+  }
+  const info = result.serverInfo;
+  if (!info || typeof info !== 'object' || Array.isArray(info)
+      || typeof info.name !== 'string' || !info.name
+      || typeof info.version !== 'string' || !info.version) {
+    return 'initialize result named no serverInfo with string name and version';
+  }
   return null;
 }
 
@@ -299,16 +306,24 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(callOutcome(500, {jsonrpc: '2.0', result: {content: []}}).status, 'rpc-error');
 
   // The initialize handshake is validated before anything continues on it.
-  const goodInit = {protocolVersion: '2025-06-18', capabilities: {}, serverInfo: {name: 'knoxx'}};
+  const goodInit = {protocolVersion: '2025-06-18', capabilities: {}, serverInfo: {name: 'knoxx', version: '1.0.0'}};
   assert.equal(initializeFault(goodInit), null);
   assert.equal(initializeFault(null), 'initialize returned no result');
   assert.equal(initializeFault({capabilities: {}, serverInfo: {}}), 'initialize result named no protocolVersion');
   assert.equal(initializeFault({...goodInit, protocolVersion: '1999-01-01'}),
     'unsupported protocolVersion 1999-01-01');
-  assert.equal(initializeFault({protocolVersion: '2025-06-18', serverInfo: {}}),
-    'initialize result named no capabilities');
+  assert.equal(initializeFault({protocolVersion: '2025-06-18', serverInfo: {name: 'k', version: '1'}}),
+    'initialize result named no capabilities object');
+  assert.equal(initializeFault({...goodInit, capabilities: []}),
+    'initialize result named no capabilities object');
   assert.equal(initializeFault({protocolVersion: '2025-06-18', capabilities: {}}),
-    'initialize result named no serverInfo');
+    'initialize result named no serverInfo with string name and version');
+  assert.equal(initializeFault({...goodInit, serverInfo: {}}),
+    'initialize result named no serverInfo with string name and version');
+  assert.equal(initializeFault({...goodInit, serverInfo: []}),
+    'initialize result named no serverInfo with string name and version');
+  assert.equal(initializeFault({...goodInit, serverInfo: {name: 'knoxx'}}),
+    'initialize result named no serverInfo with string name and version');
 
   // A 200 whose result is null, absent, or content-less is a broken surface,
   // not an empty success — the classifier must not wave it through as ok.

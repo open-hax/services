@@ -1,4 +1,5 @@
-{:cap/id :cap/deploy-verify
+{:contract/kind :capability
+ :cap/id :cap/deploy-verify
 
  ;; Exactly the tools the post-deploy MCP gate probes, and nothing else. The
  ;; existing capabilities that cover them also cover their write siblings —

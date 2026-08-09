@@ -1,4 +1,5 @@
-{:actor/id "deploy_verifier"
+{:contract/kind :actor
+ :actor/id "deploy_verifier"
  :actor/kind :agent
  ;; The verifier's own identity, deliberately not the bootstrap system
  ;; admin's. The :trusted-loopback grant in
