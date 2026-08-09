@@ -100,6 +100,15 @@ function callOutcome(status, reply) {
   if (!result || typeof result !== 'object' || !Array.isArray(result.content)) {
     return {status: 'rpc-error', detail: 'malformed result: no content array'};
   }
+  // Every item must be a typed object, and a text item must carry its text;
+  // an array of junk is still an array, and formatting it as "[undefined]"
+  // would call a schema violation ok.
+  const badItem = result.content.some((part) => !part || typeof part !== 'object'
+    || typeof part.type !== 'string' || !part.type
+    || (part.type === 'text' && typeof part.text !== 'string'));
+  if (badItem) {
+    return {status: 'rpc-error', detail: 'malformed content item'};
+  }
   const text = result.content
     .map((part) => (part && part.type === 'text' ? part.text : `[${part && part.type}]`))
     .join(' ')
@@ -333,6 +342,13 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: 'nope'}}).status, 'rpc-error');
   // …while a genuinely empty content array is a legitimate answer.
   assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: []}}).status, 'ok');
+  // …but an array of junk is not: every item needs a type, and a text item
+  // needs its text.
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{}]}}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [null]}}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'text'}]}}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'text', text: 7}]}}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'image', data: 'x', mimeType: 'image/png'}]}}).status, 'ok');
 
   // The version header exists only after negotiation; sending it on
   // initialize itself would assert a version the server has not agreed to.
