@@ -15,14 +15,25 @@ name: Deploy Stack
 # and document-stats operations still delegate to REST and degrade until one
 # is deployed.
 #
-# Adding the `deploy` label to a same-repository PR targeting main deploys the
-# PR revision. Fork PRs are explicitly rejected because this workflow inherits
-# production secrets in its reusable deploy jobs.
+# The `deploy` label marks intent; the merge performs it.
+#
+# This used to trigger on `pull_request: types: [labeled]` and deploy the PR's
+# own revision the moment the label was added. That left nowhere to put a gate:
+# a check that runs on the PR cannot stand between the label and a deploy that
+# has already happened, and an unreviewed revision reached production with
+# production secrets. It also meant a label added for planning shipped code.
+#
+# Now the workflow runs on pushes to main, asks which pull request produced the
+# pushed commit, and deploys only when that PR carried the `deploy` label. What
+# is deployed is main, always — the same thing a reviewer approved and merged.
+#
+# Fork PRs need no special case any more. A fork's code only reaches this
+# workflow after a maintainer merged it into main, at which point it is not a
+# fork's code, it is main.
 
 on:
-  pull_request:
+  push:
     branches: [main]
-    types: [labeled]
   workflow_dispatch:
     inputs:
       proxx_ref:
@@ -47,6 +58,8 @@ on:
 permissions:
   contents: read
   packages: write
+  # Reading which PR produced the pushed commit, and whether it was labelled.
+  pull-requests: read
 
 concurrency:
   group: deploy-stack-production
@@ -55,30 +68,59 @@ concurrency:
 jobs:
   authorize:
     name: Authorize deployment
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.label.name == 'deploy' &&
-       github.event.pull_request.state == 'open' &&
-       github.event.pull_request.base.ref == 'main' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.decide.outputs.should_deploy }}
     steps:
-      - run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "Deploying PR #${{ github.event.pull_request.number }} at ${{ github.event.pull_request.head.sha }}"
+      # A push to main is not on its own a request to deploy. Most are not.
+      # The question is whether the pull request that produced this commit
+      # asked for one, which is what the `deploy` label records.
+      #
+      # /commits/{sha}/pulls answers it directly, and is correct for a squash
+      # or rebase merge as well as a merge commit — GitHub associates the
+      # resulting commit with its pull request in every case. A direct push to
+      # main has no associated PR, so it returns nothing and never deploys.
+      - name: Decide whether this push asked for a deployment
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch; deploying the requested refs."
+            exit 0
+          fi
+
+          pulls=$(gh api "repos/${REPO}/commits/${COMMIT_SHA}/pulls" \
+            --jq '[.[] | select(.merged_at != null)]')
+
+          labelled=$(printf '%s' "$pulls" \
+            | jq -r '[.[] | select(any(.labels[]?.name; . == "deploy")) | .number] | join(",")')
+
+          if [ -n "$labelled" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Deploying ${COMMIT_SHA} — merged PR(s) #${labelled} carried the deploy label."
           else
-            echo "Deploying manually requested refs"
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            merged=$(printf '%s' "$pulls" | jq -r '[.[].number] | join(",")')
+            echo "Not deploying ${COMMIT_SHA} — no merged PR here carried the deploy label (merged: ${merged:-none})."
           fi
 
   build-proxx:
     needs: authorize
+    if: needs.authorize.outputs.should_deploy == 'true'
     uses: ./.github/workflows/build-images.yml
     with:
       service: proxx
       source_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.proxx_ref || 'main' }}
 
   deploy-proxx:
-    needs: build-proxx
+    needs: [authorize, build-proxx]
+    if: needs.authorize.outputs.should_deploy == 'true'
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: proxx
@@ -89,6 +131,7 @@ jobs:
   # Both Knoxx images build while Proxx deploys.
   build-knoxx-backend:
     needs: authorize
+    if: needs.authorize.outputs.should_deploy == 'true'
     uses: ./.github/workflows/build-images.yml
     with:
       service: knoxx-backend
@@ -96,13 +139,15 @@ jobs:
 
   build-knoxx-frontend:
     needs: authorize
+    if: needs.authorize.outputs.should_deploy == 'true'
     uses: ./.github/workflows/build-images.yml
     with:
       service: knoxx-frontend
       source_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
 
   deploy-knoxx:
-    needs: [deploy-proxx, build-knoxx-backend, build-knoxx-frontend]
+    needs: [authorize, deploy-proxx, build-knoxx-backend, build-knoxx-frontend]
+    if: needs.authorize.outputs.should_deploy == 'true'
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: knoxx
@@ -118,8 +163,12 @@ jobs:
     secrets: inherit
 
   deploy-caddy:
-    needs: deploy-knoxx
-    if: github.event_name == 'pull_request' || inputs.include_ingress
+    needs: [authorize, deploy-knoxx]
+    # include_ingress only exists on workflow_dispatch; a merge deploy always
+    # brings ingress with it, as the labelled-PR path used to.
+    if: >-
+      needs.authorize.outputs.should_deploy == 'true' &&
+      (github.event_name == 'push' || inputs.include_ingress)
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: caddy
