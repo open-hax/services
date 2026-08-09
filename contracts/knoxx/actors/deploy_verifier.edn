@@ -1,32 +1,32 @@
 {:actor/id "deploy_verifier"
  :actor/kind :agent
- ;; The email is load-bearing, and it is the bootstrap system admin's on
- ;; purpose. The :trusted-loopback grant in
+ ;; The verifier's own identity, deliberately not the bootstrap system
+ ;; admin's. The :trusted-loopback grant in
  ;; contracts/knoxx/authentication/mcp_http.edn resolves its context by
- ;; :grant/user-email, and law/token-actor-honourable? then refuses every call
- ;; unless that membership's stored actor binding equals the grant's
- ;; :grant/actor-id. Projecting this actor onto any other email would leave
- ;; the admin membership unbound and turn initialize into a 403.
- :actor/email "system-admin@open-hax.local"
- :actor/username "system-admin@open-hax.local"
+ ;; :grant/user-email and law/token-actor-honourable? then requires that
+ ;; membership's stored actor binding to be deploy_verifier — this email is
+ ;; what makes the two the same membership. It is a dedicated one because the
+ ;; grant's tools are :all: whoever the context resolves to defines what the
+ ;; long-lived loopback bearer can do, and read-only was the point.
+ :actor/email "deploy-verifier@open-hax.local"
+ :actor/username "deploy-verifier@open-hax.local"
  :actor/org "open-hax"
  :actor/label "Deploy Verifier"
- ;; Role projection replaces the bound membership's roles with exactly this
- ;; list (:replace true in project-actor-role-slugs!), so :role/system-admin
- ;; is not decorative: without it the bootstrap admin membership would be
- ;; demoted to the three probe tools, and the MCP catalog the gate counts
- ;; would collapse to them. :role/deploy-verifier records which tools the
- ;; gate actually exercises.
- :actor/roles [:role/system-admin :role/deploy-verifier]
+ ;; Exactly the probe role, and nothing else. Role projection replaces this
+ ;; membership's roles with this list (:replace true in
+ ;; project-actor-role-slugs!), which here touches only the verifier's own
+ ;; membership — the reason the identity had to be dedicated rather than the
+ ;; admin's.
+ :actor/roles [:role/deploy-verifier]
  :actor/policy
  {:principal :actor
   :source-of-truth :contract
   :notes
-  "The identity the post-deploy MCP gate runs as. The :trusted-loopback grant
-   in contracts/knoxx/authentication/mcp_http.edn names this :grant/actor-id, so
-   credential-backed tools resolve their credentials against the membership
-   this contract materializes rather than borrowing whichever actor the
-   system-admin membership happens to hold.
+  "The identity the post-deploy MCP gate runs as: three read-only tools via
+   :role/deploy-verifier -> :cap/deploy-verify, and no more. The loopback
+   token that reaches it is loopback-only and inert without the provisioned
+   secret, and even presented correctly it cannot write, dispatch, spawn, or
+   administer — that is the security property the identity exists for.
 
    Credentials are NOT declared here, as with open_hax: they are actor-owned
    state in the policy DB, written through

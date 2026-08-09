@@ -165,11 +165,14 @@ fi
 # longer resolves. None of it moves /health.
 #
 # Reached through the :trusted-loopback method in
-# contracts/authentication/mcp_http.edn, which requires the caller to be on
-# 127.0.0.1 — true here because the probe runs inside the backend container.
-# The method is inert without KNOXX_MCP_LOOPBACK_TOKEN, so a host that has not
-# provisioned the secret skips this section rather than failing, unless it says
-# it expects to run it.
+# contracts/knoxx/authentication/mcp_http.edn, which requires the caller to be
+# on 127.0.0.1 — true here because the probe runs inside the backend container.
+# The grant resolves the dedicated deploy_verifier identity, so the served
+# catalog is deliberately the three read-only tools the probes exercise —
+# nothing this token reaches can write, dispatch, spawn, or administer. The
+# method is inert without KNOXX_MCP_LOOPBACK_TOKEN, so a host that has not
+# provisioned the secret skips this section rather than failing, unless it
+# says it expects to run it.
 #
 # "Configured" means at least KNOXX_MCP_MIN_TOKEN_LENGTH characters, matching
 # the :auth-method/min-token-length the contract declares — not merely
@@ -220,8 +223,11 @@ else
   fi
 
   # A catalog that collapsed is the loudest symptom of a broken grant or a
-  # registration that threw before any tool landed.
-  mcp_min_tools=${KNOXX_MCP_MIN_TOOLS:-20}
+  # registration that threw before any tool landed. The verifier identity is
+  # granted exactly the three probed tools, so its full catalog is three and
+  # the floor matches it; the absent-tool check below then asserts each one
+  # individually.
+  mcp_min_tools=${KNOXX_MCP_MIN_TOOLS:-3}
   case "$mcp_min_tools" in
     ''|*[!0-9]*)
       echo "knoxx: KNOXX_MCP_MIN_TOOLS must be a non-negative integer, got '${mcp_min_tools}'" >&2

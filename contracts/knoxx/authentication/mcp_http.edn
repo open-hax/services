@@ -47,7 +47,14 @@
    :auth-method/token-env "KNOXX_MCP_LOOPBACK_TOKEN"
    :auth-method/min-token-length 16
    :auth-method/grants
-   {:grant/user-email "system-admin@open-hax.local"
+   {;; Deliberately the verifier's own identity, not the bootstrap system
+    ;; admin's — a divergence from the knoxx app repo's copy of this file.
+    ;; The grant's tools are :all, so whoever the context resolves to defines
+    ;; what this long-lived bearer token can do. Resolving the admin would
+    ;; make it a full administrative credential for any loopback-capable
+    ;; process that learned it; resolving the verifier keeps it at three
+    ;; read-only tools, and the admin membership untouched.
+    :grant/user-email "deploy-verifier@open-hax.local"
     ;; The actor verification runs as. Naming one is what lets the gate reach
     ;; credential-backed tools at all; leaving it out would make every Discord
     ;; and Bluesky check refuse for want of an actor.
