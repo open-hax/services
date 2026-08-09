@@ -2,31 +2,50 @@
 
 A proposal. Nothing here is built yet.
 
-Today there are two deploy targets, `staging` and `production`, and one shared
-slot behind them. `open-hax/knoxx`'s `deploy-testing.yml` says so in its own
-header: adding the `testing` label deploys a PR head "to the shared staging
-slot… a real staging merge deploy will overwrite it". So a PR under review and
-the accumulated staging branch fight over one host, and neither can be trusted
-while the other is deploying.
+Today there is one working deploy target: production on the DigitalOcean host,
+via a `deploy`-labelled PR merging to this repo's `main`. There is no staging,
+no per-PR environment, and no gate between a Knoxx commit and production.
+
+`open-hax/knoxx`'s `deploy-testing.yml` describes a `testing` label that
+deploys a PR head "to the shared staging slot… a real staging merge deploy will
+overwrite it". That slot was on the abandoned Promethean VPS, so today the
+label deploys nothing at all.
 
 This describes five phases, each an isolated stack, and a gate that stops
-production shipping code staging never saw.
+production shipping code no other environment has run.
 
-## The hole this closes
+## There is no staging
 
-At the time of writing:
+Worth stating plainly, because the rest of this document was first drafted
+assuming otherwise.
 
-```
-$ gh api repos/open-hax/knoxx/deployments?environment=staging --jq '.[0].sha'
-f822cf3e38bb
+`open-hax/knoxx` has a `staging` GitHub Environment and a `staging` branch, and
+the Deployments API returns records for it. All four of those records are from
+**2026-06-03**, all four are in state **`failure`**, and all four are the same
+SHA. There has never been a successful staging deployment. The `staging` branch
+has not moved since. `production` on that repo has **no deployment records at
+all**.
 
-$ gh api repos/open-hax/knoxx/compare/f822cf3e...main --jq '{status, ahead_by}'
-{"status": "ahead", "ahead_by": 70}
-```
+Those records are the remains of the abandoned Promethean VPS flow.
+`knoxx/deploy-staging.yml` and `deploy-production.yml` both call
+`open-hax/services/.github/workflows/deploy-promethean.yml`, which targets a
+host that no longer exists.
 
-`main` is seventy commits ahead of the last thing staging ever saw. A
-production deploy today ships code that has never run anywhere but a laptop and
-CI. Nothing currently notices.
+The live flow is different and lives entirely in this repo:
+`deploy-digitalocean.yml`, triggered by a `deploy`-labelled PR merging to
+`main`. It declares `environment:` too, so it *does* create deployment
+records — but on **open-hax/services**, keyed to the **services** SHA.
+
+## What is actually deployed
+
+The deployed Knoxx source commit is recoverable, in two places:
+
+- the image tag — `ghcr.io/open-hax/knoxx-backend:<knoxx source sha>`
+- `/srv/open-hax/reports/knoxx-*.json` on the host, as `sourceSha`
+
+As of writing, production runs Knoxx `1f79fc21`, deployed 2026-08-05, and
+`main` is **22 commits ahead of it**. That is the real drift number. It is not
+a staging gap — there is no staging to have a gap from.
 
 ## The phases
 
@@ -112,45 +131,61 @@ actor is worse than no review stack.
 
 ## The production gate
 
-Verified working. GitHub populates the Deployments API automatically for any
-job that declares `environment:`, so the record already exists for every
-staging deploy without adding a reporting step.
+The mechanism works. The data source is the part that needs deciding, and the
+obvious reading of it is currently wrong.
 
-A required check on services PRs into `main`:
+GitHub populates the Deployments API for any job declaring `environment:`, and
+`compare/{a}...{b}` returns `identical` / `behind` / `ahead` / `diverged` —
+exactly the "same as, or in the past of" relation. Both were checked against
+the live API.
 
-1. Read the SHA the PR sets for each service image.
-2. `GET /repos/open-hax/<service>/deployments?environment=staging` for the
-   successful deployments.
-3. `GET /repos/open-hax/<service>/compare/{staged}...{pr_sha}` and require
-   `status` to be `identical` or `behind`.
+But **querying `knoxx`'s staging deployments would gate on four failures from
+June**, and requiring the last *successful* one would block every production
+deploy forever, because there are none. A gate written against that source
+today is worse than no gate.
 
-`identical` is "this is exactly what staging ran"; `behind` is "this is an
-ancestor of what staging ran", which is the "same as, or in the past of"
-condition. `ahead` and `diverged` are refusals. Both directions were checked
-against the live API and return the expected relation.
+What a working gate needs, in order:
 
-Two things this does *not* prove, worth stating before anyone relies on it:
+1. **A staging environment that actually deploys.** Until one exists the gate
+   has nothing truthful to compare against. This is the dependency that inverts
+   the ordering below.
+2. **The deployed source SHA in a queryable place.** Right now it lives in the
+   image tag and a host report. `deploy-digitalocean.yml` already receives it
+   as `source_sha` and writes it into the report; putting it in the deployment
+   record's `payload`, or creating a deployment on the *source* repo, makes it
+   readable without SSH.
+3. Then the check on services PRs into `main`: read the Knoxx image tag the PR
+   sets, resolve the last successful staging source SHA, and require
+   `compare/{staged}...{pr_sha}` to be `identical` or `behind`.
 
-- A SHA can be an ancestor of the staged commit and still never have run as a
-  build itself. If that matters, require `identical` and drop `behind`.
-- It says the source SHA was staged, not that the **image** was. If images are
-  rebuilt per environment, the gate should compare digests instead.
+Two limits worth stating before anyone relies on it:
+
+- A SHA can be an ancestor of the staged commit and never have been built
+  itself. If that matters, require `identical` and drop `behind`.
+- Comparing source SHAs does not prove the *image* is the same build. If
+  images are ever rebuilt per environment, compare digests instead.
 
 ## Order of work
 
-1. **The gate first**, against the two phases that already exist. It is a
-   required check and a `gh api` call, it closes the seventy-commit hole today,
-   and it needs none of the rest.
-2. **Generalise `environment`.** `deploy-promethean.yml` validates
+1. **Stand up a staging that deploys**, on the DigitalOcean host, through
+   `deploy-digitalocean.yml` rather than the dead Promethean path. Everything
+   else depends on this: the gate has nothing to compare against without it,
+   and `dev`/`testing`/`review` are all variations on a working non-production
+   stack.
+2. **Record the deployed source SHA where it can be queried** — see the gate
+   section. Small, and it unblocks the check.
+3. **The gate**, once there is a truthful answer to "what did staging run".
+4. **Generalise `environment`.** `deploy-promethean.yml` validates
    `staging|production` on one line and selects secrets with a binary ternary
    (`production ? PRODUCTION_* : STAGING_*`). Both need a per-phase mapping, and
    each phase needs a GitHub Environment so its secrets and protection rules
-   are its own.
-3. **Parameterise the stack** — project name, state path, hostname.
-4. **`testing` per PR**, replacing the shared-slot behaviour that
+   are its own. Note this workflow targets the abandoned Promethean host; the
+   generalisation may belong in `deploy-digitalocean.yml` instead.
+5. **Parameterise the stack** — project name, state path, hostname.
+6. **`testing` per PR**, replacing the shared-slot behaviour that
    `deploy-testing.yml` documents. Creation and teardown must be symmetric from
    the first commit; a leaked stack per abandoned PR fills a disk quietly.
-5. **`review` and `dev`**, which are `testing` with different lifetimes.
+7. **`review` and `dev`**, which are `testing` with different lifetimes.
 
 ## Open questions
 
