@@ -170,12 +170,22 @@ fi
 # The method is inert without KNOXX_MCP_LOOPBACK_TOKEN, so a host that has not
 # provisioned the secret skips this section rather than failing, unless it says
 # it expects to run it.
-if [ -z "${KNOXX_MCP_LOOPBACK_TOKEN:-}" ]; then
+#
+# "Configured" means at least KNOXX_MCP_MIN_TOKEN_LENGTH characters, matching
+# the :auth-method/min-token-length the contract declares — not merely
+# non-empty. The renderer refuses a blank variable outright (see
+# deploy-digitalocean.yml: "refuse rather than deploy a blank credential"), so
+# a host that does not want MCP verification carries a short sentinel instead,
+# and the same length floor that makes the backend refuse that sentinel makes
+# this gate skip. One rule checked in both places, rather than a magic string
+# either side could forget.
+KNOXX_MCP_MIN_TOKEN_LENGTH=${KNOXX_MCP_MIN_TOKEN_LENGTH:-16}
+if [ "${#KNOXX_MCP_LOOPBACK_TOKEN}" -lt "$KNOXX_MCP_MIN_TOKEN_LENGTH" ]; then
   if [ "${KNOXX_EXPECT_MCP_VERIFY:-false}" = "true" ]; then
-    echo "knoxx: KNOXX_EXPECT_MCP_VERIFY=true but KNOXX_MCP_LOOPBACK_TOKEN is unset" >&2
+    echo "knoxx: KNOXX_EXPECT_MCP_VERIFY=true but KNOXX_MCP_LOOPBACK_TOKEN is under ${KNOXX_MCP_MIN_TOKEN_LENGTH} characters, so the backend cannot accept it either" >&2
     exit 1
   fi
-  echo "knoxx: MCP surface skipped — KNOXX_MCP_LOOPBACK_TOKEN is unset" >&2
+  echo "knoxx: MCP surface skipped — no loopback token of ${KNOXX_MCP_MIN_TOKEN_LENGTH}+ characters is configured" >&2
 else
   # Read-only tools only, and each one proves a different subsystem end to end:
   # semantic_query the corpus data plane, events_status the events runtime,

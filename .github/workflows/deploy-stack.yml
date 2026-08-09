@@ -113,8 +113,15 @@ jobs:
       # contract remain strict about blank values without requiring an unused
       # production credential. If a listener unexpectedly appears, the CMS
       # probe sends this sentinel, receives a non-200 response, and fails.
+      #
+      # KNOXX_MCP_LOOPBACK_TOKEN is inert by construction rather than by
+      # convention. The renderer refuses a blank value, so "off" is a sentinel
+      # — and it is deliberately shorter than the :min-token-length the
+      # authentication contract declares, so law.auth-methods refuses it as a
+      # credential no matter what a caller presents. Replace it with a real
+      # secret of 16+ characters to turn post-deploy MCP verification on.
       extra_env: >-
-        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_EXPECT_OPENPLANNER_REST": "false", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream"}
+        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_EXPECT_OPENPLANNER_REST": "false", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream", "KNOXX_MCP_LOOPBACK_TOKEN": "off", "KNOXX_EXPECT_MCP_VERIFY": "false"}
     secrets: inherit
 
   deploy-caddy:
