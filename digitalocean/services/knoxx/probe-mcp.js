@@ -145,6 +145,13 @@ function callOutcome(status, reply) {
   if ('isError' in result && typeof result.isError !== 'boolean') {
     return {status: 'rpc-error', detail: 'malformed result: isError is not a boolean'};
   }
+  // structuredContent (2025-06-18) is likewise optional, and an object when
+  // present — never an array, scalar, or null.
+  if ('structuredContent' in result
+      && (typeof result.structuredContent !== 'object' || result.structuredContent === null
+        || Array.isArray(result.structuredContent))) {
+    return {status: 'rpc-error', detail: 'malformed result: structuredContent is not an object'};
+  }
   const text = result.content
     .map((part) => (part && part.type === 'text' ? part.text : `[${part && part.type}]`))
     .join(' ')
@@ -427,6 +434,12 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(withResult({content: [], isError: 'true'}), 'rpc-error');
   assert.equal(withResult({content: [], isError: false}), 'ok');
   assert.equal(withResult({content: [], isError: true}), 'tool-error');
+
+  // structuredContent is optional, and an object when present.
+  assert.equal(withResult({content: [], structuredContent: []}), 'rpc-error');
+  assert.equal(withResult({content: [], structuredContent: 'x'}), 'rpc-error');
+  assert.equal(withResult({content: [], structuredContent: null}), 'rpc-error');
+  assert.equal(withResult({content: [], structuredContent: {rows: 3}}), 'ok');
 
   // The notification contract is exactly 202 with an empty body.
   assert.equal(notificationFault(202, ''), null);
