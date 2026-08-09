@@ -163,6 +163,12 @@ function initializeFault(result) {
   if (!result.capabilities || typeof result.capabilities !== 'object' || Array.isArray(result.capabilities)) {
     return 'initialize result named no capabilities object';
   }
+  // This gate exists for the tool surface; a server that does not advertise
+  // the tools capability must not be waved through to tools/list.
+  const caps = result.capabilities;
+  if (!caps.tools || typeof caps.tools !== 'object' || Array.isArray(caps.tools)) {
+    return 'initialize result advertised no tools capability';
+  }
   const info = result.serverInfo;
   if (!info || typeof info !== 'object' || Array.isArray(info)
       || typeof info.name !== 'string' || !info.name
@@ -353,7 +359,7 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(callOutcome(500, {jsonrpc: '2.0', result: {content: []}}).status, 'rpc-error');
 
   // The initialize handshake is validated before anything continues on it.
-  const goodInit = {protocolVersion: '2025-06-18', capabilities: {}, serverInfo: {name: 'knoxx', version: '1.0.0'}};
+  const goodInit = {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'knoxx', version: '1.0.0'}};
   assert.equal(initializeFault(goodInit), null);
   assert.equal(initializeFault(null), 'initialize returned no result');
   assert.equal(initializeFault({capabilities: {}, serverInfo: {}}), 'initialize result named no protocolVersion');
@@ -364,6 +370,10 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(initializeFault({...goodInit, capabilities: []}),
     'initialize result named no capabilities object');
   assert.equal(initializeFault({protocolVersion: '2025-06-18', capabilities: {}}),
+    'initialize result advertised no tools capability');
+  assert.equal(initializeFault({protocolVersion: '2025-06-18', capabilities: {tools: []}}),
+    'initialize result advertised no tools capability');
+  assert.equal(initializeFault({protocolVersion: '2025-06-18', capabilities: {tools: {}}}),
     'initialize result named no serverInfo with string name and version');
   assert.equal(initializeFault({...goodInit, serverInfo: {}}),
     'initialize result named no serverInfo with string name and version');
