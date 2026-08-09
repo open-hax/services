@@ -87,7 +87,7 @@ function schemaFaults(tool) {
 }
 
 function callOutcome(status, reply) {
-  if (!reply || !reply.jsonrpc) return {status: 'rpc-error', detail: `HTTP ${status} without a JSON-RPC reply`};
+  if (!reply || reply.jsonrpc !== '2.0') return {status: 'rpc-error', detail: `HTTP ${status} without a JSON-RPC 2.0 reply`};
   if (reply.error) return {status: 'rpc-error', detail: reply.error.message || JSON.stringify(reply.error)};
   // A call result carries a content array (possibly empty) per the MCP
   // schema. Null, missing, or content-less is a malformed reply — a broken
@@ -136,7 +136,7 @@ async function rpc(baseUrl, token, method, params, timeoutMs, protocolVersion) {
   }
   const text = await resp.text();
   const messages = decodeBody(resp.headers.get('content-type'), text);
-  const reply = messages.find((m) => m && m.jsonrpc && m.id === id) || null;
+  const reply = messages.find((m) => m && m.jsonrpc === '2.0' && m.id === id) || null;
   return {status: resp.status, reply, raw: text.slice(0, 400)};
 }
 
@@ -270,6 +270,8 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {isError: true, content: []}}).status, 'tool-error');
   assert.equal(callOutcome(200, {jsonrpc: '2.0', error: {message: 'boom'}}).status, 'rpc-error');
   assert.equal(callOutcome(500, null).status, 'rpc-error');
+  // Any version but 2.0 is not a reply an MCP client may accept.
+  assert.equal(callOutcome(200, {jsonrpc: '1.0', result: {content: []}}).status, 'rpc-error');
 
   // A 200 whose result is null, absent, or content-less is a broken surface,
   // not an empty success — the classifier must not wave it through as ok.
