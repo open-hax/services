@@ -49,7 +49,7 @@ services:
       # rewrite them (receipts.edn 2026-06-02, commit 91dd693).
       CONTRACTS_DIR: /app/contracts
 
-      # Optional, and unset by default. contracts/authentication/mcp_http.edn
+      # Optional, and unset by default. contracts/knoxx/authentication/mcp_http.edn
       # permits the :trusted-loopback method but law.auth-methods refuses
       # without a configured secret of at least 16 characters, so an empty
       # value leaves the backend with OAuth as its only way in. Set it to let
