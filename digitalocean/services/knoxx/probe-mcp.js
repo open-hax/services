@@ -89,8 +89,14 @@ function schemaFaults(tool) {
 function callOutcome(status, reply) {
   if (!reply || !reply.jsonrpc) return {status: 'rpc-error', detail: `HTTP ${status} without a JSON-RPC reply`};
   if (reply.error) return {status: 'rpc-error', detail: reply.error.message || JSON.stringify(reply.error)};
-  const result = reply.result || {};
-  const text = (Array.isArray(result.content) ? result.content : [])
+  // A call result carries a content array (possibly empty) per the MCP
+  // schema. Null, missing, or content-less is a malformed reply — a broken
+  // surface, not an empty success.
+  const result = reply.result;
+  if (!result || typeof result !== 'object' || !Array.isArray(result.content)) {
+    return {status: 'rpc-error', detail: 'malformed result: no content array'};
+  }
+  const text = result.content
     .map((part) => (part && part.type === 'text' ? part.text : `[${part && part.type}]`))
     .join(' ')
     .replace(/\s+/g, ' ')
@@ -264,6 +270,15 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {isError: true, content: []}}).status, 'tool-error');
   assert.equal(callOutcome(200, {jsonrpc: '2.0', error: {message: 'boom'}}).status, 'rpc-error');
   assert.equal(callOutcome(500, null).status, 'rpc-error');
+
+  // A 200 whose result is null, absent, or content-less is a broken surface,
+  // not an empty success — the classifier must not wave it through as ok.
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: null}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0'}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {}}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: 'nope'}}).status, 'rpc-error');
+  // …while a genuinely empty content array is a legitimate answer.
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: []}}).status, 'ok');
 
   // The version header exists only after negotiation; sending it on
   // initialize itself would assert a version the server has not agreed to.
