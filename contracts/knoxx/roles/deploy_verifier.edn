@@ -1,0 +1,10 @@
+{:role/id :role/deploy-verifier
+
+ ;; Deliberately declared tool-policies rather than capabilities. The
+ ;; capabilities that cover these tools also cover their write siblings —
+ ;; :cap/event-runtime carries events.dispatch and agents.spawn, :cap/discord
+ ;; carries publish and send — and a deploy gate has no business holding them.
+ ;; The three probed tools are read-only: semantic_query the corpus data
+ ;; plane, events.status the events runtime, discord.list.servers the verifier
+ ;; actor's credential resolution.
+ :role/tool-policies ["semantic_query" "events.status" "discord.list.servers"]}

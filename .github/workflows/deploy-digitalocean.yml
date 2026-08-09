@@ -205,9 +205,19 @@ jobs:
             export KNOXX_EXPECT_MCP_VERIFY=true
           fi
           # Process substitution keeps the loop in this shell so the exports
-          # survive into envsubst.
+          # survive into envsubst. The two MCP keys are refused rather than
+          # exported: they are derived from the provisioned secret above, and
+          # letting a caller shadow them with the sentinel would disable a
+          # verification the secret explicitly asked for.
           while IFS='=' read -r key value; do
-            [ -n "$key" ] && export "$key=$value"
+            [ -n "$key" ] || continue
+            case "$key" in
+              KNOXX_MCP_LOOPBACK_TOKEN|KNOXX_EXPECT_MCP_VERIFY)
+                echo "::error::extra_env may not set ${key}; it is derived from the provisioned KNOXX_MCP_LOOPBACK_TOKEN secret" >&2
+                exit 2
+                ;;
+            esac
+            export "$key=$value"
           done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"${EXTRA_ENV:-\{\}}")
 
           # Substitute only the names the template declares, so nginx/caddy

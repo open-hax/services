@@ -28,6 +28,12 @@
 const MCP_PATH = '/mcp';
 const PROTOCOL_VERSION = '2025-06-18';
 
+// The probe set is fixed and read-only. MCP_PROBE_TOOL_CALLS comes from the
+// environment, so every requested name is checked against this set before any
+// tools/call goes out — a configuration typo must fail the probe, never turn
+// the deploy gate into a writer.
+const PROBE_ALLOWED_TOOLS = new Set(['semantic_query', 'events_status', 'discord_list_servers']);
+
 // ── wire decoding ────────────────────────────────────────────
 // The backend serves MCP in the SDK's stateless mode and answers POSTs with
 // text/event-stream by default, so a JSON-only reader sees an empty body and
@@ -198,6 +204,15 @@ async function probe(baseUrl, token, toolCalls, timeoutMs) {
 
   const names = tools.map((t) => t.name);
   const duplicates = names.filter((n, i) => names.indexOf(n) !== i);
+
+  const refused = Object.keys(toolCalls).filter((n) => !PROBE_ALLOWED_TOOLS.has(n));
+  if (refused.length) {
+    return {
+      ok: false,
+      reason: 'tool-not-allowlisted',
+      detail: `refusing to call ${refused.join(', ')} — the probe set is read-only: ${[...PROBE_ALLOWED_TOOLS].join(', ')}`,
+    };
+  }
 
   const calls = {};
   for (const [name, args] of Object.entries(toolCalls)) {

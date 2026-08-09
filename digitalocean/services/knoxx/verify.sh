@@ -180,7 +180,16 @@ fi
 # this gate skip. One rule checked in both places, rather than a magic string
 # either side could forget.
 KNOXX_MCP_MIN_TOKEN_LENGTH=${KNOXX_MCP_MIN_TOKEN_LENGTH:-16}
-if [ "${#KNOXX_MCP_LOOPBACK_TOKEN}" -lt "$KNOXX_MCP_MIN_TOKEN_LENGTH" ]; then
+case "$KNOXX_MCP_MIN_TOKEN_LENGTH" in
+  ''|*[!0-9]*)
+    echo "knoxx: KNOXX_MCP_MIN_TOKEN_LENGTH must be a non-negative integer, got '${KNOXX_MCP_MIN_TOKEN_LENGTH}'" >&2
+    exit 1
+    ;;
+esac
+# Defaulted so a bare ./verify.sh run under set -u reaches the skip branch
+# rather than aborting on an unset name.
+token=${KNOXX_MCP_LOOPBACK_TOKEN:-}
+if [ "${#token}" -lt "$KNOXX_MCP_MIN_TOKEN_LENGTH" ]; then
   if [ "${KNOXX_EXPECT_MCP_VERIFY:-false}" = "true" ]; then
     echo "knoxx: KNOXX_EXPECT_MCP_VERIFY=true but KNOXX_MCP_LOOPBACK_TOKEN is under ${KNOXX_MCP_MIN_TOKEN_LENGTH} characters, so the backend cannot accept it either" >&2
     exit 1

@@ -1,0 +1,24 @@
+{:actor/id "deploy_verifier"
+ :actor/kind :agent
+ :actor/org "open-hax"
+ :actor/label "Deploy Verifier"
+ :actor/roles [:role/deploy-verifier]
+ :actor/policy
+ {:principal :actor
+  :source-of-truth :contract
+  :notes
+  "The identity the post-deploy MCP gate runs as. The :trusted-loopback grant
+   in contracts/authentication/mcp_http.edn names this :grant/actor-id, so
+   credential-backed tools resolve their credentials against the membership
+   this contract materializes rather than borrowing whichever actor the
+   system-admin membership happens to hold.
+
+   Read-only by construction: :role/deploy-verifier declares tool-policies for
+   the three probed read tools and nothing else, because the capabilities that
+   cover them also cover their write siblings.
+
+   Credentials are NOT declared here, as with open_hax: they are actor-owned
+   state in the policy DB, written through
+   PUT /api/admin/actors/:userId/credentials/:provider. Until a discord_bot
+   credential lands on this actor, discord_list_servers reports a tool-error
+   and the gate fails — which is the intended signal, not a false positive."}}
