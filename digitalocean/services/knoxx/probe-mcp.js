@@ -87,6 +87,38 @@ function schemaFaults(tool) {
   return faults;
 }
 
+// Every content block type these protocol versions define carries required
+// payload fields, and a gate claiming schema fidelity enforces them.
+// Unknown future types pass on a valid type string alone — this enumerates
+// what 2024-11-05 through 2025-06-18 require rather than guessing ahead.
+function contentItemFault(part) {
+  if (!part || typeof part !== 'object' || Array.isArray(part)) return 'content item is not an object';
+  if (typeof part.type !== 'string' || !part.type) return 'content item named no type';
+  switch (part.type) {
+    case 'text':
+      return typeof part.text === 'string' ? null : 'text item without a string text';
+    case 'image':
+    case 'audio':
+      if (typeof part.data !== 'string' || !part.data) return `${part.type} item without base64 data`;
+      if (typeof part.mimeType !== 'string' || !part.mimeType) return `${part.type} item without a mimeType`;
+      return null;
+    case 'resource': {
+      const r = part.resource;
+      if (!r || typeof r !== 'object' || typeof r.uri !== 'string' || !r.uri) {
+        return 'resource item without a resource.uri';
+      }
+      if (typeof r.text !== 'string' && typeof r.blob !== 'string') return 'resource item with neither text nor blob';
+      return null;
+    }
+    case 'resource_link':
+      if (typeof part.name !== 'string' || !part.name) return 'resource_link without a name';
+      if (typeof part.uri !== 'string' || !part.uri) return 'resource_link without a uri';
+      return null;
+    default:
+      return null;
+  }
+}
+
 function callOutcome(status, reply) {
   if (status && (status < 200 || status >= 300)) {
     return {status: 'rpc-error', detail: `HTTP ${status}: transport failure regardless of the JSON-RPC body`};
@@ -100,14 +132,12 @@ function callOutcome(status, reply) {
   if (!result || typeof result !== 'object' || !Array.isArray(result.content)) {
     return {status: 'rpc-error', detail: 'malformed result: no content array'};
   }
-  // Every item must be a typed object, and a text item must carry its text;
-  // an array of junk is still an array, and formatting it as "[undefined]"
-  // would call a schema violation ok.
-  const badItem = result.content.some((part) => !part || typeof part !== 'object'
-    || typeof part.type !== 'string' || !part.type
-    || (part.type === 'text' && typeof part.text !== 'string'));
-  if (badItem) {
-    return {status: 'rpc-error', detail: 'malformed content item'};
+  // Every item must satisfy its block type's required fields; an array of
+  // junk is still an array, and formatting it as "[undefined]" would call a
+  // schema violation ok.
+  const itemFault = result.content.map(contentItemFault).find(Boolean);
+  if (itemFault) {
+    return {status: 'rpc-error', detail: `malformed content item: ${itemFault}`};
   }
   const text = result.content
     .map((part) => (part && part.type === 'text' ? part.text : `[${part && part.type}]`))
@@ -349,6 +379,22 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'text'}]}}).status, 'rpc-error');
   assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'text', text: 7}]}}).status, 'rpc-error');
   assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'image', data: 'x', mimeType: 'image/png'}]}}).status, 'ok');
+
+  // Per-block-type required fields, one incomplete and one complete each.
+  const withContent = (content) => callOutcome(200, {jsonrpc: '2.0', result: {content}}).status;
+  assert.equal(withContent([{type: 'image', mimeType: 'image/png'}]), 'rpc-error');
+  assert.equal(withContent([{type: 'image', data: 'x'}]), 'rpc-error');
+  assert.equal(withContent([{type: 'audio', data: 'x', mimeType: 'audio/wav'}]), 'ok');
+  assert.equal(withContent([{type: 'audio', data: 'x'}]), 'rpc-error');
+  assert.equal(withContent([{type: 'resource', resource: {text: 't'}}]), 'rpc-error');
+  assert.equal(withContent([{type: 'resource', resource: {uri: 'file:///x'}}]), 'rpc-error');
+  assert.equal(withContent([{type: 'resource', resource: {uri: 'file:///x', text: 't'}}]), 'ok');
+  assert.equal(withContent([{type: 'resource', resource: {uri: 'file:///x', blob: 'e30='}}]), 'ok');
+  assert.equal(withContent([{type: 'resource_link', uri: 'https://x/'}]), 'rpc-error');
+  assert.equal(withContent([{type: 'resource_link', name: 'x'}]), 'rpc-error');
+  assert.equal(withContent([{type: 'resource_link', name: 'x', uri: 'https://x/'}]), 'ok');
+  // A type these schema versions do not define passes on a valid type string.
+  assert.equal(withContent([{type: 'future_block'}]), 'ok');
 
   // The version header exists only after negotiation; sending it on
   // initialize itself would assert a version the server has not agreed to.
