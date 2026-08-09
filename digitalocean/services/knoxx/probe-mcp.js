@@ -90,18 +90,25 @@ function schemaFaults(tool) {
 // Every content block type these protocol versions define carries required
 // payload fields, and the union is closed: this client negotiates only
 // versions through 2025-06-18, so a conforming server cannot emit a block
-// type outside it. An unknown discriminator is a schema violation, not
-// forward-compatibility.
-function contentItemFault(part) {
+// type outside it. Features are version-gated — audio arrived in 2025-03-26,
+// resource_link in 2025-06-18 — and a client honoring the negotiated version
+// rejects both the too-new discriminator and the unknown one. (ISO dates
+// compare lexicographically.)
+function contentItemFault(part, version) {
+  version = version || PROTOCOL_VERSION;
   if (!part || typeof part !== 'object' || Array.isArray(part)) return 'content item is not an object';
   if (typeof part.type !== 'string' || !part.type) return 'content item named no type';
   switch (part.type) {
     case 'text':
       return typeof part.text === 'string' ? null : 'text item without a string text';
     case 'image':
+      if (typeof part.data !== 'string' || !part.data) return 'image item without base64 data';
+      if (typeof part.mimeType !== 'string' || !part.mimeType) return 'image item without a mimeType';
+      return null;
     case 'audio':
-      if (typeof part.data !== 'string' || !part.data) return `${part.type} item without base64 data`;
-      if (typeof part.mimeType !== 'string' || !part.mimeType) return `${part.type} item without a mimeType`;
+      if (version < '2025-03-26') return `audio content negotiated at ${version}, which predates 2025-03-26`;
+      if (typeof part.data !== 'string' || !part.data) return 'audio item without base64 data';
+      if (typeof part.mimeType !== 'string' || !part.mimeType) return 'audio item without a mimeType';
       return null;
     case 'resource': {
       const r = part.resource;
@@ -112,6 +119,7 @@ function contentItemFault(part) {
       return null;
     }
     case 'resource_link':
+      if (version < '2025-06-18') return `resource_link content negotiated at ${version}, which predates 2025-06-18`;
       if (typeof part.name !== 'string' || !part.name) return 'resource_link without a name';
       if (typeof part.uri !== 'string' || !part.uri) return 'resource_link without a uri';
       return null;
@@ -120,7 +128,8 @@ function contentItemFault(part) {
   }
 }
 
-function callOutcome(status, reply) {
+function callOutcome(status, reply, version) {
+  version = version || PROTOCOL_VERSION;
   if (status && (status < 200 || status >= 300)) {
     return {status: 'rpc-error', detail: `HTTP ${status}: transport failure regardless of the JSON-RPC body`};
   }
@@ -136,7 +145,7 @@ function callOutcome(status, reply) {
   // Every item must satisfy its block type's required fields; an array of
   // junk is still an array, and formatting it as "[undefined]" would call a
   // schema violation ok.
-  const itemFault = result.content.map(contentItemFault).find(Boolean);
+  const itemFault = result.content.map((part) => contentItemFault(part, version)).find(Boolean);
   if (itemFault) {
     return {status: 'rpc-error', detail: `malformed content item: ${itemFault}`};
   }
@@ -145,8 +154,11 @@ function callOutcome(status, reply) {
   if ('isError' in result && typeof result.isError !== 'boolean') {
     return {status: 'rpc-error', detail: 'malformed result: isError is not a boolean'};
   }
-  // structuredContent (2025-06-18) is likewise optional, and an object when
+  // structuredContent exists only in 2025-06-18, and is an object when
   // present — never an array, scalar, or null.
+  if ('structuredContent' in result && version < '2025-06-18') {
+    return {status: 'rpc-error', detail: `structuredContent negotiated at ${version}, which predates 2025-06-18`};
+  }
   if ('structuredContent' in result
       && (typeof result.structuredContent !== 'object' || result.structuredContent === null
         || Array.isArray(result.structuredContent))) {
@@ -322,7 +334,7 @@ async function probe(baseUrl, token, toolCalls, timeoutMs) {
       continue;
     }
     const result = await rpc(baseUrl, token, 'tools/call', {name, arguments: args}, timeoutMs, negotiated);
-    calls[name] = callOutcome(result.status, result.reply);
+    calls[name] = callOutcome(result.status, result.reply, negotiated);
   }
 
   return {
@@ -411,7 +423,7 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'image', data: 'x', mimeType: 'image/png'}]}}).status, 'ok');
 
   // Per-block-type required fields, one incomplete and one complete each.
-  const withContent = (content) => callOutcome(200, {jsonrpc: '2.0', result: {content}}).status;
+  const withContent = (content, version) => callOutcome(200, {jsonrpc: '2.0', result: {content}}, version).status;
   assert.equal(withContent([{type: 'image', mimeType: 'image/png'}]), 'rpc-error');
   assert.equal(withContent([{type: 'image', data: 'x'}]), 'rpc-error');
   assert.equal(withContent([{type: 'audio', data: 'x', mimeType: 'audio/wav'}]), 'ok');
@@ -428,7 +440,7 @@ if (process.env.PROBE_SELFTEST === '1') {
 
   // isError is an optional boolean — invalid falsey values are malformed,
   // not passes.
-  const withResult = (result) => callOutcome(200, {jsonrpc: '2.0', result}).status;
+  const withResult = (result, version) => callOutcome(200, {jsonrpc: '2.0', result}, version).status;
   assert.equal(withResult({content: [], isError: 0}), 'rpc-error');
   assert.equal(withResult({content: [], isError: null}), 'rpc-error');
   assert.equal(withResult({content: [], isError: 'true'}), 'rpc-error');
@@ -440,6 +452,14 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(withResult({content: [], structuredContent: 'x'}), 'rpc-error');
   assert.equal(withResult({content: [], structuredContent: null}), 'rpc-error');
   assert.equal(withResult({content: [], structuredContent: {rows: 3}}), 'ok');
+
+  // Validation honors the negotiated version: features refuse before the
+  // version that defined them and pass at it.
+  assert.equal(withContent([{type: 'audio', data: 'x', mimeType: 'audio/wav'}], '2024-11-05'), 'rpc-error');
+  assert.equal(withContent([{type: 'audio', data: 'x', mimeType: 'audio/wav'}], '2025-03-26'), 'ok');
+  assert.equal(withContent([{type: 'resource_link', name: 'x', uri: 'https://x/'}], '2025-03-26'), 'rpc-error');
+  assert.equal(withResult({content: [], structuredContent: {rows: 3}}, '2025-03-26'), 'rpc-error');
+  assert.equal(withResult({content: [], structuredContent: {rows: 3}}, '2025-06-18'), 'ok');
 
   // The notification contract is exactly 202 with an empty body.
   assert.equal(notificationFault(202, ''), null);
