@@ -242,6 +242,23 @@ jobs:
             exit 2
           fi
 
+          # Optional health-gate tunables persist only when set. They have no
+          # placeholder in env.template — one would render blank when unset
+          # and trip the guard above — so they are appended here instead, and
+          # verify.sh's in-script defaults apply whenever a host does not tune
+          # them. The quote rule still holds: the file is sourced by the gate.
+          for optional_key in MCP_PROBE_OPTIONAL_TOOLS; do
+            optional_value=${!optional_key:-}
+            [ -n "$optional_value" ] || continue
+            case "$optional_value" in
+              *"'"*)
+                echo "::error::${optional_key} must not contain a single quote" >&2
+                exit 2
+                ;;
+            esac
+            printf "%s='%s'\n" "$optional_key" "$optional_value" >> rendered.env
+          done
+
           chmod 600 rendered.env
           echo "rendered $(grep -cE '^[A-Z0-9_]+=' rendered.env) variables"
 
