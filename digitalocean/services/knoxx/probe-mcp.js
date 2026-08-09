@@ -88,9 +88,10 @@ function schemaFaults(tool) {
 }
 
 // Every content block type these protocol versions define carries required
-// payload fields, and a gate claiming schema fidelity enforces them.
-// Unknown future types pass on a valid type string alone — this enumerates
-// what 2024-11-05 through 2025-06-18 require rather than guessing ahead.
+// payload fields, and the union is closed: this client negotiates only
+// versions through 2025-06-18, so a conforming server cannot emit a block
+// type outside it. An unknown discriminator is a schema violation, not
+// forward-compatibility.
 function contentItemFault(part) {
   if (!part || typeof part !== 'object' || Array.isArray(part)) return 'content item is not an object';
   if (typeof part.type !== 'string' || !part.type) return 'content item named no type';
@@ -115,7 +116,7 @@ function contentItemFault(part) {
       if (typeof part.uri !== 'string' || !part.uri) return 'resource_link without a uri';
       return null;
     default:
-      return null;
+      return `unknown content type ${part.type}`;
   }
 }
 
@@ -208,9 +209,8 @@ async function rpc(baseUrl, token, method, params, timeoutMs, protocolVersion) {
 }
 
 // A JSON-RPC notification carries no id and the server must not answer it; in
-// Streamable HTTP it is acknowledged with 202 and an empty body. Only the
-// transport status is meaningful — a JSON-RPC-shaped reply would itself be a
-// protocol violation.
+// Streamable HTTP the acknowledgement is exactly 202 with an empty body, and
+// anything else is a protocol violation rather than a quirk to tolerate.
 async function notify(baseUrl, token, method, timeoutMs, protocolVersion) {
   let resp;
   try {
@@ -223,7 +223,14 @@ async function notify(baseUrl, token, method, timeoutMs, protocolVersion) {
   } catch (e) {
     return {status: 0, error: String((e && e.message) || e)};
   }
-  return {status: resp.status};
+  return {status: resp.status, body: await resp.text()};
+}
+
+function notificationFault(status, body) {
+  if (!status) return 'the notification POST failed';
+  if (status !== 202) return `notification acknowledged with HTTP ${status}, expected exactly 202`;
+  if (String(body || '').trim()) return 'notification acknowledgement carried a body, expected none';
+  return null;
 }
 
 async function probe(baseUrl, token, toolCalls, timeoutMs) {
@@ -253,11 +260,12 @@ async function probe(baseUrl, token, toolCalls, timeoutMs) {
   const negotiated = init.reply.result.protocolVersion;
 
   const acknowledged = await notify(baseUrl, token, 'notifications/initialized', timeoutMs, negotiated);
-  if (!acknowledged.status || acknowledged.status >= 400) {
+  const notifyFault = notificationFault(acknowledged.status, acknowledged.body);
+  if (notifyFault) {
     return {
       ok: false,
       reason: 'initialized-notification-failed',
-      detail: acknowledged.error || `HTTP ${acknowledged.status}`,
+      detail: acknowledged.error || notifyFault,
     };
   }
 
@@ -393,8 +401,17 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(withContent([{type: 'resource_link', uri: 'https://x/'}]), 'rpc-error');
   assert.equal(withContent([{type: 'resource_link', name: 'x'}]), 'rpc-error');
   assert.equal(withContent([{type: 'resource_link', name: 'x', uri: 'https://x/'}]), 'ok');
-  // A type these schema versions do not define passes on a valid type string.
-  assert.equal(withContent([{type: 'future_block'}]), 'ok');
+  // A type outside the closed per-version union is a schema violation.
+  assert.equal(withContent([{type: 'future_block'}]), 'rpc-error');
+
+  // The notification contract is exactly 202 with an empty body.
+  assert.equal(notificationFault(202, ''), null);
+  assert.equal(notificationFault(202, '  \n'), null);
+  assert.equal(notificationFault(0, ''), 'the notification POST failed');
+  assert.equal(notificationFault(200, ''), 'notification acknowledged with HTTP 200, expected exactly 202');
+  assert.equal(notificationFault(204, ''), 'notification acknowledged with HTTP 204, expected exactly 202');
+  assert.equal(notificationFault(202, '{"jsonrpc":"2.0"}'),
+    'notification acknowledgement carried a body, expected none');
 
   // The version header exists only after negotiation; sending it on
   // initialize itself would assert a version the server has not agreed to.
