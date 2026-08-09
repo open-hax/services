@@ -20,9 +20,10 @@
 //   * rpc-error  — the server refused or threw. The tool is broken, or its
 //                  schema rejects arguments the caller was told are valid.
 //                  Always a gate failure.
-//   * tool-error — the tool ran and reported a problem. Legitimate when the
-//                  thing it needs is not configured on this host, so the shell
-//                  gate decides per tool whether to require it.
+//   * tool-error — the tool ran and reported a problem. Legitimate only when
+//                  the thing it needs is deliberately not configured on this
+//                  host, so the shell gate fails it unless the tool is named
+//                  in MCP_PROBE_OPTIONAL_TOOLS.
 
 const MCP_PATH = '/mcp';
 const PROTOCOL_VERSION = '2025-06-18';
@@ -95,17 +96,26 @@ function callOutcome(status, reply) {
 
 let nextId = 0;
 
-async function rpc(baseUrl, token, method, params, timeoutMs) {
+// The 2025-06-18 Streamable HTTP transport expects MCP-Protocol-Version on
+// every request after initialize — including the initialized notification.
+// Before negotiation there is nothing to send, so the header stays absent.
+function rpcHeaders(token, protocolVersion) {
+  const headers = {
+    'content-type': 'application/json',
+    accept: 'application/json, text/event-stream',
+    authorization: `Bearer ${token}`,
+  };
+  if (protocolVersion) headers['MCP-Protocol-Version'] = protocolVersion;
+  return headers;
+}
+
+async function rpc(baseUrl, token, method, params, timeoutMs, protocolVersion) {
   const id = ++nextId;
   let resp;
   try {
     resp = await fetch(baseUrl + MCP_PATH, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
-        authorization: `Bearer ${token}`,
-      },
+      headers: rpcHeaders(token, protocolVersion),
       body: JSON.stringify({jsonrpc: '2.0', id, method, params: params || {}}),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -116,6 +126,25 @@ async function rpc(baseUrl, token, method, params, timeoutMs) {
   const messages = decodeBody(resp.headers.get('content-type'), text);
   const reply = messages.find((m) => m && m.jsonrpc && m.id === id) || null;
   return {status: resp.status, reply, raw: text.slice(0, 400)};
+}
+
+// A JSON-RPC notification carries no id and the server must not answer it; in
+// Streamable HTTP it is acknowledged with 202 and an empty body. Only the
+// transport status is meaningful — a JSON-RPC-shaped reply would itself be a
+// protocol violation.
+async function notify(baseUrl, token, method, timeoutMs, protocolVersion) {
+  let resp;
+  try {
+    resp = await fetch(baseUrl + MCP_PATH, {
+      method: 'POST',
+      headers: rpcHeaders(token, protocolVersion),
+      body: JSON.stringify({jsonrpc: '2.0', method}),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    return {status: 0, error: String((e && e.message) || e)};
+  }
+  return {status: resp.status};
 }
 
 async function probe(baseUrl, token, toolCalls, timeoutMs) {
@@ -136,7 +165,22 @@ async function probe(baseUrl, token, toolCalls, timeoutMs) {
     };
   }
 
-  const listed = await rpc(baseUrl, token, 'tools/list', {}, timeoutMs);
+  // The negotiated version governs every follow-up POST: a server that
+  // answered with a different version than the client offered expects that
+  // one back, and 2025-06-18 requires the notifications/initialized
+  // handshake before any operational call.
+  const negotiated = (init.reply.result && init.reply.result.protocolVersion) || PROTOCOL_VERSION;
+
+  const acknowledged = await notify(baseUrl, token, 'notifications/initialized', timeoutMs, negotiated);
+  if (!acknowledged.status || acknowledged.status >= 400) {
+    return {
+      ok: false,
+      reason: 'initialized-notification-failed',
+      detail: acknowledged.error || `HTTP ${acknowledged.status}`,
+    };
+  }
+
+  const listed = await rpc(baseUrl, token, 'tools/list', {}, timeoutMs, negotiated);
   if (listed.status !== 200 || !listed.reply || listed.reply.error) {
     return {
       ok: false,
@@ -161,7 +205,7 @@ async function probe(baseUrl, token, toolCalls, timeoutMs) {
       calls[name] = {status: 'absent', detail: 'not in the served catalog'};
       continue;
     }
-    const result = await rpc(baseUrl, token, 'tools/call', {name, arguments: args}, timeoutMs);
+    const result = await rpc(baseUrl, token, 'tools/call', {name, arguments: args}, timeoutMs, negotiated);
     calls[name] = callOutcome(result.status, result.reply);
   }
 
@@ -205,6 +249,12 @@ if (process.env.PROBE_SELFTEST === '1') {
   assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {isError: true, content: []}}).status, 'tool-error');
   assert.equal(callOutcome(200, {jsonrpc: '2.0', error: {message: 'boom'}}).status, 'rpc-error');
   assert.equal(callOutcome(500, null).status, 'rpc-error');
+
+  // The version header exists only after negotiation; sending it on
+  // initialize itself would assert a version the server has not agreed to.
+  assert.equal(rpcHeaders('t', '2025-06-18')['MCP-Protocol-Version'], '2025-06-18');
+  assert.equal(rpcHeaders('t', null)['MCP-Protocol-Version'], undefined);
+  assert.equal(rpcHeaders('t', undefined)['MCP-Protocol-Version'], undefined);
 
   process.stdout.write('probe-mcp: decoder and classifier matrix ok\n');
 } else {

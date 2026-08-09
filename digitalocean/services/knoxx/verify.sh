@@ -212,9 +212,16 @@ else
 
   # A catalog that collapsed is the loudest symptom of a broken grant or a
   # registration that threw before any tool landed.
+  mcp_min_tools=${KNOXX_MCP_MIN_TOOLS:-20}
+  case "$mcp_min_tools" in
+    ''|*[!0-9]*)
+      echo "knoxx: KNOXX_MCP_MIN_TOOLS must be a non-negative integer, got '${mcp_min_tools}'" >&2
+      exit 1
+      ;;
+  esac
   mcp_tool_count=$(printf '%s' "$mcp" | jq -r '.toolCount // 0')
-  if [ "$mcp_tool_count" -lt "${KNOXX_MCP_MIN_TOOLS:-20}" ]; then
-    echo "knoxx: MCP served only ${mcp_tool_count} tools, expected at least ${KNOXX_MCP_MIN_TOOLS:-20}" >&2
+  if [ "$mcp_tool_count" -lt "$mcp_min_tools" ]; then
+    echo "knoxx: MCP served only ${mcp_tool_count} tools, expected at least ${mcp_min_tools}" >&2
     printf '%s' "$mcp" | jq -c '.tools' >&2
     exit 1
   fi
@@ -234,13 +241,29 @@ else
   fi
 
   # rpc-error means the server refused or threw — always a failure. A
-  # tool-error means the tool ran and reported a problem, which is legitimate
-  # when its dependency is not configured on this host, so it is reported and
-  # not fatal.
+  # tool-error means the tool ran and reported a problem, which for a required
+  # probe is exactly the failure this gate exists to catch: semantic_query on a
+  # broken data plane, discord_list_servers on an unresolvable verifier
+  # credential. It is tolerated only for a tool whose missing dependency is
+  # deliberately not configured on this host, named explicitly in
+  # MCP_PROBE_OPTIONAL_TOOLS — which defaults to empty, so nothing is optional
+  # unless a host says so.
   mcp_refused=$(printf '%s' "$mcp" | jq -r '[.calls | to_entries[] | select(.value.status == "rpc-error")] | length')
   if [ "$mcp_refused" != "0" ]; then
     echo "knoxx: MCP tools refused their own probe arguments" >&2
     printf '%s' "$mcp" | jq -r '.calls | to_entries[] | select(.value.status == "rpc-error") | "  \(.key): \(.value.detail)"' >&2
+    exit 1
+  fi
+
+  # Space-padded so contains() matches whole tool names; tool names cannot
+  # contain spaces (^[A-Za-z0-9_-]{1,128}$), so the padding cannot false-match.
+  mcp_optional=" ${MCP_PROBE_OPTIONAL_TOOLS:-} "
+  mcp_tool_errors=$(printf '%s' "$mcp" | jq -r --arg optional "$mcp_optional" \
+    '[.calls | to_entries[] | . as $e | select($e.value.status == "tool-error") | select(($optional | contains(" " + $e.key + " ")) | not)] | length')
+  if [ "$mcp_tool_errors" != "0" ]; then
+    echo "knoxx: MCP tools reported errors on required probes (tolerated only for MCP_PROBE_OPTIONAL_TOOLS)" >&2
+    printf '%s' "$mcp" | jq -r --arg optional "$mcp_optional" \
+      '.calls | to_entries[] | . as $e | select($e.value.status == "tool-error") | select(($optional | contains(" " + $e.key + " ")) | not) | "  \($e.key): \($e.value.detail)"' >&2
     exit 1
   fi
 

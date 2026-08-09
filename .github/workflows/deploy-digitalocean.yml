@@ -54,6 +54,7 @@ on:
       OPENPLANNER_API_KEY: { required: false }
       KNOXX_API_KEY: { required: false }
       KNOXX_SESSION_SECRET: { required: false }
+      KNOXX_MCP_LOOPBACK_TOKEN: { required: false }
       KNOXX_GITHUB_OAUTH_CLIENT_ID: { required: false }
       KNOXX_GITHUB_OAUTH_CLIENT_SECRET: { required: false }
       CADDY_ACME_EMAIL: { required: false }
@@ -176,6 +177,9 @@ jobs:
           OPENPLANNER_API_KEY: ${{ secrets.OPENPLANNER_API_KEY }}
           KNOXX_API_KEY: ${{ secrets.KNOXX_API_KEY }}
           KNOXX_SESSION_SECRET: ${{ secrets.KNOXX_SESSION_SECRET }}
+          # Absent by default; the render step substitutes the inert sentinel
+          # below and derives the verification expectation from what is set.
+          KNOXX_MCP_LOOPBACK_TOKEN: ${{ secrets.KNOXX_MCP_LOOPBACK_TOKEN }}
           KNOXX_GITHUB_OAUTH_CLIENT_ID: ${{ secrets.KNOXX_GITHUB_OAUTH_CLIENT_ID }}
           KNOXX_GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.KNOXX_GITHUB_OAUTH_CLIENT_SECRET }}
           # Let's Encrypt expiry contact. No longer borrowed from
@@ -186,6 +190,20 @@ jobs:
           EXTRA_ENV: ${{ inputs.extra_env }}
         run: |
           set -euo pipefail
+          # Post-deploy MCP verification is opt-in per host. With no
+          # provisioned token, fall back to the conspicuous short sentinel:
+          # the renderer's blank-value guard never fires, the backend refuses
+          # "off" as a credential on the same :min-token-length floor, and
+          # verify.sh skips its MCP section on that floor. A provisioned token
+          # turns the gate on, and then it is required to pass — a host that
+          # asked for verification must not silently skip it. Runs before the
+          # EXTRA_ENV loop so a caller can still override either value.
+          if [ -z "${KNOXX_MCP_LOOPBACK_TOKEN:-}" ]; then
+            export KNOXX_MCP_LOOPBACK_TOKEN=off
+            export KNOXX_EXPECT_MCP_VERIFY=false
+          else
+            export KNOXX_EXPECT_MCP_VERIFY=true
+          fi
           # Process substitution keeps the loop in this shell so the exports
           # survive into envsubst.
           while IFS='=' read -r key value; do
