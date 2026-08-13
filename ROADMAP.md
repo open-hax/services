@@ -16,18 +16,24 @@ gate is the only place several of these contracts are checked against reality.
 
 ### 1. Retiring the OpenPlanner REST dependency
 
-The knoxx health gate carries a conditional branch that exists only for a service
-production does not run:
+The knoxx health gate used to carry a conditional branch that existed only for a
+service production does not run:
 
 ```text
 knoxx: CMS surface skipped — no host OpenPlanner API at http://host.docker.internal:7777
 ```
 
-Retiring the CMS (`knoxx:knoxx-arch-migration-cms-routes-retirement`, breakdown)
-removes the last REST-only OpenPlanner dependency, and with it
-`KNOXX_EXPECT_OPENPLANNER_REST`, the `OPENPLANNER_API_KEY` sentinel, and the
-skip branch in `digitalocean/services/knoxx/verify.sh`. Net simplification of the
-gate. See `openplanner/ROADMAP.md`.
+**Done.** Publication intent and translation config now resolve from Knoxx's own
+resource graph, so `digitalocean/services/knoxx/verify.sh` checks all six
+contract-owned surfaces unconditionally — authorized and anonymous — and
+`KNOXX_EXPECT_OPENPLANNER_REST`, the skip branch, and the reachability probe it
+fed are gone.
+
+**Still open.** The `OPENPLANNER_API_KEY` sentinel stays for now: the Gardens
+page still calls `/api/openplanner/v1/gardens` through the backend proxy, so the
+container needs the key until that surface is migrated. That is the last
+REST-only OpenPlanner dependency in the deployed stack. See
+`openplanner/ROADMAP.md`.
 
 ### 2. Provisioning an actor that owns tool credentials
 
