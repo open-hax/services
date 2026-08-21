@@ -27,6 +27,10 @@ in this repo: the descriptor a service declares, the lifecycle phases and the
 promotion rule between them, the contract every `verify.sh` gate must satisfy,
 and how a service serves content another service writes.
 
+Every service is declared for the **DigitalOcean lane**. The Promethean lane
+(`promethean/`, `deploy-promethean.yml`) accepts no new services and is being
+retired; see the model's §1 for the migration inventory.
+
 ## Boundary rule
 
 If a change decides where a service runs, which port it binds, which hostname routes to it, or which deploy job promotes it, it belongs here.
