@@ -20,6 +20,13 @@ This repository owns how those applications are deployed together:
 - host inventory and drift reports
 - live verification scripts
 
+## Deployment model
+
+[`docs/deployment-model.md`](docs/deployment-model.md) defines what a service is
+in this repo: the descriptor a service declares, the lifecycle phases and the
+promotion rule between them, the contract every `verify.sh` gate must satisfy,
+and how a service serves content another service writes.
+
 ## Boundary rule
 
 If a change decides where a service runs, which port it binds, which hostname routes to it, or which deploy job promotes it, it belongs here.
