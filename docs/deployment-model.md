@@ -72,6 +72,42 @@ that the role is served.
 it to GHCR; the host pulls it. Nothing is built on the host and no working tree
 is rsynced. A service that cannot be expressed as an image does not deploy here.
 
+### Where the migration actually stands
+
+Resolved 2026-08-21, rather than read off `services.yaml`:
+
+```text
+knoxx.promethean.rest          157.245.125.134   DigitalOcean   done
+proxx.promethean.rest          157.245.125.134   DigitalOcean   done
+openplanner.promethean.rest    104.130.159.19    legacy host
+axxium.promethean.rest         104.130.159.19    legacy host
+staging-knoxx.promethean.rest  104.130.159.19    legacy host
+open-hax.promethean.rest       104.130.159.19    legacy host    (website, unbuilt)
+```
+
+Production Knoxx and Proxx are already served from DigitalOcean. What remains on
+the legacy host is OpenPlanner, axxium, the staging slots, and the website
+hostname — which is why `open-hax.promethean.rest` still needs a record move
+before Caddy can issue for it.
+
+### Two production deploy paths, and the automatic one is aimed at the legacy host
+
+`open-hax/knoxx`'s own `deploy-production.yml` triggers on **every push to
+`main`**, runs a full preflight, and then calls
+`open-hax/services/.github/workflows/deploy-promethean.yml` with
+`service: knoxx, environment: production`. That deploys Knoxx to
+`proxx.promethean.rest` — the legacy host — while `knoxx.promethean.rest`
+resolves to DigitalOcean, which is deployed by `deploy-stack.yml` on a merged PR
+carrying the `deploy` label.
+
+So Knoxx has two production deploy paths with different authorization models, and
+the one that fires by itself targets a host that no longer serves it. Merging
+anything to `main` exercises it. `deploy-staging.yml` and the label-gated
+`deploy-testing.yml` reach into the same legacy module.
+
+This is the first thing to fix in the migration, not the last: until it is fixed,
+every merge to Knoxx `main` is a deploy at the wrong box.
+
 ## 2. The service descriptor
 
 A service is one directory under `digitalocean/services/<name>/`, one entry in
@@ -296,9 +332,9 @@ and the deploy script do not.
   Cloudflare API credentials it would put on the host. Consolidating every
   service — plus staging slots — onto one Caddy raises the count enough to
   reopen that decision. Reopen it explicitly.
-- **DNS cutover.** Every hostname still pointing at 104.130.159.19 needs moving,
-  and records are DNS-only rather than proxied precisely so ACME HTTP-01 reaches
-  the origin. Sequencing matters: the record must move before the certificate can
+- **DNS cutover.** Four hostnames still point at 104.130.159.19 (see §1), and
+  records are DNS-only rather than proxied precisely so ACME HTTP-01 reaches the
+  origin. Sequencing matters: the record must move before the certificate can
   issue, and traffic follows the record.
 - **Who owns the content root's disk budget**, and what happens when a
   publication run fills it.
