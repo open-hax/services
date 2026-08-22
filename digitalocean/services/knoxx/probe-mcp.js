@@ -35,6 +35,11 @@ const SUPPORTED_PROTOCOL_VERSIONS = new Set(['2024-11-05', '2025-03-26', '2025-0
 // the deploy gate into a writer.
 const PROBE_ALLOWED_TOOLS = new Set(['semantic_query', 'events_status', 'discord_list_servers']);
 
+// Pagination bound for tools/list. High enough that no real catalog reaches it,
+// low enough that a server looping on cursors fails the gate instead of hanging
+// it.
+const MAX_TOOL_LIST_PAGES = 20;
+
 // ── wire decoding ────────────────────────────────────────────
 // The backend serves MCP in the SDK's stateless mode and answers POSTs with
 // text/event-stream by default, so a JSON-only reader sees an empty body and
@@ -128,13 +133,48 @@ function contentItemFault(part, version) {
   }
 }
 
+// The cursor decision, kept pure so the self-test can exercise it without a
+// network. Returns {fault} to stop, or {cursor} to continue (undefined = done).
+function toolPageStep(result, previousCursor, pagesSoFar) {
+  if (!result || typeof result !== 'object' || !Array.isArray(result.tools)) {
+    return {fault: 'result carried no tools array'};
+  }
+  const next = result.nextCursor;
+  if (next !== undefined && next !== null && typeof next !== 'string') {
+    return {fault: 'nextCursor is not a string'};
+  }
+  if (next && next === previousCursor) {
+    return {fault: 'nextCursor did not advance'};
+  }
+  if (next && pagesSoFar + 1 >= MAX_TOOL_LIST_PAGES) {
+    return {fault: `catalog still paginating after ${MAX_TOOL_LIST_PAGES} pages; refusing to assert on a partial catalog`};
+  }
+  return {cursor: next || undefined};
+}
+
 function callOutcome(status, reply, version) {
   version = version || PROTOCOL_VERSION;
   if (status && (status < 200 || status >= 300)) {
     return {status: 'rpc-error', detail: `HTTP ${status}: transport failure regardless of the JSON-RPC body`};
   }
   if (!reply || reply.jsonrpc !== '2.0') return {status: 'rpc-error', detail: `HTTP ${status} without a JSON-RPC 2.0 reply`};
-  if (reply.error) return {status: 'rpc-error', detail: reply.error.message || JSON.stringify(reply.error)};
+  // JSON-RPC 2.0 §5: a response carries EXACTLY ONE of result or error. Testing
+  // `reply.error` for truthiness is not the same test: a reply carrying both a
+  // plausible result and `error: null` would skip this branch and be classified
+  // ok, even though a schema-validating MCP client rejects it outright. A gate
+  // must not accept a response the real clients refuse.
+  const hasResult = Object.prototype.hasOwnProperty.call(reply, 'result');
+  const hasError = Object.prototype.hasOwnProperty.call(reply, 'error');
+  if (hasResult && hasError) {
+    return {status: 'rpc-error', detail: 'malformed reply: carries both result and error'};
+  }
+  if (!hasResult && !hasError) {
+    return {status: 'rpc-error', detail: 'malformed reply: carries neither result nor error'};
+  }
+  if (hasError) {
+    const e = reply.error;
+    return {status: 'rpc-error', detail: (e && e.message) || JSON.stringify(e)};
+  }
   // A call result carries a content array (possibly empty) per the MCP
   // schema. Null, missing, or content-less is a malformed reply — a broken
   // surface, not an empty success.
@@ -299,16 +339,35 @@ async function probe(baseUrl, token, toolCalls, timeoutMs) {
     };
   }
 
-  const listed = await rpc(baseUrl, token, 'tools/list', {}, timeoutMs, negotiated);
-  if (listed.status !== 200 || !listed.reply || listed.reply.error) {
-    return {
-      ok: false,
-      reason: 'tools-list-failed',
-      detail: (listed.reply && listed.reply.error && listed.reply.error.message) || listed.error || `HTTP ${listed.status}`,
-    };
-  }
+  // tools/list is paginated. A single request that ignores result.nextCursor
+  // sees only the first page, and every downstream assertion about the catalog
+  // is then made about a subset: the minimum-count check can fail on a healthy
+  // server, and — worse — the exact-allowlist check reports green while a
+  // fourth tool the verifier token should not reach sits on page two. Follow
+  // the cursor to completion before asserting anything about the catalog.
+  const tools = [];
+  let cursor;
+  let pages = 0;
+  do {
+    const listed = await rpc(baseUrl, token, 'tools/list', cursor ? {cursor} : {}, timeoutMs, negotiated);
+    if (listed.status !== 200 || !listed.reply || listed.reply.error) {
+      return {
+        ok: false,
+        reason: 'tools-list-failed',
+        detail: (listed.reply && listed.reply.error && listed.reply.error.message) || listed.error || `HTTP ${listed.status}`,
+        page: pages + 1,
+      };
+    }
+    const result = listed.reply.result;
+    const step = toolPageStep(result, cursor, pages);
+    if (step.fault) {
+      return {ok: false, reason: 'tools-list-malformed', detail: step.fault, page: pages + 1};
+    }
+    tools.push(...result.tools);
+    cursor = step.cursor;
+    pages += 1;
+  } while (cursor);
 
-  const tools = (listed.reply.result && listed.reply.result.tools) || [];
   const degraded = {};
   for (const tool of tools) {
     const faults = schemaFaults(tool);
@@ -405,6 +464,33 @@ if (process.env.PROBE_SELFTEST === '1') {
     'initialize result named no serverInfo with string name and version');
   assert.equal(initializeFault({...goodInit, serverInfo: {name: 'knoxx'}}),
     'initialize result named no serverInfo with string name and version');
+
+  // tools/list pagination. A first page plus a cursor must continue, or the
+  // exact-allowlist assertion is made about a subset and a leaked tool on page
+  // two reads as green.
+  assert.deepEqual(toolPageStep({tools: []}, undefined, 0), {cursor: undefined});
+  assert.deepEqual(toolPageStep({tools: [], nextCursor: 'p2'}, undefined, 0), {cursor: 'p2'});
+  assert.deepEqual(toolPageStep({tools: [], nextCursor: null}, 'p2', 1), {cursor: undefined});
+  assert.equal(toolPageStep({}, undefined, 0).fault, 'result carried no tools array');
+  assert.equal(toolPageStep(null, undefined, 0).fault, 'result carried no tools array');
+  assert.equal(toolPageStep({tools: 'nope'}, undefined, 0).fault, 'result carried no tools array');
+  assert.equal(toolPageStep({tools: [], nextCursor: 7}, undefined, 0).fault, 'nextCursor is not a string');
+  // A server handing back the same cursor would loop forever; fail, never hang.
+  assert.equal(toolPageStep({tools: [], nextCursor: 'p2'}, 'p2', 1).fault, 'nextCursor did not advance');
+  // And a catalog still paginating at the bound fails rather than truncating,
+  // which is the exact defect this rule exists to prevent.
+  assert.match(toolPageStep({tools: [], nextCursor: 'more'}, 'prev', MAX_TOOL_LIST_PAGES - 1).fault,
+    /refusing to assert on a partial catalog/);
+
+  // JSON-RPC exclusivity: exactly one of result/error. A falsey error member
+  // beside a valid-looking result must not read as ok, and a reply with neither
+  // is malformed rather than empty.
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'text', text: 'hi'}]}, error: null}).status, 'rpc-error');
+  assert.match(callOutcome(200, {jsonrpc: '2.0', result: {content: []}, error: null}).detail, /both result and error/);
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: []}, error: {message: 'boom'}}).status, 'rpc-error');
+  assert.match(callOutcome(200, {jsonrpc: '2.0'}).detail, /neither result nor error/);
+  // An error with no message still reports something actionable.
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', error: {code: -32000}}).status, 'rpc-error');
 
   // A 200 whose result is null, absent, or content-less is a broken surface,
   // not an empty success — the classifier must not wave it through as ok.
