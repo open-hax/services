@@ -66,11 +66,6 @@ on:
         required: false
         default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
         type: string
-      openplanner_ref:
-        description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
-        required: false
-        default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
-        type: string
       include_ingress:
         description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
         required: false
