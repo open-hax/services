@@ -1,0 +1,12 @@
+{:contract/kind :capability
+ :cap/id :cap/deploy-verify
+
+ ;; Exactly the tools the post-deploy MCP gate probes, and nothing else. The
+ ;; existing capabilities that cover them also cover their write siblings —
+ ;; :cap/event-runtime carries events.dispatch and agents.spawn, :cap/discord
+ ;; carries publish and send — and a deploy gate has no business holding
+ ;; those. Registry ids, accepted by tool-registry/normalize-tool-id as-is.
+ ;;
+ ;; No :cap/user-surfaces: this is a machine gate identity, not a workspace
+ ;; surface.
+ :cap/tools [:semantic_query :events.status :discord.list.servers]}

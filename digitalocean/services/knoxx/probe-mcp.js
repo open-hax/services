@@ -1,0 +1,576 @@
+'use strict';
+
+// Probe the Knoxx MCP tool surface from inside the backend container.
+//
+// Delivered to the container by verify.sh as `node -e "$(cat ...)"`, so it runs
+// where 127.0.0.1 is the backend itself — which is what the authentication
+// contract's :require-loopback guard permits, and nothing off-box can reach.
+// Kept a real file for the same reasons as probe-openplanner.js: `node --check`
+// in CI, reviewable, and self-testable (PROBE_SELFTEST at the bottom).
+//
+// It answers what /health cannot. A healthy backend with a broken tool surface
+// is the failure this exists to catch: tools whose schema conversion produced
+// nothing callable, tools that vanished from the catalog entirely, and tools
+// that cannot resolve the actor credential they need. None of that moves
+// /health, and until this gate existed the only way to find out was to ask a
+// hosted assistant to try a tool in production.
+//
+// Distinguishes two kinds of failure, because they mean different things:
+//
+//   * rpc-error  — the server refused or threw. The tool is broken, or its
+//                  schema rejects arguments the caller was told are valid.
+//                  Always a gate failure.
+//   * tool-error — the tool ran and reported a problem. Legitimate only when
+//                  the thing it needs is deliberately not configured on this
+//                  host, so the shell gate fails it unless the tool is named
+//                  in MCP_PROBE_OPTIONAL_TOOLS.
+
+const MCP_PATH = '/mcp';
+const PROTOCOL_VERSION = '2025-06-18';
+const SUPPORTED_PROTOCOL_VERSIONS = new Set(['2024-11-05', '2025-03-26', '2025-06-18']);
+
+// The probe set is fixed and read-only. MCP_PROBE_TOOL_CALLS comes from the
+// environment, so every requested name is checked against this set before any
+// tools/call goes out — a configuration typo must fail the probe, never turn
+// the deploy gate into a writer.
+const PROBE_ALLOWED_TOOLS = new Set(['semantic_query', 'events_status', 'discord_list_servers']);
+
+// Pagination bound for tools/list. High enough that no real catalog reaches it,
+// low enough that a server looping on cursors fails the gate instead of hanging
+// it.
+const MAX_TOOL_LIST_PAGES = 20;
+
+// ── wire decoding ────────────────────────────────────────────
+// The backend serves MCP in the SDK's stateless mode and answers POSTs with
+// text/event-stream by default, so a JSON-only reader sees an empty body and
+// reports a healthy surface as missing.
+
+function parseEventStream(text) {
+  const messages = [];
+  for (const block of String(text).split(/\r?\n\r?\n/)) {
+    const data = block
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim())
+      .join('');
+    if (!data) continue;
+    try {
+      messages.push(JSON.parse(data));
+    } catch {
+      messages.push({_unparseable: data});
+    }
+  }
+  return messages;
+}
+
+function decodeBody(contentType, text) {
+  const type = String(contentType || '').toLowerCase();
+  if (type.includes('text/event-stream')) return parseEventStream(text);
+  if (type.includes('application/json')) {
+    try {
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+// ── classification ───────────────────────────────────────────
+
+// A tool that is present but arrived unusable. Annotations are deliberately not
+// checked: most of the catalog lacks them, that is tracked as a ratchet in the
+// CLJS e2e suite, and failing a production deploy over it would be noise.
+function schemaFaults(tool) {
+  const faults = [];
+  const name = (tool && tool.name) || '';
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(name)) faults.push('illegal tool name');
+  if (!tool || !tool.inputSchema) faults.push('no inputSchema');
+  else if (tool.inputSchema.type !== 'object') faults.push(`inputSchema.type=${tool.inputSchema.type}`);
+  if (!String((tool && tool.description) || '').trim()) faults.push('no description');
+  return faults;
+}
+
+// Every content block type these protocol versions define carries required
+// payload fields, and the union is closed: this client negotiates only
+// versions through 2025-06-18, so a conforming server cannot emit a block
+// type outside it. Features are version-gated — audio arrived in 2025-03-26,
+// resource_link in 2025-06-18 — and a client honoring the negotiated version
+// rejects both the too-new discriminator and the unknown one. (ISO dates
+// compare lexicographically.)
+function contentItemFault(part, version) {
+  version = version || PROTOCOL_VERSION;
+  if (!part || typeof part !== 'object' || Array.isArray(part)) return 'content item is not an object';
+  if (typeof part.type !== 'string' || !part.type) return 'content item named no type';
+  switch (part.type) {
+    case 'text':
+      return typeof part.text === 'string' ? null : 'text item without a string text';
+    case 'image':
+      if (typeof part.data !== 'string' || !part.data) return 'image item without base64 data';
+      if (typeof part.mimeType !== 'string' || !part.mimeType) return 'image item without a mimeType';
+      return null;
+    case 'audio':
+      if (version < '2025-03-26') return `audio content negotiated at ${version}, which predates 2025-03-26`;
+      if (typeof part.data !== 'string' || !part.data) return 'audio item without base64 data';
+      if (typeof part.mimeType !== 'string' || !part.mimeType) return 'audio item without a mimeType';
+      return null;
+    case 'resource': {
+      const r = part.resource;
+      if (!r || typeof r !== 'object' || typeof r.uri !== 'string' || !r.uri) {
+        return 'resource item without a resource.uri';
+      }
+      if (typeof r.text !== 'string' && typeof r.blob !== 'string') return 'resource item with neither text nor blob';
+      return null;
+    }
+    case 'resource_link':
+      if (version < '2025-06-18') return `resource_link content negotiated at ${version}, which predates 2025-06-18`;
+      if (typeof part.name !== 'string' || !part.name) return 'resource_link without a name';
+      if (typeof part.uri !== 'string' || !part.uri) return 'resource_link without a uri';
+      return null;
+    default:
+      return `unknown content type ${part.type}`;
+  }
+}
+
+// The cursor decision, kept pure so the self-test can exercise it without a
+// network. Returns {fault} to stop, or {cursor} to continue (undefined = done).
+function toolPageStep(result, previousCursor, pagesSoFar) {
+  if (!result || typeof result !== 'object' || !Array.isArray(result.tools)) {
+    return {fault: 'result carried no tools array'};
+  }
+  const next = result.nextCursor;
+  if (next !== undefined && next !== null && typeof next !== 'string') {
+    return {fault: 'nextCursor is not a string'};
+  }
+  if (next && next === previousCursor) {
+    return {fault: 'nextCursor did not advance'};
+  }
+  if (next && pagesSoFar + 1 >= MAX_TOOL_LIST_PAGES) {
+    return {fault: `catalog still paginating after ${MAX_TOOL_LIST_PAGES} pages; refusing to assert on a partial catalog`};
+  }
+  return {cursor: next || undefined};
+}
+
+function callOutcome(status, reply, version) {
+  version = version || PROTOCOL_VERSION;
+  if (status && (status < 200 || status >= 300)) {
+    return {status: 'rpc-error', detail: `HTTP ${status}: transport failure regardless of the JSON-RPC body`};
+  }
+  if (!reply || reply.jsonrpc !== '2.0') return {status: 'rpc-error', detail: `HTTP ${status} without a JSON-RPC 2.0 reply`};
+  // JSON-RPC 2.0 §5: a response carries EXACTLY ONE of result or error. Testing
+  // `reply.error` for truthiness is not the same test: a reply carrying both a
+  // plausible result and `error: null` would skip this branch and be classified
+  // ok, even though a schema-validating MCP client rejects it outright. A gate
+  // must not accept a response the real clients refuse.
+  const hasResult = Object.prototype.hasOwnProperty.call(reply, 'result');
+  const hasError = Object.prototype.hasOwnProperty.call(reply, 'error');
+  if (hasResult && hasError) {
+    return {status: 'rpc-error', detail: 'malformed reply: carries both result and error'};
+  }
+  if (!hasResult && !hasError) {
+    return {status: 'rpc-error', detail: 'malformed reply: carries neither result nor error'};
+  }
+  if (hasError) {
+    const e = reply.error;
+    return {status: 'rpc-error', detail: (e && e.message) || JSON.stringify(e)};
+  }
+  // A call result carries a content array (possibly empty) per the MCP
+  // schema. Null, missing, or content-less is a malformed reply — a broken
+  // surface, not an empty success.
+  const result = reply.result;
+  if (!result || typeof result !== 'object' || !Array.isArray(result.content)) {
+    return {status: 'rpc-error', detail: 'malformed result: no content array'};
+  }
+  // Every item must satisfy its block type's required fields; an array of
+  // junk is still an array, and formatting it as "[undefined]" would call a
+  // schema violation ok.
+  const itemFault = result.content.map((part) => contentItemFault(part, version)).find(Boolean);
+  if (itemFault) {
+    return {status: 'rpc-error', detail: `malformed content item: ${itemFault}`};
+  }
+  // isError is an optional boolean; a schema-invalid falsey value like 0 or
+  // null must not read as a pass.
+  if ('isError' in result && typeof result.isError !== 'boolean') {
+    return {status: 'rpc-error', detail: 'malformed result: isError is not a boolean'};
+  }
+  // structuredContent exists only in 2025-06-18, and is an object when
+  // present — never an array, scalar, or null.
+  if ('structuredContent' in result && version < '2025-06-18') {
+    return {status: 'rpc-error', detail: `structuredContent negotiated at ${version}, which predates 2025-06-18`};
+  }
+  if ('structuredContent' in result
+      && (typeof result.structuredContent !== 'object' || result.structuredContent === null
+        || Array.isArray(result.structuredContent))) {
+    return {status: 'rpc-error', detail: 'malformed result: structuredContent is not an object'};
+  }
+  const text = result.content
+    .map((part) => (part && part.type === 'text' ? part.text : `[${part && part.type}]`))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return {status: result.isError ? 'tool-error' : 'ok', detail: text.slice(0, 200)};
+}
+
+// An initialize result must name its protocol version, capabilities, and
+// serverInfo, and the negotiated version must be one this client speaks.
+// Waving a malformed handshake through would validate a surface conforming
+// clients refuse at the first step.
+function initializeFault(result) {
+  if (!result || typeof result !== 'object') return 'initialize returned no result';
+  if (typeof result.protocolVersion !== 'string' || !result.protocolVersion) {
+    return 'initialize result named no protocolVersion';
+  }
+  if (!SUPPORTED_PROTOCOL_VERSIONS.has(result.protocolVersion)) {
+    return `unsupported protocolVersion ${result.protocolVersion}`;
+  }
+  if (!result.capabilities || typeof result.capabilities !== 'object' || Array.isArray(result.capabilities)) {
+    return 'initialize result named no capabilities object';
+  }
+  // This gate exists for the tool surface; a server that does not advertise
+  // the tools capability must not be waved through to tools/list.
+  const caps = result.capabilities;
+  if (!caps.tools || typeof caps.tools !== 'object' || Array.isArray(caps.tools)) {
+    return 'initialize result advertised no tools capability';
+  }
+  const info = result.serverInfo;
+  if (!info || typeof info !== 'object' || Array.isArray(info)
+      || typeof info.name !== 'string' || !info.name
+      || typeof info.version !== 'string' || !info.version) {
+    return 'initialize result named no serverInfo with string name and version';
+  }
+  return null;
+}
+
+// ── the probe ────────────────────────────────────────────────
+
+let nextId = 0;
+
+// The 2025-06-18 Streamable HTTP transport expects MCP-Protocol-Version on
+// every request after initialize — including the initialized notification.
+// Before negotiation there is nothing to send, so the header stays absent.
+function rpcHeaders(token, protocolVersion) {
+  const headers = {
+    'content-type': 'application/json',
+    accept: 'application/json, text/event-stream',
+    authorization: `Bearer ${token}`,
+  };
+  if (protocolVersion) headers['MCP-Protocol-Version'] = protocolVersion;
+  return headers;
+}
+
+async function rpc(baseUrl, token, method, params, timeoutMs, protocolVersion) {
+  const id = ++nextId;
+  let resp;
+  try {
+    resp = await fetch(baseUrl + MCP_PATH, {
+      method: 'POST',
+      headers: rpcHeaders(token, protocolVersion),
+      body: JSON.stringify({jsonrpc: '2.0', id, method, params: params || {}}),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    return {status: 0, reply: null, error: String((e && e.message) || e)};
+  }
+  const text = await resp.text();
+  const messages = decodeBody(resp.headers.get('content-type'), text);
+  const reply = messages.find((m) => m && m.jsonrpc === '2.0' && m.id === id) || null;
+  return {status: resp.status, reply, raw: text.slice(0, 400)};
+}
+
+// A JSON-RPC notification carries no id and the server must not answer it; in
+// Streamable HTTP the acknowledgement is exactly 202 with an empty body, and
+// anything else is a protocol violation rather than a quirk to tolerate.
+async function notify(baseUrl, token, method, timeoutMs, protocolVersion) {
+  let resp;
+  try {
+    resp = await fetch(baseUrl + MCP_PATH, {
+      method: 'POST',
+      headers: rpcHeaders(token, protocolVersion),
+      body: JSON.stringify({jsonrpc: '2.0', method}),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    return {status: 0, error: String((e && e.message) || e)};
+  }
+  return {status: resp.status, body: await resp.text()};
+}
+
+function notificationFault(status, body) {
+  if (!status) return 'the notification POST failed';
+  if (status !== 202) return `notification acknowledged with HTTP ${status}, expected exactly 202`;
+  if (String(body || '').trim()) return 'notification acknowledgement carried a body, expected none';
+  return null;
+}
+
+async function probe(baseUrl, token, toolCalls, timeoutMs) {
+  const init = await rpc(baseUrl, token, 'initialize', {
+    protocolVersion: PROTOCOL_VERSION,
+    clientInfo: {name: 'knoxx-deploy-verify', version: '1.0.0'},
+    capabilities: {},
+  }, timeoutMs);
+
+  if (init.status === 401) {
+    return {ok: false, reason: 'unauthorized', detail: 'the backend refused the loopback token'};
+  }
+  if (init.status !== 200 || !init.reply || init.reply.error) {
+    return {
+      ok: false,
+      reason: 'initialize-failed',
+      detail: (init.reply && init.reply.error && init.reply.error.message) || init.error || init.raw || `HTTP ${init.status}`,
+    };
+  }
+
+  // The negotiated version governs every follow-up POST, and it only counts
+  // if the handshake itself was well-formed.
+  const initFault = initializeFault(init.reply && init.reply.result);
+  if (initFault) {
+    return {ok: false, reason: 'initialize-malformed', detail: initFault};
+  }
+  const negotiated = init.reply.result.protocolVersion;
+
+  const acknowledged = await notify(baseUrl, token, 'notifications/initialized', timeoutMs, negotiated);
+  const notifyFault = notificationFault(acknowledged.status, acknowledged.body);
+  if (notifyFault) {
+    return {
+      ok: false,
+      reason: 'initialized-notification-failed',
+      detail: acknowledged.error || notifyFault,
+    };
+  }
+
+  // tools/list is paginated. A single request that ignores result.nextCursor
+  // sees only the first page, and every downstream assertion about the catalog
+  // is then made about a subset: the minimum-count check can fail on a healthy
+  // server, and — worse — the exact-allowlist check reports green while a
+  // fourth tool the verifier token should not reach sits on page two. Follow
+  // the cursor to completion before asserting anything about the catalog.
+  const tools = [];
+  let cursor;
+  let pages = 0;
+  do {
+    const listed = await rpc(baseUrl, token, 'tools/list', cursor ? {cursor} : {}, timeoutMs, negotiated);
+    if (listed.status !== 200 || !listed.reply || listed.reply.error) {
+      return {
+        ok: false,
+        reason: 'tools-list-failed',
+        detail: (listed.reply && listed.reply.error && listed.reply.error.message) || listed.error || `HTTP ${listed.status}`,
+        page: pages + 1,
+      };
+    }
+    const result = listed.reply.result;
+    const step = toolPageStep(result, cursor, pages);
+    if (step.fault) {
+      return {ok: false, reason: 'tools-list-malformed', detail: step.fault, page: pages + 1};
+    }
+    tools.push(...result.tools);
+    cursor = step.cursor;
+    pages += 1;
+  } while (cursor);
+
+  const degraded = {};
+  for (const tool of tools) {
+    const faults = schemaFaults(tool);
+    if (faults.length) degraded[tool.name || '(unnamed)'] = faults;
+  }
+
+  const names = tools.map((t) => t.name);
+  const duplicates = names.filter((n, i) => names.indexOf(n) !== i);
+
+  const refused = Object.keys(toolCalls).filter((n) => !PROBE_ALLOWED_TOOLS.has(n));
+  if (refused.length) {
+    return {
+      ok: false,
+      reason: 'tool-not-allowlisted',
+      detail: `refusing to call ${refused.join(', ')} — the probe set is read-only: ${[...PROBE_ALLOWED_TOOLS].join(', ')}`,
+    };
+  }
+
+  const calls = {};
+  for (const [name, args] of Object.entries(toolCalls)) {
+    if (!names.includes(name)) {
+      calls[name] = {status: 'absent', detail: 'not in the served catalog'};
+      continue;
+    }
+    const result = await rpc(baseUrl, token, 'tools/call', {name, arguments: args}, timeoutMs, negotiated);
+    calls[name] = callOutcome(result.status, result.reply, negotiated);
+  }
+
+  return {
+    ok: true,
+    toolCount: tools.length,
+    tools: names,
+    degraded,
+    duplicates,
+    calls,
+  };
+}
+
+// ── self-test ────────────────────────────────────────────────
+// Exercises the decoders and classifiers with no network, so the code the gate
+// runs and the code CI asserts on cannot drift apart.
+if (process.env.PROBE_SELFTEST === '1') {
+  const assert = require('node:assert/strict');
+
+  // SSE is the default transport for a stateless MCP POST; reading it as JSON
+  // reports a working surface as empty.
+  const sse = 'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"tools":[]}}\n\n';
+  assert.equal(decodeBody('text/event-stream', sse).length, 1);
+  assert.equal(decodeBody('text/event-stream', sse)[0].id, 1);
+  assert.equal(decodeBody('application/json', '{"jsonrpc":"2.0","id":2}')[0].id, 2);
+  assert.deepEqual(decodeBody('text/plain', 'nope'), []);
+  assert.deepEqual(decodeBody('application/json', 'not json'), []);
+  // A multi-line data field is one payload, not several.
+  assert.equal(parseEventStream('data: {"jsonrpc":"2.0",\ndata: "id":3}\n\n')[0].id, 3);
+
+  assert.deepEqual(schemaFaults({name: 'ok_tool', description: 'd', inputSchema: {type: 'object'}}), []);
+  assert.ok(schemaFaults({name: 'ok_tool', description: 'd'}).includes('no inputSchema'));
+  assert.ok(schemaFaults({name: 'bad name', description: 'd', inputSchema: {type: 'object'}})
+    .includes('illegal tool name'));
+  assert.ok(schemaFaults({name: 'ok_tool', description: '  ', inputSchema: {type: 'object'}})
+    .includes('no description'));
+
+  // A tool's own failure arrives as a *successful* JSON-RPC result carrying
+  // isError. Treating a 200 as a pass would mark every broken tool green.
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'text', text: 'hi'}]}}).status, 'ok');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {isError: true, content: []}}).status, 'tool-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', error: {message: 'boom'}}).status, 'rpc-error');
+  assert.equal(callOutcome(500, null).status, 'rpc-error');
+  // Any version but 2.0 is not a reply an MCP client may accept.
+  assert.equal(callOutcome(200, {jsonrpc: '1.0', result: {content: []}}).status, 'rpc-error');
+  // A well-formed body does not rescue a transport failure.
+  assert.equal(callOutcome(500, {jsonrpc: '2.0', result: {content: []}}).status, 'rpc-error');
+
+  // The initialize handshake is validated before anything continues on it.
+  const goodInit = {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'knoxx', version: '1.0.0'}};
+  assert.equal(initializeFault(goodInit), null);
+  assert.equal(initializeFault(null), 'initialize returned no result');
+  assert.equal(initializeFault({capabilities: {}, serverInfo: {}}), 'initialize result named no protocolVersion');
+  assert.equal(initializeFault({...goodInit, protocolVersion: '1999-01-01'}),
+    'unsupported protocolVersion 1999-01-01');
+  assert.equal(initializeFault({protocolVersion: '2025-06-18', serverInfo: {name: 'k', version: '1'}}),
+    'initialize result named no capabilities object');
+  assert.equal(initializeFault({...goodInit, capabilities: []}),
+    'initialize result named no capabilities object');
+  assert.equal(initializeFault({protocolVersion: '2025-06-18', capabilities: {}}),
+    'initialize result advertised no tools capability');
+  assert.equal(initializeFault({protocolVersion: '2025-06-18', capabilities: {tools: []}}),
+    'initialize result advertised no tools capability');
+  assert.equal(initializeFault({protocolVersion: '2025-06-18', capabilities: {tools: {}}}),
+    'initialize result named no serverInfo with string name and version');
+  assert.equal(initializeFault({...goodInit, serverInfo: {}}),
+    'initialize result named no serverInfo with string name and version');
+  assert.equal(initializeFault({...goodInit, serverInfo: []}),
+    'initialize result named no serverInfo with string name and version');
+  assert.equal(initializeFault({...goodInit, serverInfo: {name: 'knoxx'}}),
+    'initialize result named no serverInfo with string name and version');
+
+  // tools/list pagination. A first page plus a cursor must continue, or the
+  // exact-allowlist assertion is made about a subset and a leaked tool on page
+  // two reads as green.
+  assert.deepEqual(toolPageStep({tools: []}, undefined, 0), {cursor: undefined});
+  assert.deepEqual(toolPageStep({tools: [], nextCursor: 'p2'}, undefined, 0), {cursor: 'p2'});
+  assert.deepEqual(toolPageStep({tools: [], nextCursor: null}, 'p2', 1), {cursor: undefined});
+  assert.equal(toolPageStep({}, undefined, 0).fault, 'result carried no tools array');
+  assert.equal(toolPageStep(null, undefined, 0).fault, 'result carried no tools array');
+  assert.equal(toolPageStep({tools: 'nope'}, undefined, 0).fault, 'result carried no tools array');
+  assert.equal(toolPageStep({tools: [], nextCursor: 7}, undefined, 0).fault, 'nextCursor is not a string');
+  // A server handing back the same cursor would loop forever; fail, never hang.
+  assert.equal(toolPageStep({tools: [], nextCursor: 'p2'}, 'p2', 1).fault, 'nextCursor did not advance');
+  // And a catalog still paginating at the bound fails rather than truncating,
+  // which is the exact defect this rule exists to prevent.
+  assert.match(toolPageStep({tools: [], nextCursor: 'more'}, 'prev', MAX_TOOL_LIST_PAGES - 1).fault,
+    /refusing to assert on a partial catalog/);
+
+  // JSON-RPC exclusivity: exactly one of result/error. A falsey error member
+  // beside a valid-looking result must not read as ok, and a reply with neither
+  // is malformed rather than empty.
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'text', text: 'hi'}]}, error: null}).status, 'rpc-error');
+  assert.match(callOutcome(200, {jsonrpc: '2.0', result: {content: []}, error: null}).detail, /both result and error/);
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: []}, error: {message: 'boom'}}).status, 'rpc-error');
+  assert.match(callOutcome(200, {jsonrpc: '2.0'}).detail, /neither result nor error/);
+  // An error with no message still reports something actionable.
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', error: {code: -32000}}).status, 'rpc-error');
+
+  // A 200 whose result is null, absent, or content-less is a broken surface,
+  // not an empty success — the classifier must not wave it through as ok.
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: null}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0'}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {}}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: 'nope'}}).status, 'rpc-error');
+  // …while a genuinely empty content array is a legitimate answer.
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: []}}).status, 'ok');
+  // …but an array of junk is not: every item needs a type, and a text item
+  // needs its text.
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{}]}}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [null]}}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'text'}]}}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'text', text: 7}]}}).status, 'rpc-error');
+  assert.equal(callOutcome(200, {jsonrpc: '2.0', result: {content: [{type: 'image', data: 'x', mimeType: 'image/png'}]}}).status, 'ok');
+
+  // Per-block-type required fields, one incomplete and one complete each.
+  const withContent = (content, version) => callOutcome(200, {jsonrpc: '2.0', result: {content}}, version).status;
+  assert.equal(withContent([{type: 'image', mimeType: 'image/png'}]), 'rpc-error');
+  assert.equal(withContent([{type: 'image', data: 'x'}]), 'rpc-error');
+  assert.equal(withContent([{type: 'audio', data: 'x', mimeType: 'audio/wav'}]), 'ok');
+  assert.equal(withContent([{type: 'audio', data: 'x'}]), 'rpc-error');
+  assert.equal(withContent([{type: 'resource', resource: {text: 't'}}]), 'rpc-error');
+  assert.equal(withContent([{type: 'resource', resource: {uri: 'file:///x'}}]), 'rpc-error');
+  assert.equal(withContent([{type: 'resource', resource: {uri: 'file:///x', text: 't'}}]), 'ok');
+  assert.equal(withContent([{type: 'resource', resource: {uri: 'file:///x', blob: 'e30='}}]), 'ok');
+  assert.equal(withContent([{type: 'resource_link', uri: 'https://x/'}]), 'rpc-error');
+  assert.equal(withContent([{type: 'resource_link', name: 'x'}]), 'rpc-error');
+  assert.equal(withContent([{type: 'resource_link', name: 'x', uri: 'https://x/'}]), 'ok');
+  // A type outside the closed per-version union is a schema violation.
+  assert.equal(withContent([{type: 'future_block'}]), 'rpc-error');
+
+  // isError is an optional boolean — invalid falsey values are malformed,
+  // not passes.
+  const withResult = (result, version) => callOutcome(200, {jsonrpc: '2.0', result}, version).status;
+  assert.equal(withResult({content: [], isError: 0}), 'rpc-error');
+  assert.equal(withResult({content: [], isError: null}), 'rpc-error');
+  assert.equal(withResult({content: [], isError: 'true'}), 'rpc-error');
+  assert.equal(withResult({content: [], isError: false}), 'ok');
+  assert.equal(withResult({content: [], isError: true}), 'tool-error');
+
+  // structuredContent is optional, and an object when present.
+  assert.equal(withResult({content: [], structuredContent: []}), 'rpc-error');
+  assert.equal(withResult({content: [], structuredContent: 'x'}), 'rpc-error');
+  assert.equal(withResult({content: [], structuredContent: null}), 'rpc-error');
+  assert.equal(withResult({content: [], structuredContent: {rows: 3}}), 'ok');
+
+  // Validation honors the negotiated version: features refuse before the
+  // version that defined them and pass at it.
+  assert.equal(withContent([{type: 'audio', data: 'x', mimeType: 'audio/wav'}], '2024-11-05'), 'rpc-error');
+  assert.equal(withContent([{type: 'audio', data: 'x', mimeType: 'audio/wav'}], '2025-03-26'), 'ok');
+  assert.equal(withContent([{type: 'resource_link', name: 'x', uri: 'https://x/'}], '2025-03-26'), 'rpc-error');
+  assert.equal(withResult({content: [], structuredContent: {rows: 3}}, '2025-03-26'), 'rpc-error');
+  assert.equal(withResult({content: [], structuredContent: {rows: 3}}, '2025-06-18'), 'ok');
+
+  // The notification contract is exactly 202 with an empty body.
+  assert.equal(notificationFault(202, ''), null);
+  assert.equal(notificationFault(202, '  \n'), null);
+  assert.equal(notificationFault(0, ''), 'the notification POST failed');
+  assert.equal(notificationFault(200, ''), 'notification acknowledged with HTTP 200, expected exactly 202');
+  assert.equal(notificationFault(204, ''), 'notification acknowledged with HTTP 204, expected exactly 202');
+  assert.equal(notificationFault(202, '{"jsonrpc":"2.0"}'),
+    'notification acknowledgement carried a body, expected none');
+
+  // The version header exists only after negotiation; sending it on
+  // initialize itself would assert a version the server has not agreed to.
+  assert.equal(rpcHeaders('t', '2025-06-18')['MCP-Protocol-Version'], '2025-06-18');
+  assert.equal(rpcHeaders('t', null)['MCP-Protocol-Version'], undefined);
+  assert.equal(rpcHeaders('t', undefined)['MCP-Protocol-Version'], undefined);
+
+  process.stdout.write('probe-mcp: decoder and classifier matrix ok\n');
+} else {
+  const timeoutMs = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
+  const baseUrl = process.env.MCP_PROBE_BASE_URL || 'http://127.0.0.1:8000';
+  const token = process.env.KNOXX_MCP_LOOPBACK_TOKEN || '';
+  const toolCalls = JSON.parse(process.env.MCP_PROBE_TOOL_CALLS || '{}');
+
+  probe(baseUrl, token, toolCalls, timeoutMs).then(
+    (result) => process.stdout.write(JSON.stringify(result)),
+    (e) => process.stdout.write(JSON.stringify({ok: false, reason: 'probe-threw', detail: String((e && e.message) || e)})),
+  );
+}

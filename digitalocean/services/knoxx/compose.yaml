@@ -49,6 +49,14 @@ services:
       # rewrite them (receipts.edn 2026-06-02, commit 91dd693).
       CONTRACTS_DIR: /app/contracts
 
+      # Optional, and unset by default. contracts/knoxx/authentication/mcp_http.edn
+      # permits the :trusted-loopback method but law.auth-methods refuses
+      # without a configured secret of at least 16 characters, so an empty
+      # value leaves the backend with OAuth as its only way in. Set it to let
+      # the post-deploy gate verify the MCP tool surface from inside this
+      # container; :require-loopback keeps it unreachable from anywhere else.
+      KNOXX_MCP_LOOPBACK_TOKEN: ${KNOXX_MCP_LOOPBACK_TOKEN:-}
+
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI must be set}
       MONGODB_DB: ${MONGODB_DB}
 

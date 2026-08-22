@@ -1,0 +1,6 @@
+{:contract/kind :role
+ :role/id :role/deploy-verifier
+ ;; The grant path every other role in this tree uses: a dedicated read-only
+ ;; capability rather than declared tool-policies, so the documented
+ ;; resolution chain (role -> capabilities -> cap/tools) is the whole story.
+ :role/capabilities [:cap/deploy-verify]}

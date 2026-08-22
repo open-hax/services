@@ -104,6 +104,12 @@ jobs:
       # publication and translation config resolve from Knoxx's resource graph,
       # so their surfaces are required unconditionally. The sentinel remains
       # because the Gardens page still proxies /api/openplanner/v1/gardens.
+      #
+      # KNOXX_MCP_LOOPBACK_TOKEN is deliberately absent here: it is a secret,
+      # and deploy-digitalocean.yml's render step defaults it to the inert
+      # "off" sentinel when the environment has not provisioned one, deriving
+      # KNOXX_EXPECT_MCP_VERIFY from what it finds. Hard-coding either value
+      # here would shadow the inherited secret and pin the gate off forever.
       extra_env: >-
         {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream"}
     secrets: inherit
