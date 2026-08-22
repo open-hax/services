@@ -31,6 +31,10 @@ on:
         required: false
         default: main
         type: string
+      openplanner_ref:
+        description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
+        required: false
+        default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
       website_ref:
         description: open-hax/website ref to deploy
         required: false
@@ -88,8 +92,14 @@ jobs:
       service: knoxx-frontend
       source_ref: ${{ inputs.knoxx_ref }}
 
+  build-knoxx-devtools:
+    uses: ./.github/workflows/build-knoxx-devtools.yml
+    with:
+      source_ref: ${{ inputs.knoxx_ref }}
+      openplanner_ref: ${{ inputs.openplanner_ref }}
+
   deploy-knoxx:
-    needs: [deploy-proxx, build-knoxx-backend, build-knoxx-frontend]
+    needs: [deploy-proxx, build-knoxx-backend, build-knoxx-frontend, build-knoxx-devtools]
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: knoxx
@@ -111,7 +121,7 @@ jobs:
       # KNOXX_EXPECT_MCP_VERIFY from what it finds. Hard-coding either value
       # here would shadow the inherited secret and pin the gate off forever.
       extra_env: >-
-        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream"}
+        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}@${{ needs.build-knoxx-devtools.outputs.digest }}", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream"}
     secrets: inherit
 
   deploy-caddy:

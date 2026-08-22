@@ -1,0 +1,180 @@
+name: Build Knoxx Devtools Image
+
+# Builds a side-effect-free shadow-cljs runtime for the production nrepl.eval
+# tool. The image carries source and compiler state but exposes no host port and
+# starts no second Knoxx application process.
+
+on:
+  workflow_call:
+    inputs:
+      source_ref:
+        description: open-hax/knoxx ref to compile against
+        required: false
+        default: main
+        type: string
+      openplanner_ref:
+        description: Immutable open-hax/openplanner ref supplying compiler sources and SDK
+        required: false
+        default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
+        type: string
+    outputs:
+      image:
+        description: Fully qualified image reference including both source revisions
+        value: ${{ jobs.build.outputs.image }}
+      digest:
+        description: Image digest as pushed
+        value: ${{ jobs.build.outputs.digest }}
+      source_sha:
+        description: Resolved Knoxx source commit
+        value: ${{ jobs.build.outputs.source_sha }}
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: open-hax/knoxx ref to compile against
+        required: false
+        default: main
+        type: string
+      openplanner_ref:
+        description: Immutable open-hax/openplanner ref supplying compiler sources and SDK
+        required: false
+        default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.source.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+      source_sha: ${{ steps.source.outputs.knoxx_sha }}
+    steps:
+      - name: Checkout Knoxx
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/knoxx
+          ref: ${{ inputs.source_ref }}
+          path: source
+          persist-credentials: false
+          submodules: false
+
+      - name: Checkout pinned OpenPlanner compiler dependencies
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/openplanner
+          ref: ${{ inputs.openplanner_ref }}
+          path: openplanner
+          persist-credentials: false
+          submodules: false
+
+      - name: Record source revisions
+        id: source
+        run: |
+          set -euo pipefail
+          knoxx_sha=$(git -C source rev-parse HEAD)
+          openplanner_sha=$(git -C openplanner rev-parse HEAD)
+          {
+            echo "knoxx_sha=$knoxx_sha"
+            echo "openplanner_sha=$openplanner_sha"
+            echo "image=ghcr.io/open-hax/knoxx-devtools:${knoxx_sha}-${openplanner_sha}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building Knoxx devtools from knoxx@$knoxx_sha and openplanner@$openplanner_sha"
+
+      # A reusable workflow does not implicitly contain its caller repository.
+      # This checkout resolves to the services revision that triggered the run,
+      # including labeled-PR revisions.
+      - name: Checkout service-owned runtime files
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          path: contracts
+          persist-credentials: false
+
+      - name: Setup Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10.14.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Build self-contained OpenPlanner SDK
+        run: |
+          set -euo pipefail
+          cd openplanner
+          pnpm install --frozen-lockfile --filter @open-hax/openplanner-sdk...
+          pnpm --filter @open-hax/openplanner-sdk... run build
+          pnpm deploy --filter @open-hax/openplanner-sdk --prod --legacy \
+            --config.node-linker=hoisted "${GITHUB_WORKSPACE}/sdk-deploy"
+          test -f "${GITHUB_WORKSPACE}/sdk-deploy/dist/index.js"
+
+      - name: Assemble minimal devtools context
+        run: |
+          set -euo pipefail
+          mkdir -p devtools-layer/source devtools-layer/openplanner/packages
+
+          cp -R source/backend devtools-layer/source/backend
+          cp -R source/shared devtools-layer/source/shared
+          cp -R openplanner/packages/contract-runtime devtools-layer/contract-runtime
+          cp -R sdk-deploy devtools-layer/openplanner/packages/openplanner-sdk
+
+          cp contracts/digitalocean/services/knoxx/Dockerfile.devtools \
+            devtools-layer/Dockerfile
+          cp contracts/digitalocean/services/knoxx/start-devtools.sh \
+            devtools-layer/start-devtools.sh
+          cp contracts/digitalocean/services/knoxx/shadow-cljs.devtools.edn \
+            devtools-layer/source/backend/shadow-cljs.edn
+          cp contracts/digitalocean/services/knoxx/repl.cljs \
+            devtools-layer/source/backend/src/cljs/knoxx/backend/repl.cljs
+
+          test -f devtools-layer/source/backend/pnpm-lock.yaml
+          test -d devtools-layer/contract-runtime/src/cljs
+          test -f devtools-layer/openplanner/packages/openplanner-sdk/dist/index.js
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push
+        id: push
+        env:
+          IMAGE: ${{ steps.source.outputs.image }}
+          MOVING_TAG: ghcr.io/open-hax/knoxx-devtools:main
+        run: |
+          set -euo pipefail
+          docker build -t "$IMAGE" -t "$MOVING_TAG" devtools-layer
+          docker push "$IMAGE"
+          docker push "$MOVING_TAG"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE")
+          echo "digest=${digest##*@}" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize
+        env:
+          IMAGE: ${{ steps.source.outputs.image }}
+        run: |
+          {
+            echo "### Knoxx devtools"
+            echo
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| Knoxx source | \`open-hax/knoxx@${{ steps.source.outputs.knoxx_sha }}\` |"
+            echo "| OpenPlanner source | \`open-hax/openplanner@${{ steps.source.outputs.openplanner_sha }}\` |"
+            echo "| image | \`$IMAGE\` |"
+            echo "| digest | \`${{ steps.push.outputs.digest }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
