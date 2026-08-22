@@ -1,12 +1,7 @@
 name: Deploy Stack
 
-# Brings the production stack up in dependency order.
-#
-#   proxx ──> knoxx ──> caddy
-#
-# Ordering is enforced here rather than with depends_on, because these are
-# separate compose projects. It is load-bearing: the Knoxx backend's /health
-# returns 503 until Proxx is reachable, and its healthcheck gates the frontend.
+# Brings the production stack up in dependency order (proxx ──> knoxx ──>
+# caddy) when a merged pull request asked for it.
 #
 # OpenPlanner's HTTP service is deliberately absent. Knoxx runs the OpenPlanner
 # data plane in-process through @open-hax/openplanner-sdk
@@ -15,14 +10,45 @@ name: Deploy Stack
 # and document-stats operations still delegate to REST and degrade until one
 # is deployed.
 #
-# Adding the `deploy` label to a same-repository PR targeting main deploys the
-# PR revision. Fork PRs are explicitly rejected because this workflow inherits
-# production secrets in its reusable deploy jobs.
+# The `deploy` label marks intent; the merge performs it.
+#
+# This used to trigger on pushes to main, ask which pull request produced the
+# pushed commit, and re-read that PR's labels when the job eventually ran.
+# Two reviewers' findings retired that design:
+#
+# * The label check read the PR's *current* labels, so a label removed while
+#   the run queued behind another deployment suppressed an intended deploy,
+#   and a label added after the merge authorized one nobody requested. The
+#   pull_request_target closed payload freezes the label set at merge time,
+#   which is the only state that should ever authorize a deployment.
+#
+# * The concurrency group wrapped the whole workflow, and GitHub keeps only
+#   one pending run per group — replacing it even with
+#   cancel-in-progress: false. An unrelated unlabeled push could therefore
+#   evict a queued labeled run and then no-op, losing the requested
+#   deployment. The group now wraps only the deploy job, which unlabeled
+#   merges skip entirely, so they never enter the queue. When two deploys do
+#   queue, the newer replaces the older and deploys main, which already
+#   contains the older run's merge, so no requested deployment is lost.
+#
+# pull_request_target rather than pull_request so a merged fork PR deploys in
+# the base repository's context, with the secrets deployment needs. This is
+# the trigger's documented-safe use: the workflow never checks out or
+# executes the pull request's code. authorize reads only the event payload,
+# and what is built and deployed is main, always — the same thing a reviewer
+# approved and merged, which by then includes a fork's contribution as main's
+# own.
+#
+# A direct push to main produces no event here and still never deploys.
+#
+# The deploy chain lives in deploy-stack-chain.yml behind one workflow_call
+# so the single concurrency slot covers proxx → knoxx → caddy end to end;
+# per-job groups would let a newer run preempt an older run mid-chain.
 
 on:
-  pull_request:
+  pull_request_target:
+    types: [closed]
     branches: [main]
-    types: [labeled]
   workflow_dispatch:
     inputs:
       proxx_ref:
@@ -48,85 +74,62 @@ permissions:
   contents: read
   packages: write
 
-concurrency:
-  group: deploy-stack-production
-  cancel-in-progress: false
-
 jobs:
   authorize:
     name: Authorize deployment
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.label.name == 'deploy' &&
-       github.event.pull_request.state == 'open' &&
-       github.event.pull_request.base.ref == 'main' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.decide.outputs.should_deploy }}
     steps:
-      - run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "Deploying PR #${{ github.event.pull_request.number }} at ${{ github.event.pull_request.head.sha }}"
-          else
-            echo "Deploying manually requested refs"
+      # Authorization comes from the event payload, not an API lookup: the
+      # payload's label set is frozen when the merge happens, so the decision
+      # cannot drift while the run queues behind another deployment.
+      - name: Decide whether this merge asked for a deployment
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels) }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch; deploying the requested refs."
+            exit 0
           fi
 
-  build-proxx:
+          if [ "$MERGED" != "true" ]; then
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "PR #${PR_NUMBER} closed without merging; nothing to deploy."
+            exit 0
+          fi
+
+          if printf '%s' "$LABELS" | jq -e 'any(.[]?.name; . == "deploy")' >/dev/null; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Deploying ${MERGE_SHA} — PR #${PR_NUMBER} carried the deploy label when it merged."
+          else
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "Not deploying ${MERGE_SHA} — PR #${PR_NUMBER} did not carry the deploy label when it merged."
+          fi
+
+  # One job for the whole chain: the concurrency group then admits only runs
+  # that actually deploy. A queued deploy is only ever replaced by a newer
+  # deploy, which builds main — a superset of the run it replaced.
+  deploy:
+    name: Deploy proxx, knoxx, caddy
     needs: authorize
-    uses: ./.github/workflows/build-images.yml
+    if: needs.authorize.outputs.should_deploy == 'true'
+    concurrency:
+      group: deploy-stack-production
+      cancel-in-progress: false
+    uses: ./.github/workflows/deploy-stack-chain.yml
     with:
-      service: proxx
-      source_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.proxx_ref || 'main' }}
-
-  deploy-proxx:
-    needs: build-proxx
-    uses: ./.github/workflows/deploy-digitalocean.yml
-    with:
-      service: proxx
-      image: ${{ needs.build-proxx.outputs.image }}
-      source_sha: ${{ needs.build-proxx.outputs.source_sha }}
-    secrets: inherit
-
-  # Both Knoxx images build while Proxx deploys.
-  build-knoxx-backend:
-    needs: authorize
-    uses: ./.github/workflows/build-images.yml
-    with:
-      service: knoxx-backend
-      source_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
-
-  build-knoxx-frontend:
-    needs: authorize
-    uses: ./.github/workflows/build-images.yml
-    with:
-      service: knoxx-frontend
-      source_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
-
-  deploy-knoxx:
-    needs: [deploy-proxx, build-knoxx-backend, build-knoxx-frontend]
-    uses: ./.github/workflows/deploy-digitalocean.yml
-    with:
-      service: knoxx
-      image: ${{ needs.build-knoxx-backend.outputs.image }}
-      source_sha: ${{ needs.build-knoxx-backend.outputs.source_sha }}
-      # OpenPlanner REST is intentionally absent from this stack. Supply a
-      # conspicuous non-secret sentinel so the shared renderer and Compose
-      # contract remain strict about blank values without requiring an unused
-      # production credential. If a listener unexpectedly appears, the CMS
-      # probe sends this sentinel, receives a non-200 response, and fails.
-      #
-      # KNOXX_MCP_LOOPBACK_TOKEN is deliberately absent here: it is a secret,
-      # and deploy-digitalocean.yml's render step defaults it to the inert
-      # "off" sentinel when the environment has not provisioned one, deriving
-      # KNOXX_EXPECT_MCP_VERIFY from what it finds. Hard-coding either value
-      # here would shadow the inherited secret and pin the gate off forever.
-      extra_env: >-
-        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_EXPECT_OPENPLANNER_REST": "false", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream"}
-    secrets: inherit
-
-  deploy-caddy:
-    needs: deploy-knoxx
-    if: github.event_name == 'pull_request' || inputs.include_ingress
-    uses: ./.github/workflows/deploy-digitalocean.yml
-    with:
-      service: caddy
+      proxx_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.proxx_ref || 'main' }}
+      knoxx_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
+      # A merge deploy always brings ingress with it, as the labelled-PR path
+      # used to; only a manual dispatch can leave Caddy alone.
+      include_ingress: ${{ github.event_name != 'workflow_dispatch' || inputs.include_ingress }}
     secrets: inherit
