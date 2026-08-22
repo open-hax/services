@@ -1,0 +1,56 @@
+# open-hax/website — static bytes at a path, and nothing else.
+#
+# One image, one read-only content mount, one committed serving config. There is
+# no build here: the docroot arrives as an image layer built by
+# build-images.yml, so the droplet needs no node, pnpm or java toolchain and no
+# working tree is rsynced to it.
+#
+# No request from this service reaches a Knoxx origin. The seam is files, which
+# is why the site keeps serving what was last published when Knoxx is down.
+#
+# Bound to loopback; caddy owns host 80/443.
+
+name: website
+
+services:
+  website:
+    image: ${WEBSITE_IMAGE:?WEBSITE_IMAGE must be set}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEBSITE_LOOPBACK_PORT}:8080"
+    volumes:
+      # The serving config is the committed file, mounted — one authority. A
+      # change to it is itemized by the deploy rsync, which sets
+      # definition_changed and forces --force-recreate, because compose hashes
+      # the image and the environment and never the contents of a bind mount
+      # (caddy served stale routes for exactly this reason, run 30696778888).
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Published content, READ-ONLY. Exactly one writer (the knoxx backend);
+      # every reader mounts the same root :ro. Declared in
+      # docs/published-content-root.md; asserted, not assumed, by verify.sh,
+      # which reads the running container's mount table.
+      #
+      # It lives under stateRoot rather than inside the image so that replacing
+      # the image — which every release does — cannot erase published
+      # translations. An absent or empty content root is a valid state that
+      # serves the site correctly.
+      - ${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/usr/share/nginx/html/published:ro
+    healthcheck:
+      # The shell, not merely a socket: an empty docroot answers 403 here.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      default:
+        aliases:
+          # Caddy resolves its upstream by this name. A service that joins the
+          # network without declaring an alias is unreachable from the ingress
+          # — which is the whole reason `smoke` has never been publicly served.
+          - website
+
+networks:
+  default:
+    name: open-hax
+    external: true

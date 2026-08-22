@@ -63,7 +63,7 @@ on:
         description: Service to deploy
         required: true
         type: choice
-        options: [smoke, proxx, openplanner, knoxx, caddy]
+        options: [smoke, proxx, openplanner, knoxx, caddy, website]
       environment:
         description: Target environment
         required: false
@@ -126,6 +126,7 @@ jobs:
             echo "service_dir=${dir}"
             echo "runtime_path=$(service_runtime_path "$SERVICE")"
             echo "state_path=$(service_state_path "$SERVICE")"
+            echo "state_root=${OPEN_HAX_STATE_ROOT}"
             echo "reports_root=${OPEN_HAX_REPORTS_ROOT}"
           } >> "$GITHUB_OUTPUT"
 
@@ -162,6 +163,13 @@ jobs:
           OPEN_HAX_SERVICE_IMAGE: ${{ inputs.image }}
           OPEN_HAX_SOURCE_SHA: ${{ inputs.source_sha }}
           OPEN_HAX_STATE_PATH: ${{ steps.contract.outputs.state_path }}
+          # stateRoot itself, for the one kind of path a per-service state path
+          # cannot express: a directory SHARED between two services, where one
+          # writes and the other reads. The published content root is
+          # <stateRoot>/website-content, a peer of state/knoxx and
+          # state/website rather than a child of either, so both services must
+          # be able to name it identically. See docs/published-content-root.md.
+          OPEN_HAX_STATE_ROOT: ${{ steps.contract.outputs.state_root }}
           OPEN_HAX_HOST_ADDRESS: ${{ steps.contract.outputs.host }}
           KNOXX_API_KEY_USER_EMAIL: ${{ vars.KNOXX_API_KEY_USER_EMAIL }}
           # Secrets. Absent ones stay empty and are caught by the placeholder
