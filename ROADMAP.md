@@ -16,18 +16,24 @@ gate is the only place several of these contracts are checked against reality.
 
 ### 1. Retiring the OpenPlanner REST dependency
 
-The knoxx health gate carries a conditional branch that exists only for a service
-production does not run:
+The knoxx health gate used to carry a conditional branch that existed only for a
+service production does not run:
 
 ```text
 knoxx: CMS surface skipped — no host OpenPlanner API at http://host.docker.internal:7777
 ```
 
-Retiring the CMS (`knoxx:knoxx-arch-migration-cms-routes-retirement`, breakdown)
-removes the last REST-only OpenPlanner dependency, and with it
-`KNOXX_EXPECT_OPENPLANNER_REST`, the `OPENPLANNER_API_KEY` sentinel, and the
-skip branch in `digitalocean/services/knoxx/verify.sh`. Net simplification of the
-gate. See `openplanner/ROADMAP.md`.
+**Done.** Publication intent and translation config now resolve from Knoxx's own
+resource graph, so `digitalocean/services/knoxx/verify.sh` checks all six
+contract-owned surfaces unconditionally — authorized and anonymous — and
+`KNOXX_EXPECT_OPENPLANNER_REST`, the skip branch, and the reachability probe it
+fed are gone.
+
+**Still open.** The `OPENPLANNER_API_KEY` sentinel stays for now: the Gardens
+page still calls `/api/openplanner/v1/gardens` through the backend proxy, so the
+container needs the key until that surface is migrated. That is the last
+REST-only OpenPlanner dependency in the deployed stack. See
+`openplanner/ROADMAP.md`.
 
 ### 2. Production actor contract is deployed infrastructure, credential provisioning remains operational work
 
@@ -85,9 +91,12 @@ the production dependency set.
 This repo's enforcement patterns are the sibling precedent for
 `knoxx:knoxx-layer-enforcement-gate`:
 
-- `code-quality.yml` — YAML validity, `bash -n` on every script, `node --check`
-  on helper scripts, and self-tests of the same classifier/probe sources the
-  deploy gates execute
+- `code-quality.yml` — YAML validity, `bash -n` on every script, and
+  `node --check` on helper scripts. It used to also run a classifier self-test
+  against `probe-openplanner.js`; that probe and its self-test went with the
+  skip branch they served. The pattern worth copying is running a probe's own
+  self-test against the exact source the deploy gate executes, and it returns
+  with the next probe that needs one
 - the stdin-consumption guard, which exists because one `docker compose exec`
   swallowed a health gate's failure branch and turned 30 failed probes into a
   green deploy (run 30679331293)

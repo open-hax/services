@@ -89,67 +89,119 @@ for surface in \
   fi
 done
 
-# 1c. CMS compatibility operations are REST-only and reach the host OpenPlanner
-# API. deploy-stack.yml deliberately does not deploy that service, so requiring
-# a 200 unconditionally would fail every deployment on a stack-built host.
+# 1c. The contract-owned publication surface. Required UNCONDITIONALLY.
 #
-# Reachability is probed directly against the upstream rather than inferred from
-# the CMS status. Reading Knoxx's status alone cannot tell an absent upstream
-# from a deployed one that is failing: both surface as 502/503/504, so skipping
-# on those would hide exactly the regression this check exists to catch.
-openplanner_base=$(docker compose --project-name knoxx --env-file .env \
-  exec -T knoxx-backend node -e "process.stdout.write(process.env.OPENPLANNER_BASE_URL || '')" </dev/null)
+# This block used to probe a host OpenPlanner REST service and skip the CMS
+# check when nothing answered, gated on KNOXX_EXPECT_OPENPLANNER_REST. That
+# branch existed because CMS state was owned by a service this stack does not
+# deploy. It no longer is: publication intent and translation config resolve
+# from Knoxx's own resource graph, with no hosted backend involved. A surface
+# that is absent-tolerant by construction must not have a way to be skipped, so
+# there is deliberately no flag, environment read, or skip branch below.
+#
+# The list mirrors `knoxx.backend.law.publication-surface/required-surfaces`,
+# which the Knoxx E2E suite checks against the same expectations. Keep the two
+# in step: a surface added there needs a line here.
+#
+# Every surface is checked unauthenticated as well as authorized. A route that
+# answers 200 to an anonymous caller is not a working route even though it
+# responds — the projection exposes document titles, garden membership and
+# publication paths, so an open route is an enumeration leak.
 
-if [ -z "$openplanner_base" ]; then
-  echo "knoxx: CMS surface skipped — OPENPLANNER_BASE_URL is unset" >&2
-else
-  # probe-openplanner.js ships beside this script and is read here on the host,
-  # then evaluated inside the container so the container's network view applies.
-  # Keeping it a real file rather than an inline string is what lets CI run
-  # `node --check` and its classifier self-test against the same source the gate
-  # executes. Its contract: `absent` is true only for a failure to establish a
-  # TCP connection, so a hung deployed service can never be mistaken for one
-  # that was never deployed.
-  upstream=$(docker compose --project-name knoxx --env-file .env \
+# Same as backend_curl, without the API key.
+backend_curl_anon() {
+  docker compose --project-name knoxx --env-file .env \
     exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
-    knoxx-backend node -e "$(cat ./probe-openplanner.js)" </dev/null)
-  upstream_reachable=$(printf '%s' "$upstream" | jq -r '.reachable // false')
+    knoxx-backend node -e "
+      const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
+      fetch('http://127.0.0.1:8000$1', {
+        method: '${2:-GET}',
+        signal: AbortSignal.timeout(ms),
+      })
+        .then(async r => { process.stdout.write(JSON.stringify({status: r.status, body: await r.text()})); })
+        .catch(e => { process.stdout.write(JSON.stringify({status: 0, body: String(e)})); });
+    " </dev/null
+}
 
-  upstream_absent=$(printf '%s' "$upstream" | jq -r '.absent // false')
-  upstream_code=$(printf '%s' "$upstream" | jq -r '.code // "unknown"')
-  upstream_phase=$(printf '%s' "$upstream" | jq -r '.phase // "unknown"')
+status_of() { printf '%s' "$1" | jq -r '.status'; }
 
-  if [ "$upstream_reachable" != "true" ] && [ "$upstream_absent" = "true" ] \
-     && [ "${KNOXX_EXPECT_OPENPLANNER_REST:-false}" != "true" ]; then
-    # Nothing listening, and this host does not expect anything to be. REST-only
-    # compatibility operations stay degraded until OpenPlanner exists.
-    echo "knoxx: CMS surface skipped — no host OpenPlanner API at ${openplanner_base} (${upstream_phase}/${upstream_code}), and KNOXX_EXPECT_OPENPLANNER_REST is not true" >&2
-  elif [ "$upstream_reachable" != "true" ]; then
-    # Either the host expects OpenPlanner and nothing is accepting connections —
-    # a crashed or stopped process — or a connection was established and the
-    # service then failed to answer, which the probe reports as phase=response.
-    # Both are failures rather than intentional absence.
-    echo "knoxx: host OpenPlanner API at ${openplanner_base} did not answer (${upstream_phase}/${upstream_code}); expected=${KNOXX_EXPECT_OPENPLANNER_REST:-false}" >&2
-    printf '%s\n' "$upstream" >&2
+# An unauthenticated caller must be refused. 401 and 403 are both acceptable —
+# which one depends on whether the request carried an identity at all — but a
+# 2xx never is. A 404 here would mean the route is missing entirely.
+require_refused() {
+  local name=$1 path=$2 method=${3:-GET}
+  local got
+  got=$(status_of "$(backend_curl_anon "$path" "$method")")
+  case "$got" in
+    401|403) ;;
+    404) echo "knoxx: ${name} — ${method} ${path} does not exist (404 unauthenticated)" >&2; exit 1 ;;
+    *)   echo "knoxx: ${name} — ${method} ${path} answered ${got} to an anonymous caller, expected 401/403" >&2; exit 1 ;;
+  esac
+}
+
+# A collection read must actually serve data to an authorized caller.
+require_authorized_200() {
+  local name=$1 path=$2 result got
+  result=$(backend_curl "$path")
+  got=$(status_of "$result")
+  if [ "$got" != "200" ]; then
+    echo "knoxx: ${name} — GET ${path} returned ${got} for an authorized caller" >&2
+    printf '%s\n' "$result" | jq -r '.body' >&2
     exit 1
-  else
-    # OpenPlanner answered, so any non-200 from the CMS route is a real failure,
-    # including 502/503/504 raised by the proxy or its dependencies.
-    cms=$(backend_curl "/api/openplanner/v1/cms/documents?limit=1")
-    cms_status=$(printf '%s' "$cms" | jq -r '.status')
-    cms_body=$(printf '%s' "$cms" | jq -r '.body')
-    if [ "$cms_status" != "200" ]; then
-      echo "knoxx: CMS surface returned ${cms_status} with OpenPlanner reachable at ${openplanner_base}" >&2
-      printf '%s\n' "$cms_body" >&2
-      exit 1
-    fi
-    echo "knoxx: CMS surface ok via the host OpenPlanner API"
   fi
-fi
+}
 
-# 1d. Translation is served by Knoxx's in-process Mongo data plane, so it must
-# be healthy regardless of whether the host OpenPlanner API is deployed. This is
-# a hard requirement and deliberately sits outside the CMS reachability branch.
+# A parameterized read cannot be asserted at 200 from a deploy gate: the gate
+# has no id to ask for, and inventing one would assert on fixture data that must
+# not exist in production. So the assertion is on the STATUS SET rather than on a
+# single status: a synthetic id has exactly two correct answers, 404 (no such
+# document, the normal case) and 200 (it improbably exists).
+#
+# Enumerating that set rather than merely rejecting 401/403 is the point. An
+# earlier version accepted anything that was not a refusal, which let a 400, 500,
+# 502 or 503 from the document-view handler ship green — the anonymous probe that
+# follows would still prove authorization was enforced, so a required surface
+# could be entirely broken and nothing in the gate would say so.
+require_authorized_found_or_missing() {
+  local name=$1 path=$2 result got
+  result=$(backend_curl "$path")
+  got=$(status_of "$result")
+  case "$got" in
+    200|404) ;;
+    401|403) echo "knoxx: ${name} — GET ${path} refused an authorized caller (${got})" >&2; exit 1 ;;
+    0)       echo "knoxx: ${name} — GET ${path} did not answer within ${BACKEND_PROBE_TIMEOUT_MS}ms" >&2; exit 1 ;;
+    *)       echo "knoxx: ${name} — GET ${path} returned ${got} for an authorized caller, expected 200 or 404" >&2
+             printf '%s\n' "$result" | jq -r '.body' >&2
+             exit 1 ;;
+  esac
+}
+
+# Reads: authorized and anonymous.
+require_authorized_200      "publication topology" "/api/publications/documents"
+require_refused             "publication topology" "/api/publications/documents"
+
+require_authorized_found_or_missing "publication document view" "/api/publications/documents/deploy.gate%2Fprobe"
+require_refused                "publication document view" "/api/publications/documents/deploy.gate%2Fprobe"
+
+require_authorized_200      "cms publication view" "/api/cms/publications/documents"
+require_refused             "cms publication view" "/api/cms/publications/documents"
+
+require_authorized_200      "translation config" "/api/translations/config"
+require_refused             "translation config" "/api/translations/config"
+
+# Writes: anonymous only. A PATCH is deliberately never issued with credentials
+# from a health gate — it would mutate published state on every deploy. The
+# anonymous probe is enough to prove both that the route exists and that it is
+# guarded, because a missing route answers 404 rather than 401/403.
+require_refused "cms publication state write" "/api/cms/publications/intents/deploy.gate%2Fprobe" "PATCH"
+require_refused "translation config write"    "/api/translations/config" "PATCH"
+
+echo "knoxx: contract-owned publication surface ok (6 surfaces, authorized and anonymous)"
+
+# 1d. Translation segments are served by Knoxx's in-process Mongo data plane, so
+# this is a hard requirement regardless of whether any host OpenPlanner API is
+# deployed. It is a separate assertion from the translation *config* surface
+# checked above: config is resource-graph state, segments are the data plane.
 translation=$(backend_curl "/api/translations/segments?limit=1")
 translation_status=$(printf '%s' "$translation" | jq -r '.status')
 translation_body=$(printf '%s' "$translation" | jq -r '.body')

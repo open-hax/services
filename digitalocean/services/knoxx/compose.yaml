@@ -67,7 +67,19 @@ services:
 
       # The SDK sources its own embeddings, also via Proxx.
       KNOXX_OPENPLANNER_CLIENT_MODE: mongo
-      # CMS compatibility routes use the production OpenPlanner HTTP service.
+      # The Gardens page proxies /api/openplanner/v1/gardens through the backend
+      # to this base URL. It is the last REST-only OpenPlanner dependency here:
+      # publication intent and translation config resolve from Knoxx resources
+      # and no longer read it.
+      #
+      # Nothing answers on this address. No service in this stack publishes host
+      # port 7777 and the deploy chain builds only proxx, knoxx and caddy, so
+      # Gardens degrades with a connection failure and every other surface is
+      # unaffected. deploy-stack-chain.yml therefore supplies a conspicuous
+      # sentinel rather than the real OPENPLANNER_API_KEY secret: there is no
+      # upstream to authenticate against, and a live credential in a stack that
+      # cannot use it is only a way to leak one. If a listener ever does appear
+      # here, the sentinel makes it fail loudly and visibly rather than half-work.
       # Translation is deliberately handled in-process by Knoxx's Mongo client.
       OPENPLANNER_BASE_URL: http://host.docker.internal:7777
       OPENPLANNER_API_KEY: ${OPENPLANNER_API_KEY:?OPENPLANNER_API_KEY must be set}
@@ -90,11 +102,28 @@ services:
       KNOXX_MUSIC_LIBRARY_ROOT: /app/workspace/Music
       OPENPLANNER_SOURCE_ROOT: /app/workspace
       OPENPLANNER_HYDRATION_LMDB_PATH: /app/state/source-hydration-lmdb
+
+      # Where the publication target writes. Knoxx is the SINGLE writer of the
+      # published content root (epic law 7); the website service mounts the same
+      # directory read-only. Declared in services:docs/published-content-root.md
+      # and shaped by
+      # foresight:docs/notes/published-content-manifest-cross-repo-contract.md.
+      #
+      # Same host, so the adapter is a filesystem adapter: write the artifact,
+      # then rename the manifest into place. rename(2) within one filesystem is
+      # atomic, which is what lets a static file server — which has no read lock
+      # — never serve a half-written manifest.
+      KNOXX_PUBLICATION_CONTENT_ROOT: /srv/website-content
     volumes:
       - ./contracts:/app/contracts:ro
       - ${KNOXX_WORKSPACE_PATH:?KNOXX_WORKSPACE_PATH must be set}:/app/workspace
       - ${KNOXX_STATE_PATH}/backend:/app/state
       - ${KNOXX_STATE_PATH}/runs:/runs/knoxx-agent
+      # Read-WRITE, and the only read-write mount of this directory anywhere.
+      # It is a peer of this service's state directory rather than a child of
+      # it, because the reader is another service: state/website-content, not
+      # state/knoxx/website-content.
+      - ${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/srv/website-content
     # OpenPlanner runs as a host PM2 process; map the Linux host gateway
     # explicitly instead of relying on Docker Desktop's implicit alias.
     extra_hosts:

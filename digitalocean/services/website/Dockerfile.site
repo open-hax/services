@@ -1,0 +1,43 @@
+# Serving image for open-hax/website.
+#
+# Deliberately thin: it layers ONE directory — the website's build output — onto
+# an unprivileged nginx. The build itself happens in
+# .github/workflows/build-images.yml, which stages `dist/site` beside this file
+# as `site/`.
+#
+# Why the Dockerfile lives here rather than in open-hax/website: this repository
+# owns where a service runs, what port it binds and how it is served, and the
+# serving config beside this file is the other half of that. Same precedent as
+# Dockerfile.backend-sdk. If open-hax/website ever grows a Dockerfile of its
+# own, this becomes redundant and should be deleted rather than kept in
+# parallel.
+#
+# What is NOT in the image:
+#   * the checkout — no src/, no test/, no scripts/, no node_modules/
+#   * orgs/ and .gitmodules — 62 KB of submodule manifest and the entire
+#     vendored constellation behind it. services#19 rsynced the working tree to
+#     a public docroot with `orgs/` unexcluded; `COPY site/` cannot express
+#     that defect.
+#   * the content root — that is runtime state, bind-mounted read-only.
+
+FROM nginxinc/nginx-unprivileged:1.27-alpine
+
+# The post-deploy gate parses the manifest inside this image.  Babashka is a
+# pinned static binary rather than an Alpine package so its availability does
+# not vary with the base image's repository snapshot.
+USER root
+ARG BABASHKA_VERSION=1.12.207
+RUN apk add --no-cache ca-certificates curl \
+ && curl --fail --location --silent --show-error \
+      "https://github.com/babashka/babashka/releases/download/v${BABASHKA_VERSION}/babashka-${BABASHKA_VERSION}-linux-amd64-static.tar.gz" \
+      | tar -xz -C /usr/local/bin bb \
+ && bb --version
+USER 101
+
+# The whole docroot, and nothing else. The base image already runs as uid 101,
+# which is the uid these files must be readable by.
+COPY --chown=101:101 site/ /usr/share/nginx/html/
+
+# /usr/share/nginx/html/published is created by docker as the bind-mount point.
+# /etc/nginx/conf.d/default.conf is replaced by the mounted nginx.conf.
+EXPOSE 8080
