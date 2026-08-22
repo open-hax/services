@@ -62,8 +62,16 @@ services:
       # The Gardens page proxies /api/openplanner/v1/gardens through the backend
       # to this base URL. It is the last REST-only OpenPlanner dependency here:
       # publication intent and translation config resolve from Knoxx resources
-      # and no longer read it. This stack deploys no OpenPlanner, so nothing
-      # answers and Gardens degrades; every other surface is unaffected.
+      # and no longer read it.
+      #
+      # Nothing answers on this address. No service in this stack publishes host
+      # port 7777 and the deploy chain builds only proxx, knoxx and caddy, so
+      # Gardens degrades with a connection failure and every other surface is
+      # unaffected. deploy-stack-chain.yml therefore supplies a conspicuous
+      # sentinel rather than the real OPENPLANNER_API_KEY secret: there is no
+      # upstream to authenticate against, and a live credential in a stack that
+      # cannot use it is only a way to leak one. If a listener ever does appear
+      # here, the sentinel makes it fail loudly and visibly rather than half-work.
       # Translation is deliberately handled in-process by Knoxx's Mongo client.
       OPENPLANNER_BASE_URL: http://host.docker.internal:7777
       OPENPLANNER_API_KEY: ${OPENPLANNER_API_KEY:?OPENPLANNER_API_KEY must be set}
