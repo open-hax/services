@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+FROM node:22-bookworm-slim AS node
+
+FROM eclipse-temurin:21-jre-bookworm
+
+USER 0:0
+COPY --from=node /usr/local /usr/local
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends bash ca-certificates procps \
+ && rm -rf /var/lib/apt/lists/* \
+ && corepack enable \
+ && corepack prepare pnpm@10.14.0 --activate \
+ && useradd --uid 1000 --create-home --shell /bin/bash agent \
+ && mkdir -p /workspace/source/backend /home/agent/.cache \
+ && chown -R 1000:1000 /workspace /home/agent
+
+COPY --chown=1000:1000 source /workspace/source
+COPY --chown=1000:1000 contract-runtime /workspace/contract-runtime
+COPY --chown=1000:1000 openplanner /workspace/openplanner
+COPY --chown=1000:1000 --chmod=0755 start-devtools.sh /usr/local/bin/start-knoxx-devtools
+
+USER 1000:1000
+ENV HOME=/home/agent
+ENV XDG_CACHE_HOME=/home/agent/.cache
+WORKDIR /workspace/source/backend
+
+RUN pnpm install --frozen-lockfile --ignore-scripts \
+ && pnpm exec shadow-cljs compile server
+
+CMD ["/usr/local/bin/start-knoxx-devtools"]

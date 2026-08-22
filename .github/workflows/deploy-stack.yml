@@ -61,6 +61,10 @@ on:
         required: false
         default: main
         type: string
+      openplanner_ref:
+        description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
+        required: false
+        default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
       website_ref:
         description: open-hax/website ref to deploy
         required: false
@@ -141,6 +145,7 @@ jobs:
     with:
       proxx_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.proxx_ref || 'main' }}
       knoxx_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
+      openplanner_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.openplanner_ref || '8b425c1690ada78f3f1bc5dfa28c3151e3a4fede' }}
       website_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.website_ref || 'main' }}
       # A merge deploy always brings ingress with it, as the labelled-PR path
       # used to; only a manual dispatch can leave Caddy alone.
