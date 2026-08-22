@@ -1,0 +1,89 @@
+# open-hax/website — the public site, and Knoxx's first real publication target.
+#
+# The descriptor of docs/deployment-model.md §2. Three of these files are
+# required by deploy-digitalocean.yml (compose.yaml, env.template, verify.sh);
+# this one is the declaration those three are built against.
+#
+# Replaces services#19, which declared the same intent for the legacy Promethean
+# lane. Its hostnames and the substance of its services.yaml entries are carried
+# over here; its nginx server blocks and its host-side build script are not —
+# see docs/published-content-root.md §1 for why this lane was chosen.
+
+version: 1
+name: website
+kind: static-site
+sourceRepo: open-hax/website
+sourceRef: main
+
+image:
+  name: ghcr.io/open-hax/website
+  # The build stage is a CI job, not the host: build-images.yml checks the
+  # website out, builds it, and layers the output onto nginx with
+  # Dockerfile.site. Nothing is built on the droplet and no working tree is
+  # rsynced there.
+  build: services:digitalocean/services/website/Dockerfile.site
+  toolchain: [node, pnpm, java]
+  command: pnpm run build:site
+  # The ONLY directory copied into the serving stage. One directory, so a
+  # single docroot can reproduce it; the site's :dev-http merges three roots
+  # (["." "dist" "public"]) and a docroot cannot.
+  #
+  # PREREQUISITE: open-hax/website must emit this. See the follow-up named in
+  # docs/published-content-root.md and the include_website input of
+  # deploy-stack-chain.yml.
+  output: dist/site
+
+serve:
+  # nginxinc/nginx-unprivileged listens here; the container runs as uid 101.
+  internalPort: 8080
+  # Loopback only. 8080 is knoxx-frontend, 8789 is proxx, 9000 is smoke;
+  # caddy alone owns host 80/443.
+  loopbackPort: 8081
+  # Locale prefixes (/es/…) and client-routed document paths resolve to the
+  # app shell. The content prefix is deliberately excluded — see nginx.conf.
+  spaFallback: true
+  networkAlias: website
+
+ingress:
+  hostname: open-hax.promethean.rest
+  caddyHostVar: CADDY_WEBSITE_HOST
+  # The record already resolves to the droplet (verified 2026-08-21 against two
+  # public resolvers), so HTTP-01 reaches this host and the certificate issues
+  # on the first Caddy deploy carrying the site block. verify.sh therefore
+  # asserts public TLS rather than warning about it.
+  dnsCutoverPending: false
+
+content:
+  root: /srv/open-hax/state/website-content
+  writer: knoxx
+  writerMount: /srv/website-content
+  readerMount: /usr/share/nginx/html/published:ro
+  # Fixed by the reader: open-hax/website's
+  # src/cljc/open_hax/website/domain/published.cljc declares content-root
+  # "/published" and builds every manifest and artifact URL from it.
+  urlPrefix: /published/
+  manifest: manifest.edn
+  contract: foresight:docs/notes/published-content-manifest-cross-repo-contract.md
+  declaration: services:docs/published-content-root.md
+
+phases:
+  # Production only, like every other service on this lane. services#19 also
+  # declared `website-staging` at staging-open-hax.promethean.rest; that is
+  # dropped rather than forgotten, because no service on this lane has a staging
+  # slot and inventing the first one for the website would be a bigger decision
+  # than this card. Whether it needs one stays open:
+  # docs/published-content-root.md §7.
+  - production
+
+verify:
+  required: true
+  probes:
+    - deployed-revision
+    - content-root-permissions
+    - content-root-mounted-read-only
+    - shell-served
+    - assets-served
+    - locale-fallback
+    - content-manifest
+    - ingress-vhost
+    - public-tls

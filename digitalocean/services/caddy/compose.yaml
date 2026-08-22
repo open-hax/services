@@ -20,6 +20,7 @@ services:
     environment:
       CADDY_KNOXX_HOST: ${KNOXX_PUBLIC_HOST:?KNOXX_PUBLIC_HOST must be set}
       CADDY_PROXX_HOST: ${PROXX_PUBLIC_HOST:?PROXX_PUBLIC_HOST must be set}
+      CADDY_WEBSITE_HOST: ${WEBSITE_PUBLIC_HOST:?WEBSITE_PUBLIC_HOST must be set}
       CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?CADDY_ACME_EMAIL must be set}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

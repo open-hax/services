@@ -99,3 +99,26 @@
 		}
 	}
 }
+
+# The public site — static bytes, no origin behind it.
+#
+# Deliberately absent from caddy/verify.sh's probe loop. The website deploys
+# AFTER this service (its own gate asserts TLS on this hostname), so requiring
+# a live upstream here would make the ingress gate depend on a service that does
+# not exist yet and fail every first deploy. The website's gate owns this
+# vhost's assertions; this file owns its existence.
+#
+# `open-hax.promethean.rest` already resolves to this droplet, so ACME HTTP-01
+# reaches the origin and this is the deploy on which its certificate first
+# issues. Caddy manages certificates per site, so a failure here cannot take the
+# other hostnames down with it.
+{$CADDY_WEBSITE_HOST} {
+	import common
+
+	# Reached by network alias on the shared `open-hax` network; 8080 is the
+	# unprivileged nginx port inside the container, not the loopback publication.
+	reverse_proxy website:8080 {
+		# Never let the bridge's owner-level grant header reach anything.
+		header_up -x-open-hax-bridge-auth
+	}
+}

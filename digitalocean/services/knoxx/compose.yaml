@@ -94,11 +94,28 @@ services:
       KNOXX_MUSIC_LIBRARY_ROOT: /app/workspace/Music
       OPENPLANNER_SOURCE_ROOT: /app/workspace
       OPENPLANNER_HYDRATION_LMDB_PATH: /app/state/source-hydration-lmdb
+
+      # Where the publication target writes. Knoxx is the SINGLE writer of the
+      # published content root (epic law 7); the website service mounts the same
+      # directory read-only. Declared in services:docs/published-content-root.md
+      # and shaped by
+      # foresight:docs/notes/published-content-manifest-cross-repo-contract.md.
+      #
+      # Same host, so the adapter is a filesystem adapter: write the artifact,
+      # then rename the manifest into place. rename(2) within one filesystem is
+      # atomic, which is what lets a static file server — which has no read lock
+      # — never serve a half-written manifest.
+      KNOXX_PUBLICATION_CONTENT_ROOT: /srv/website-content
     volumes:
       - ./contracts:/app/contracts:ro
       - ${KNOXX_WORKSPACE_PATH:?KNOXX_WORKSPACE_PATH must be set}:/app/workspace
       - ${KNOXX_STATE_PATH}/backend:/app/state
       - ${KNOXX_STATE_PATH}/runs:/runs/knoxx-agent
+      # Read-WRITE, and the only read-write mount of this directory anywhere.
+      # It is a peer of this service's state directory rather than a child of
+      # it, because the reader is another service: state/website-content, not
+      # state/knoxx/website-content.
+      - ${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/srv/website-content
     # OpenPlanner runs as a host PM2 process; map the Linux host gateway
     # explicitly instead of relying on Docker Desktop's implicit alias.
     extra_hosts:

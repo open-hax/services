@@ -36,7 +36,7 @@ on:
         description: Service image to build
         required: true
         type: choice
-        options: [proxx, openplanner, knoxx-backend, knoxx-frontend]
+        options: [proxx, openplanner, knoxx-backend, knoxx-frontend, website]
       source_ref:
         description: Ref of the application repository to build
         required: false
@@ -70,6 +70,11 @@ jobs:
             openplanner)    repo=open-hax/openplanner; context=source;          dockerfile=source/Dockerfile ;;
             knoxx-backend)  repo=open-hax/knoxx;       context=source/backend;  dockerfile=source/backend/Dockerfile ;;
             knoxx-frontend) repo=open-hax/knoxx;       context=source/frontend; dockerfile=source/frontend/Dockerfile ;;
+            # The website has no Dockerfile of its own. Its docroot and the
+            # serving image are staged below into site-layer/ from
+            # digitalocean/services/website/, which is where this repository
+            # keeps how a service is served.
+            website)        repo=open-hax/website;     context=site-layer;      dockerfile=site-layer/Dockerfile ;;
             *) echo "unknown service: $SERVICE" >&2; exit 2 ;;
           esac
           {
@@ -91,6 +96,12 @@ jobs:
           # open-hax/openplanner declares a file:/// submodule
           # (packages/stores/migrations/openplanner-migration-tools) that
           # cannot be cloned on a hosted runner.
+          #
+          # open-hax/website needs this for a second reason: its .gitmodules is
+          # 62 KB of submodule declarations and none of them are inputs to the
+          # build (pnpm-workspace.yaml declares only `.`). services#19 rsynced
+          # that entire vendored constellation into a public docroot because its
+          # excludes named src/ and test/ but not orgs/.
           submodules: false
 
       - name: Record resolved source commit
@@ -133,20 +144,20 @@ jobs:
           echo "staged $(find contract-runtime/src/cljs -name '*.cljs' | wc -l) cljs files"
 
       - name: Setup Java
-        if: startsWith(inputs.service, 'knoxx-')
+        if: startsWith(inputs.service, 'knoxx-') || inputs.service == 'website'
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Setup pnpm
-        if: startsWith(inputs.service, 'knoxx-')
+        if: startsWith(inputs.service, 'knoxx-') || inputs.service == 'website'
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: 10.14.0
 
       - name: Setup Node.js
-        if: startsWith(inputs.service, 'knoxx-')
+        if: startsWith(inputs.service, 'knoxx-') || inputs.service == 'website'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -171,7 +182,7 @@ jobs:
       # runner of a reusable workflow call. Dockerfile.backend-sdk lives in
       # this repo (digitalocean/services/knoxx/), so check it out explicitly.
       - name: Check out service contracts
-        if: inputs.service == 'knoxx-backend'
+        if: inputs.service == 'knoxx-backend' || inputs.service == 'website'
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: contracts
@@ -228,6 +239,77 @@ jobs:
           test -f frontend/dist/app.css
           test -f frontend/dist/cljs/app.js
           test -f frontend/dist/bridge/style.css
+
+      # --- website-only: build the site, then stage the serving layer -----
+      #
+      # node, pnpm and java come from the steps above; the droplet has none of
+      # them and needs none. services#19 called `pnpm install` and
+      # `pnpm exec shadow-cljs release app` from deploy-promethean.yml, which
+      # sets up no toolchain at all — `pnpm` is not on ubuntu-latest.
+      #
+      # No clojure CLI: shadow-cljs resolves its own Maven dependencies through
+      # the java it was given, exactly as both knoxx builds already do.
+      - name: Build the website
+        if: inputs.service == 'website'
+        working-directory: source
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          # service.yaml declares image.toolchain; assert it rather than
+          # discovering its absence at `pnpm: command not found`, which is how
+          # services#19 would have failed.
+          for tool in node pnpm java; do
+            command -v "$tool" >/dev/null || {
+              echo "::error::the runner has no ${tool}; digitalocean/services/website/service.yaml declares it in image.toolchain" >&2
+              exit 2
+            }
+          done
+          echo "toolchain: node $(node -v), pnpm $(pnpm -v), java $(java -version 2>&1 | head -1)"
+
+          # dist/site is the deployment contract, declared as image.output in
+          # digitalocean/services/website/service.yaml. ONE directory, because a
+          # single docroot cannot reproduce the three roots the site's :dev-http
+          # merges (["." "dist" "public"]) — which is exactly how services#19
+          # came to mount public/ and serve neither the shell nor the bundle.
+          if ! jq -e '.scripts["build:site"]' package.json >/dev/null; then
+            echo "::error::open-hax/website@${SOURCE_REF} declares no build:site script. dist/site/ is the deployment contract; see services:docs/published-content-root.md" >&2
+            exit 2
+          fi
+          pnpm install --frozen-lockfile
+          pnpm run build:site
+
+          # A docroot that answers / and 404s its own bundle serves a blank page
+          # with a 200. Assert the shape where the failure is a build failure,
+          # rather than discovering it in the health gate.
+          test -f dist/site/index.html
+          grep -q 'id="root"' dist/site/index.html
+
+          # Only built bytes may be served. `COPY site/` cannot express
+          # services#19's defect, but an emitter that copied the checkout into
+          # its own output still could.
+          for forbidden in .git .gitmodules orgs node_modules; do
+            if [ -e "dist/site/${forbidden}" ]; then
+              echo "::error::dist/site/${forbidden} is part of the build output; only built bytes may be served" >&2
+              exit 2
+            fi
+          done
+          echo "docroot: $(find dist/site -type f | wc -l) files, $(du -sh dist/site | cut -f1)"
+
+      - name: Stage the serving layer
+        if: inputs.service == 'website'
+        run: |
+          set -euo pipefail
+          mkdir -p site-layer
+          cp -R source/dist/site site-layer/site
+          # Dockerfile.site lives in this repository because this repository
+          # owns how a service is served. Its companion nginx.conf is
+          # deliberately NOT baked in: compose.yaml bind-mounts it, so a
+          # serving-config fix needs no website rebuild, and a change to it is
+          # itemized by the deploy rsync, which forces a container recreate.
+          cp contracts/digitalocean/services/website/Dockerfile.site site-layer/Dockerfile
+          test -f site-layer/site/index.html
+          test -f site-layer/Dockerfile
 
       # --- Build and push -------------------------------------------------
 
