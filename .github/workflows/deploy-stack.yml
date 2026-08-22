@@ -1,7 +1,7 @@
 name: Deploy Stack
 
 # Brings the production stack up in dependency order (proxx ──> knoxx ──>
-# caddy) when a merged pull request asked for it.
+# caddy ──> website) when a merged pull request asked for it.
 #
 # OpenPlanner's HTTP service is deliberately absent. Knoxx runs the OpenPlanner
 # data plane in-process through @open-hax/openplanner-sdk
@@ -42,8 +42,8 @@ name: Deploy Stack
 # A direct push to main produces no event here and still never deploys.
 #
 # The deploy chain lives in deploy-stack-chain.yml behind one workflow_call
-# so the single concurrency slot covers proxx → knoxx → caddy end to end;
-# per-job groups would let a newer run preempt an older run mid-chain.
+# so the single concurrency slot covers proxx → knoxx → caddy → website end to
+# end; per-job groups would let a newer run preempt an older run mid-chain.
 
 on:
   pull_request_target:
@@ -61,10 +61,22 @@ on:
         required: false
         default: main
         type: string
+      website_ref:
+        description: open-hax/website ref to deploy
+        required: false
+        default: main
+        type: string
       include_ingress:
         description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
         required: false
         default: true
+        type: boolean
+      include_website:
+        description: >-
+          Build and deploy open-hax/website. Off by default until
+          open-hax/website emits dist/site; see deploy-stack-chain.yml.
+        required: false
+        default: false
         type: boolean
 
 # packages: write is required here, not just in build-images.yml: a reusable
@@ -119,7 +131,7 @@ jobs:
   # that actually deploy. A queued deploy is only ever replaced by a newer
   # deploy, which builds main — a superset of the run it replaced.
   deploy:
-    name: Deploy proxx, knoxx, caddy
+    name: Deploy proxx, knoxx, caddy, website
     needs: authorize
     if: needs.authorize.outputs.should_deploy == 'true'
     concurrency:
@@ -129,7 +141,13 @@ jobs:
     with:
       proxx_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.proxx_ref || 'main' }}
       knoxx_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
+      website_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.website_ref || 'main' }}
       # A merge deploy always brings ingress with it, as the labelled-PR path
       # used to; only a manual dispatch can leave Caddy alone.
       include_ingress: ${{ github.event_name != 'workflow_dispatch' || inputs.include_ingress }}
+      # Not `|| true` like include_ingress: a merge must NOT bring the website
+      # with it until open-hax/website emits dist/site, or every deploy goes
+      # red. Explicitly passed rather than defaulted so the day it flips is one
+      # readable edit here and in deploy-stack-chain.yml.
+      include_website: ${{ github.event_name == 'workflow_dispatch' && inputs.include_website }}
     secrets: inherit

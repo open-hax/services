@@ -1,9 +1,13 @@
 name: Deploy Stack Chain
 
-# Reusable body of deploy-stack.yml: builds and deploys proxx, knoxx and
-# caddy in dependency order.
+# Reusable body of deploy-stack.yml: builds and deploys proxx, knoxx, caddy
+# and the website in dependency order.
 #
-#   proxx ──> knoxx ──> caddy
+#   proxx ──> knoxx ──> caddy ──> website
+#
+# The website comes last because its gate asserts TLS on its public hostname,
+# which means reaching through Caddy; putting it before Caddy would instead make
+# the ingress gate depend on an upstream that does not exist yet.
 #
 # Ordering is enforced here rather than with depends_on, because these are
 # separate compose projects. It is load-bearing: the Knoxx backend's /health
@@ -27,10 +31,25 @@ on:
         required: false
         default: main
         type: string
+      website_ref:
+        description: open-hax/website ref to deploy
+        required: false
+        default: main
+        type: string
       include_ingress:
         description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
         required: false
         default: true
+        type: boolean
+      include_website:
+        description: >-
+          Build and deploy open-hax/website. Defaults to false only because the
+          build requires open-hax/website to emit dist/site (image.output in
+          digitalocean/services/website/service.yaml); until that lands, a true
+          default would turn every production deploy red. Flip this default to
+          true in the same change that lands it, then delete this input.
+        required: false
+        default: false
         type: boolean
 
 # packages: write is required here, not just in build-images.yml: a reusable
@@ -91,4 +110,31 @@ jobs:
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: caddy
+    secrets: inherit
+
+  # Builds alongside the rest of the chain; deploys last.
+  build-website:
+    if: inputs.include_website
+    uses: ./.github/workflows/build-images.yml
+    with:
+      service: website
+      source_ref: ${{ inputs.website_ref }}
+
+  deploy-website:
+    needs: [build-website, deploy-caddy]
+    # deploy-caddy is conditional, and a skipped ingress must not silently skip
+    # the website with it: the website's gate classifies an absent ingress as a
+    # WARN owned by caddy and still proves the site serves on loopback. A
+    # *failed* caddy is different — there is then no ingress to assert against.
+    if: >-
+      always()
+      && inputs.include_website
+      && needs.build-website.result == 'success'
+      && needs.deploy-caddy.result != 'failure'
+      && needs.deploy-caddy.result != 'cancelled'
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: website
+      image: ${{ needs.build-website.outputs.image }}
+      source_sha: ${{ needs.build-website.outputs.source_sha }}
     secrets: inherit
