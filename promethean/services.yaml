@@ -74,7 +74,7 @@ services:
     desiredProxxBaseUrl: https://proxx.promethean.rest
     notes:
       - The durable workspace backs CMS drafts, Studio media/playlists, and source hydration.
-      - CMS compatibility operations use the host OpenPlanner HTTP service; translation is in-process.
+      - Publication intent and translation config resolve from Knoxx resources; only the Gardens proxy still needs OpenPlanner REST.
 
   knoxx-staging:
     kind: app

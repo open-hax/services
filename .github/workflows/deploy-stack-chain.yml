@@ -1,0 +1,98 @@
+name: Deploy Stack Chain
+
+# Reusable body of deploy-stack.yml: builds and deploys proxx, knoxx and
+# caddy in dependency order.
+#
+#   proxx ──> knoxx ──> caddy
+#
+# Ordering is enforced here rather than with depends_on, because these are
+# separate compose projects. It is load-bearing: the Knoxx backend's /health
+# returns 503 until Proxx is reachable, and its healthcheck gates the frontend.
+#
+# The whole chain lives behind a single workflow_call so the caller's one
+# concurrency slot covers it end to end. With per-job concurrency groups a
+# newer run could preempt an older run mid-chain — cancel its next queued job
+# and leave production half-advanced on the older revision.
+
+on:
+  workflow_call:
+    inputs:
+      proxx_ref:
+        description: open-hax/proxx ref to deploy
+        required: false
+        default: main
+        type: string
+      knoxx_ref:
+        description: open-hax/knoxx ref to deploy
+        required: false
+        default: main
+        type: string
+      include_ingress:
+        description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
+        required: false
+        default: true
+        type: boolean
+
+# packages: write is required here, not just in build-images.yml: a reusable
+# workflow's jobs can never hold more than the caller's top-level permissions,
+# and GitHub refuses to start the run on the mismatch.
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-proxx:
+    uses: ./.github/workflows/build-images.yml
+    with:
+      service: proxx
+      source_ref: ${{ inputs.proxx_ref }}
+
+  deploy-proxx:
+    needs: build-proxx
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: proxx
+      image: ${{ needs.build-proxx.outputs.image }}
+      source_sha: ${{ needs.build-proxx.outputs.source_sha }}
+    secrets: inherit
+
+  # Both Knoxx images build while Proxx deploys.
+  build-knoxx-backend:
+    uses: ./.github/workflows/build-images.yml
+    with:
+      service: knoxx-backend
+      source_ref: ${{ inputs.knoxx_ref }}
+
+  build-knoxx-frontend:
+    uses: ./.github/workflows/build-images.yml
+    with:
+      service: knoxx-frontend
+      source_ref: ${{ inputs.knoxx_ref }}
+
+  deploy-knoxx:
+    needs: [deploy-proxx, build-knoxx-backend, build-knoxx-frontend]
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: knoxx
+      image: ${{ needs.build-knoxx-backend.outputs.image }}
+      source_sha: ${{ needs.build-knoxx-backend.outputs.source_sha }}
+      # OpenPlanner REST is intentionally absent from this stack. Supply a
+      # conspicuous non-secret sentinel so the shared renderer and Compose
+      # contract remain strict about blank values without requiring an unused
+      # production credential.
+      #
+      # The health gate no longer branches on whether that service answers:
+      # publication and translation config resolve from Knoxx's resource graph,
+      # so their surfaces are required unconditionally. The sentinel remains
+      # because the Gardens page still proxies /api/openplanner/v1/gardens.
+      extra_env: >-
+        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream"}
+    secrets: inherit
+
+  deploy-caddy:
+    needs: deploy-knoxx
+    if: inputs.include_ingress
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: caddy
+    secrets: inherit

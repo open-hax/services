@@ -153,15 +153,26 @@ require_authorized_200() {
 
 # A parameterized read cannot be asserted at 200 from a deploy gate: the gate
 # has no id to ask for, and inventing one would assert on fixture data that must
-# not exist in production. Asserting it is not REFUSED still proves the route is
-# reachable and that authorization admits this caller; a 404 for an unknown id
-# is the correct answer, not a failure.
-require_authorized_not_refused() {
-  local name=$1 path=$2 got
-  got=$(status_of "$(backend_curl "$path")")
+# not exist in production. So the assertion is on the STATUS SET rather than on a
+# single status: a synthetic id has exactly two correct answers, 404 (no such
+# document, the normal case) and 200 (it improbably exists).
+#
+# Enumerating that set rather than merely rejecting 401/403 is the point. An
+# earlier version accepted anything that was not a refusal, which let a 400, 500,
+# 502 or 503 from the document-view handler ship green — the anonymous probe that
+# follows would still prove authorization was enforced, so a required surface
+# could be entirely broken and nothing in the gate would say so.
+require_authorized_found_or_missing() {
+  local name=$1 path=$2 result got
+  result=$(backend_curl "$path")
+  got=$(status_of "$result")
   case "$got" in
+    200|404) ;;
     401|403) echo "knoxx: ${name} — GET ${path} refused an authorized caller (${got})" >&2; exit 1 ;;
     0)       echo "knoxx: ${name} — GET ${path} did not answer within ${BACKEND_PROBE_TIMEOUT_MS}ms" >&2; exit 1 ;;
+    *)       echo "knoxx: ${name} — GET ${path} returned ${got} for an authorized caller, expected 200 or 404" >&2
+             printf '%s\n' "$result" | jq -r '.body' >&2
+             exit 1 ;;
   esac
 }
 
@@ -169,7 +180,7 @@ require_authorized_not_refused() {
 require_authorized_200      "publication topology" "/api/publications/documents"
 require_refused             "publication topology" "/api/publications/documents"
 
-require_authorized_not_refused "publication document view" "/api/publications/documents/deploy.gate%2Fprobe"
+require_authorized_found_or_missing "publication document view" "/api/publications/documents/deploy.gate%2Fprobe"
 require_refused                "publication document view" "/api/publications/documents/deploy.gate%2Fprobe"
 
 require_authorized_200      "cms publication view" "/api/cms/publications/documents"
@@ -187,9 +198,10 @@ require_refused "translation config write"    "/api/translations/config" "PATCH"
 
 echo "knoxx: contract-owned publication surface ok (6 surfaces, authorized and anonymous)"
 
-# 1d. Translation is served by Knoxx's in-process Mongo data plane, so it must
-# be healthy regardless of whether the host OpenPlanner API is deployed. This is
-# a hard requirement and deliberately sits outside the CMS reachability branch.
+# 1d. Translation segments are served by Knoxx's in-process Mongo data plane, so
+# this is a hard requirement regardless of whether any host OpenPlanner API is
+# deployed. It is a separate assertion from the translation *config* surface
+# checked above: config is resource-graph state, segments are the data plane.
 translation=$(backend_curl "/api/translations/segments?limit=1")
 translation_status=$(printf '%s' "$translation" | jq -r '.status')
 translation_body=$(printf '%s' "$translation" | jq -r '.body')
