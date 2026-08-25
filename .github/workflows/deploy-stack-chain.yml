@@ -35,6 +35,7 @@ on:
         description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
         required: false
         default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
+        type: string
       website_ref:
         description: open-hax/website ref to deploy
         required: false
