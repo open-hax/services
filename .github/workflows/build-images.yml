@@ -183,7 +183,13 @@ jobs:
         if: inputs.service == 'knoxx-backend'
         uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # v13.6.1
         with:
-          cli: latest
+          # Pinned, not `latest`. This workflow builds the image that ships to
+          # production, and `latest` resolves to whatever clojure/brew-install
+          # released most recently — so the same commit could produce two
+          # different classpaths on two different days. open-hax/knoxx's ci.yml
+          # floats deliberately, because catching an upstream break early is
+          # what a CI lane is for; a release lane wants the opposite.
+          cli: 1.12.5.1664
 
       - name: Build Knoxx backend bundle
         if: inputs.service == 'knoxx-backend'
