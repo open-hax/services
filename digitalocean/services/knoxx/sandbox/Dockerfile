@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-FROM eclipse-temurin:21-jdk-bookworm AS jdk
+# Temurin retired its Debian variants; `21-jdk-bookworm` now 404s on pull.
+# jammy rather than noble because only the JDK moves from here into the
+# bookworm base below, and a JDK built against an older glibc runs on a newer
+# one — jammy is 2.35, bookworm is 2.36. noble (2.39) is the wrong direction.
+FROM eclipse-temurin:21-jdk-jammy AS jdk
 
 FROM nikolaik/python-nodejs:python3.12-nodejs22-bookworm
 

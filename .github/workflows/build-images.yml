@@ -162,11 +162,47 @@ jobs:
         with:
           node-version: 22
 
+      # knoxx-backend ONLY, and the distinction is in the shadow-cljs config
+      # rather than in the service name. `backend/shadow-cljs.edn` is
+      # `{:deps {:aliases [:cljs]}}` — it declares no :source-paths and no
+      # :dependencies and defers the whole classpath, including the katamorph
+      # Git dependency, to tools.deps. shadow-cljs then shells out to
+      # `clojure`, and ubuntu-latest has no clojure. Without this the build
+      # died at "Executable 'clojure' not found on system path" on every run,
+      # which is why production still serves knoxx images from 2026-08-04.
+      #
+      # knoxx-frontend and website resolve their own dependencies through the
+      # java above (`:source-paths` + `:dependencies`), so neither needs it.
+      # The comment above the website build used to claim that of "both knoxx
+      # builds"; it was true of the frontend and false of the backend.
+      #
+      # Mirrors open-hax/knoxx's own ci.yml, which sets up the same CLI for the
+      # same reason — a build that passes there and fails here is a toolchain
+      # difference, not a code difference.
+      - name: Setup Clojure CLI
+        if: inputs.service == 'knoxx-backend'
+        uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # v13.6.1
+        with:
+          # Pinned, not `latest`. This workflow builds the image that ships to
+          # production, and `latest` resolves to whatever clojure/brew-install
+          # released most recently — so the same commit could produce two
+          # different classpaths on two different days. open-hax/knoxx's ci.yml
+          # floats deliberately, because catching an upstream break early is
+          # what a CI lane is for; a release lane wants the opposite.
+          cli: 1.12.5.1664
+
       - name: Build Knoxx backend bundle
         if: inputs.service == 'knoxx-backend'
         working-directory: source
         run: |
           set -euo pipefail
+          # Assert the toolchain rather than discovering its absence three
+          # minutes into a build, exactly as the website step does.
+          command -v clojure >/dev/null || {
+            echo "::error::the runner has no clojure CLI; backend/shadow-cljs.edn is in :deps mode and shadow-cljs shells out to it" >&2
+            exit 2
+          }
+          echo "toolchain: node $(node -v), pnpm $(pnpm -v), clojure $(clojure --version 2>&1 | head -1)"
           pnpm install --frozen-lockfile
           pnpm -C backend install --frozen-lockfile
           # `compile`, not `release`. backend/package.json's build script runs
@@ -247,8 +283,10 @@ jobs:
       # `pnpm exec shadow-cljs release app` from deploy-promethean.yml, which
       # sets up no toolchain at all — `pnpm` is not on ubuntu-latest.
       #
-      # No clojure CLI: shadow-cljs resolves its own Maven dependencies through
-      # the java it was given, exactly as both knoxx builds already do.
+      # No clojure CLI: website/shadow-cljs.edn declares :source-paths and
+      # :dependencies, so shadow-cljs resolves its own Maven dependencies
+      # through the java it was given. knoxx-frontend is the same. knoxx-backend
+      # is NOT — it is in :deps mode and gets the CLI above.
       - name: Build the website
         if: inputs.service == 'website'
         working-directory: source
