@@ -23,17 +23,52 @@ service production does not run:
 knoxx: CMS surface skipped — no host OpenPlanner API at http://host.docker.internal:7777
 ```
 
-**Done.** Publication intent and translation config now resolve from Knoxx's own
-resource graph, so `digitalocean/services/knoxx/verify.sh` checks all six
+**Done.** Garden deployment, publication intent, translation config, and
+revision-bound translation review now resolve from Knoxx's own resource graph
+and evidence stores. `digitalocean/services/knoxx/verify.sh` checks all eight
 contract-owned surfaces unconditionally — authorized and anonymous — and
 `KNOXX_EXPECT_OPENPLANNER_REST`, the skip branch, and the reachability probe it
 fed are gone.
 
-**Still open.** The `OPENPLANNER_API_KEY` sentinel stays for now: the Gardens
-page still calls `/api/openplanner/v1/gardens` through the backend proxy, so the
-container needs the key until that surface is migrated. That is the last
-REST-only OpenPlanner dependency in the deployed stack. See
-`openplanner/ROADMAP.md`.
+The Gardens page now reads `/api/publications/gardens`; the retired
+`/api/openplanner/v1/gardens` route and `OPENPLANNER_API_KEY` deployment
+credential are absent from the Knoxx service contract. The in-process Mongo
+data plane remains separately identified and is not a dependency on an
+OpenPlanner HTTP deployment.
+
+### 1b. The stack now contains a translation producer
+
+Decoupling the transport left a gap that no surface reported: this stack could
+*review* translations and could not *produce* one. `knoxx`'s dispatch posts a
+batch to the OpenPlanner ingestion worker, which runs out of `ingestion/`, and
+the deploy chain here builds `proxx`, `knoxx` and `caddy` — nothing else. Every
+dispatch queued work nothing would pick up, so the four localized publication
+intents for `open-hax.promethean.rest` stayed blocked indefinitely while every
+publication surface returned 200.
+
+**Done.** The producer is an agent actor, declared as deployed contract data in
+this repo:
+
+| File | Role |
+|---|---|
+| `contracts/knoxx/agents/publication_translator.edn` | the agent holding `:role/translator` |
+| `contracts/knoxx/namespaces/publication.edn` | the trigger that runs it on `publication/translation-needed` |
+
+`contracts/knoxx/roles/translator.edn` and
+`contracts/knoxx/capabilities/cap_translation.edn` were already deployed and had
+nothing holding them. `digitalocean/services/knoxx/compose.yaml` states
+`KNOXX_TRANSLATION_RUNNER: agent` explicitly — it is also the code default, but
+the deployment fact that makes it correct belongs in the deployment contract.
+
+`digitalocean/services/knoxx/verify.sh` now fails the deploy when no enabled
+trigger subscribes to `publication/translation-needed`, or when the agent it
+names does not resolve in the deployed catalog. A stack that cannot translate
+stops being a green deploy.
+
+**Still open.** An agent-dispatched translation claim whose session dies mid-run
+stays in flight — there is no session read that can settle it, so that revision
+needs an operator. `verify.sh` prints this as a `WARN` every run rather than
+failing on it.
 
 ### 2. Production actor contract is deployed infrastructure, credential provisioning remains operational work
 

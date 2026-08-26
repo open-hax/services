@@ -48,6 +48,27 @@ backend_curl() {
     " </dev/null
 }
 
+backend_json_request() {
+  local path=$1 method=$2 request_body=$3
+  docker compose --project-name knoxx --env-file .env \
+    exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
+    -e KNOXX_DEPLOY_PROBE_BODY="$request_body" \
+    knoxx-backend node -e "
+      const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
+      fetch('http://127.0.0.1:8000${path}', {
+        method: '${method}',
+        headers: {
+          'X-API-Key': process.env.KNOXX_API_KEY || '',
+          'Content-Type': 'application/json',
+        },
+        body: process.env.KNOXX_DEPLOY_PROBE_BODY,
+        signal: AbortSignal.timeout(ms),
+      })
+        .then(async r => { process.stdout.write(JSON.stringify({status: r.status, body: await r.text()})); })
+        .catch(e => { process.stdout.write(JSON.stringify({status: 0, body: String(e)})); });
+    " </dev/null
+}
+
 # 1. Backend health. Reports 503 until Proxx is reachable, which is the point:
 #    a green Knoxx with dead inference is not a demo.
 health=$(backend_curl /health)
@@ -180,6 +201,9 @@ require_authorized_found_or_missing() {
 require_authorized_200      "publication topology" "/api/publications/documents"
 require_refused             "publication topology" "/api/publications/documents"
 
+require_authorized_200      "garden deployment view" "/api/publications/gardens"
+require_refused             "garden deployment view" "/api/publications/gardens"
+
 require_authorized_found_or_missing "publication document view" "/api/publications/documents/deploy.gate%2Fprobe"
 require_refused                "publication document view" "/api/publications/documents/deploy.gate%2Fprobe"
 
@@ -189,6 +213,9 @@ require_refused             "cms publication view" "/api/cms/publications/docume
 require_authorized_200      "translation config" "/api/translations/config"
 require_refused             "translation config" "/api/translations/config"
 
+require_authorized_200      "translation publication review" "/api/publications/translations/reviews"
+require_refused             "translation publication review" "/api/publications/translations/reviews"
+
 # Writes: anonymous only. A PATCH is deliberately never issued with credentials
 # from a health gate — it would mutate published state on every deploy. The
 # anonymous probe is enough to prove both that the route exists and that it is
@@ -196,9 +223,25 @@ require_refused             "translation config" "/api/translations/config"
 require_refused "cms publication state write" "/api/cms/publications/intents/deploy.gate%2Fprobe" "PATCH"
 require_refused "translation config write"    "/api/translations/config" "PATCH"
 
-echo "knoxx: contract-owned publication surface ok (6 surfaces, authorized and anonymous)"
+echo "knoxx: contract-owned publication surface ok (8 surfaces, authorized and anonymous)"
 
-# 1d. Translation segments are served by Knoxx's in-process Mongo data plane, so
+# 1d. Activate the source-locale Garden intent. Reconciliation is idempotent and
+# contract-directed: repeating this gate cannot invent placement, styling, or
+# content, and a failed activation must not leave a deploy green while the new
+# Garden remains invisible. Localized intents are activated by the review UI
+# after their exact translation revision is approved.
+activation=$(backend_json_request "/api/publications/reconcile" "POST" \
+  '{"publicationId":"open-hax.publications/promethean-en"}')
+activation_status=$(printf '%s' "$activation" | jq -r '.status')
+if [ "$activation_status" != "200" ]; then
+  echo "knoxx: source-locale Garden activation returned ${activation_status}" >&2
+  printf '%s\n' "$activation" | jq -r '.body' >&2
+  exit 1
+fi
+
+echo "knoxx: source-locale Garden intent reconciled"
+
+# 1e. Translation segments are served by Knoxx's in-process Mongo data plane, so
 # this is a hard requirement regardless of whether any host OpenPlanner API is
 # deployed. It is a separate assertion from the translation *config* surface
 # checked above: config is resource-graph state, segments are the data plane.
@@ -211,7 +254,90 @@ if [ "$translation_status" != "200" ]; then
   exit 1
 fi
 
-# 1e. The MCP tool surface. A healthy backend with a broken tool surface is a
+# 1e-bis. The translation producer.
+#
+# The single most important check added with the agent-actor composition, and the
+# one whose absence caused the failure it replaces. Every other publication
+# surface can be green while nothing on earth is able to produce a translation:
+# the gate derives work, the claim is taken, a batch is queued, and no worker
+# exists to pick it up. The four localized intents then sit blocked forever and
+# no surface says why.
+#
+# So this asserts the producer exists, rather than that the plumbing responds:
+# a trigger subscribing to publication/translation-needed, enabled, naming an
+# agent contract that resolves. A stack that cannot translate fails the deploy
+# here instead of shipping a site stuck in one language.
+events=$(backend_curl "/api/admin/config/events")
+events_status=$(printf '%s' "$events" | jq -r '.status')
+events_body=$(printf '%s' "$events" | jq -r '.body')
+if [ "$events_status" != "200" ]; then
+  echo "knoxx: event runtime surface returned ${events_status}" >&2
+  printf '%s\n' "$events_body" >&2
+  exit 1
+fi
+
+translation_trigger=$(printf '%s' "$events_body" | jq -r '
+  [.runtime.triggers[]?
+   | select((.events // []) | map(tostring) | any(test("publication/translation-needed")))]
+  | first // empty')
+
+if [ -z "$translation_trigger" ]; then
+  echo "knoxx: no trigger subscribes to publication/translation-needed" >&2
+  echo "knoxx: nothing in this stack can produce a translation, so every" >&2
+  echo "       localized publication intent would stay blocked forever" >&2
+  printf '%s\n' "$events_body" | jq -r '.runtime.triggers // []' >&2
+  exit 1
+fi
+
+trigger_enabled=$(printf '%s' "$translation_trigger" | jq -r '.enabled')
+trigger_agent=$(printf '%s' "$translation_trigger" | jq -r '.agent // empty')
+
+if [ "$trigger_enabled" != "true" ]; then
+  echo "knoxx: the publication translation trigger is present but disabled" >&2
+  exit 1
+fi
+
+if [ -z "$trigger_agent" ]; then
+  echo "knoxx: the publication translation trigger names no agent contract" >&2
+  exit 1
+fi
+
+# The agent contract itself must resolve. A trigger naming a contract that does
+# not load starts no session and reports nothing — it fails exactly like having
+# no trigger, one layer deeper.
+#
+# Checked against the resolved catalog rather than by reading the EDN off disk.
+# The file being present proves nothing: the contract only starts a session if it
+# resolves through role, capability and actor scope, and the catalog is the one
+# view that has done all three.
+agents_catalog=$(backend_curl "/api/knoxx/agents/catalog")
+agents_status=$(printf '%s' "$agents_catalog" | jq -r '.status')
+agents_body=$(printf '%s' "$agents_catalog" | jq -r '.body')
+if [ "$agents_status" != "200" ]; then
+  echo "knoxx: agent catalog returned ${agents_status}" >&2
+  printf '%s\n' "$agents_body" >&2
+  exit 1
+fi
+
+resolved_agent=$(printf '%s' "$agents_body" | jq -r --arg id "$trigger_agent" \
+  '[.agents[]? | select((.id // "") == $id)] | first // empty')
+
+if [ -z "$resolved_agent" ]; then
+  echo "knoxx: the translation trigger names agent '${trigger_agent}', which does" >&2
+  echo "       not resolve in the deployed catalog — no session would start" >&2
+  printf '%s\n' "$agents_body" | jq -r '[.agents[]?.id]' >&2
+  exit 1
+fi
+
+echo "knoxx: translation producer ok (trigger -> agent '${trigger_agent}')"
+
+# KNOWN GAP, printed every run rather than left to be rediscovered. See
+# `knoxx.backend.infra.translation-agent-dispatch/known-gap`.
+echo "knoxx: WARN an agent-dispatched translation claim whose session dies" >&2
+echo "knoxx: WARN mid-run stays in flight — there is no session read that can" >&2
+echo "knoxx: WARN settle it, so that revision needs an operator" >&2
+
+# 1f. The MCP tool surface. A healthy backend with a broken tool surface is a
 # real and previously undetectable failure: schema conversion producing nothing
 # callable, a tool vanishing from the catalog, or an actor credential that no
 # longer resolves. None of it moves /health.

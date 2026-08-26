@@ -1,0 +1,9 @@
+{:document/id :open-hax.documents/promethean
+ :document/title "Open Hax Promethean Garden"
+ :document/source-locale :en
+ :document/source {:path "/app/publication-source/open-hax-promethean.md"}
+ :document/translations
+ {:es {:path "/app/publication-source/open-hax-promethean.es.md"}
+  :fr {:path "/app/publication-source/open-hax-promethean.fr.md"}
+  :de {:path "/app/publication-source/open-hax-promethean.de.md"}
+  :ja {:path "/app/publication-source/open-hax-promethean.ja.md"}}}

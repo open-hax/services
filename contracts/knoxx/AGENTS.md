@@ -35,6 +35,11 @@ contracts/
   actions/        Action resources — registered behavior and schemas
   pipelines/      Pipeline resources — ordered action sequences
   triggers/       Trigger resources — actor agreements to act after observing events
+  namespaces/     Namespace files — {:namespace ... :resources [...]}, expanding to
+                  one resource per entry. The newer form `resource-architecture.md`
+                  mandates, and the only form for a trigger whose action needs a
+                  sibling resource in the same file. The loader detects these by
+                  BODY, not by directory, so placement here is a human convention.
   source_modes/   Legacy source-mode resources during migration
   sources/        Source resources — actor-owned driver instances or context providers
   models/         Model resources — individual model metadata
