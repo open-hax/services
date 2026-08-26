@@ -77,10 +77,9 @@ on:
         type: boolean
       include_website:
         description: >-
-          Build and deploy open-hax/website. Off by default until
-          open-hax/website emits dist/site; see deploy-stack-chain.yml.
+          Build and deploy open-hax/website. No DNS is changed either way.
         required: false
-        default: false
+        default: true
         type: boolean
 
 # packages: write is required here, not just in build-images.yml: a reusable
@@ -150,9 +149,9 @@ jobs:
       # A merge deploy always brings ingress with it, as the labelled-PR path
       # used to; only a manual dispatch can leave Caddy alone.
       include_ingress: ${{ github.event_name != 'workflow_dispatch' || inputs.include_ingress }}
-      # Not `|| true` like include_ingress: a merge must NOT bring the website
-      # with it until open-hax/website emits dist/site, or every deploy goes
-      # red. Explicitly passed rather than defaulted so the day it flips is one
-      # readable edit here and in deploy-stack-chain.yml.
-      include_website: ${{ github.event_name == 'workflow_dispatch' && inputs.include_website }}
+      # Now `|| true` like include_ingress. open-hax/website declares
+      # build:site (open-hax/website#2), which is the prerequisite this input
+      # was waiting on, so a merge deploy brings the site with it. Only a
+      # manual dispatch can leave it alone.
+      include_website: ${{ github.event_name != 'workflow_dispatch' || inputs.include_website }}
     secrets: inherit

@@ -48,13 +48,9 @@ on:
         type: boolean
       include_website:
         description: >-
-          Build and deploy open-hax/website. Defaults to false only because the
-          build requires open-hax/website to emit dist/site (image.output in
-          digitalocean/services/website/service.yaml); until that lands, a true
-          default would turn every production deploy red. Flip this default to
-          true in the same change that lands it, then delete this input.
+          Build and deploy open-hax/website. No DNS is changed either way.
         required: false
-        default: false
+        default: true
         type: boolean
 
 # packages: write is required here, not just in build-images.yml: a reusable
