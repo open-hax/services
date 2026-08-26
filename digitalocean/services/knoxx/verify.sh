@@ -276,9 +276,13 @@ if [ "$events_status" != "200" ]; then
   exit 1
 fi
 
-translation_trigger=$(printf '%s' "$events_body" | jq -r '
+# Matched on `.id`, not `.events`: `encode-wire-values` renders an event keyword
+# with `name`, so :publication/translation-needed reaches the wire as
+# "translation-needed" and the namespace survives only on the id.
+translation_trigger=$(printf '%s' "$events_body" | jq -c '
   [.runtime.triggers[]?
-   | select((.events // []) | map(tostring) | any(test("publication/translation-needed")))]
+   | select(((.id // "") | tostring | test("translation-needed"))
+            or (((.events // []) | map(tostring) | any(test("translation-needed")))))]
   | first // empty')
 
 if [ -z "$translation_trigger" ]; then
@@ -291,6 +295,7 @@ fi
 
 trigger_enabled=$(printf '%s' "$translation_trigger" | jq -r '.enabled')
 trigger_agent=$(printf '%s' "$translation_trigger" | jq -r '.agent // empty')
+trigger_listener=$(printf '%s' "$translation_trigger" | jq -r '.listener // empty')
 
 if [ "$trigger_enabled" != "true" ]; then
   echo "knoxx: the publication translation trigger is present but disabled" >&2
@@ -310,7 +315,10 @@ fi
 # The file being present proves nothing: the contract only starts a session if it
 # resolves through role, capability and actor scope, and the catalog is the one
 # view that has done all three.
-agents_catalog=$(backend_curl "/api/knoxx/agents/catalog")
+# Asked AS THE TRIGGER'"'"'S LISTENER. The catalog is actor-scoped, and the default
+# actor is not the one a triggered session runs as — a bare lookup reports "does
+# not resolve" for a contract that resolves fine for the right actor.
+agents_catalog=$(backend_curl "/api/knoxx/agents/catalog${trigger_listener:+?actorId=$trigger_listener}")
 agents_status=$(printf '%s' "$agents_catalog" | jq -r '.status')
 agents_body=$(printf '%s' "$agents_catalog" | jq -r '.body')
 if [ "$agents_status" != "200" ]; then
