@@ -343,7 +343,8 @@ echo "knoxx: WARN settle it, so that revision needs an operator" >&2
 # longer resolves. None of it moves /health.
 #
 # Reached through the :trusted-loopback method in
-# contracts/knoxx/authentication/mcp_http.edn, which requires the caller to be
+# the authentication contract (NOT currently deployed — see below), which
+# requires the caller to be
 # on 127.0.0.1 — true here because the probe runs inside the backend container.
 # The grant resolves the dedicated deploy_verifier identity, so the served
 # catalog is deliberately the three read-only tools the probes exercise —

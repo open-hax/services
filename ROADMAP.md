@@ -70,6 +70,37 @@ stays in flight — there is no session read that can settle it, so that revisio
 needs an operator. `verify.sh` prints this as a `WARN` every run rather than
 failing on it.
 
+### 1c. A contract shipped ahead of its implementation, and broke unrelated surfaces
+
+`contracts/knoxx/authentication/mcp_http.edn` arrived here in #51 to let
+`verify.sh` gate deploys on the MCP tool surface. The app-side implementation it
+needs — `law.auth-methods`, `infra.auth.method-config`, and the loader knowing an
+`:authentication` contract class — is **open-hax/knoxx#224, still unmerged** (open
+since 2026-08-09, 206 commits behind main, conflicting).
+
+The deployed image therefore could not parse the file, and that did not fail
+narrowly. The publication resource loader marks an unparseable file invalid with
+no kind, and the publication surfaces fail closed on *any* invalid resource —
+correctly, since an unparseable file cannot be proven irrelevant. So
+`/api/publications/documents` and `/api/publications/gardens` answered
+`invalid publication resources` for a file that has nothing to do with
+publication. Reproduced locally against this exact contract set.
+
+**Done.** The contract is removed from the deployed set until #224 lands. Nothing
+in the deployed image reads it, so removing it costs nothing today.
+
+**Still open.** Two things must happen together when #224 merges: re-add the
+contract here, and only then provision `KNOXX_MCP_LOOPBACK_TOKEN` as a real 16+
+character secret. Provisioning it first flips `KNOXX_EXPECT_MCP_VERIFY=true` and
+fails the deploy on an auth method the backend does not implement — a second,
+independent way the same file breaks a deploy. Both `env.template` and
+`verify.sh` now say so at the point of use.
+
+**Not a lesson about this file.** A contract set deployed from one repo against
+an image built from another can always run ahead of it. The cheap guard is that
+the app should not treat an unknown contract class as a reason to fail surfaces
+that never asked about it.
+
 ### 2. Production actor contract is deployed infrastructure, credential provisioning remains operational work
 
 `services#41` merged the `open_hax` actor contract and the minimal
