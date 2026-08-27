@@ -20,6 +20,15 @@ This repository owns how those applications are deployed together:
 - host inventory and drift reports
 - live verification scripts
 
+## Operational contracts
+
+- [`docs/dev-instances.md`](docs/dev-instances.md) — the host-resident dev
+  servers, the `*-dev.promethean.rest` hostnames that reach them, how to add
+  one, and **the rule that a live question is answered against a dev instance
+  rather than by deploying to production**.
+- [`docs/published-content-root.md`](docs/published-content-root.md) — where
+  published content lives, its single writer, and its read-only reader.
+
 ## Boundary rule
 
 If a change decides where a service runs, which port it binds, which hostname routes to it, or which deploy job promotes it, it belongs here.

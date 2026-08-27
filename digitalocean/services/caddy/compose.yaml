@@ -22,6 +22,14 @@ services:
       CADDY_PROXX_HOST: ${PROXX_PUBLIC_HOST:?PROXX_PUBLIC_HOST must be set}
       CADDY_WEBSITE_HOST: ${WEBSITE_PUBLIC_HOST:?WEBSITE_PUBLIC_HOST must be set}
       CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?CADDY_ACME_EMAIL must be set}
+      CADDY_KNOXX_DEV_HOST: ${CADDY_KNOXX_DEV_HOST:?CADDY_KNOXX_DEV_HOST must be set}
+      CADDY_OPENCODE_DEV_HOST: ${CADDY_OPENCODE_DEV_HOST:?CADDY_OPENCODE_DEV_HOST must be set}
+      CADDY_SHADOW_DEV_HOST: ${CADDY_SHADOW_DEV_HOST:?CADDY_SHADOW_DEV_HOST must be set}
+      # No `:?` default. An unset hash renders the basic_auth directive with an
+      # empty credential, which Caddy accepts and which authenticates nobody
+      # against nothing — the failure would be an open door, not an error.
+      DEV_BASIC_AUTH_USER: ${DEV_BASIC_AUTH_USER:?DEV_BASIC_AUTH_USER must be set}
+      DEV_BASIC_AUTH_HASH: ${DEV_BASIC_AUTH_HASH:?DEV_BASIC_AUTH_HASH must be set}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Certificates and ACME account state. Losing this means re-issuing, and
