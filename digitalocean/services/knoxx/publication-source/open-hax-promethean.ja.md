@@ -1,4 +1,4 @@
-# Open Hax プロメテアン・ガーデン
+# Open Hax Promethean ガーデン
 
 Open Hax は、契約を可視化するツール、研究、アート、システムのためのガーデンです。
 

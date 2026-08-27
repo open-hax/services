@@ -1,4 +1,4 @@
-# Prometheischer Garten von Open Hax
+# Promethean Garten von Open Hax
 
 Open Hax ist ein Garten für Werkzeuge, Forschung, Kunst und Systeme, die ihre Verträge sichtbar machen.
 

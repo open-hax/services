@@ -276,14 +276,17 @@ if [ "$events_status" != "200" ]; then
   exit 1
 fi
 
-# Matched on `.id`, not `.events`: `encode-wire-values` renders an event keyword
-# with `name`, so :publication/translation-needed reaches the wire as
-# "translation-needed" and the namespace survives only on the id.
-translation_trigger=$(printf '%s' "$events_body" | jq -c '
-  [.runtime.triggers[]?
-   | select(((.id // "") | tostring | test("translation-needed"))
-            or (((.events // []) | map(tostring) | any(test("translation-needed")))))]
-  | first // empty')
+# Selected by EXACT id. `encode-wire-values` renders an event keyword with
+# `name`, so :publication/translation-needed reaches the wire as
+# "translation-needed" and the namespace survives only on `.id` — which is
+# precisely why `.id` is the field to compare, and to compare with `==`.
+#
+# A substring match here would take `first` of anything whose id merely contains
+# the phrase, and that trigger's enabled/agent/listener would then satisfy every
+# assertion below while the publication trigger went unchecked. If this id ever
+# changes the check fails loudly, which is the correct failure.
+translation_trigger=$(printf '%s' "$events_body" | jq -c \
+  '[.runtime.triggers[]? | select((.id // "") == "publication/translation-needed")] | first // empty')
 
 if [ -z "$translation_trigger" ]; then
   echo "knoxx: no trigger subscribes to publication/translation-needed" >&2
