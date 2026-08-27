@@ -34,12 +34,15 @@ if [ "$BACKEND_PROBE_TIMEOUT_MS" -lt 1 ] || [ "$BACKEND_PROBE_TIMEOUT_MS" -gt 60
   exit 1
 fi
 
+# Same rule as backend_json_request below: the path crosses as an environment
+# variable rather than interpolated into the script text.
 backend_curl() {
   docker compose --project-name knoxx --env-file .env \
     exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
+    -e KNOXX_DEPLOY_PROBE_PATH="$1" \
     knoxx-backend node -e "
       const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
-      fetch('http://127.0.0.1:8000$1', {
+      fetch('http://127.0.0.1:8000' + process.env.KNOXX_DEPLOY_PROBE_PATH, {
         headers: {'X-API-Key': process.env.KNOXX_API_KEY || ''},
         signal: AbortSignal.timeout(ms),
       })
@@ -48,15 +51,23 @@ backend_curl() {
     " </dev/null
 }
 
+# Every caller-supplied value crosses into the node script as an ENVIRONMENT
+# VARIABLE, never as string interpolation. Interpolating even a hardcoded
+# "POST" makes this reusable helper carry an injection for whichever future
+# caller passes something derived: a method of `'"'"'; process.exit(1); //` closes
+# the string literal and runs. The path has exactly the same exposure and is
+# handled the same way.
 backend_json_request() {
   local path=$1 method=$2 request_body=$3
   docker compose --project-name knoxx --env-file .env \
     exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
     -e KNOXX_DEPLOY_PROBE_BODY="$request_body" \
+    -e KNOXX_DEPLOY_PROBE_PATH="$path" \
+    -e KNOXX_DEPLOY_PROBE_METHOD="$method" \
     knoxx-backend node -e "
       const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
-      fetch('http://127.0.0.1:8000${path}', {
-        method: '${method}',
+      fetch('http://127.0.0.1:8000' + process.env.KNOXX_DEPLOY_PROBE_PATH, {
+        method: process.env.KNOXX_DEPLOY_PROBE_METHOD,
         headers: {
           'X-API-Key': process.env.KNOXX_API_KEY || '',
           'Content-Type': 'application/json',
@@ -129,14 +140,18 @@ done
 # responds — the projection exposes document titles, garden membership and
 # publication paths, so an open route is an enumeration leak.
 
-# Same as backend_curl, without the API key.
+# Same as backend_curl, without the API key — including the env-variable rule
+# for the path and method. This one takes a method from `require_refused`, so it
+# is the helper most likely to be handed something derived.
 backend_curl_anon() {
   docker compose --project-name knoxx --env-file .env \
     exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
+    -e KNOXX_DEPLOY_PROBE_PATH="$1" \
+    -e KNOXX_DEPLOY_PROBE_METHOD="${2:-GET}" \
     knoxx-backend node -e "
       const ms = Number(process.env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
-      fetch('http://127.0.0.1:8000$1', {
-        method: '${2:-GET}',
+      fetch('http://127.0.0.1:8000' + process.env.KNOXX_DEPLOY_PROBE_PATH, {
+        method: process.env.KNOXX_DEPLOY_PROBE_METHOD,
         signal: AbortSignal.timeout(ms),
       })
         .then(async r => { process.stdout.write(JSON.stringify({status: r.status, body: await r.text()})); })
