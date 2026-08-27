@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/constellation-es
+ :publication/document :open-hax.documents/constellation
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :es
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/es/garden/constellation/"
+ :translation/review :required}

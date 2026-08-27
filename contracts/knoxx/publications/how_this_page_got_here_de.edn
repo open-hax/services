@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/how-this-page-got-here-de
+ :publication/document :open-hax.documents/how-this-page-got-here
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :de
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/de/garden/how-this-page-got-here/"
+ :translation/review :required}

@@ -35,6 +35,10 @@ services:
       # translations. An absent or empty content root is a valid state that
       # serves the site correctly.
       - ${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/usr/share/nginx/html/published:ro
+      # Music library, READ-ONLY, and with no writer anywhere in the stack:
+      # the tracks are uploaded out of band rather than produced by a service.
+      # Mounted under the docroot because nginx.conf already routes /music/.
+      - ${WEBSITE_MUSIC_ROOT:?WEBSITE_MUSIC_ROOT must be set}:/usr/share/nginx/html/music:ro
     healthcheck:
       # The shell, not merely a socket: an empty docroot answers 403 here.
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/"]

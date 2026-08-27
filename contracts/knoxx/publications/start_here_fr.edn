@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/start-here-fr
+ :publication/document :open-hax.documents/start-here
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :fr
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/fr/garden/start-here/"
+ :translation/review :required}

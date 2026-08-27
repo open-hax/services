@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/alpha-de
+ :publication/document :open-hax.documents/alpha
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :de
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/de/garden/alpha/"
+ :translation/review :required}
