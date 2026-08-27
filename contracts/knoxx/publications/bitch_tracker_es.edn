@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/bitch-tracker-es
+ :publication/document :open-hax.documents/bitch-tracker
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :es
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/es/garden/bitch-tracker/"
+ :translation/review :required}

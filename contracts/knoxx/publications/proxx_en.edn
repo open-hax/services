@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/proxx-en
+ :publication/document :open-hax.documents/proxx
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :en
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/garden/proxx/"
+ :translation/review :none}

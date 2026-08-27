@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/contracts-and-gardens-fr
+ :publication/document :open-hax.documents/contracts-and-gardens
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :fr
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/fr/garden/contracts-and-gardens/"
+ :translation/review :required}

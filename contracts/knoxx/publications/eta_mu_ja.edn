@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/eta-mu-ja
+ :publication/document :open-hax.documents/eta-mu
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :ja
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/ja/garden/eta-mu/"
+ :translation/review :required}

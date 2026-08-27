@@ -1,0 +1,15 @@
+;; English source only, deliberately.
+;;
+;; No `:document/translations` key: an authored locale file synthesises a
+;; `:translation/completed` receipt (`infra.publication-contract-content`),
+;; which satisfies the gate's `:translation-missing` blocker and therefore
+;; derives no work. The four target locales are meant to be produced by the
+;; translation agent and approved by a person, so the fallback is omitted.
+;;
+;; The source path is RELATIVE, resolved against the parent of the contract
+;; root — `/app/contracts` in the container, so this reads
+;; `/app/publication-source/knoxx.md`.
+{:document/id :open-hax.documents/knoxx
+ :document/title "Knoxx"
+ :document/source-locale :en
+ :document/source {:path "publication-source/knoxx.md"}}

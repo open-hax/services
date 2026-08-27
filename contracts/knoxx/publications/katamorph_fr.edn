@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/katamorph-fr
+ :publication/document :open-hax.documents/katamorph
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :fr
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/fr/garden/katamorph/"
+ :translation/review :required}

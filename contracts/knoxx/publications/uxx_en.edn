@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/uxx-en
+ :publication/document :open-hax.documents/uxx
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :en
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/garden/uxx/"
+ :translation/review :none}

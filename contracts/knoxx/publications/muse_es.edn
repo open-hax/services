@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/muse-es
+ :publication/document :open-hax.documents/muse
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :es
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/es/garden/muse/"
+ :translation/review :required}

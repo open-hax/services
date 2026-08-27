@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/calliope-fr
+ :publication/document :open-hax.documents/calliope
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :fr
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/fr/garden/calliope/"
+ :translation/review :required}
