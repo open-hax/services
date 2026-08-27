@@ -23,17 +23,83 @@ service production does not run:
 knoxx: CMS surface skipped — no host OpenPlanner API at http://host.docker.internal:7777
 ```
 
-**Done.** Publication intent and translation config now resolve from Knoxx's own
-resource graph, so `digitalocean/services/knoxx/verify.sh` checks all six
+**Done.** Garden deployment, publication intent, translation config, and
+revision-bound translation review now resolve from Knoxx's own resource graph
+and evidence stores. `digitalocean/services/knoxx/verify.sh` checks all eight
 contract-owned surfaces unconditionally — authorized and anonymous — and
 `KNOXX_EXPECT_OPENPLANNER_REST`, the skip branch, and the reachability probe it
 fed are gone.
 
-**Still open.** The `OPENPLANNER_API_KEY` sentinel stays for now: the Gardens
-page still calls `/api/openplanner/v1/gardens` through the backend proxy, so the
-container needs the key until that surface is migrated. That is the last
-REST-only OpenPlanner dependency in the deployed stack. See
-`openplanner/ROADMAP.md`.
+The Gardens page now reads `/api/publications/gardens`; the retired
+`/api/openplanner/v1/gardens` route and `OPENPLANNER_API_KEY` deployment
+credential are absent from the Knoxx service contract. The in-process Mongo
+data plane remains separately identified and is not a dependency on an
+OpenPlanner HTTP deployment.
+
+### 1b. The stack now contains a translation producer
+
+Decoupling the transport left a gap that no surface reported: this stack could
+*review* translations and could not *produce* one. `knoxx`'s dispatch posts a
+batch to the OpenPlanner ingestion worker, which runs out of `ingestion/`, and
+the deploy chain here builds `proxx`, `knoxx` and `caddy` — nothing else. Every
+dispatch queued work nothing would pick up, so the four localized publication
+intents for `open-hax.promethean.rest` stayed blocked indefinitely while every
+publication surface returned 200.
+
+**Done.** The producer is an agent actor, declared as deployed contract data in
+this repo:
+
+| File | Role |
+|---|---|
+| `contracts/knoxx/agents/publication_translator.edn` | the agent holding `:role/translator` |
+| `contracts/knoxx/namespaces/publication.edn` | the trigger that runs it on `publication/translation-needed` |
+
+`contracts/knoxx/roles/translator.edn` and
+`contracts/knoxx/capabilities/cap_translation.edn` were already deployed and had
+nothing holding them. `digitalocean/services/knoxx/compose.yaml` states
+`KNOXX_TRANSLATION_RUNNER: agent` explicitly — it is also the code default, but
+the deployment fact that makes it correct belongs in the deployment contract.
+
+`digitalocean/services/knoxx/verify.sh` now fails the deploy when no enabled
+trigger subscribes to `publication/translation-needed`, or when the agent it
+names does not resolve in the deployed catalog. A stack that cannot translate
+stops being a green deploy.
+
+**Still open.** An agent-dispatched translation claim whose session dies mid-run
+stays in flight — there is no session read that can settle it, so that revision
+needs an operator. `verify.sh` prints this as a `WARN` every run rather than
+failing on it.
+
+### 1c. A contract shipped ahead of its implementation, and broke unrelated surfaces
+
+`contracts/knoxx/authentication/mcp_http.edn` arrived here in #51 to let
+`verify.sh` gate deploys on the MCP tool surface. The app-side implementation it
+needs — `law.auth-methods`, `infra.auth.method-config`, and the loader knowing an
+`:authentication` contract class — is **open-hax/knoxx#224, still unmerged** (open
+since 2026-08-09, 206 commits behind main, conflicting).
+
+The deployed image therefore could not parse the file, and that did not fail
+narrowly. The publication resource loader marks an unparseable file invalid with
+no kind, and the publication surfaces fail closed on *any* invalid resource —
+correctly, since an unparseable file cannot be proven irrelevant. So
+`/api/publications/documents` and `/api/publications/gardens` answered
+`invalid publication resources` for a file that has nothing to do with
+publication. Reproduced locally against this exact contract set.
+
+**Done.** The contract is removed from the deployed set until #224 lands. Nothing
+in the deployed image reads it, so removing it costs nothing today.
+
+**Still open.** Two things must happen together when #224 merges: re-add the
+contract here, and only then provision `KNOXX_MCP_LOOPBACK_TOKEN` as a real 16+
+character secret. Provisioning it first flips `KNOXX_EXPECT_MCP_VERIFY=true` and
+fails the deploy on an auth method the backend does not implement — a second,
+independent way the same file breaks a deploy. Both `env.template` and
+`verify.sh` now say so at the point of use.
+
+**Not a lesson about this file.** A contract set deployed from one repo against
+an image built from another can always run ahead of it. The cheap guard is that
+the app should not treat an unknown contract class as a reason to fail surfaces
+that never asked about it.
 
 ### 2. Production actor contract is deployed infrastructure, credential provisioning remains operational work
 

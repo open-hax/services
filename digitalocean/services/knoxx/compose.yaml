@@ -6,11 +6,10 @@
 # Atlas. Verified: the backend reports openplanner {reachable: true, transport:
 # "sdk"} with no OpenPlanner service running anywhere.
 #
-# Operations not yet ported to the SDK still delegate to a REST client:
-# graph-memory, graph-export, upsert-document, documents-stats,
-# graph-monitoring, build-semantic-edges, record-labels, record-reaction and
-# the translation endpoints. Those degrade while no OpenPlanner service exists.
-# Chat, sessions and search — the demo path — do not.
+# Publication contracts, Garden review, translation evidence review, and static
+# reconciliation are Knoxx-owned surfaces. They do not delegate to an
+# OpenPlanner HTTP service. The remaining SDK dependency is an in-process Mongo
+# adapter used by broader Knoxx data-plane features.
 #
 # No knoxx-postgres and no knoxx-redis. The pinned backend is Mongo-only
 # (infra/db/policy.cljs, infra/mongo_client.cljs; backend/package.json carries
@@ -25,6 +24,7 @@ services:
   # no host Docker socket and therefore cannot create or mutate host containers.
   # Root inside a nested sandbox maps to the unprivileged rootless-daemon user.
   knoxx-sandboxd:
+    profiles: ["sandbox"]
     image: docker:27.5.1-dind-rootless
     privileged: true
     restart: unless-stopped
@@ -59,6 +59,7 @@ services:
     depends_on:
       knoxx-sandboxd:
         condition: service_healthy
+        required: false
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -70,6 +71,7 @@ services:
       KNOXX_API_KEY_USER_EMAIL: ${KNOXX_API_KEY_USER_EMAIL:?KNOXX_API_KEY_USER_EMAIL must be set}
       KNOXX_PUBLIC_BASE_URL: https://${KNOXX_PUBLIC_HOST}
       KNOXX_BASE_URL: https://${KNOXX_PUBLIC_HOST}
+      KNOXX_PUBLICATION_SITE_URL: https://open-hax.promethean.rest
 
       # Browser login. The callback URL is derived from KNOXX_PUBLIC_BASE_URL as
       # /api/auth/callback/github, so the GitHub OAuth app must be registered
@@ -102,22 +104,6 @@ services:
 
       # The SDK sources its own embeddings, also via Proxx.
       KNOXX_OPENPLANNER_CLIENT_MODE: mongo
-      # The Gardens page proxies /api/openplanner/v1/gardens through the backend
-      # to this base URL. It is the last REST-only OpenPlanner dependency here:
-      # publication intent and translation config resolve from Knoxx resources
-      # and no longer read it.
-      #
-      # Nothing answers on this address. No service in this stack publishes host
-      # port 7777 and the deploy chain builds only proxx, knoxx and caddy, so
-      # Gardens degrades with a connection failure and every other surface is
-      # unaffected. deploy-stack-chain.yml therefore supplies a conspicuous
-      # sentinel rather than the real OPENPLANNER_API_KEY secret: there is no
-      # upstream to authenticate against, and a live credential in a stack that
-      # cannot use it is only a way to leak one. If a listener ever does appear
-      # here, the sentinel makes it fail loudly and visibly rather than half-work.
-      # Translation is deliberately handled in-process by Knoxx's Mongo client.
-      OPENPLANNER_BASE_URL: http://host.docker.internal:7777
-      OPENPLANNER_API_KEY: ${OPENPLANNER_API_KEY:?OPENPLANNER_API_KEY must be set}
       EMBED_PROVIDER_BASE_URL: http://proxx:8789
       EMBED_PROVIDER_API_KEY: ${PROXY_AUTH_TOKEN}
       EMBED_PROVIDER_MODEL: ${EMBED_PROVIDER_MODEL}
@@ -150,6 +136,17 @@ services:
       # — never serve a half-written manifest.
       KNOXX_PUBLICATION_CONTENT_ROOT: /srv/website-content
 
+      # Who produces translations. `agent` runs the contract-declared
+      # publication_translator through the event/trigger runtime, in-process;
+      # `worker` posts a batch to the OpenPlanner ingestion worker.
+      #
+      # Stated explicitly even though `agent` is also the code default, because
+      # this is the deployment fact that makes it correct: this stack builds
+      # proxx, knoxx and caddy, and nothing else. There is no `ingestion/`
+      # worker here to pick a batch up, so `worker` would leave every localized
+      # intent queued forever with nothing reporting why.
+      KNOXX_TRANSLATION_RUNNER: agent
+
       # Sandboxes use the private rootless daemon above. The same host path is
       # mounted at /sandboxes in both containers so nested bind mounts resolve
       # inside the daemon rather than against the DigitalOcean host.
@@ -163,6 +160,7 @@ services:
       KNOXX_SANDBOX_MAX_TTL_SECONDS: "86400"
     volumes:
       - ./contracts:/app/contracts:ro
+      - ./publication-source:/app/publication-source:ro
       - ./sandbox:/runtime/sandbox:ro
       - ${KNOXX_WORKSPACE_PATH:?KNOXX_WORKSPACE_PATH must be set}:/app/workspace
       - ${KNOXX_STATE_PATH}/backend:/app/state
@@ -173,10 +171,6 @@ services:
       # state/knoxx/website-content.
       - ${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/srv/website-content
       - ${KNOXX_SANDBOX_ROOT_PATH:?KNOXX_SANDBOX_ROOT_PATH must be set}:/sandboxes
-    # OpenPlanner runs as a host PM2 process; map the Linux host gateway
-    # explicitly instead of relying on Docker Desktop's implicit alias.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     # No /var/run/docker.sock. The agent sandbox needs it, but it is a
     # root-equivalent grant and this host is about to be public.
     healthcheck:

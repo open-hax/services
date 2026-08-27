@@ -1,0 +1,4 @@
+{:garden/id :open-hax.gardens/promethean
+ :garden/title "Open Hax · Promethean Garden"
+ :garden/status :active
+ :garden/locales [:en :es :fr :de :ja]}
