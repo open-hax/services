@@ -7,11 +7,14 @@ DEV_INGRESS_SOURCE=${DEV_INGRESS_SOURCE:-172.31.255.2}
 FIREWALL_VERIFIER=${FIREWALL_VERIFIER:-/usr/local/sbin/open-hax-verify-dev-ingress-firewall}
 DOCKER_BOOT_LINK=${DOCKER_BOOT_LINK:-/etc/systemd/system/multi-user.target.wants/docker.service}
 DOCKER_UNIT_PATH=${DOCKER_UNIT_PATH:-/lib/systemd/system/docker.service}
+SYSTEMCTL_BIN=${SYSTEMCTL_BIN:-/usr/bin/systemctl}
+SYSTEMCTL_ROOT=${SYSTEMCTL_ROOT:-/}
 
 docker_is_ready_for_boot() {
   [ -L "$DOCKER_BOOT_LINK" ] &&
     [ -e "$DOCKER_UNIT_PATH" ] &&
     [ "$(readlink -f "$DOCKER_BOOT_LINK")" = "$(readlink -f "$DOCKER_UNIT_PATH")" ] &&
+    "$SYSTEMCTL_BIN" --root="$SYSTEMCTL_ROOT" is-enabled --quiet docker.service >/dev/null 2>&1 &&
     docker info >/dev/null 2>&1
 }
 
