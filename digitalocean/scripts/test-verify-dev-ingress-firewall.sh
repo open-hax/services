@@ -9,7 +9,7 @@ trap 'rm -rf "$fixture_dir"' EXIT
 app_profiles_file="${fixture_dir}/app-profiles.txt"
 printf '%s\n' 'Available applications:' '  8787' '  8787 on eth0' '  8787 (v6)' '  Dev # Servers' '  OpenSSH' > "$app_profiles_file"
 
-good=$'Status: active\nDefault: deny (incoming), allow (outgoing), disabled (routed)\nOpenSSH ALLOW IN Anywhere\n80/tcp ALLOW IN Anywhere\n443/tcp ALLOW IN Anywhere\nOpenSSH (v6) ALLOW IN Anywhere (v6)\n80/tcp (v6) ALLOW IN Anywhere (v6)\n443/tcp (v6) ALLOW IN Anywhere (v6)\n5173/tcp ALLOW IN 172.31.255.2\n8000/tcp ALLOW IN 172.31.255.2\n8097/tcp ALLOW IN 172.31.255.2'
+good=$'Status: active\nDefault: deny (incoming), allow (outgoing), disabled (routed)\n22/tcp (OpenSSH) ALLOW IN Anywhere\n80/tcp ALLOW IN Anywhere\n443/tcp ALLOW IN Anywhere\n22/tcp (OpenSSH (v6)) ALLOW IN Anywhere (v6)\n80/tcp (v6) ALLOW IN Anywhere (v6)\n443/tcp (v6) ALLOW IN Anywhere (v6)\n5173/tcp ALLOW IN 172.31.255.2\n8000/tcp ALLOW IN 172.31.255.2\n8097/tcp ALLOW IN 172.31.255.2'
 
 expect_pass() {
   local name=$1
@@ -56,6 +56,8 @@ expect_fail numeric-application-profile "${good}"$'\n8787 ALLOW IN Anywhere'
 expect_fail interface-shaped-application-profile "${good}"$'\n8787 on eth0 ALLOW IN Anywhere'
 expect_fail v6-shaped-application-profile "${good}"$'\n8787 (v6) ALLOW IN Anywhere'
 expect_fail comment-shaped-application-profile "${good}"$'\nDev # Servers ALLOW IN Anywhere'
+expect_fail other-annotated-profile "${good}"$'\n22/tcp (Dev SSH) ALLOW IN Anywhere'
+expect_fail protected-openssh-annotation "${good}"$'\n5173/tcp (OpenSSH) ALLOW IN Anywhere'
 expect_fail unknown-profile "${good}"$'\nDev Servers ALLOW IN Anywhere'
 expect_fail numeric-prefix-profile "${good}"$'\n8787 Dev Servers ALLOW IN Anywhere'
 expect_fail allowlisted-prefix-profile "${good}"$'\nOpenSSH Dev ALLOW IN Anywhere'
