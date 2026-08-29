@@ -3,6 +3,8 @@ set -euo pipefail
 
 DEPLOY_USER=${DEPLOY_USER:-deploy}
 RUNTIME_ROOT=${RUNTIME_ROOT:-/srv/open-hax}
+DEV_INGRESS_SOURCE=${DEV_INGRESS_SOURCE:-172.31.255.2}
+FIREWALL_VERIFIER=${FIREWALL_VERIFIER:-/usr/local/sbin/open-hax-verify-dev-ingress-firewall}
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "bootstrap-host.sh must run as root" >&2
@@ -11,7 +13,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl git jq rsync unzip ufw openjdk-21-jdk
+apt-get install -y ca-certificates curl git jq rsync sudo unzip ufw openjdk-21-jdk
 
 if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
   install -m 0755 -d /etc/apt/keyrings
@@ -51,7 +53,35 @@ ufw default allow outgoing
 ufw allow OpenSSH
 ufw allow 80/tcp
 ufw allow 443/tcp
+
+# Retire the old shared-bridge allowances before installing the only permitted
+# Caddy source. A missing legacy rule is already the desired state.
+while IFS='|' read -r port comment; do
+  ufw --force delete allow from 172.18.0.0/16 to any port "$port" proto tcp \
+    >/dev/null 2>&1 || true
+  ufw allow from "$DEV_INGRESS_SOURCE" to any port "$port" proto tcp \
+    comment "$comment"
+done <<'RULES'
+5173|shadow-cljs dev HTTP via Caddy
+8000|Knoxx dev Caddy backend
+8097|OpenCode web UI via Caddy ingress
+RULES
+
 ufw --force enable
+
+if [ ! -x "$FIREWALL_VERIFIER" ]; then
+  echo "missing root-owned firewall verifier at ${FIREWALL_VERIFIER}" >&2
+  exit 2
+fi
+"$FIREWALL_VERIFIER"
+
+# Service deploys run as the unprivileged deploy user. Grant that user exactly
+# one root operation: the root-owned, argument-free, read-only firewall proof.
+sudoers_tmp=$(mktemp)
+trap 'rm -f "$sudoers_tmp"' EXIT
+printf '%s ALL=(root) NOPASSWD: %s\n' "$DEPLOY_USER" "$FIREWALL_VERIFIER" > "$sudoers_tmp"
+visudo -cf "$sudoers_tmp" >/dev/null
+install -o root -g root -m 0440 "$sudoers_tmp" /etc/sudoers.d/open-hax-firewall-verify
 
 systemctl enable --now docker
 

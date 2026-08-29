@@ -157,6 +157,13 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
 
+      - name: Verify Caddy dev-ingress firewall boundary
+        if: inputs.service == 'caddy'
+        run: |
+          set -euo pipefail
+          ssh open-hax-target \
+            'sudo -n /usr/local/sbin/open-hax-verify-dev-ingress-firewall'
+
       - name: Render runtime environment
         env:
           SERVICE_DIR: ${{ steps.contract.outputs.service_dir }}

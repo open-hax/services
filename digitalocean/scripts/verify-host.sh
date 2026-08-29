@@ -4,6 +4,7 @@ set -euo pipefail
 DEPLOY_USER=${DEPLOY_USER:-deploy}
 RUNTIME_ROOT=${RUNTIME_ROOT:-/srv/open-hax}
 REPORT=${REPORT:-host-verification.json}
+FIREWALL_VERIFIER=${FIREWALL_VERIFIER:-/usr/local/sbin/open-hax-verify-dev-ingress-firewall}
 status=passed
 
 check() {
@@ -19,6 +20,10 @@ check() {
 
 firewall_active() {
   ufw status | grep -q '^Status: active'
+}
+
+firewall_dev_ingress_scoped() {
+  "$FIREWALL_VERIFIER"
 }
 
 deploy_can_use() {
@@ -43,6 +48,7 @@ for directory in services state config reports; do
   check "deploy-access-$directory" deploy_can_use "$path" >> "$results"
 done
 check firewall-active firewall_active >> "$results"
+check firewall-dev-ingress-scoped firewall_dev_ingress_scoped >> "$results"
 
 python3 - "$results" "$REPORT" "$status" <<'PY'
 import json, platform, socket, sys

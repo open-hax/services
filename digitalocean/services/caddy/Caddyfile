@@ -100,6 +100,85 @@
 	}
 }
 
+# ── Dev instances ───────────────────────────────────────────────────────────
+#
+# Long-running development servers owned by the `err` user, running ON the host
+# rather than in a container, published here so a live instance can be reached
+# by name instead of by port.
+#
+# Why they reach the host at 172.31.255.1: that is the gateway of Caddy's
+# dedicated `caddy-dev-ingress` network. Caddy has the fixed 172.31.255.2
+# address on that network, so ufw can allow exactly one container rather than
+# every production container on the shared `open-hax` bridge:
+#
+#   5173/tcp ALLOW 172.31.255.2     # shadow-cljs dev HTTP via Caddy
+#   8000/tcp ALLOW 172.31.255.2     # Knoxx dev Caddy backend
+#   8097/tcp ALLOW 172.31.255.2     # OpenCode web UI via Caddy ingress
+#
+# The dev ports are therefore NOT reachable from the internet directly, even
+# though the processes bind 0.0.0.0. Caddy is the only way in, which is the
+# whole point: TLS and authentication happen here, once.
+#
+# EVERY dev vhost authenticates. These are development servers on a production
+# host — the OpenCode one is a coding agent with shell access. An unauthenticated
+# public route to it is remote code execution as a service. `basic_auth` is the
+# floor, not the ceiling; it is here so that forgetting it is impossible rather
+# than merely discouraged.
+#
+# nREPL (9630, 9631) is deliberately absent. It is a remote-eval socket with no
+# authentication of its own and no HTTP framing for Caddy to authenticate in
+# front of. Reach it with an SSH tunnel instead — see docs/dev-instances.md.
+(dev_guard) {
+	import common
+
+	basic_auth {
+		{$DEV_BASIC_AUTH_USER} {$DEV_BASIC_AUTH_HASH}
+	}
+}
+
+(dev_upstream) {
+	# Long timeouts: dev servers hold SSE and websocket connections open, and an
+	# agent turn runs far past a default 60s.
+	transport http {
+		read_timeout 3600s
+		write_timeout 3600s
+	}
+
+	header_up -x-open-hax-bridge-auth
+	# `basic_auth` leaves the browser's Authorization header on the request.
+	# The host dev servers do not own that credential and must never receive it.
+	header_up -Authorization
+}
+
+# Knoxx dev backend — nbb scripts/start-server-dev.cljs on host :8000.
+{$CADDY_KNOXX_DEV_HOST} {
+	import dev_guard
+
+	reverse_proxy 172.31.255.1:8000 {
+		import dev_upstream
+	}
+}
+
+# OpenCode web UI on host :8097. See the RCE note above; this vhost is the
+# reason `basic_auth` is in `dev_guard` rather than per-site.
+{$CADDY_OPENCODE_DEV_HOST} {
+	import dev_guard
+
+	reverse_proxy 172.31.255.1:8097 {
+		import dev_upstream
+	}
+}
+
+# shadow-cljs :dev-http on host :5173 — the frontend dev server, with HMR over
+# websockets, which `dev_upstream`'s timeouts are what keep alive.
+{$CADDY_SHADOW_DEV_HOST} {
+	import dev_guard
+
+	reverse_proxy 172.31.255.1:5173 {
+		import dev_upstream
+	}
+}
+
 # The public site — static bytes, no origin behind it.
 #
 # Deliberately absent from caddy/verify.sh's probe loop. The website deploys

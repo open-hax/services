@@ -43,6 +43,9 @@ jobs:
         run: |
           bash -n digitalocean/scripts/bootstrap-host.sh
           bash -n digitalocean/scripts/verify-host.sh
+          bash -n digitalocean/scripts/verify-dev-ingress-firewall.sh
+          bash -n digitalocean/scripts/test-verify-dev-ingress-firewall.sh
+          digitalocean/scripts/test-verify-dev-ingress-firewall.sh
           python3 - <<'PY'
           import ipaddress
           from pathlib import Path
@@ -130,6 +133,10 @@ jobs:
       - name: Bootstrap host
         if: steps.target.outputs.operation == 'bootstrap'
         run: |
+          scp digitalocean/scripts/verify-dev-ingress-firewall.sh \
+            production-droplet:/tmp/open-hax-verify-dev-ingress-firewall
+          ssh production-droplet \
+            'install -o root -g root -m 0755 /tmp/open-hax-verify-dev-ingress-firewall /usr/local/sbin/open-hax-verify-dev-ingress-firewall && rm -f /tmp/open-hax-verify-dev-ingress-firewall'
           ssh production-droplet 'bash -s' < digitalocean/scripts/bootstrap-host.sh
 
       - name: Verify host
