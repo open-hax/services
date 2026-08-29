@@ -5,6 +5,18 @@ DEPLOY_USER=${DEPLOY_USER:-deploy}
 RUNTIME_ROOT=${RUNTIME_ROOT:-/srv/open-hax}
 DEV_INGRESS_SOURCE=${DEV_INGRESS_SOURCE:-172.31.255.2}
 FIREWALL_VERIFIER=${FIREWALL_VERIFIER:-/usr/local/sbin/open-hax-verify-dev-ingress-firewall}
+DOCKER_BOOT_LINK=${DOCKER_BOOT_LINK:-/etc/systemd/system/multi-user.target.wants/docker.service}
+
+docker_is_ready_for_boot() {
+  [ -L "$DOCKER_BOOT_LINK" ] &&
+    [ -e "$DOCKER_BOOT_LINK" ] &&
+    docker info >/dev/null 2>&1
+}
+
+if [ "${BOOTSTRAP_DOCKER_READINESS_ONLY:-0}" = 1 ]; then
+  docker_is_ready_for_boot
+  exit
+fi
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "bootstrap-host.sh must run as root" >&2
@@ -83,6 +95,10 @@ printf '%s ALL=(root) NOPASSWD: %s\n' "$DEPLOY_USER" "$FIREWALL_VERIFIER" > "$su
 visudo -cf "$sudoers_tmp" >/dev/null
 install -o root -g root -m 0440 "$sudoers_tmp" /etc/sudoers.d/open-hax-firewall-verify
 
-systemctl enable --now docker
+if docker_is_ready_for_boot; then
+  echo "docker is already enabled at boot and accepting requests"
+else
+  systemctl enable --now docker
+fi
 
 echo "bootstrap complete"

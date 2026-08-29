@@ -45,7 +45,9 @@ jobs:
           bash -n digitalocean/scripts/verify-host.sh
           bash -n digitalocean/scripts/verify-dev-ingress-firewall.sh
           bash -n digitalocean/scripts/test-verify-dev-ingress-firewall.sh
+          bash -n digitalocean/scripts/test-bootstrap-docker-readiness.sh
           digitalocean/scripts/test-verify-dev-ingress-firewall.sh
+          digitalocean/scripts/test-bootstrap-docker-readiness.sh
           python3 - <<'PY'
           import ipaddress
           from pathlib import Path
