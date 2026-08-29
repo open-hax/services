@@ -32,6 +32,8 @@ expect_fail() {
 
 expect_pass scoped-only "$good"
 expect_pass unrelated-port "${good}"$'\n8787/tcp ALLOW IN Anywhere'
+expect_pass unrelated-tcp-range "${good}"$'\n1000:2000/tcp ALLOW IN Anywhere'
+expect_pass unrelated-tcp-list "${good}"$'\n1000,2000/tcp ALLOW IN Anywhere'
 expect_pass unrelated-udp "${good}"$'\n8001/udp ALLOW IN Anywhere'
 expect_pass protected-number-udp "${good}"$'\n5173/udp ALLOW IN Anywhere'
 expect_pass protected-range-udp "${good}"$'\n7999:8001/udp ALLOW IN Anywhere'
