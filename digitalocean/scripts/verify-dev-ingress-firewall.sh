@@ -95,7 +95,7 @@ if ! awk -v expected="$expected_source" '
     direction = $(action_index + 1)
     source = $(action_index + 2)
     target_spec = target
-    sub(/ .*/, "", target_spec)
+    sub(/ on [^ ]+$/, "", target_spec)
     coverage = numeric_target_covers_required(target_spec)
 
     # This verifier owns only the three development ports. Existing explicit
