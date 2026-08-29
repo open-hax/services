@@ -56,8 +56,9 @@ if ! awk -v expected="$expected_source" '
         for (port in protected_port) {
           if ((port + 0) >= (bounds[1] + 0) && (port + 0) <= (bounds[2] + 0)) return 1
         }
-      } else if (parts[i] in protected_port) {
-        return 1
+      } else {
+        normalized_port = sprintf("%d", parts[i] + 0)
+        if (normalized_port in protected_port) return 1
       }
     }
     return 0
