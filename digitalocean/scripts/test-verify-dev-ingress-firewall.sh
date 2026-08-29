@@ -52,6 +52,8 @@ expect_fail slash-profile "${good}"$'\n8787 Dev/udp ALLOW IN Anywhere'
 expect_fail protected-port-interface "${good/5173\/tcp ALLOW IN/5173\/tcp on eth0 ALLOW IN}"
 expect_fail allow-keyword-profile "${good}"$'\nDev ALLOW Servers ALLOW IN Anywhere'
 expect_fail limit-keyword-profile "${good}"$'\nDev LIMIT Servers ALLOW IN Anywhere'
+expect_fail allow-pair-profile "${good}"$'\n8787 ALLOW IN Servers ALLOW IN Anywhere'
+expect_fail limit-pair-profile "${good}"$'\n8787 LIMIT IN Servers ALLOW IN Anywhere'
 expect_fail unknown-protocol "${good}"$'\n5173/sctp ALLOW IN Anywhere'
 expect_fail protected-limit "${good}"$'\n5173/tcp LIMIT IN Anywhere'
 expect_fail global-limit "${good}"$'\nAnywhere LIMIT IN Anywhere'

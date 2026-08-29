@@ -87,7 +87,6 @@ if ! awk -v expected="$expected_source" '
           ($(i + 1) == "IN" || $(i + 1) == "OUT" || $(i + 1) == "FWD")) {
         permit_action = $i
         action_index = i
-        break
       }
     }
     if (!action_index) next
