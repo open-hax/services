@@ -31,6 +31,9 @@ expect_fail() {
 expect_pass scoped-only "$good"
 expect_pass unrelated-port "${good}"$'\n8787/tcp ALLOW IN Anywhere'
 expect_pass unrelated-udp "${good}"$'\n8001/udp ALLOW IN Anywhere'
+expect_pass protected-number-udp "${good}"$'\n5173/udp ALLOW IN Anywhere'
+expect_pass protected-range-udp "${good}"$'\n7999:8001/udp ALLOW IN Anywhere'
+expect_pass protected-list-udp "${good}"$'\n5172,5173/udp ALLOW IN Anywhere'
 expect_pass unrelated-port-interface "${good}"$'\n8787/tcp on eth0 ALLOW IN Anywhere'
 expect_pass scoped-port-interface "${good/5173\/tcp ALLOW IN/5173\/tcp on caddy-dev-ingress ALLOW IN}"
 expect_fail inactive "${good/Status: active/Status: inactive}"
@@ -44,6 +47,7 @@ expect_fail covering-list "${good}"$'\n5172,5173/tcp ALLOW IN Anywhere'
 expect_fail unknown-profile "${good}"$'\nDev Servers ALLOW IN Anywhere'
 expect_fail numeric-prefix-profile "${good}"$'\n8787 Dev Servers ALLOW IN Anywhere'
 expect_fail allowlisted-prefix-profile "${good}"$'\nOpenSSH Dev ALLOW IN Anywhere'
+expect_fail unknown-protocol "${good}"$'\n5173/sctp ALLOW IN Anywhere'
 expect_fail routed-allow "${good}"$'\n5173/tcp ALLOW FWD 172.18.0.0/16'
 expect_fail wrong-fixed-peer "${good/172.31.255.2/172.31.255.3}"
 

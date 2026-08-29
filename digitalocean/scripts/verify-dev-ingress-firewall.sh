@@ -42,8 +42,12 @@ if ! awk -v expected="$expected_source" '
     printf "dev-ingress firewall: rejected rule target=%s direction=%s source=%s reason=%s\n", target, direction, source, reason > "/dev/stderr"
   }
 
-  function numeric_target_covers_required(spec, parts, ranges, count, i, bounds, port) {
-    sub(/\/.*/, "", spec)
+  function numeric_target_covers_required(spec, parts, protocol, ranges, count, i, bounds, port) {
+    count = split(spec, protocol, "/")
+    if (count > 2) return -1
+    if (count == 2 && protocol[2] == "udp") return 0
+    if (count == 2 && protocol[2] != "tcp") return -1
+    spec = protocol[1]
     if (spec !~ /^[0-9,:]+$/) return -1
     count = split(spec, parts, ",")
     for (i = 1; i <= count; i++) {
