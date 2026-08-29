@@ -31,20 +31,21 @@ minutes, and a deployment failed its verification gate as a direct result. See
 
 ```
 browser ──TLS──> caddy (container, owns :80/:443)
-                   │  reverse_proxy 172.18.0.1:<port>
+                   │  reverse_proxy 172.31.255.1:<port>
                    ▼
                  host process bound 0.0.0.0:<port>
 ```
 
 Three facts make that work, and each is load-bearing:
 
-1. **172.18.0.1 is the gateway of the `open-hax` docker network**, which is the
-   network Caddy is attached to. A request leaving Caddy therefore arrives at
-   the host with a `172.18.x.x` source address.
-2. **ufw allows those ports only from `172.18.0.0/16`.** The dev processes bind
-   `0.0.0.0`, but the firewall means the internet cannot reach them directly —
-   verified: ports 8000, 8097, 5173 and 9630 all refuse connections from
-   outside. Caddy is the only path in.
+1. **172.31.255.1 is the gateway of Caddy's dedicated
+   `caddy-dev-ingress` network.** Caddy also remains on the shared `open-hax`
+   network for production upstreams, but only its fixed `172.31.255.2` address
+   is a firewall identity for host dev ports.
+2. **ufw allows those ports only from `172.31.255.2`.** The dev processes bind
+   `0.0.0.0`, but the firewall means neither the internet nor another container
+   on the shared production bridge can reach them directly. Caddy is the only
+   path in.
 3. **Authentication happens at Caddy, once.** The dev servers have none of their
    own.
 
@@ -86,9 +87,10 @@ name that does not resolve here fails issuance for itself.
    droplet's current public address, DNS-only (not proxied) — HTTP-01 must reach
    the origin. `promethean.rest` is on Cloudflare. There is no wildcard, on
    purpose: a wildcard would silently publish every future port someone opens.
-2. **ufw.** Allow the port from the bridge only, and say what it is:
+2. **ufw.** Allow the port from Caddy's fixed dedicated address only, and say
+   what it is:
    ```sh
-   ufw allow from 172.18.0.0/16 to any port <port> proto tcp comment '<what> via Caddy ingress'
+   ufw allow from 172.31.255.2 to any port <port> proto tcp comment '<what> via Caddy ingress'
    ```
    Never `ufw allow <port>` — that opens it to the internet and bypasses both
    TLS and the basic-auth guard.
@@ -98,14 +100,46 @@ name that does not resolve here fails issuance for itself.
    `dev_guard` and `dev_upstream`.
 6. **Validate before deploying:**
    ```sh
+   dev_basic_auth_hash=$(docker run --rm caddy:2.8-alpine \
+     caddy hash-password --plaintext validation-only)
    docker run --rm -i -v "$PWD/digitalocean/services/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-     -e CADDY_ACME_EMAIL=a@b.c ... caddy:2.8-alpine \
+     -e CADDY_ACME_EMAIL=ops@example.test \
+     -e CADDY_KNOXX_HOST=knoxx.example.test \
+     -e CADDY_PROXX_HOST=proxx.example.test \
+     -e CADDY_WEBSITE_HOST=website.example.test \
+     -e CADDY_KNOXX_DEV_HOST=knoxx-dev.example.test \
+     -e CADDY_OPENCODE_DEV_HOST=opencode-dev.example.test \
+     -e CADDY_SHADOW_DEV_HOST=shadow-dev.example.test \
+     -e DEV_BASIC_AUTH_USER=validation \
+     -e DEV_BASIC_AUTH_HASH="$dev_basic_auth_hash" \
+     caddy:2.8-alpine \
      caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
    ```
 7. **Deploy** with the `deploy` label on the merged PR, or dispatch `Deploy
    Stack` manually. A Caddyfile change is a bind mount, and compose hashes the
    image and the environment but never the contents of a bind mount — the deploy
    step's rsync itemization is what forces the recreate.
+
+### One-time firewall migration for this change
+
+The old rules trusted the entire shared `172.18.0.0/16` production bridge.
+Create the dedicated bridge by bringing up this Caddy compose definition, then
+replace those rules with the fixed Caddy address before exposing a dev vhost:
+
+```sh
+ufw delete allow from 172.18.0.0/16 to any port 5173 proto tcp
+ufw delete allow from 172.18.0.0/16 to any port 8000 proto tcp
+ufw delete allow from 172.18.0.0/16 to any port 8097 proto tcp
+ufw allow from 172.31.255.2 to any port 5173 proto tcp comment 'Knoxx dev Caddy bridge'
+ufw allow from 172.31.255.2 to any port 8000 proto tcp comment 'Knoxx dev Caddy backend'
+ufw allow from 172.31.255.2 to any port 8097 proto tcp comment 'OpenCode web UI via Caddy ingress'
+ufw status numbered
+```
+
+If a delete command reports that no matching rule exists, inspect
+`ufw status numbered` and remove the equivalent `/16` rule by number. Do not
+leave both the broad and narrow rules installed: the broad rule still permits
+an unauthenticated production container to bypass `dev_guard`.
 
 ## 5. nREPL and other non-HTTP services
 

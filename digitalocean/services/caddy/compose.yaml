@@ -46,8 +46,19 @@ services:
       default:
         aliases:
           - caddy
+      # The fixed address is the firewall identity for host-resident dev
+      # services. Do not attach any other container to this network.
+      dev-ingress:
+        ipv4_address: 172.31.255.2
 
 networks:
   default:
     name: open-hax
     external: true
+  dev-ingress:
+    name: caddy-dev-ingress
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.255.0/28
+          gateway: 172.31.255.1

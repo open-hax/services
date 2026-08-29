@@ -106,13 +106,14 @@
 # rather than in a container, published here so a live instance can be reached
 # by name instead of by port.
 #
-# Why they reach the host at 172.18.0.1: that is the gateway of the `open-hax`
-# network this container sits on, so a request leaving Caddy arrives at the host
-# with a 172.18.x.x source address. ufw already allows exactly that:
+# Why they reach the host at 172.31.255.1: that is the gateway of Caddy's
+# dedicated `caddy-dev-ingress` network. Caddy has the fixed 172.31.255.2
+# address on that network, so ufw can allow exactly one container rather than
+# every production container on the shared `open-hax` bridge:
 #
-#   5173/tcp ALLOW 172.18.0.0/16   # Knoxx dev Caddy bridge
-#   8000/tcp ALLOW 172.18.0.0/16   # Knoxx dev Caddy backend
-#   8097/tcp ALLOW 172.18.0.0/16   # OpenCode web UI via Caddy ingress
+#   5173/tcp ALLOW 172.31.255.2     # Knoxx dev Caddy bridge
+#   8000/tcp ALLOW 172.31.255.2     # Knoxx dev Caddy backend
+#   8097/tcp ALLOW 172.31.255.2     # OpenCode web UI via Caddy ingress
 #
 # The dev ports are therefore NOT reachable from the internet directly, even
 # though the processes bind 0.0.0.0. Caddy is the only way in, which is the
@@ -144,13 +145,16 @@
 	}
 
 	header_up -x-open-hax-bridge-auth
+	# `basic_auth` leaves the browser's Authorization header on the request.
+	# The host dev servers do not own that credential and must never receive it.
+	header_up -Authorization
 }
 
 # Knoxx dev backend — nbb scripts/start-server-dev.cljs on host :8000.
 {$CADDY_KNOXX_DEV_HOST} {
 	import dev_guard
 
-	reverse_proxy 172.18.0.1:8000 {
+	reverse_proxy 172.31.255.1:8000 {
 		import dev_upstream
 	}
 }
@@ -160,7 +164,7 @@
 {$CADDY_OPENCODE_DEV_HOST} {
 	import dev_guard
 
-	reverse_proxy 172.18.0.1:8097 {
+	reverse_proxy 172.31.255.1:8097 {
 		import dev_upstream
 	}
 }
@@ -170,7 +174,7 @@
 {$CADDY_SHADOW_DEV_HOST} {
 	import dev_guard
 
-	reverse_proxy 172.18.0.1:5173 {
+	reverse_proxy 172.31.255.1:5173 {
 		import dev_upstream
 	}
 }
