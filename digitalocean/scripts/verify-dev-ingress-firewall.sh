@@ -87,6 +87,8 @@ if ! awk -v expected="$expected_source" -v app_profiles="$app_profiles" '
     protected_port["8097"] = 1
     public["OpenSSH"] = 1
     public["22/tcp"] = 1
+    public["22/tcp (OpenSSH)"] = 1
+    public["22/tcp (OpenSSH (v6))"] = 1
     public["80/tcp"] = 1
     public["443/tcp"] = 1
   }
