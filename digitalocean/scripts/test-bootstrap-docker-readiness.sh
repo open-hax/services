@@ -62,6 +62,25 @@ if PATH="$fixture_dir/bin:$PATH" \
 fi
 rm "$mask"
 
+override="$systemctl_root/etc/systemd/system/docker.service"
+printf '%s\n' \
+  '[Unit]' \
+  'Description=Broken Docker override' \
+  '[Service]' \
+  'ExecStart=/bin/false' \
+  > "$override"
+if PATH="$fixture_dir/bin:$PATH" \
+  DOCKER_BOOT_LINK="$boot_link" \
+  DOCKER_UNIT_PATH="$unit" \
+  SYSTEMCTL_BIN=/usr/bin/systemctl \
+  SYSTEMCTL_ROOT="$systemctl_root" \
+  BOOTSTRAP_DOCKER_READINESS_ONLY=1 \
+  bash "$bootstrap"; then
+  echo "docker readiness unexpectedly accepted a higher-priority unit override" >&2
+  exit 1
+fi
+rm "$override"
+
 rm "$boot_link"
 missing_unit="$systemctl_root/usr/lib/systemd/system/missing-docker.service"
 ln -s "$missing_unit" "$boot_link"
