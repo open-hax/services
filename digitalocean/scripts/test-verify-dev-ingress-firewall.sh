@@ -6,6 +6,8 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 verifier="${script_dir}/verify-dev-ingress-firewall.sh"
 fixture_dir=$(mktemp -d)
 trap 'rm -rf "$fixture_dir"' EXIT
+app_profiles_file="${fixture_dir}/app-profiles.txt"
+printf '%s\n' 'Available applications:' '  8787' '  OpenSSH' > "$app_profiles_file"
 
 good=$'Status: active\nDefault: deny (incoming), allow (outgoing), disabled (routed)\nOpenSSH ALLOW IN Anywhere\n80/tcp ALLOW IN Anywhere\n443/tcp ALLOW IN Anywhere\nOpenSSH (v6) ALLOW IN Anywhere (v6)\n80/tcp (v6) ALLOW IN Anywhere (v6)\n443/tcp (v6) ALLOW IN Anywhere (v6)\n5173/tcp ALLOW IN 172.31.255.2\n8000/tcp ALLOW IN 172.31.255.2\n8097/tcp ALLOW IN 172.31.255.2'
 
@@ -14,7 +16,7 @@ expect_pass() {
   local content=$2
   local fixture="${fixture_dir}/${name}.txt"
   printf '%s\n' "$content" > "$fixture"
-  UFW_STATUS_FILE="$fixture" "$verifier" >/dev/null
+  UFW_STATUS_FILE="$fixture" UFW_APP_PROFILES_FILE="$app_profiles_file" "$verifier" >/dev/null
 }
 
 expect_fail() {
@@ -22,7 +24,7 @@ expect_fail() {
   local content=$2
   local fixture="${fixture_dir}/${name}.txt"
   printf '%s\n' "$content" > "$fixture"
-  if UFW_STATUS_FILE="$fixture" "$verifier" >/dev/null 2>&1; then
+  if UFW_STATUS_FILE="$fixture" UFW_APP_PROFILES_FILE="$app_profiles_file" "$verifier" >/dev/null 2>&1; then
     echo "firewall verifier unexpectedly accepted ${name}" >&2
     exit 1
   fi
@@ -47,6 +49,7 @@ expect_fail covering-range "${good}"$'\n7999:8001/tcp ALLOW IN Anywhere'
 expect_fail covering-list "${good}"$'\n5172,5173/tcp ALLOW IN Anywhere'
 expect_fail zero-padded-singleton "${good}"$'\n05173/tcp ALLOW IN Anywhere'
 expect_fail zero-padded-list "${good}"$'\n8001,08000/tcp ALLOW IN Anywhere'
+expect_fail numeric-application-profile "${good}"$'\n8787 ALLOW IN Anywhere'
 expect_fail unknown-profile "${good}"$'\nDev Servers ALLOW IN Anywhere'
 expect_fail numeric-prefix-profile "${good}"$'\n8787 Dev Servers ALLOW IN Anywhere'
 expect_fail allowlisted-prefix-profile "${good}"$'\nOpenSSH Dev ALLOW IN Anywhere'

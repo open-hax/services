@@ -9,6 +9,11 @@ expected_source=${DEV_INGRESS_SOURCE:-172.31.255.2}
 
 if [ -n "${UFW_STATUS_FILE:-}" ]; then
   status=$(<"$UFW_STATUS_FILE")
+  if [ -n "${UFW_APP_PROFILES_FILE:-}" ]; then
+    app_profiles=$(<"$UFW_APP_PROFILES_FILE")
+  else
+    app_profiles=""
+  fi
 else
   if [ "$(id -u)" -ne 0 ]; then
     echo "dev-ingress firewall verification must run as root" >&2
@@ -24,6 +29,7 @@ else
   fi
 
   status=$(ufw status verbose)
+  app_profiles=$(ufw app list)
 fi
 
 if ! grep -q '^Status: active$' <<<"$status"; then
@@ -36,7 +42,7 @@ if ! grep -q '^Default: deny (incoming)' <<<"$status"; then
   exit 1
 fi
 
-if ! awk -v expected="$expected_source" '
+if ! awk -v expected="$expected_source" -v app_profiles="$app_profiles" '
   function reject(reason) {
     unexpected = 1
     printf "dev-ingress firewall: rejected rule target=%s direction=%s source=%s reason=%s\n", target, direction, source, reason > "/dev/stderr"
@@ -65,6 +71,13 @@ if ! awk -v expected="$expected_source" '
   }
 
   BEGIN {
+    profile_count = split(app_profiles, profile_lines, "\n")
+    for (profile_index = 1; profile_index <= profile_count; profile_index++) {
+      profile = profile_lines[profile_index]
+      sub(/^[[:space:]]+/, "", profile)
+      sub(/[[:space:]]+$/, "", profile)
+      if (profile != "" && profile != "Available applications:") application_profile[profile] = 1
+    }
     required["5173/tcp"] = 1
     required["8000/tcp"] = 1
     required["8097/tcp"] = 1
@@ -106,6 +119,7 @@ if ! awk -v expected="$expected_source" '
     if (target_spec ~ / on [^ ]+$/) target_has_interface = 1
     sub(/ on [^ ]+$/, "", target_spec)
     coverage = numeric_target_covers_required(target_spec)
+    if (target_spec in application_profile) coverage = -1
 
     # This verifier owns only the three development ports. Existing explicit
     # rules for unrelated services remain outside its scope; broad, ranged, or
