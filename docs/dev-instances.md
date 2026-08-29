@@ -130,7 +130,7 @@ replace those rules with the fixed Caddy address before exposing a dev vhost:
 ufw delete allow from 172.18.0.0/16 to any port 5173 proto tcp
 ufw delete allow from 172.18.0.0/16 to any port 8000 proto tcp
 ufw delete allow from 172.18.0.0/16 to any port 8097 proto tcp
-ufw allow from 172.31.255.2 to any port 5173 proto tcp comment 'Knoxx dev Caddy bridge'
+ufw allow from 172.31.255.2 to any port 5173 proto tcp comment 'shadow-cljs dev HTTP via Caddy'
 ufw allow from 172.31.255.2 to any port 8000 proto tcp comment 'Knoxx dev Caddy backend'
 ufw allow from 172.31.255.2 to any port 8097 proto tcp comment 'OpenCode web UI via Caddy ingress'
 ufw status numbered

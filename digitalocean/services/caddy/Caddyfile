@@ -111,7 +111,7 @@
 # address on that network, so ufw can allow exactly one container rather than
 # every production container on the shared `open-hax` bridge:
 #
-#   5173/tcp ALLOW 172.31.255.2     # Knoxx dev Caddy bridge
+#   5173/tcp ALLOW 172.31.255.2     # shadow-cljs dev HTTP via Caddy
 #   8000/tcp ALLOW 172.31.255.2     # Knoxx dev Caddy backend
 #   8097/tcp ALLOW 172.31.255.2     # OpenCode web UI via Caddy ingress
 #
