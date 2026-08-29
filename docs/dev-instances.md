@@ -115,16 +115,27 @@ name that does not resolve here fails issuance for itself.
      caddy:2.8-alpine \
      caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
    ```
-7. **Deploy** with the `deploy` label on the merged PR, or dispatch `Deploy
-   Stack` manually. A Caddyfile change is a bind mount, and compose hashes the
-   image and the environment but never the contents of a bind mount — the deploy
-   step's rsync itemization is what forces the recreate.
+7. **Bootstrap and verify the host firewall.** Run `Bootstrap DigitalOcean
+   Host` with the `bootstrap` operation and retain its verification report. The
+   report must contain a passing `firewall-dev-ingress-scoped` check.
+8. **Deploy** with the `deploy` label on the merged PR, or dispatch `Deploy
+   Stack` manually. Every Caddy deploy re-runs the installed firewall verifier
+   before rendering or changing the service. A Caddyfile change is a bind mount,
+   and compose hashes the image and the environment but never the contents of a
+   bind mount — the deploy step's rsync itemization is what forces the recreate.
 
-### One-time firewall migration for this change
+### Firewall migration and proof
 
-The old rules trusted the entire shared `172.18.0.0/16` production bridge.
-Create the dedicated bridge by bringing up this Caddy compose definition, then
-replace those rules with the fixed Caddy address before exposing a dev vhost:
+The old rules trusted the entire shared `172.18.0.0/16` production bridge. The
+host bootstrap now removes those known broad rules, installs the fixed-address
+rules, and installs a root-owned verifier at
+`/usr/local/sbin/open-hax-verify-dev-ingress-firewall`. The verifier rejects an
+inactive firewall, a default-allow incoming policy, a missing narrow rule, or
+any additional allow source for ports 5173, 8000, and 8097 (including public
+IPv6 rules). Caddy deployment is fail closed when that live proof fails.
+
+The following commands are the manual recovery equivalent of the bootstrap
+migration:
 
 ```sh
 ufw delete allow from 172.18.0.0/16 to any port 5173 proto tcp
@@ -133,13 +144,14 @@ ufw delete allow from 172.18.0.0/16 to any port 8097 proto tcp
 ufw allow from 172.31.255.2 to any port 5173 proto tcp comment 'shadow-cljs dev HTTP via Caddy'
 ufw allow from 172.31.255.2 to any port 8000 proto tcp comment 'Knoxx dev Caddy backend'
 ufw allow from 172.31.255.2 to any port 8097 proto tcp comment 'OpenCode web UI via Caddy ingress'
-ufw status numbered
+sudo /usr/local/sbin/open-hax-verify-dev-ingress-firewall
 ```
 
 If a delete command reports that no matching rule exists, inspect
 `ufw status numbered` and remove the equivalent `/16` rule by number. Do not
 leave both the broad and narrow rules installed: the broad rule still permits
-an unauthenticated production container to bypass `dev_guard`.
+an unauthenticated production container to bypass `dev_guard`. Do not proceed
+with Caddy deployment until the verifier succeeds.
 
 ## 5. nREPL and other non-HTTP services
 

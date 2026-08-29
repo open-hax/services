@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -euo pipefail
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+verifier="${script_dir}/verify-dev-ingress-firewall.sh"
+fixture_dir=$(mktemp -d)
+trap 'rm -rf "$fixture_dir"' EXIT
+
+good=$'Status: active\nDefault: deny (incoming), allow (outgoing), disabled (routed)\nOpenSSH ALLOW IN Anywhere\n80/tcp ALLOW IN Anywhere\n443/tcp ALLOW IN Anywhere\nOpenSSH (v6) ALLOW IN Anywhere (v6)\n80/tcp (v6) ALLOW IN Anywhere (v6)\n443/tcp (v6) ALLOW IN Anywhere (v6)\n5173/tcp ALLOW IN 172.31.255.2\n8000/tcp ALLOW IN 172.31.255.2\n8097/tcp ALLOW IN 172.31.255.2'
+
+expect_pass() {
+  local name=$1
+  local content=$2
+  local fixture="${fixture_dir}/${name}.txt"
+  printf '%s\n' "$content" > "$fixture"
+  UFW_STATUS_FILE="$fixture" "$verifier" >/dev/null
+}
+
+expect_fail() {
+  local name=$1
+  local content=$2
+  local fixture="${fixture_dir}/${name}.txt"
+  printf '%s\n' "$content" > "$fixture"
+  if UFW_STATUS_FILE="$fixture" "$verifier" >/dev/null 2>&1; then
+    echo "firewall verifier unexpectedly accepted ${name}" >&2
+    exit 1
+  fi
+}
+
+expect_pass scoped-only "$good"
+expect_fail inactive "${good/Status: active/Status: inactive}"
+expect_fail default-allow "${good/Default: deny (incoming)/Default: allow (incoming)}"
+expect_fail missing-port "${good/$'\n8097/tcp ALLOW IN 172.31.255.2'/}"
+expect_fail broad-peer "${good}"$'\n5173/tcp ALLOW IN 172.18.0.0/16'
+expect_fail public-v6 "${good}"$'\n8097/tcp (v6) ALLOW IN Anywhere (v6)'
+expect_fail global-allow "${good}"$'\nAnywhere ALLOW IN 172.18.0.0/16'
+expect_fail unknown-profile "${good}"$'\nDev Servers ALLOW IN Anywhere'
+expect_fail routed-allow "${good}"$'\n5173/tcp ALLOW FWD 172.18.0.0/16'
+expect_fail wrong-fixed-peer "${good/172.31.255.2/172.31.255.3}"
+
+echo "dev-ingress firewall verifier self-test: ok"

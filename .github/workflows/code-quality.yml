@@ -13,7 +13,7 @@ jobs:
     name: Validate service definitions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Validate YAML and scripts
         run: |
           python - <<'PY'
@@ -28,6 +28,9 @@ jobs:
           bash -n promethean/scripts/*.sh
           bash -n digitalocean/lib/*.sh digitalocean/scripts/*.sh
           bash -n digitalocean/services/*/verify.sh
+
+      - name: Self-test the dev-ingress firewall verifier
+        run: digitalocean/scripts/test-verify-dev-ingress-firewall.sh
 
       # Helper scripts a verify.sh evaluates inside a container. They only ever
       # run on the production host, so a syntax error in one would surface as a
