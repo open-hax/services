@@ -29,12 +29,16 @@ expect_fail() {
 }
 
 expect_pass scoped-only "$good"
+expect_pass unrelated-port "${good}"$'\n8787/tcp ALLOW IN Anywhere'
+expect_pass unrelated-udp "${good}"$'\n8001/udp ALLOW IN Anywhere'
 expect_fail inactive "${good/Status: active/Status: inactive}"
 expect_fail default-allow "${good/Default: deny (incoming)/Default: allow (incoming)}"
 expect_fail missing-port "${good/$'\n8097/tcp ALLOW IN 172.31.255.2'/}"
 expect_fail broad-peer "${good}"$'\n5173/tcp ALLOW IN 172.18.0.0/16'
 expect_fail public-v6 "${good}"$'\n8097/tcp (v6) ALLOW IN Anywhere (v6)'
 expect_fail global-allow "${good}"$'\nAnywhere ALLOW IN 172.18.0.0/16'
+expect_fail covering-range "${good}"$'\n7999:8001/tcp ALLOW IN Anywhere'
+expect_fail covering-list "${good}"$'\n5172,5173/tcp ALLOW IN Anywhere'
 expect_fail unknown-profile "${good}"$'\nDev Servers ALLOW IN Anywhere'
 expect_fail routed-allow "${good}"$'\n5173/tcp ALLOW FWD 172.18.0.0/16'
 expect_fail wrong-fixed-peer "${good/172.31.255.2/172.31.255.3}"

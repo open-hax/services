@@ -37,10 +37,35 @@ if ! grep -q '^Default: deny (incoming)' <<<"$status"; then
 fi
 
 if ! awk -v expected="$expected_source" '
+  function reject(reason) {
+    unexpected = 1
+    printf "dev-ingress firewall: rejected rule target=%s direction=%s source=%s reason=%s\n", target, direction, source, reason > "/dev/stderr"
+  }
+
+  function numeric_target_covers_required(spec, parts, ranges, count, i, bounds, port) {
+    sub(/\/.*/, "", spec)
+    if (spec !~ /^[0-9,:]+$/) return -1
+    count = split(spec, parts, ",")
+    for (i = 1; i <= count; i++) {
+      if (parts[i] ~ /:/) {
+        split(parts[i], bounds, ":")
+        for (port in protected_port) {
+          if ((port + 0) >= (bounds[1] + 0) && (port + 0) <= (bounds[2] + 0)) return 1
+        }
+      } else if (parts[i] in protected_port) {
+        return 1
+      }
+    }
+    return 0
+  }
+
   BEGIN {
     required["5173/tcp"] = 1
     required["8000/tcp"] = 1
     required["8097/tcp"] = 1
+    protected_port["5173"] = 1
+    protected_port["8000"] = 1
+    protected_port["8097"] = 1
     public["OpenSSH"] = 1
     public["22/tcp"] = 1
     public["80/tcp"] = 1
@@ -69,32 +94,50 @@ if ! awk -v expected="$expected_source" '
 
     direction = $(action_index + 1)
     source = $(action_index + 2)
+    target_spec = target
+    sub(/ .*/, "", target_spec)
+    coverage = numeric_target_covers_required(target_spec)
 
-    # The bootstrap intentionally exposes only SSH and public HTTP(S). Reject
-    # every other inbound allow shape unless it is one of the three exact
-    # IPv4 dev-ingress rules. This also rejects global and named-profile rules
-    # that could silently cover the protected ports.
+    # This verifier owns only the three development ports. Existing explicit
+    # rules for unrelated services remain outside its scope; broad, ranged, or
+    # named-profile rules stay fail closed because they could cover a protected
+    # port without naming it exactly.
     if (direction != "IN") {
-      unexpected = 1
+      if (direction == "FWD" && (target_spec == "Anywhere" || coverage != 0)) {
+        reject("routed rule can cover a protected port")
+      }
       next
     }
-    if (target in public) next
-    if ((target in required) && !target_is_v6 && source == expected) {
-      exact[target] = 1
+    if (target_spec in public) next
+    if (target_spec in required) {
+      if (!target_is_v6 && source == expected) exact[target_spec] = 1
+      else reject("protected port source or address family mismatch")
       next
     }
-    unexpected = 1
+    if (target_spec == "Anywhere") {
+      reject("global inbound allow")
+      next
+    }
+    if (coverage == 1) {
+      reject("non-exact rule covers a protected port")
+      next
+    }
+    if (coverage == 0) next
+    reject("unresolved application profile")
   }
 
   END {
     missing = 0
     for (target in required) {
-      if (!exact[target]) missing = 1
+      if (!exact[target]) {
+        missing = 1
+        printf "dev-ingress firewall: missing exact %s allow from %s\n", target, expected > "/dev/stderr"
+      }
     }
     exit (unexpected || missing)
   }
 ' <<<"$status"; then
-  echo "dev-ingress firewall: inbound allows must be public SSH/HTTP(S) or exact ${expected_source} rules for ports 5173, 8000, and 8097" >&2
+  echo "dev-ingress firewall: ports 5173, 8000, and 8097 are not exclusively scoped to ${expected_source}" >&2
   exit 1
 fi
 
