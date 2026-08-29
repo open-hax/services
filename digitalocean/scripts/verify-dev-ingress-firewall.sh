@@ -116,10 +116,13 @@ if ! awk -v expected="$expected_source" -v app_profiles="$app_profiles" '
     direction = $(action_index + 1)
     source = $(action_index + 2)
     target_spec = target
-    if (target_spec ~ / on [^ ]+$/) target_has_interface = 1
-    sub(/ on [^ ]+$/, "", target_spec)
+    target_is_profile = (target_spec in application_profile)
+    if (!target_is_profile && target_spec ~ / on [^ ]+$/) {
+      target_has_interface = 1
+      sub(/ on [^ ]+$/, "", target_spec)
+    }
     coverage = numeric_target_covers_required(target_spec)
-    if (target_spec in application_profile) coverage = -1
+    if (target_is_profile || target_spec in application_profile) coverage = -1
 
     # This verifier owns only the three development ports. Existing explicit
     # rules for unrelated services remain outside its scope; broad, ranged, or
