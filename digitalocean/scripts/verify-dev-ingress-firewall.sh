@@ -80,8 +80,11 @@ if ! awk -v expected="$expected_source" '
     action_index = 0
     target = ""
     target_is_v6 = 0
+    target_has_interface = 0
     for (i = 1; i <= NF; i++) {
-      if ($i == "ALLOW" || $i == "LIMIT") {
+      if ($i == "#") break
+      if (($i == "ALLOW" || $i == "LIMIT") &&
+          ($(i + 1) == "IN" || $(i + 1) == "OUT" || $(i + 1) == "FWD")) {
         permit_action = $i
         action_index = i
         break
@@ -100,6 +103,7 @@ if ! awk -v expected="$expected_source" '
     direction = $(action_index + 1)
     source = $(action_index + 2)
     target_spec = target
+    if (target_spec ~ / on [^ ]+$/) target_has_interface = 1
     sub(/ on [^ ]+$/, "", target_spec)
     coverage = numeric_target_covers_required(target_spec)
 
@@ -115,8 +119,8 @@ if ! awk -v expected="$expected_source" '
     }
     if (target_spec in public) next
     if (target_spec in required) {
-      if (permit_action == "ALLOW" && !target_is_v6 && source == expected) exact[target_spec] = 1
-      else reject("protected port action, source, or address family mismatch")
+      if (permit_action == "ALLOW" && !target_is_v6 && !target_has_interface && source == expected) exact[target_spec] = 1
+      else reject("protected port action, source, address family, or interface mismatch")
       next
     }
     if (target_spec == "Anywhere") {

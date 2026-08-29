@@ -36,7 +36,7 @@ expect_pass protected-range-udp "${good}"$'\n7999:8001/udp ALLOW IN Anywhere'
 expect_pass protected-list-udp "${good}"$'\n5172,5173/udp ALLOW IN Anywhere'
 expect_pass unrelated-limit "${good}"$'\n8787/tcp LIMIT IN Anywhere'
 expect_pass unrelated-port-interface "${good}"$'\n8787/tcp on eth0 ALLOW IN Anywhere'
-expect_pass scoped-port-interface "${good/5173\/tcp ALLOW IN/5173\/tcp on caddy-dev-ingress ALLOW IN}"
+expect_pass denied-comment-keyword "${good}"$'\n5173/tcp DENY IN Anywhere # ALLOW IN is comment text'
 expect_fail inactive "${good/Status: active/Status: inactive}"
 expect_fail default-allow "${good/Default: deny (incoming)/Default: allow (incoming)}"
 expect_fail missing-port "${good/$'\n8097/tcp ALLOW IN 172.31.255.2'/}"
@@ -49,6 +49,9 @@ expect_fail unknown-profile "${good}"$'\nDev Servers ALLOW IN Anywhere'
 expect_fail numeric-prefix-profile "${good}"$'\n8787 Dev Servers ALLOW IN Anywhere'
 expect_fail allowlisted-prefix-profile "${good}"$'\nOpenSSH Dev ALLOW IN Anywhere'
 expect_fail slash-profile "${good}"$'\n8787 Dev/udp ALLOW IN Anywhere'
+expect_fail protected-port-interface "${good/5173\/tcp ALLOW IN/5173\/tcp on eth0 ALLOW IN}"
+expect_fail allow-keyword-profile "${good}"$'\nDev ALLOW Servers ALLOW IN Anywhere'
+expect_fail limit-keyword-profile "${good}"$'\nDev LIMIT Servers ALLOW IN Anywhere'
 expect_fail unknown-protocol "${good}"$'\n5173/sctp ALLOW IN Anywhere'
 expect_fail protected-limit "${good}"$'\n5173/tcp LIMIT IN Anywhere'
 expect_fail global-limit "${good}"$'\nAnywhere LIMIT IN Anywhere'
