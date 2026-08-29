@@ -32,6 +32,9 @@ jobs:
       - name: Self-test the dev-ingress firewall verifier
         run: digitalocean/scripts/test-verify-dev-ingress-firewall.sh
 
+      - name: Self-test the Docker readiness guard
+        run: digitalocean/scripts/test-bootstrap-docker-readiness.sh
+
       # Helper scripts a verify.sh evaluates inside a container. They only ever
       # run on the production host, so a syntax error in one would surface as a
       # failed health gate mid-deploy rather than here.

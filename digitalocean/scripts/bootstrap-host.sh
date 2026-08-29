@@ -5,6 +5,37 @@ DEPLOY_USER=${DEPLOY_USER:-deploy}
 RUNTIME_ROOT=${RUNTIME_ROOT:-/srv/open-hax}
 DEV_INGRESS_SOURCE=${DEV_INGRESS_SOURCE:-172.31.255.2}
 FIREWALL_VERIFIER=${FIREWALL_VERIFIER:-/usr/local/sbin/open-hax-verify-dev-ingress-firewall}
+DOCKER_BOOT_LINK=${DOCKER_BOOT_LINK:-/etc/systemd/system/multi-user.target.wants/docker.service}
+DOCKER_UNIT_PATH=${DOCKER_UNIT_PATH:-/lib/systemd/system/docker.service}
+SYSTEMCTL_BIN=${SYSTEMCTL_BIN:-/usr/bin/systemctl}
+SYSTEMCTL_ROOT=${SYSTEMCTL_ROOT:-/}
+SYSTEMD_ANALYZE_BIN=${SYSTEMD_ANALYZE_BIN:-/usr/bin/systemd-analyze}
+
+docker_is_ready_for_boot() {
+  local effective_config effective_unit
+  local -a config_paths
+  effective_config=$(
+    "$SYSTEMD_ANALYZE_BIN" --root="$SYSTEMCTL_ROOT" cat-config systemd/system/docker.service 2>/dev/null
+  ) || return 1
+  mapfile -t config_paths < <(
+    printf '%s\n' "$effective_config" |
+      awk '/^# \/.*$/ { print substr($0, 3) }'
+  )
+  [ "${#config_paths[@]}" -eq 1 ] || return 1
+  effective_unit=${config_paths[0]}
+  [ -L "$DOCKER_BOOT_LINK" ] &&
+    [ -e "$DOCKER_UNIT_PATH" ] &&
+    [ "$(readlink -f "$DOCKER_BOOT_LINK")" = "$(readlink -f "$DOCKER_UNIT_PATH")" ] &&
+    [ -n "$effective_unit" ] &&
+    [ "$(readlink -f "$effective_unit")" = "$(readlink -f "$DOCKER_UNIT_PATH")" ] &&
+    "$SYSTEMCTL_BIN" --root="$SYSTEMCTL_ROOT" is-enabled --quiet docker.service >/dev/null 2>&1 &&
+    docker info >/dev/null 2>&1
+}
+
+if [ "${BOOTSTRAP_DOCKER_READINESS_ONLY:-0}" = 1 ]; then
+  docker_is_ready_for_boot
+  exit
+fi
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "bootstrap-host.sh must run as root" >&2
@@ -83,6 +114,10 @@ printf '%s ALL=(root) NOPASSWD: %s\n' "$DEPLOY_USER" "$FIREWALL_VERIFIER" > "$su
 visudo -cf "$sudoers_tmp" >/dev/null
 install -o root -g root -m 0440 "$sudoers_tmp" /etc/sudoers.d/open-hax-firewall-verify
 
-systemctl enable --now docker
+if docker_is_ready_for_boot; then
+  echo "docker is already enabled at boot and accepting requests"
+else
+  systemctl enable --now docker
+fi
 
 echo "bootstrap complete"
