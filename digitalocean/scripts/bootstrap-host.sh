@@ -12,11 +12,17 @@ SYSTEMCTL_ROOT=${SYSTEMCTL_ROOT:-/}
 SYSTEMD_ANALYZE_BIN=${SYSTEMD_ANALYZE_BIN:-/usr/bin/systemd-analyze}
 
 docker_is_ready_for_boot() {
-  local effective_unit
-  effective_unit=$(
-    "$SYSTEMD_ANALYZE_BIN" --root="$SYSTEMCTL_ROOT" cat-config systemd/system/docker.service 2>/dev/null |
-      awk '/^# \/.*docker\.service$/ { print substr($0, 3); exit }'
+  local effective_config effective_unit
+  local -a config_paths
+  effective_config=$(
+    "$SYSTEMD_ANALYZE_BIN" --root="$SYSTEMCTL_ROOT" cat-config systemd/system/docker.service 2>/dev/null
   ) || return 1
+  mapfile -t config_paths < <(
+    printf '%s\n' "$effective_config" |
+      awk '/^# \/.*$/ { print substr($0, 3) }'
+  )
+  [ "${#config_paths[@]}" -eq 1 ] || return 1
+  effective_unit=${config_paths[0]}
   [ -L "$DOCKER_BOOT_LINK" ] &&
     [ -e "$DOCKER_UNIT_PATH" ] &&
     [ "$(readlink -f "$DOCKER_BOOT_LINK")" = "$(readlink -f "$DOCKER_UNIT_PATH")" ] &&

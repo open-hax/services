@@ -15,6 +15,18 @@ printf '%s\n' \
   > "$fixture_dir/bin/docker"
 chmod 0755 "$fixture_dir/bin/docker"
 
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'test "${2:-}" = cat-config || exit 64' \
+  'test "${3:-}" = systemd/system/docker.service || exit 64' \
+  'case "${MOCK_SYSTEMD_ANALYZE_MODE:-canonical}" in' \
+  '  canonical) printf "# %s\\n[Unit]\\nDescription=Docker fixture\\n" "$MOCK_SYSTEMD_UNIT" ;;' \
+  '  unknown-header) printf "Main configuration: %s\\n[Unit]\\nDescription=Docker fixture\\n" "$MOCK_SYSTEMD_UNIT" ;;' \
+  '  *) exit 64 ;;' \
+  'esac' \
+  > "$fixture_dir/bin/systemd-analyze"
+chmod 0755 "$fixture_dir/bin/systemd-analyze"
+
 systemctl_root="$fixture_dir/root"
 unit="$systemctl_root/usr/lib/systemd/system/docker.service"
 boot_link="$systemctl_root/etc/systemd/system/multi-user.target.wants/docker.service"
@@ -35,6 +47,40 @@ PATH="$fixture_dir/bin:$PATH" \
   SYSTEMCTL_ROOT="$systemctl_root" \
   BOOTSTRAP_DOCKER_READINESS_ONLY=1 \
   bash "$bootstrap"
+
+for _ in $(seq 1 50); do
+  PATH="$fixture_dir/bin:$PATH" \
+    DOCKER_BOOT_LINK="$boot_link" \
+    DOCKER_UNIT_PATH="$unit" \
+    SYSTEMCTL_BIN=/usr/bin/systemctl \
+    SYSTEMCTL_ROOT="$systemctl_root" \
+    BOOTSTRAP_DOCKER_READINESS_ONLY=1 \
+    bash "$bootstrap"
+done
+
+PATH="$fixture_dir/bin:$PATH" \
+  DOCKER_BOOT_LINK="$boot_link" \
+  DOCKER_UNIT_PATH="$unit" \
+  SYSTEMCTL_BIN=/usr/bin/systemctl \
+  SYSTEMCTL_ROOT="$systemctl_root" \
+  SYSTEMD_ANALYZE_BIN="$fixture_dir/bin/systemd-analyze" \
+  MOCK_SYSTEMD_UNIT="$unit" \
+  BOOTSTRAP_DOCKER_READINESS_ONLY=1 \
+  bash "$bootstrap"
+
+if PATH="$fixture_dir/bin:$PATH" \
+  DOCKER_BOOT_LINK="$boot_link" \
+  DOCKER_UNIT_PATH="$unit" \
+  SYSTEMCTL_BIN=/usr/bin/systemctl \
+  SYSTEMCTL_ROOT="$systemctl_root" \
+  SYSTEMD_ANALYZE_BIN="$fixture_dir/bin/systemd-analyze" \
+  MOCK_SYSTEMD_UNIT="$unit" \
+  MOCK_SYSTEMD_ANALYZE_MODE=unknown-header \
+  BOOTSTRAP_DOCKER_READINESS_ONLY=1 \
+  bash "$bootstrap"; then
+  echo "docker readiness unexpectedly accepted an unrecognized analyzer format" >&2
+  exit 1
+fi
 
 if PATH="$fixture_dir/bin:$PATH" \
   DOCKER_BOOT_LINK="$boot_link" \
@@ -80,6 +126,27 @@ if PATH="$fixture_dir/bin:$PATH" \
   exit 1
 fi
 rm "$override"
+
+drop_in_dir="$systemctl_root/etc/systemd/system/docker.service.d"
+drop_in="$drop_in_dir/override.conf"
+mkdir -p "$drop_in_dir"
+printf '%s\n' \
+  '[Service]' \
+  'ExecStart=' \
+  'ExecStart=/bin/false' \
+  > "$drop_in"
+if PATH="$fixture_dir/bin:$PATH" \
+  DOCKER_BOOT_LINK="$boot_link" \
+  DOCKER_UNIT_PATH="$unit" \
+  SYSTEMCTL_BIN=/usr/bin/systemctl \
+  SYSTEMCTL_ROOT="$systemctl_root" \
+  BOOTSTRAP_DOCKER_READINESS_ONLY=1 \
+  bash "$bootstrap"; then
+  echo "docker readiness unexpectedly accepted a service drop-in" >&2
+  exit 1
+fi
+rm "$drop_in"
+rmdir "$drop_in_dir"
 
 rm "$boot_link"
 missing_unit="$systemctl_root/usr/lib/systemd/system/missing-docker.service"
