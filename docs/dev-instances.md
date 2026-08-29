@@ -148,11 +148,14 @@ no HTTP framing for Caddy to authenticate in front of; a reverse proxy would
 publish an unauthenticated remote-eval endpoint. Reach it over SSH instead:
 
 ```sh
-ssh -N -L 9630:127.0.0.1:9630 <user>@proxx.promethean.rest
+ssh -N \
+  -L 9630:127.0.0.1:9630 \
+  -L 9631:127.0.0.1:9631 \
+  <user>@proxx.promethean.rest
 ```
 
-Then connect a local client to `127.0.0.1:9630`. The same rule applies to any
-protocol Caddy cannot authenticate.
+Then connect local clients to `127.0.0.1:9630` or `127.0.0.1:9631`. The same
+rule applies to any protocol Caddy cannot authenticate.
 
 ## 6. The rule for agents
 
