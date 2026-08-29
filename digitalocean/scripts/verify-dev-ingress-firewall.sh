@@ -92,6 +92,7 @@ if ! awk -v expected="$expected_source" -v app_profiles="$app_profiles" '
 
   {
     action_index = 0
+    permit_action = ""
     target = ""
     target_is_v6 = 0
     target_has_interface = 0

@@ -37,6 +37,7 @@ expect_pass protected-number-udp "${good}"$'\n5173/udp ALLOW IN Anywhere'
 expect_pass protected-range-udp "${good}"$'\n7999:8001/udp ALLOW IN Anywhere'
 expect_pass protected-list-udp "${good}"$'\n5172,5173/udp ALLOW IN Anywhere'
 expect_pass unrelated-limit "${good}"$'\n8787/tcp LIMIT IN Anywhere'
+expect_pass unrelated-limit-before-required "${good/$'\n5173/tcp ALLOW IN'/$'\n8787/tcp LIMIT IN Anywhere\n5173/tcp ALLOW IN'}"
 expect_pass unrelated-port-interface "${good}"$'\n8787/tcp on eth0 ALLOW IN Anywhere'
 expect_pass denied-comment-keyword "${good}"$'\n5173/tcp DENY IN Anywhere # ALLOW IN is comment text'
 expect_fail inactive "${good/Status: active/Status: inactive}"
