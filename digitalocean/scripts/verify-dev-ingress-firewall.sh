@@ -76,6 +76,7 @@ if ! awk -v expected="$expected_source" -v app_profiles="$app_profiles" '
       profile = profile_lines[profile_index]
       sub(/^[[:space:]]+/, "", profile)
       sub(/[[:space:]]+$/, "", profile)
+      gsub(/[[:space:]]+/, " ", profile)
       if (profile != "" && profile != "Available applications:") application_profile[profile] = 1
     }
     required["5173/tcp"] = 1
@@ -96,6 +97,41 @@ if ! awk -v expected="$expected_source" -v app_profiles="$app_profiles" '
     target = ""
     target_is_v6 = 0
     target_has_interface = 0
+    normalized_line = $0
+    gsub(/[[:space:]]+/, " ", normalized_line)
+    sub(/^ /, "", normalized_line)
+    sub(/ $/, "", normalized_line)
+    registered_profile = ""
+    registered_suffix = ""
+    for (profile in application_profile) {
+      profile_prefix = profile " "
+      if (index(normalized_line, profile_prefix) != 1) continue
+      candidate_suffix = substr(normalized_line, length(profile_prefix) + 1)
+      while (candidate_suffix ~ /^\(v6\) / || candidate_suffix ~ /^on [^ ]+ /) {
+        sub(/^\(v6\) /, "", candidate_suffix)
+        sub(/^on [^ ]+ /, "", candidate_suffix)
+      }
+      if (candidate_suffix ~ /^(ALLOW|LIMIT) (IN|OUT|FWD) [^ ]+/ &&
+          length(profile) > length(registered_profile)) {
+        registered_profile = profile
+        registered_suffix = candidate_suffix
+      }
+    }
+    if (registered_profile != "") {
+      split(registered_suffix, registered_fields, " ")
+      target = registered_profile
+      target_spec = registered_profile
+      permit_action = registered_fields[1]
+      direction = registered_fields[2]
+      source = registered_fields[3]
+      if (direction != "IN") {
+        if (direction == "FWD") reject("routed application profile can cover a protected port")
+        next
+      }
+      if (target_spec in public) next
+      reject("unresolved application profile")
+      next
+    }
     for (i = 1; i <= NF; i++) {
       if ($i == "#") break
       if (($i == "ALLOW" || $i == "LIMIT") &&
