@@ -63,6 +63,20 @@ fi
 rm "$mask"
 
 rm "$boot_link"
+missing_unit="$systemctl_root/usr/lib/systemd/system/missing-docker.service"
+ln -s "$missing_unit" "$boot_link"
+if PATH="$fixture_dir/bin:$PATH" \
+  DOCKER_BOOT_LINK="$boot_link" \
+  DOCKER_UNIT_PATH="$missing_unit" \
+  SYSTEMCTL_BIN=/usr/bin/systemctl \
+  SYSTEMCTL_ROOT="$systemctl_root" \
+  BOOTSTRAP_DOCKER_READINESS_ONLY=1 \
+  bash "$bootstrap"; then
+  echo "docker readiness unexpectedly accepted a missing expected unit" >&2
+  exit 1
+fi
+
+rm "$boot_link"
 other_unit="$fixture_dir/other.service"
 touch "$other_unit"
 ln -s "$other_unit" "$boot_link"
