@@ -45,10 +45,10 @@ if ! awk -v expected="$expected_source" '
   function numeric_target_covers_required(spec, parts, protocol, ranges, count, i, bounds, port) {
     count = split(spec, protocol, "/")
     if (count > 2) return -1
-    if (count == 2 && protocol[2] == "udp") return 0
-    if (count == 2 && protocol[2] != "tcp") return -1
     spec = protocol[1]
     if (spec !~ /^[0-9,:]+$/) return -1
+    if (count == 2 && protocol[2] == "udp") return 0
+    if (count == 2 && protocol[2] != "tcp") return -1
     count = split(spec, parts, ",")
     for (i = 1; i <= count; i++) {
       if (parts[i] ~ /:/) {
@@ -81,7 +81,8 @@ if ! awk -v expected="$expected_source" '
     target = ""
     target_is_v6 = 0
     for (i = 1; i <= NF; i++) {
-      if ($i == "ALLOW") {
+      if ($i == "ALLOW" || $i == "LIMIT") {
+        permit_action = $i
         action_index = i
         break
       }
@@ -114,8 +115,8 @@ if ! awk -v expected="$expected_source" '
     }
     if (target_spec in public) next
     if (target_spec in required) {
-      if (!target_is_v6 && source == expected) exact[target_spec] = 1
-      else reject("protected port source or address family mismatch")
+      if (permit_action == "ALLOW" && !target_is_v6 && source == expected) exact[target_spec] = 1
+      else reject("protected port action, source, or address family mismatch")
       next
     }
     if (target_spec == "Anywhere") {
