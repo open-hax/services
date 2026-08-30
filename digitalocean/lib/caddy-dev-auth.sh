@@ -44,7 +44,7 @@ resolve_caddy_dev_auth() {
 
   local image disabled_password
   image=$(caddy_image_from_service_dir "$service_dir")
-  disabled_password=$(openssl rand -hex 48)
+  disabled_password=$(openssl rand -hex 32)
 
   DEV_BASIC_AUTH_USER=disabled-unprovisioned
   DEV_BASIC_AUTH_HASH=$(generate_disabled_caddy_hash "$image" "$disabled_password")

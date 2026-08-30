@@ -42,7 +42,7 @@ fi
   }
   generate_disabled_caddy_hash() {
     [ "$1" = caddy:test ] || fail "Caddy image was not forwarded"
-    [ "${#2}" -eq 96 ] || fail "generated password was not 48 random bytes"
+    [ "${#2}" -eq 64 ] || fail "generated password was not 32 random bytes"
     printf '%s\n' '$2a$14$generated'
   }
   resolve_caddy_dev_auth caddy /fixture
