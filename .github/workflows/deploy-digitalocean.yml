@@ -202,13 +202,26 @@ jobs:
           # reads mail for. A secret rather than a variable because this repo is
           # public and Actions prints non-secret vars verbatim into run logs.
           CADDY_ACME_EMAIL: ${{ secrets.CADDY_ACME_EMAIL }}
-          # All dev ingress is one host-level trust boundary. Keep both values
-          # secret and fail closed when production has not provisioned them.
+          # All dev ingress is one host-level trust boundary. A provisioned pair
+          # is preserved; an absent pair is replaced below with a one-deploy,
+          # unknowable credential so the routes remain closed by default.
           DEV_BASIC_AUTH_USER: ${{ secrets.DEV_BASIC_AUTH_USER }}
           DEV_BASIC_AUTH_HASH: ${{ secrets.DEV_BASIC_AUTH_HASH }}
           EXTRA_ENV: ${{ inputs.extra_env }}
         run: |
           set -euo pipefail
+          # Caddy's dev vhosts must never become public merely because a
+          # fresh environment has not provisioned operator credentials yet.
+          # Preserve a complete configured pair; reject a partial pair; and
+          # otherwise generate a valid bcrypt hash for a random password that
+          # is immediately discarded. The resulting auth wall is intentionally
+          # unusable until the environment supplies real credentials.
+          . digitalocean/lib/caddy-dev-auth.sh
+          resolve_caddy_dev_auth "$SERVICE" "$SERVICE_DIR"
+          if [ "$SERVICE" = caddy ]; then
+            echo "::add-mask::${DEV_BASIC_AUTH_HASH}"
+          fi
+
           # Post-deploy MCP verification is opt-in per host. With no
           # provisioned token, fall back to the conspicuous short sentinel:
           # the renderer's blank-value guard never fires, the backend refuses
