@@ -453,6 +453,30 @@ jobs:
             echo "definition changed; recreating containers"
           fi
           docker compose --project-name "$service" --env-file .env up -d --remove-orphans $recreate
+
+          # A service moved behind a disabled Compose profile is still part of
+          # the configuration model, so --remove-orphans deliberately leaves an
+          # older container running. Service definitions may declare those
+          # migrations in disabled-profile-services. Validate that each entry
+          # really is profiled, then stop and remove only that project service;
+          # named volumes and durable bind-mounted state are preserved.
+          if [ -f disabled-profile-services ]; then
+            while IFS= read -r profile_service; do
+              [ -n "$profile_service" ] || continue
+              profile_count=$(docker compose --project-name "$service" --env-file .env \
+                --profile '*' config --format json \
+                | jq -r --arg service "$profile_service" \
+                    '.services[$service].profiles // [] | length')
+              if [ "$profile_count" -lt 1 ]; then
+                echo "disabled profile service '$profile_service' is missing or has no profile" >&2
+                exit 2
+              fi
+              echo "retiring disabled profile service $profile_service"
+              docker compose --project-name "$service" --env-file .env \
+                --profile '*' rm -sf "$profile_service"
+            done < <(sed -E 's/[[:space:]]*#.*$//; /^[[:space:]]*$/d; s/^[[:space:]]+//; s/[[:space:]]+$//' \
+                       disabled-profile-services)
+          fi
           } </dev/null
           REMOTE
 

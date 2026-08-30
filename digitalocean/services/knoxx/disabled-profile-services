@@ -1,0 +1,3 @@
+# Containers from these now-inactive profiles are removed after the ordinary
+# Compose reconciliation. Durable bind mounts and named volumes are preserved.
+knoxx-sandboxd
