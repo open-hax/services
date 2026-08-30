@@ -36,6 +36,9 @@ jobs:
       - name: Enforce singular immutable deploy source pins
         run: python scripts/check-deploy-source-pins.py
 
+      - name: Enforce deploy-chain failure propagation
+        run: python scripts/check-deploy-chain.py
+
       - name: Self-test the dev-ingress firewall verifier
         run: digitalocean/scripts/test-verify-dev-ingress-firewall.sh
 
