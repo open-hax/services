@@ -65,7 +65,7 @@ jobs:
   # gate. This keeps application validation in Knoxx while making it an actual
   # prerequisite of both label-authorized and manually dispatched deploys.
   knoxx-preflight:
-    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@main
+    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@356014b6bf41b22effbb61dc68607d5be806b9b2
     with:
       source_ref: ${{ inputs.knoxx_ref }}
 
