@@ -25,12 +25,18 @@ PIN_FILES = (
 class SourcePin:
     input_name: str
     consumer_job: str
+    consumer_argument: str
     consumer_workflow: str
 
 
 PINS = (
-    SourcePin("proxx_ref", "build-proxx", "deploy-stack-chain.yml"),
-    SourcePin("openplanner_ref", "build-knoxx-devtools", "deploy-stack-chain.yml"),
+    SourcePin("proxx_ref", "build-proxx", "source_ref", "deploy-stack-chain.yml"),
+    SourcePin(
+        "openplanner_ref",
+        "build-knoxx-devtools",
+        "openplanner_ref",
+        "deploy-stack-chain.yml",
+    ),
 )
 
 
@@ -91,7 +97,7 @@ def validate() -> list[str]:
             "deploy-stack-chain.yml",
             pin.input_name,
         )
-        forwarded = chain["jobs"][pin.consumer_job]["with"][pin.input_name]
+        forwarded = chain["jobs"][pin.consumer_job]["with"][pin.consumer_argument]
         if forwarded != f"${{{{ inputs.{pin.input_name} }}}}":
             errors.append(
                 f"{pin.consumer_workflow} must forward {pin.input_name} unchanged"
