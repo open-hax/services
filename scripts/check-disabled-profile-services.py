@@ -24,6 +24,7 @@ def validate_names(names: list[str], services: dict[str, Any]) -> list[str]:
     """Return contract violations without coupling validation to filesystem I/O."""
     failures: list[str] = []
     seen: set[str] = set()
+    disabled = set(names)
 
     for name in names:
         if not SERVICE_NAME.fullmatch(name):
@@ -42,7 +43,7 @@ def validate_names(names: list[str], services: dict[str, Any]) -> list[str]:
             failures.append(f"disabled service has no Compose profile: {name}")
 
         for consumer_name, consumer in services.items():
-            if consumer_name in seen or not isinstance(consumer, dict):
+            if consumer_name in disabled or not isinstance(consumer, dict):
                 continue
             if consumer.get("profiles"):
                 continue
