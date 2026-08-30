@@ -42,6 +42,9 @@ jobs:
       - name: Enforce service environment contracts
         run: python scripts/check-env-contracts.py
 
+      - name: Self-test the Caddy dev-auth fail-closed fallback
+        run: digitalocean/scripts/test-caddy-dev-auth-fallback.sh
+
       - name: Self-test the dev-ingress firewall verifier
         run: digitalocean/scripts/test-verify-dev-ingress-firewall.sh
 
