@@ -18,12 +18,16 @@ class Rule:
 
 
 RULES = (
-    Rule("retired deployment workflow", re.compile(r"deploy-promethean\.yml")),
-    Rule("legacy SSH identity", re.compile(r"\berror@proxx\.promethean\.rest\b")),
+    Rule("retired deployment workflow", re.compile(r"deploy-promethean\.ya?ml")),
+    Rule("legacy VPS address", re.compile(r"\b104\.130\.159\.19\b")),
+    Rule(
+        "legacy SSH identity",
+        re.compile(r"\berror@(?:[^\s]+\.promethean\.rest|104\.130\.159\.19)\b"),
+    ),
     Rule("legacy runtime root", re.compile(r"/home/error(?:/|\b)")),
     Rule(
         "trust-on-first-use SSH policy",
-        re.compile(r"StrictHostKeyChecking\s*(?:=|\s)\s*accept-new", re.IGNORECASE),
+        re.compile(r"StrictHostKeyChecking\s*(?:=|\s)\s*(?:accept-new|no)\b", re.IGNORECASE),
     ),
     Rule("unverified SSH host-key discovery", re.compile(r"\bssh-keyscan\b")),
     Rule(
@@ -32,7 +36,7 @@ RULES = (
     ),
     Rule(
         "legacy SSH user default",
-        re.compile(r"PROMETHEAN_SSH_USER[^\n]{0,200}(?:\|\||:-)[^\n]{0,80}\berror\b"),
+        re.compile(r"(?:PROMETHEAN_SSH_USER|DEPLOY_USER|(?:STAGING|TESTING|PRODUCTION)_SSH_USER)[^\n]{0,200}\berror\b"),
     ),
 )
 
@@ -86,10 +90,11 @@ def scan(root: Path) -> int:
 
 def self_test() -> int:
     bad = (
-        "uses: open-hax/services/.github/workflows/deploy-promethean.yml@main",
+        "uses: open-hax/services/.github/workflows/deploy-promethean.yaml@main",
         "ssh: error@proxx.promethean.rest",
+        "ssh error@104.130.159.19",
         "runtimeRoot: /home/error/devel/services/knoxx",
-        "StrictHostKeyChecking=accept-new",
+        "StrictHostKeyChecking=no",
         "ssh-keyscan -H host.example",
         "PROMETHEAN_SSH_HOST: ${{ vars.HOST || 'proxx.promethean.rest' }}",
         "PROMETHEAN_SSH_USER: ${{ vars.USER || 'error' }}",

@@ -28,11 +28,10 @@ proxx.promethean.rest      -> 157.245.125.134   DigitalOcean droplet
 open-hax.promethean.rest   -> 157.245.125.134   DigitalOcean droplet
 ```
 
-The website hostname's record has **already moved**. Anything in this
-constellation still saying it points at `104.130.159.19` — including
-`docs/deployment-model.md` §1 and §6 — is stale; a resolver answered
-`104.130.159.19` as recently as the start of this work, from cache inside that
-300-second TTL. What has *not* happened is issuance: the droplet's Caddy has no
+The website hostname's record has **already moved**. Any earlier VPS address is
+historical inventory, preserved only in `docs/history/promethean-vps.md`; active
+configuration must use the pinned DigitalOcean contract above. What has *not*
+happened is issuance: the droplet's Caddy has no
 site block for the name yet, so `https://open-hax.promethean.rest/` fails the
 TLS handshake outright. This change adds that block; HTTP-01 now reaches the
 droplet, so the certificate can issue on the first Caddy deploy.
@@ -40,7 +39,7 @@ droplet, so the certificate can issue on the first Caddy deploy.
 and from this repository:
 
 ```text
-digitalocean/hosts/production.yaml   roles: ingress, proxx, openplanner, knoxx
+digitalocean/hosts/production.yaml   roles: ingress, proxx, knoxx
 digitalocean/services/knoxx/         a full service definition on this lane
 .github/workflows/deploy-stack-chain.yml   deploys proxx -> knoxx -> caddy there
 digitalocean/services/knoxx/verify.sh      reaches the backend by
