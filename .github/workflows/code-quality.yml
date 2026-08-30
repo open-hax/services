@@ -42,6 +42,11 @@ jobs:
       - name: Enforce service environment contracts
         run: python scripts/check-env-contracts.py
 
+      - name: Enforce disabled Compose profile retirements
+        run: |
+          python scripts/check-disabled-profile-services.py --self-test
+          python scripts/check-disabled-profile-services.py
+
       - name: Self-test the Caddy dev-auth fail-closed fallback
         run: digitalocean/scripts/test-caddy-dev-auth-fallback.sh
 
