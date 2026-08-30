@@ -28,6 +28,19 @@ def main() -> int:
 
     providers = set(render["env"])
     providers.update(EXPORT.findall(render["run"]))
+
+    # Shell helpers can require workflow context that is not represented by a
+    # service template placeholder. Assert those bindings at the integration
+    # boundary, not only inside the helper's isolated unit test.
+    if 'resolve_caddy_dev_auth "$SERVICE" "$SERVICE_DIR"' in render["run"]:
+        for required in ("SERVICE", "SERVICE_DIR"):
+            if required not in render["env"]:
+                print(
+                    f"environment contract error: render helper uses ${required} "
+                    "without a step-level provider",
+                    file=sys.stderr,
+                )
+                return 1
     providers.update(
         EXTRA_KEY.findall((WORKFLOWS / "deploy-stack-chain.yml").read_text())
     )

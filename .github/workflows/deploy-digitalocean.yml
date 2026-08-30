@@ -167,6 +167,10 @@ jobs:
 
       - name: Render runtime environment
         env:
+          # The auth resolver branches by service before rendering. Keep the
+          # stable workflow input explicit instead of relying on ambient shell
+          # state; reusable-workflow jobs do not inherit caller variables.
+          SERVICE: ${{ inputs.service }}
           SERVICE_DIR: ${{ steps.contract.outputs.service_dir }}
           # Non-secret runtime facts.
           OPEN_HAX_SERVICE_IMAGE: ${{ inputs.image }}
