@@ -33,6 +33,9 @@ jobs:
           python scripts/check-deployment-boundary.py --self-test
           python scripts/check-deployment-boundary.py
 
+      - name: Enforce singular immutable deploy source pins
+        run: python scripts/check-deploy-source-pins.py
+
       - name: Self-test the dev-ingress firewall verifier
         run: digitalocean/scripts/test-verify-dev-ingress-firewall.sh
 

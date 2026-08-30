@@ -14,8 +14,7 @@ on:
         type: string
       openplanner_ref:
         description: Immutable open-hax/openplanner ref supplying compiler sources and SDK
-        required: false
-        default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
+        required: true
         type: string
     outputs:
       image:
@@ -36,8 +35,7 @@ on:
         type: string
       openplanner_ref:
         description: Immutable open-hax/openplanner ref supplying compiler sources and SDK
-        required: false
-        default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
+        required: true
         type: string
 
 permissions:
