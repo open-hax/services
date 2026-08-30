@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Ensure every active service placeholder has a deployment-time provider."""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOWS = ROOT / ".github" / "workflows"
+PLACEHOLDER = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
+EXPORT = re.compile(r"\bexport\s+([A-Z][A-Z0-9_]*)=")
+EXTRA_KEY = re.compile(r'"([A-Z][A-Z0-9_]*)"\s*:')
+
+
+def main() -> int:
+    deploy_path = WORKFLOWS / "deploy-digitalocean.yml"
+    document = yaml.load(deploy_path.read_text(), Loader=yaml.BaseLoader)
+    render = next(
+        step
+        for step in document["jobs"]["deploy"]["steps"]
+        if step.get("name") == "Render runtime environment"
+    )
+
+    providers = set(render["env"])
+    providers.update(EXPORT.findall(render["run"]))
+    providers.update(
+        EXTRA_KEY.findall((WORKFLOWS / "deploy-stack-chain.yml").read_text())
+    )
+
+    failures: list[str] = []
+    for template in sorted((ROOT / "digitalocean" / "services").glob("*/env.template")):
+        placeholders: set[str] = set()
+        for line in template.read_text().splitlines():
+            if line.lstrip().startswith("#"):
+                continue
+            placeholders.update(PLACEHOLDER.findall(line))
+        missing = sorted(placeholders - providers)
+        if missing:
+            failures.append(f"{template.relative_to(ROOT)}: no provider for {', '.join(missing)}")
+
+    if failures:
+        print("\n".join(f"environment contract error: {failure}" for failure in failures), file=sys.stderr)
+        return 1
+    print("all active service placeholders have deployment-time providers")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
