@@ -61,6 +61,14 @@ permissions:
   packages: write
 
 jobs:
+  # The deployment consumes the immutable SHA emitted by Knoxx's own release
+  # gate. This keeps application validation in Knoxx while making it an actual
+  # prerequisite of both label-authorized and manually dispatched deploys.
+  knoxx-preflight:
+    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@main
+    with:
+      source_ref: ${{ inputs.knoxx_ref }}
+
   build-proxx:
     uses: ./.github/workflows/build-images.yml
     with:
@@ -78,21 +86,24 @@ jobs:
 
   # Both Knoxx images build while Proxx deploys.
   build-knoxx-backend:
+    needs: knoxx-preflight
     uses: ./.github/workflows/build-images.yml
     with:
       service: knoxx-backend
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ needs.knoxx-preflight.outputs.source_sha }}
 
   build-knoxx-frontend:
+    needs: knoxx-preflight
     uses: ./.github/workflows/build-images.yml
     with:
       service: knoxx-frontend
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ needs.knoxx-preflight.outputs.source_sha }}
 
   build-knoxx-devtools:
+    needs: knoxx-preflight
     uses: ./.github/workflows/build-knoxx-devtools.yml
     with:
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ needs.knoxx-preflight.outputs.source_sha }}
       openplanner_ref: ${{ inputs.openplanner_ref }}
 
   deploy-knoxx:
