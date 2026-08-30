@@ -279,9 +279,8 @@ jobs:
       # --- website-only: build the site, then stage the serving layer -----
       #
       # node, pnpm and java come from the steps above; the droplet has none of
-      # them and needs none. services#19 called `pnpm install` and
-      # `pnpm exec shadow-cljs release app` from deploy-promethean.yml, which
-      # sets up no toolchain at all — `pnpm` is not on ubuntu-latest.
+      # them and needs none. The retired VPS lane attempted this build without
+      # provisioning a toolchain — `pnpm` is not on ubuntu-latest by default.
       #
       # No clojure CLI: website/shadow-cljs.edn declares :source-paths and
       # :dependencies, so shadow-cljs resolves its own Maven dependencies

@@ -48,14 +48,9 @@ digitalocean/services/knoxx/verify.sh      reaches the backend by
 ```
 
 Earlier prose — including this epic's own cards — says "Knoxx production runs on
-the Promethean host". That describes the **legacy lane** and is stale for the
-serving deployment. It is not wholly wrong about the repository: `open-hax/knoxx`
-still has a `deploy-production.yml` that fires on every push to its `main` and
-calls `deploy-promethean.yml`, aimed at 104.130.159.19. So Knoxx has two
-production deploy paths, and the one that fires by itself targets a box that no
-longer serves it. That is a separate defect (`docs/deployment-model.md` §1); it
-does not change the answer here, because the deployment that *serves*
-`knoxx.promethean.rest` is the DigitalOcean one.
+the Promethean host". That described the retired VPS lane and is stale. Services
+#22 removed that executable lane and its cross-repository callers. The only
+deployment that serves `knoxx.promethean.rest` is the DigitalOcean stack.
 
 ### Consequence for the adapter — the reason this card blocks that one
 

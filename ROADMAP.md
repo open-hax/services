@@ -2,7 +2,7 @@
 
 > Hub: **[eta-mu/ROADMAP.md](https://github.com/open-hax/eta-mu/blob/main/ROADMAP.md)** — read that for the seam, the ownership
 > table, and the sequencing rule. This file is only this repo's slice.
-> Last surveyed: 2026-08-09.
+> Last surveyed: 2026-08-30.
 
 ## What this repo is, on this roadmap
 
@@ -11,6 +11,20 @@ application behaviour.
 
 It is also, in practice, where the constellation's claims get tested: a health
 gate is the only place several of these contracts are checked against reality.
+
+### The legacy VPS lane is retired
+
+**Done in services #22.** The executable `promethean/` topology and its callable
+workflow were a second, stale deployment implementation. They targeted a lost
+host with a legacy account, home-directory roots, and trust-on-first-use SSH.
+Knoxx, OpenPlanner, and Proxx still called that workflow even after production
+moved to DigitalOcean.
+
+The callers are retired, historical reports remain evidence under
+`docs/reports/`, and CI rejects reintroduction of the old workflow, identity,
+runtime root, or SSH trust pattern outside explicit history. The only active
+production contract is `digitalocean/hosts/production.yaml`, its pinned host
+key, the protected `production` environment, and `/srv/open-hax`.
 
 ## What affects this repo
 

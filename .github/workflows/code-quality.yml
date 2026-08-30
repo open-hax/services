@@ -25,9 +25,13 @@ jobs:
               yaml.safe_load(p.read_text())
               print('yaml ok', p)
           PY
-          bash -n promethean/scripts/*.sh
           bash -n digitalocean/lib/*.sh digitalocean/scripts/*.sh
           bash -n digitalocean/services/*/verify.sh
+
+      - name: Enforce the DigitalOcean-only deployment boundary
+        run: |
+          python scripts/check-deployment-boundary.py --self-test
+          python scripts/check-deployment-boundary.py
 
       - name: Self-test the dev-ingress firewall verifier
         run: digitalocean/scripts/test-verify-dev-ingress-firewall.sh
