@@ -51,7 +51,6 @@ on:
       PROXY_TOKEN_PEPPER: { required: false }
       PROXX_SESSION_SECRET: { required: false }
       PROXX_POSTGRES_PASSWORD: { required: false }
-      OPENPLANNER_API_KEY: { required: false }
       KNOXX_API_KEY: { required: false }
       KNOXX_SESSION_SECRET: { required: false }
       KNOXX_MCP_LOOPBACK_TOKEN: { required: false }
@@ -64,7 +63,7 @@ on:
         description: Service to deploy
         required: true
         type: choice
-        options: [smoke, proxx, openplanner, knoxx, caddy, website]
+        options: [smoke, proxx, knoxx, caddy, website]
       environment:
         description: Target environment
         required: false
@@ -189,7 +188,6 @@ jobs:
           PROXY_TOKEN_PEPPER: ${{ secrets.PROXY_TOKEN_PEPPER }}
           PROXX_SESSION_SECRET: ${{ secrets.PROXX_SESSION_SECRET }}
           PROXX_POSTGRES_PASSWORD: ${{ secrets.PROXX_POSTGRES_PASSWORD }}
-          OPENPLANNER_API_KEY: ${{ secrets.OPENPLANNER_API_KEY }}
           KNOXX_API_KEY: ${{ secrets.KNOXX_API_KEY }}
           KNOXX_SESSION_SECRET: ${{ secrets.KNOXX_SESSION_SECRET }}
           # Absent by default; the render step substitutes the inert sentinel

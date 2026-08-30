@@ -1,7 +1,6 @@
 # Caddy — the single owner of host ports 80 and 443.
 #
-# Chosen over the legacy nginx path (promethean/nginx/promethean.conf plus a
-# certbot/dns-cloudflare sidecar) because that arrangement needs Cloudflare API
+# Chosen over the retired nginx/certbot path because that arrangement needs Cloudflare API
 # credentials resident on the host and a wildcard certificate held as host
 # state. Three hostnames and HTTP-01 need neither. The promethean.rest records
 # are DNS-only rather than proxied, so ACME reaches the origin directly.

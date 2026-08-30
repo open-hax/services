@@ -45,6 +45,5 @@ inference:
 roles:
   - ingress
   - proxx
-  - openplanner
   - knoxx
   - website

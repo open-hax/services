@@ -33,8 +33,7 @@ on:
         type: string
       openplanner_ref:
         description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
-        required: false
-        default: 8b425c1690ada78f3f1bc5dfa28c3151e3a4fede
+        required: true
         type: string
       website_ref:
         description: open-hax/website ref to deploy
@@ -61,6 +60,14 @@ permissions:
   packages: write
 
 jobs:
+  # The deployment consumes the immutable SHA emitted by Knoxx's own release
+  # gate. This keeps application validation in Knoxx while making it an actual
+  # prerequisite of both label-authorized and manually dispatched deploys.
+  knoxx-preflight:
+    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@356014b6bf41b22effbb61dc68607d5be806b9b2
+    with:
+      source_ref: ${{ inputs.knoxx_ref }}
+
   build-proxx:
     uses: ./.github/workflows/build-images.yml
     with:
@@ -78,21 +85,24 @@ jobs:
 
   # Both Knoxx images build while Proxx deploys.
   build-knoxx-backend:
+    needs: knoxx-preflight
     uses: ./.github/workflows/build-images.yml
     with:
       service: knoxx-backend
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ needs.knoxx-preflight.outputs.source_sha }}
 
   build-knoxx-frontend:
+    needs: knoxx-preflight
     uses: ./.github/workflows/build-images.yml
     with:
       service: knoxx-frontend
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ needs.knoxx-preflight.outputs.source_sha }}
 
   build-knoxx-devtools:
+    needs: knoxx-preflight
     uses: ./.github/workflows/build-knoxx-devtools.yml
     with:
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ needs.knoxx-preflight.outputs.source_sha }}
       openplanner_ref: ${{ inputs.openplanner_ref }}
 
   deploy-knoxx:
