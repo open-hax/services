@@ -22,9 +22,8 @@ on:
   workflow_call:
     inputs:
       proxx_ref:
-        description: open-hax/proxx ref to deploy
-        required: false
-        default: main
+        description: Immutable open-hax/proxx ref to deploy
+        required: true
         type: string
       knoxx_ref:
         description: open-hax/knoxx ref to deploy
