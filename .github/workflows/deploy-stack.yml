@@ -52,9 +52,8 @@ on:
   workflow_dispatch:
     inputs:
       proxx_ref:
-        description: open-hax/proxx ref to deploy
+        description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
-        default: main
         type: string
       knoxx_ref:
         description: open-hax/knoxx ref to deploy
@@ -142,7 +141,10 @@ jobs:
       cancel-in-progress: false
     uses: ./.github/workflows/deploy-stack-chain.yml
     with:
-      proxx_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.proxx_ref || 'main' }}
+      # Pin the release source at the production entry point. A manual
+      # dispatch may deliberately override it; merge-authorized deploys cannot
+      # drift with the moving main branch while queued.
+      proxx_ref: ${{ inputs.proxx_ref || '88471efd7f8cd27f64fc733a1c31369f00a6d432' }}
       knoxx_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
       # Keep the production default in one place. Nested reusable workflows
       # require this input instead of carrying independent, drift-prone pins.
