@@ -146,14 +146,17 @@ jobs:
     needs: [build-website, deploy-caddy]
     # deploy-caddy is conditional, and a skipped ingress must not silently skip
     # the website with it: the website's gate classifies an absent ingress as a
-    # WARN owned by caddy and still proves the site serves on loopback. A
-    # *failed* caddy is different — there is then no ingress to assert against.
+    # WARN owned by caddy and still proves the site serves on loopback. When
+    # ingress was requested, however, a skipped Caddy means an upstream
+    # dependency failed; never advance the website through that broken chain.
     if: >-
       always()
       && inputs.include_website
       && needs.build-website.result == 'success'
-      && needs.deploy-caddy.result != 'failure'
-      && needs.deploy-caddy.result != 'cancelled'
+      && (
+        (!inputs.include_ingress && needs.deploy-caddy.result == 'skipped')
+        || (inputs.include_ingress && needs.deploy-caddy.result == 'success')
+      )
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: website
