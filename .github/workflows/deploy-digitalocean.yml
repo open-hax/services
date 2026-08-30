@@ -57,6 +57,8 @@ on:
       KNOXX_GITHUB_OAUTH_CLIENT_ID: { required: false }
       KNOXX_GITHUB_OAUTH_CLIENT_SECRET: { required: false }
       CADDY_ACME_EMAIL: { required: false }
+      DEV_BASIC_AUTH_USER: { required: false }
+      DEV_BASIC_AUTH_HASH: { required: false }
   workflow_dispatch:
     inputs:
       service:
@@ -200,6 +202,10 @@ jobs:
           # reads mail for. A secret rather than a variable because this repo is
           # public and Actions prints non-secret vars verbatim into run logs.
           CADDY_ACME_EMAIL: ${{ secrets.CADDY_ACME_EMAIL }}
+          # All dev ingress is one host-level trust boundary. Keep both values
+          # secret and fail closed when production has not provisioned them.
+          DEV_BASIC_AUTH_USER: ${{ secrets.DEV_BASIC_AUTH_USER }}
+          DEV_BASIC_AUTH_HASH: ${{ secrets.DEV_BASIC_AUTH_HASH }}
           EXTRA_ENV: ${{ inputs.extra_env }}
         run: |
           set -euo pipefail
