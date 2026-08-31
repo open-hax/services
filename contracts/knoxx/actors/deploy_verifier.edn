@@ -7,9 +7,8 @@
  ;; :grant/user-email and law/token-actor-honourable? then requires that
  ;; membership's stored actor binding to be deploy_verifier — this email is
  ;; what makes the two the same membership. It is a dedicated one because the
- ;; grant's tools are :all: whoever the context resolves to defines what the
- ;; long-lived loopback bearer can do, and a small read-only surface was the
- ;; point.
+ ;; role projection and the authentication grant independently clamp what the
+ ;; long-lived loopback bearer can do; a small read-only surface is the point.
  :actor/email "deploy-verifier@open-hax.local"
  :actor/username "deploy-verifier@open-hax.local"
  :actor/org "open-hax"
