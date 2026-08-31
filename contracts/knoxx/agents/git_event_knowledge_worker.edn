@@ -20,8 +20,7 @@
                  "memory_search"
                  "memory_session"
                  "semantic_query"
-                 "semantic_read"
-                 "graph_query"]
+                 "semantic_read"]
 
  :agent {:role :role/knowledge-worker
          :model "gemma4:31b"
