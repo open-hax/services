@@ -368,42 +368,18 @@ echo "knoxx: WARN settle it, so that revision needs an operator" >&2
 # callable, a tool vanishing from the catalog, or an actor credential that no
 # longer resolves. None of it moves /health.
 #
-# Reached through the :trusted-loopback method in
-# the authentication contract (NOT currently deployed — see below), which
-# requires the caller to be
+# Reached through the :trusted-loopback method in the deployed authentication
+# contract, which requires the caller to be
 # on 127.0.0.1 — true here because the probe runs inside the backend container.
 # The grant resolves the dedicated deploy_verifier identity, so the served
 # catalog is deliberately the three read-only tools the probes exercise —
 # nothing this token reaches can write, dispatch, spawn, or administer. The
-# method is inert without KNOXX_MCP_LOOPBACK_TOKEN, so a host that has not
-# provisioned the secret skips this section rather than failing, unless it
-# says it expects to run it.
-#
-# "Configured" means at least KNOXX_MCP_MIN_TOKEN_LENGTH characters, matching
-# the :auth-method/min-token-length the contract declares — not merely
-# non-empty. The renderer refuses a blank variable outright (see
-# deploy-digitalocean.yml: "refuse rather than deploy a blank credential"), so
-# a host that does not want MCP verification carries a short sentinel instead,
-# and the same length floor that makes the backend refuse that sentinel makes
-# this gate skip. One rule checked in both places, rather than a magic string
-# either side could forget.
-KNOXX_MCP_MIN_TOKEN_LENGTH=${KNOXX_MCP_MIN_TOKEN_LENGTH:-16}
-case "$KNOXX_MCP_MIN_TOKEN_LENGTH" in
-  ''|*[!0-9]*)
-    echo "knoxx: KNOXX_MCP_MIN_TOKEN_LENGTH must be a non-negative integer, got '${KNOXX_MCP_MIN_TOKEN_LENGTH}'" >&2
-    exit 1
-    ;;
-esac
-# Defaulted so a bare ./verify.sh run under set -u reaches the skip branch
-# rather than aborting on an unset name.
-token=${KNOXX_MCP_LOOPBACK_TOKEN:-}
-if [ "${#token}" -lt "$KNOXX_MCP_MIN_TOKEN_LENGTH" ]; then
-  if [ "${KNOXX_EXPECT_MCP_VERIFY:-false}" = "true" ]; then
-    echo "knoxx: KNOXX_EXPECT_MCP_VERIFY=true but KNOXX_MCP_LOOPBACK_TOKEN is under ${KNOXX_MCP_MIN_TOKEN_LENGTH} characters, so the backend cannot accept it either" >&2
-    exit 1
-  fi
-  echo "knoxx: MCP surface skipped — no loopback token of ${KNOXX_MCP_MIN_TOKEN_LENGTH}+ characters is configured" >&2
-else
+# method is inert without KNOXX_MCP_LOOPBACK_TOKEN. Rendering and verification
+# source the same policy, and both refuse to proceed if the token is missing or
+# shorter than the authentication contract permits.
+. ./mcp-verification-policy.sh
+require_knoxx_mcp_verification_token
+
   # Read-only tools only, and each one proves a different subsystem end to end:
   # semantic_query the corpus data plane, events_status the events runtime,
   # discord_list_servers that the verifier actor's credential still resolves.
@@ -510,7 +486,6 @@ else
 
   printf '%s' "$mcp" | jq -r '.calls | to_entries[] | "knoxx: mcp \(.key) -> \(.value.status)"'
   echo "knoxx: MCP surface ok; ${mcp_tool_count} tools served, none degraded"
-fi
 
 # 2. Auth is actually enforced. A backend that answers unauthenticated
 #    requests would expose the whole vault.

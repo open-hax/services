@@ -46,6 +46,27 @@ def main() -> int:
     )
 
     failures: list[str] = []
+
+    # Knoxx's MCP verification is a mandatory production invariant, not an
+    # optional placeholder-provider relationship. Keep the three independent
+    # enforcement points wired together: render, host verification, and the
+    # authentication resource consumed by the deployed application image.
+    render_run = render["run"]
+    knoxx_verify = (
+        ROOT / "digitalocean" / "services" / "knoxx" / "verify.sh"
+    ).read_text()
+    mcp_auth_contract = (
+        ROOT / "contracts" / "knoxx" / "authentication" / "mcp_http.edn"
+    )
+    if 'if [ "$SERVICE" = knoxx ]' not in render_run:
+        failures.append("Knoxx render does not scope the mandatory MCP token policy")
+    if "require_knoxx_mcp_verification_token" not in render_run:
+        failures.append("Knoxx render does not enforce the mandatory MCP token policy")
+    if "require_knoxx_mcp_verification_token" not in knoxx_verify:
+        failures.append("Knoxx verify.sh does not enforce the mandatory MCP token policy")
+    if not mcp_auth_contract.is_file():
+        failures.append("Knoxx trusted-loopback authentication resource is missing")
+
     for template in sorted((ROOT / "digitalocean" / "services").glob("*/env.template")):
         placeholders: set[str] = set()
         for line in template.read_text().splitlines():
