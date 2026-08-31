@@ -389,6 +389,8 @@ require_knoxx_mcp_verification_token
     "semantic_query": {"query": "knoxx", "topK": 1},
     "events_status": {}
   }'}
+  MCP_EXPECTED_TOOLS=${MCP_EXPECTED_TOOLS:-semantic_query events_status}
+  require_knoxx_mcp_probe_contract
 
   mcp=$(docker compose --project-name knoxx --env-file .env \
     exec -T \
@@ -407,7 +409,9 @@ require_knoxx_mcp_verification_token
   # registration that threw before any tool landed. The verifier identity is
   # granted exactly the two probed tools, so its full catalog is two and
   # the floor matches it; the absent-tool check below then asserts each one
-  # individually.
+  # individually. Overrides may change probe arguments or order, but the shared
+  # policy above refuses any override that removes, adds, or makes optional a
+  # member of this exact set.
   mcp_min_tools=${KNOXX_MCP_MIN_TOOLS:-2}
   case "$mcp_min_tools" in
     ''|*[!0-9]*)
@@ -424,9 +428,9 @@ require_knoxx_mcp_verification_token
 
   # Exactly the probe set, not merely at least it. An extra served tool means
   # role or capability resolution leaked a surface this long-lived token must
-  # not reach, and the floor above would wave it through. Same space-padded
-  # whole-name matching as the optional-tools filter below.
-  mcp_expected_tools=${MCP_EXPECTED_TOOLS:-semantic_query events_status}
+  # not reach, and the floor above would wave it through. Space padding keeps
+  # this an exact whole-name comparison.
+  mcp_expected_tools=$MCP_EXPECTED_TOOLS
   mcp_unexpected=$(printf '%s' "$mcp" | jq -r --arg allowed " $mcp_expected_tools " \
     '[.tools[] | . as $t | select(($allowed | contains(" " + $t + " ")) | not)] | length')
   if [ "$mcp_unexpected" != "0" ]; then
@@ -451,12 +455,9 @@ require_knoxx_mcp_verification_token
   fi
 
   # rpc-error means the server refused or threw — always a failure. A
-  # tool-error means the tool ran and reported a problem, which for a required
-  # probe is exactly the failure this gate exists to catch: semantic_query on a
-  # broken data plane, for example. It is tolerated only for a tool whose
-  # missing dependency is deliberately not configured on this host, named in
-  # MCP_PROBE_OPTIONAL_TOOLS — which defaults to empty, so nothing is optional
-  # unless a host says so.
+  # tool-error means the tool ran and reported a problem, which for either
+  # required probe is exactly the failure this gate exists to catch:
+  # semantic_query on a broken data plane, for example.
   mcp_refused=$(printf '%s' "$mcp" | jq -r '[.calls | to_entries[] | select(.value.status == "rpc-error")] | length')
   if [ "$mcp_refused" != "0" ]; then
     echo "knoxx: MCP tools refused their own probe arguments" >&2
@@ -464,15 +465,12 @@ require_knoxx_mcp_verification_token
     exit 1
   fi
 
-  # Space-padded so contains() matches whole tool names; tool names cannot
-  # contain spaces (^[A-Za-z0-9_-]{1,128}$), so the padding cannot false-match.
-  mcp_optional=" ${MCP_PROBE_OPTIONAL_TOOLS:-} "
-  mcp_tool_errors=$(printf '%s' "$mcp" | jq -r --arg optional "$mcp_optional" \
-    '[.calls | to_entries[] | . as $e | select($e.value.status == "tool-error") | select(($optional | contains(" " + $e.key + " ")) | not)] | length')
+  mcp_tool_errors=$(printf '%s' "$mcp" | jq -r \
+    '[.calls | to_entries[] | select(.value.status == "tool-error")] | length')
   if [ "$mcp_tool_errors" != "0" ]; then
-    echo "knoxx: MCP tools reported errors on required probes (tolerated only for MCP_PROBE_OPTIONAL_TOOLS)" >&2
-    printf '%s' "$mcp" | jq -r --arg optional "$mcp_optional" \
-      '.calls | to_entries[] | . as $e | select($e.value.status == "tool-error") | select(($optional | contains(" " + $e.key + " ")) | not) | "  \($e.key): \($e.value.detail)"' >&2
+    echo "knoxx: MCP tools reported errors on mandatory production probes" >&2
+    printf '%s' "$mcp" | jq -r \
+      '.calls | to_entries[] | select(.value.status == "tool-error") | "  \(.key): \(.value.detail)"' >&2
     exit 1
   fi
 
