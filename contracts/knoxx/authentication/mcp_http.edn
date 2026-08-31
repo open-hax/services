@@ -2,7 +2,7 @@
 ;;
 ;; The production verifier runs inside the backend container. Its bearer is
 ;; accepted only from loopback and resolves the dedicated deploy_verifier
-;; actor, whose role exposes exactly the three read-only tools in
+;; actor, whose role exposes exactly the two read-only tools in
 ;; :cap/deploy-verify. The method is inert without the separately provisioned
 ;; KNOXX_MCP_LOOPBACK_TOKEN secret.
 {:contract/kind :authentication

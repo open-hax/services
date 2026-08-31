@@ -372,7 +372,7 @@ echo "knoxx: WARN settle it, so that revision needs an operator" >&2
 # contract, which requires the caller to be
 # on 127.0.0.1 — true here because the probe runs inside the backend container.
 # The grant resolves the dedicated deploy_verifier identity, so the served
-# catalog is deliberately the three read-only tools the probes exercise —
+# catalog is deliberately the two read-only tools the probes exercise —
 # nothing this token reaches can write, dispatch, spawn, or administer. The
 # method is inert without KNOXX_MCP_LOOPBACK_TOKEN. Rendering and verification
 # source the same policy, and both refuse to proceed if the token is missing or
@@ -380,14 +380,14 @@ echo "knoxx: WARN settle it, so that revision needs an operator" >&2
 . ./mcp-verification-policy.sh
 require_knoxx_mcp_verification_token
 
-  # Read-only tools only, and each one proves a different subsystem end to end:
-  # semantic_query the corpus data plane, events_status the events runtime,
-  # discord_list_servers that the verifier actor's credential still resolves.
+  # Read-only tools only, and each one proves a different Knoxx subsystem end
+  # to end: semantic_query the corpus data plane and events_status the events
+  # runtime. External actor credentials are a separate operational contract;
+  # this gate verifies the MCP server without inventing or broadening one.
   # Writes are deliberately absent — a deploy gate must not publish anything.
   MCP_PROBE_TOOL_CALLS=${MCP_PROBE_TOOL_CALLS:-'{
     "semantic_query": {"query": "knoxx", "topK": 1},
-    "events_status": {},
-    "discord_list_servers": {}
+    "events_status": {}
   }'}
 
   mcp=$(docker compose --project-name knoxx --env-file .env \
@@ -405,10 +405,10 @@ require_knoxx_mcp_verification_token
 
   # A catalog that collapsed is the loudest symptom of a broken grant or a
   # registration that threw before any tool landed. The verifier identity is
-  # granted exactly the three probed tools, so its full catalog is three and
+  # granted exactly the two probed tools, so its full catalog is two and
   # the floor matches it; the absent-tool check below then asserts each one
   # individually.
-  mcp_min_tools=${KNOXX_MCP_MIN_TOOLS:-3}
+  mcp_min_tools=${KNOXX_MCP_MIN_TOOLS:-2}
   case "$mcp_min_tools" in
     ''|*[!0-9]*)
       echo "knoxx: KNOXX_MCP_MIN_TOOLS must be a non-negative integer, got '${mcp_min_tools}'" >&2
@@ -422,11 +422,11 @@ require_knoxx_mcp_verification_token
     exit 1
   fi
 
-  # Exactly the probe set, not merely at least it. A fourth served tool means
+  # Exactly the probe set, not merely at least it. An extra served tool means
   # role or capability resolution leaked a surface this long-lived token must
   # not reach, and the floor above would wave it through. Same space-padded
   # whole-name matching as the optional-tools filter below.
-  mcp_expected_tools=${MCP_EXPECTED_TOOLS:-semantic_query events_status discord_list_servers}
+  mcp_expected_tools=${MCP_EXPECTED_TOOLS:-semantic_query events_status}
   mcp_unexpected=$(printf '%s' "$mcp" | jq -r --arg allowed " $mcp_expected_tools " \
     '[.tools[] | . as $t | select(($allowed | contains(" " + $t + " ")) | not)] | length')
   if [ "$mcp_unexpected" != "0" ]; then
@@ -453,9 +453,8 @@ require_knoxx_mcp_verification_token
   # rpc-error means the server refused or threw — always a failure. A
   # tool-error means the tool ran and reported a problem, which for a required
   # probe is exactly the failure this gate exists to catch: semantic_query on a
-  # broken data plane, discord_list_servers on an unresolvable verifier
-  # credential. It is tolerated only for a tool whose missing dependency is
-  # deliberately not configured on this host, named explicitly in
+  # broken data plane, for example. It is tolerated only for a tool whose
+  # missing dependency is deliberately not configured on this host, named in
   # MCP_PROBE_OPTIONAL_TOOLS — which defaults to empty, so nothing is optional
   # unless a host says so.
   mcp_refused=$(printf '%s' "$mcp" | jq -r '[.calls | to_entries[] | select(.value.status == "rpc-error")] | length')
