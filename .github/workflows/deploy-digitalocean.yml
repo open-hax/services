@@ -196,8 +196,8 @@ jobs:
           PROXX_POSTGRES_PASSWORD: ${{ secrets.PROXX_POSTGRES_PASSWORD }}
           KNOXX_API_KEY: ${{ secrets.KNOXX_API_KEY }}
           KNOXX_SESSION_SECRET: ${{ secrets.KNOXX_SESSION_SECRET }}
-          # Absent by default; the render step substitutes the inert sentinel
-          # below and derives the verification expectation from what is set.
+          # Mandatory for Knoxx. The render step applies the same minimum
+          # length policy as the host-side post-deploy verifier.
           KNOXX_MCP_LOOPBACK_TOKEN: ${{ secrets.KNOXX_MCP_LOOPBACK_TOKEN }}
           KNOXX_GITHUB_OAUTH_CLIENT_ID: ${{ secrets.KNOXX_GITHUB_OAUTH_CLIENT_ID }}
           KNOXX_GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.KNOXX_GITHUB_OAUTH_CLIENT_SECRET }}
@@ -226,30 +226,22 @@ jobs:
             echo "::add-mask::${DEV_BASIC_AUTH_HASH}"
           fi
 
-          # Post-deploy MCP verification is opt-in per host. With no
-          # provisioned token, fall back to the conspicuous short sentinel:
-          # the renderer's blank-value guard never fires, the backend refuses
-          # "off" as a credential on the same :min-token-length floor, and
-          # verify.sh skips its MCP section on that floor. A provisioned token
-          # turns the gate on, and then it is required to pass — a host that
-          # asked for verification must not silently skip it. Runs before the
-          # EXTRA_ENV loop so a caller can still override either value.
-          if [ -z "${KNOXX_MCP_LOOPBACK_TOKEN:-}" ]; then
-            export KNOXX_MCP_LOOPBACK_TOKEN=off
-            export KNOXX_EXPECT_MCP_VERIFY=false
-          else
-            export KNOXX_EXPECT_MCP_VERIFY=true
+          # Knoxx deploys always verify their MCP server. A missing/short
+          # credential stops rendering before anything is copied to the host.
+          # Other service templates do not declare this variable.
+          if [ "$SERVICE" = knoxx ]; then
+            . "${SERVICE_DIR}/mcp-verification-policy.sh"
+            require_knoxx_mcp_verification_token
           fi
           # Process substitution keeps the loop in this shell so the exports
-          # survive into envsubst. The two MCP keys are refused rather than
-          # exported: they are derived from the provisioned secret above, and
-          # letting a caller shadow them with the sentinel would disable a
-          # verification the secret explicitly asked for.
+          # survive into envsubst. The MCP token is refused rather than
+          # exported: it comes only from the protected environment secret, and
+          # allowing a caller to shadow it would weaken the mandatory gate.
           while IFS='=' read -r key value; do
             [ -n "$key" ] || continue
             case "$key" in
-              KNOXX_MCP_LOOPBACK_TOKEN|KNOXX_EXPECT_MCP_VERIFY)
-                echo "::error::extra_env may not set ${key}; it is derived from the provisioned KNOXX_MCP_LOOPBACK_TOKEN secret" >&2
+              KNOXX_MCP_LOOPBACK_TOKEN)
+                echo "::error::extra_env may not set ${key}; it is supplied only by the protected environment secret" >&2
                 exit 2
                 ;;
             esac
@@ -277,23 +269,6 @@ jobs:
             echo "::error::the above values contain a single quote, which the env file cannot represent" >&2
             exit 2
           fi
-
-          # Optional health-gate tunables persist only when set. They have no
-          # placeholder in env.template — one would render blank when unset
-          # and trip the guard above — so they are appended here instead, and
-          # verify.sh's in-script defaults apply whenever a host does not tune
-          # them. The quote rule still holds: the file is sourced by the gate.
-          for optional_key in MCP_PROBE_OPTIONAL_TOOLS; do
-            optional_value=${!optional_key:-}
-            [ -n "$optional_value" ] || continue
-            case "$optional_value" in
-              *"'"*)
-                echo "::error::${optional_key} must not contain a single quote" >&2
-                exit 2
-                ;;
-            esac
-            printf "%s='%s'\n" "$optional_key" "$optional_value" >> rendered.env
-          done
 
           chmod 600 rendered.env
           echo "rendered $(grep -cE '^[A-Z0-9_]+=' rendered.env) variables"

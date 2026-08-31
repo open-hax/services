@@ -26,7 +26,7 @@ jobs:
               print('yaml ok', p)
           PY
           bash -n digitalocean/lib/*.sh digitalocean/scripts/*.sh
-          bash -n digitalocean/services/*/verify.sh
+          bash -n digitalocean/services/*/*.sh
 
       - name: Enforce the DigitalOcean-only deployment boundary
         run: |
@@ -55,6 +55,12 @@ jobs:
 
       - name: Self-test the Docker readiness guard
         run: digitalocean/scripts/test-bootstrap-docker-readiness.sh
+
+      - name: Self-test the Knoxx MCP fail-closed policy
+        run: digitalocean/services/knoxx/test-mcp-verification-policy.sh
+
+      - name: Self-test the Knoxx Git event dispatcher boundary
+        run: scripts/test-dispatch-knoxx-git-event.sh
 
       # Helper scripts a verify.sh evaluates inside a container. They only ever
       # run on the production host, so a syntax error in one would surface as a

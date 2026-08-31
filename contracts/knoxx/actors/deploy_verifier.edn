@@ -8,7 +8,8 @@
  ;; membership's stored actor binding to be deploy_verifier — this email is
  ;; what makes the two the same membership. It is a dedicated one because the
  ;; grant's tools are :all: whoever the context resolves to defines what the
- ;; long-lived loopback bearer can do, and read-only was the point.
+ ;; long-lived loopback bearer can do, and a small read-only surface was the
+ ;; point.
  :actor/email "deploy-verifier@open-hax.local"
  :actor/username "deploy-verifier@open-hax.local"
  :actor/org "open-hax"
@@ -23,14 +24,10 @@
  {:principal :actor
   :source-of-truth :contract
   :notes
-  "The identity the post-deploy MCP gate runs as: three read-only tools via
+  "The identity the post-deploy MCP gate runs as: two read-only tools via
    :role/deploy-verifier -> :cap/deploy-verify, and no more. The loopback
    token that reaches it is loopback-only and inert without the provisioned
    secret, and even presented correctly it cannot write, dispatch, spawn, or
-   administer — that is the security property the identity exists for.
-
-   Credentials are NOT declared here, as with open_hax: they are actor-owned
-   state in the policy DB, written through
-   PUT /api/admin/actors/:userId/credentials/:provider. Until a discord_bot
-   credential lands on this actor, discord_list_servers reports a tool-error
-   and the gate fails — which is the intended signal, not a false positive."}}
+   administer. Neither probe depends on an unrelated actor-owned external
+   credential; that keeps MCP deployment health separate from Discord account
+   provisioning."}}

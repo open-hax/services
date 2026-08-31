@@ -46,6 +46,8 @@ and `docs/reports/`; it is not an alternative runtime.
   servers and the rule that live development questions use a dev instance
 - [`docs/published-content-root.md`](docs/published-content-root.md) — the
   shared published-content directory, its single writer, and read-only reader
+- [`docs/knoxx-git-event-bridge.md`](docs/knoxx-git-event-bridge.md) — the
+  metadata-only GitHub-to-Knoxx event path and the explicit Git-driver boundary
 
 ## Boundary rule
 

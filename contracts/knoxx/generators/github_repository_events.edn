@@ -1,0 +1,19 @@
+;; GitHub Actions is the adapter that emits these events through Knoxx's
+;; authenticated /api/admin/config/events/dispatch route. This is deliberately
+;; a generator, not a :source resource: the pinned Knoxx runtime has no
+;; :driver/git implementation to bind as a long-lived source.
+{:contract/kind :generator
+ :contract/id "github_repository_events"
+ :contract/version 1
+ :enabled true
+
+ :generator/id "github_repository_events"
+ :generator/kind :github-actions
+ :generator/actor "knoxx_dev_automation"
+ :generator/emits [:git.push
+                   :git.pull-request.merged
+                   :git.verification.requested]
+ :generator/policy
+ {:transport :authenticated-event-dispatch
+  :payload :metadata-only
+  :secrets-forbidden true}}

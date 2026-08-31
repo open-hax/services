@@ -20,10 +20,8 @@
 //   * rpc-error  — the server refused or threw. The tool is broken, or its
 //                  schema rejects arguments the caller was told are valid.
 //                  Always a gate failure.
-//   * tool-error — the tool ran and reported a problem. Legitimate only when
-//                  the thing it needs is deliberately not configured on this
-//                  host, so the shell gate fails it unless the tool is named
-//                  in MCP_PROBE_OPTIONAL_TOOLS.
+//   * tool-error — the tool ran and reported a problem. Both production probes
+//                  are mandatory, so the shell gate always fails it.
 
 const MCP_PATH = '/mcp';
 const PROTOCOL_VERSION = '2025-06-18';
@@ -33,7 +31,7 @@ const SUPPORTED_PROTOCOL_VERSIONS = new Set(['2024-11-05', '2025-03-26', '2025-0
 // environment, so every requested name is checked against this set before any
 // tools/call goes out — a configuration typo must fail the probe, never turn
 // the deploy gate into a writer.
-const PROBE_ALLOWED_TOOLS = new Set(['semantic_query', 'events_status', 'discord_list_servers']);
+const PROBE_ALLOWED_TOOLS = new Set(['semantic_query', 'events_status']);
 
 // Pagination bound for tools/list. High enough that no real catalog reaches it,
 // low enough that a server looping on cursors fails the gate instead of hanging

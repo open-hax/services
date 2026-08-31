@@ -1,0 +1,84 @@
+name: Dispatch Git events to Knoxx
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    name: Shape and dispatch Git event
+    if: >-
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.merged == true &&
+        github.event.pull_request.head.repo.full_name == github.repository)) &&
+      (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          # The production API key must never be exposed to helper code from a
+          # feature branch. Event metadata still names the triggering SHA.
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Shape repository metadata
+        id: event
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            push)
+              event_type=git.push
+              payload=$(jq -c '{repository: .repository.full_name,
+                                ref: .ref,
+                                before: .before,
+                                after: .after,
+                                forced: .forced,
+                                sender: .sender.login}' "$GITHUB_EVENT_PATH")
+              ;;
+            pull_request)
+              event_type=git.pull-request.merged
+              payload=$(jq -c '{repository: .repository.full_name,
+                                number: .number,
+                                base_ref: .pull_request.base.ref,
+                                head_ref: .pull_request.head.ref,
+                                head_repository: .pull_request.head.repo.full_name,
+                                merge_commit_sha: .pull_request.merge_commit_sha,
+                                sender: .sender.login}' "$GITHUB_EVENT_PATH")
+              ;;
+            workflow_dispatch)
+              event_type=git.verification.requested
+              payload=$(jq -cn --arg repository "$REPOSITORY" --arg sender "$GITHUB_ACTOR" \
+                '{repository: $repository, sender: $sender, reason: "manual production verification"}')
+              ;;
+            *)
+              echo "unsupported GitHub event: $EVENT_NAME" >&2
+              exit 2
+              ;;
+          esac
+          event_id="git:${REPOSITORY}:${EVENT_NAME}:${GITHUB_SHA}:${RUN_ID}:${RUN_ATTEMPT}"
+          {
+            echo "event_type=$event_type"
+            echo "event_id=$event_id"
+            echo "payload=$payload"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch to production Knoxx
+        env:
+          KNOXX_API_KEY: ${{ secrets.KNOXX_API_KEY }}
+          KNOXX_BASE_URL: https://knoxx.promethean.rest
+          EVENT_TYPE: ${{ steps.event.outputs.event_type }}
+          EVENT_ID: ${{ steps.event.outputs.event_id }}
+          EVENT_PAYLOAD: ${{ steps.event.outputs.payload }}
+        run: scripts/dispatch-knoxx-git-event.sh "$EVENT_TYPE" "$EVENT_ID" "$EVENT_PAYLOAD"

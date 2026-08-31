@@ -116,11 +116,9 @@ jobs:
       # contracts and in-process evidence stores, and the deploy gate requires
       # them unconditionally.
       #
-      # KNOXX_MCP_LOOPBACK_TOKEN is deliberately absent here: it is a secret,
-      # and deploy-digitalocean.yml's render step defaults it to the inert
-      # "off" sentinel when the environment has not provisioned one, deriving
-      # KNOXX_EXPECT_MCP_VERIFY from what it finds. Hard-coding either value
-      # here would shadow the inherited secret and pin the gate off forever.
+      # KNOXX_MCP_LOOPBACK_TOKEN is deliberately absent here: it is inherited
+      # from the protected production environment. The called deploy workflow
+      # fails closed before rendering if the secret is absent or too short.
       extra_env: >-
         {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}@${{ needs.build-knoxx-devtools.outputs.digest }}"}
     secrets: inherit

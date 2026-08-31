@@ -368,51 +368,29 @@ echo "knoxx: WARN settle it, so that revision needs an operator" >&2
 # callable, a tool vanishing from the catalog, or an actor credential that no
 # longer resolves. None of it moves /health.
 #
-# Reached through the :trusted-loopback method in
-# the authentication contract (NOT currently deployed — see below), which
-# requires the caller to be
+# Reached through the :trusted-loopback method in the deployed authentication
+# contract, which requires the caller to be
 # on 127.0.0.1 — true here because the probe runs inside the backend container.
 # The grant resolves the dedicated deploy_verifier identity, so the served
-# catalog is deliberately the three read-only tools the probes exercise —
+# catalog is deliberately the two read-only tools the probes exercise —
 # nothing this token reaches can write, dispatch, spawn, or administer. The
-# method is inert without KNOXX_MCP_LOOPBACK_TOKEN, so a host that has not
-# provisioned the secret skips this section rather than failing, unless it
-# says it expects to run it.
-#
-# "Configured" means at least KNOXX_MCP_MIN_TOKEN_LENGTH characters, matching
-# the :auth-method/min-token-length the contract declares — not merely
-# non-empty. The renderer refuses a blank variable outright (see
-# deploy-digitalocean.yml: "refuse rather than deploy a blank credential"), so
-# a host that does not want MCP verification carries a short sentinel instead,
-# and the same length floor that makes the backend refuse that sentinel makes
-# this gate skip. One rule checked in both places, rather than a magic string
-# either side could forget.
-KNOXX_MCP_MIN_TOKEN_LENGTH=${KNOXX_MCP_MIN_TOKEN_LENGTH:-16}
-case "$KNOXX_MCP_MIN_TOKEN_LENGTH" in
-  ''|*[!0-9]*)
-    echo "knoxx: KNOXX_MCP_MIN_TOKEN_LENGTH must be a non-negative integer, got '${KNOXX_MCP_MIN_TOKEN_LENGTH}'" >&2
-    exit 1
-    ;;
-esac
-# Defaulted so a bare ./verify.sh run under set -u reaches the skip branch
-# rather than aborting on an unset name.
-token=${KNOXX_MCP_LOOPBACK_TOKEN:-}
-if [ "${#token}" -lt "$KNOXX_MCP_MIN_TOKEN_LENGTH" ]; then
-  if [ "${KNOXX_EXPECT_MCP_VERIFY:-false}" = "true" ]; then
-    echo "knoxx: KNOXX_EXPECT_MCP_VERIFY=true but KNOXX_MCP_LOOPBACK_TOKEN is under ${KNOXX_MCP_MIN_TOKEN_LENGTH} characters, so the backend cannot accept it either" >&2
-    exit 1
-  fi
-  echo "knoxx: MCP surface skipped — no loopback token of ${KNOXX_MCP_MIN_TOKEN_LENGTH}+ characters is configured" >&2
-else
-  # Read-only tools only, and each one proves a different subsystem end to end:
-  # semantic_query the corpus data plane, events_status the events runtime,
-  # discord_list_servers that the verifier actor's credential still resolves.
+# method is inert without KNOXX_MCP_LOOPBACK_TOKEN. Rendering and verification
+# source the same policy, and both refuse to proceed if the token is missing or
+# shorter than the authentication contract permits.
+. ./mcp-verification-policy.sh
+require_knoxx_mcp_verification_token
+
+  # Read-only tools only, and each one proves a different Knoxx subsystem end
+  # to end: semantic_query the corpus data plane and events_status the events
+  # runtime. External actor credentials are a separate operational contract;
+  # this gate verifies the MCP server without inventing or broadening one.
   # Writes are deliberately absent — a deploy gate must not publish anything.
   MCP_PROBE_TOOL_CALLS=${MCP_PROBE_TOOL_CALLS:-'{
     "semantic_query": {"query": "knoxx", "topK": 1},
-    "events_status": {},
-    "discord_list_servers": {}
+    "events_status": {}
   }'}
+  MCP_EXPECTED_TOOLS=${MCP_EXPECTED_TOOLS:-semantic_query events_status}
+  require_knoxx_mcp_probe_contract
 
   mcp=$(docker compose --project-name knoxx --env-file .env \
     exec -T \
@@ -429,10 +407,12 @@ else
 
   # A catalog that collapsed is the loudest symptom of a broken grant or a
   # registration that threw before any tool landed. The verifier identity is
-  # granted exactly the three probed tools, so its full catalog is three and
+  # granted exactly the two probed tools, so its full catalog is two and
   # the floor matches it; the absent-tool check below then asserts each one
-  # individually.
-  mcp_min_tools=${KNOXX_MCP_MIN_TOOLS:-3}
+  # individually. Overrides may change probe arguments or order, but the shared
+  # policy above refuses any override that removes, adds, or makes optional a
+  # member of this exact set.
+  mcp_min_tools=${KNOXX_MCP_MIN_TOOLS:-2}
   case "$mcp_min_tools" in
     ''|*[!0-9]*)
       echo "knoxx: KNOXX_MCP_MIN_TOOLS must be a non-negative integer, got '${mcp_min_tools}'" >&2
@@ -446,11 +426,11 @@ else
     exit 1
   fi
 
-  # Exactly the probe set, not merely at least it. A fourth served tool means
+  # Exactly the probe set, not merely at least it. An extra served tool means
   # role or capability resolution leaked a surface this long-lived token must
-  # not reach, and the floor above would wave it through. Same space-padded
-  # whole-name matching as the optional-tools filter below.
-  mcp_expected_tools=${MCP_EXPECTED_TOOLS:-semantic_query events_status discord_list_servers}
+  # not reach, and the floor above would wave it through. Space padding keeps
+  # this an exact whole-name comparison.
+  mcp_expected_tools=$MCP_EXPECTED_TOOLS
   mcp_unexpected=$(printf '%s' "$mcp" | jq -r --arg allowed " $mcp_expected_tools " \
     '[.tools[] | . as $t | select(($allowed | contains(" " + $t + " ")) | not)] | length')
   if [ "$mcp_unexpected" != "0" ]; then
@@ -475,13 +455,9 @@ else
   fi
 
   # rpc-error means the server refused or threw — always a failure. A
-  # tool-error means the tool ran and reported a problem, which for a required
-  # probe is exactly the failure this gate exists to catch: semantic_query on a
-  # broken data plane, discord_list_servers on an unresolvable verifier
-  # credential. It is tolerated only for a tool whose missing dependency is
-  # deliberately not configured on this host, named explicitly in
-  # MCP_PROBE_OPTIONAL_TOOLS — which defaults to empty, so nothing is optional
-  # unless a host says so.
+  # tool-error means the tool ran and reported a problem, which for either
+  # required probe is exactly the failure this gate exists to catch:
+  # semantic_query on a broken data plane, for example.
   mcp_refused=$(printf '%s' "$mcp" | jq -r '[.calls | to_entries[] | select(.value.status == "rpc-error")] | length')
   if [ "$mcp_refused" != "0" ]; then
     echo "knoxx: MCP tools refused their own probe arguments" >&2
@@ -489,15 +465,12 @@ else
     exit 1
   fi
 
-  # Space-padded so contains() matches whole tool names; tool names cannot
-  # contain spaces (^[A-Za-z0-9_-]{1,128}$), so the padding cannot false-match.
-  mcp_optional=" ${MCP_PROBE_OPTIONAL_TOOLS:-} "
-  mcp_tool_errors=$(printf '%s' "$mcp" | jq -r --arg optional "$mcp_optional" \
-    '[.calls | to_entries[] | . as $e | select($e.value.status == "tool-error") | select(($optional | contains(" " + $e.key + " ")) | not)] | length')
+  mcp_tool_errors=$(printf '%s' "$mcp" | jq -r \
+    '[.calls | to_entries[] | select(.value.status == "tool-error")] | length')
   if [ "$mcp_tool_errors" != "0" ]; then
-    echo "knoxx: MCP tools reported errors on required probes (tolerated only for MCP_PROBE_OPTIONAL_TOOLS)" >&2
-    printf '%s' "$mcp" | jq -r --arg optional "$mcp_optional" \
-      '.calls | to_entries[] | . as $e | select($e.value.status == "tool-error") | select(($optional | contains(" " + $e.key + " ")) | not) | "  \($e.key): \($e.value.detail)"' >&2
+    echo "knoxx: MCP tools reported errors on mandatory production probes" >&2
+    printf '%s' "$mcp" | jq -r \
+      '.calls | to_entries[] | select(.value.status == "tool-error") | "  \(.key): \(.value.detail)"' >&2
     exit 1
   fi
 
@@ -510,7 +483,6 @@ else
 
   printf '%s' "$mcp" | jq -r '.calls | to_entries[] | "knoxx: mcp \(.key) -> \(.value.status)"'
   echo "knoxx: MCP surface ok; ${mcp_tool_count} tools served, none degraded"
-fi
 
 # 2. Auth is actually enforced. A backend that answers unauthenticated
 #    requests would expose the whole vault.

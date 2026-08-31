@@ -103,12 +103,14 @@ publication. Reproduced locally against this exact contract set.
 **Done.** The contract is removed from the deployed set until #224 lands. Nothing
 in the deployed image reads it, so removing it costs nothing today.
 
-**Still open.** Two things must happen together when #224 merges: re-add the
-contract here, and only then provision `KNOXX_MCP_LOOPBACK_TOKEN` as a real 16+
-character secret. Provisioning it first flips `KNOXX_EXPECT_MCP_VERIFY=true` and
-fails the deploy on an auth method the backend does not implement — a second,
-independent way the same file breaks a deploy. Both `env.template` and
-`verify.sh` now say so at the point of use.
+**Implementation landed upstream.** The Knoxx source pinned by the Services
+preflight includes #224, including the `:authentication` loader,
+trusted-loopback law, and MCP route integration. Services therefore ships the
+authentication resource again and makes the MCP probe mandatory for every
+Knoxx deploy. The remaining operational prerequisite is provisioning
+`KNOXX_MCP_LOOPBACK_TOKEN` as a protected production environment secret with
+16+ characters; until that happens, the deploy fails during environment
+rendering instead of silently skipping the only MCP catalog/data-plane check.
 
 **Not a lesson about this file.** A contract set deployed from one repo against
 an image built from another can always run ahead of it. The cheap guard is that

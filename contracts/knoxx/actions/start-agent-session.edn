@@ -1,0 +1,15 @@
+;; Discoverable declaration for behavior already registered in Knoxx code.
+;; This resource does not invent a handler: the runtime's action registry owns
+;; the :actions/start-agent-session multimethod implementation.
+{:contract/kind :action
+ :contract/id "start-agent-session"
+ :contract/version 1
+ :enabled true
+
+ :action/id :actions/start-agent-session
+ :action/kind :actions/start-agent-session
+ :action/handler "knoxx.backend.domain.action.registry/run-action!"
+ :action/responds-to [:git.push
+                      :git.pull-request.merged
+                      :git.verification.requested]
+ :action/result :agent/session}
