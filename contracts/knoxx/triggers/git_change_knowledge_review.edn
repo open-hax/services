@@ -7,7 +7,8 @@
  :trigger/kind :event
  :trigger/emitter "knoxx_dev_automation"
  :trigger/listener "events_page"
- :trigger/events [:git.pull-request.merged
+ :trigger/events [:git.push
+                  :git.pull-request.merged
                   :git.verification.requested]
  :trigger/action :actions/start-agent-session
  :trigger/with

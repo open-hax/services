@@ -8,9 +8,9 @@ knoxx_base_url=${KNOXX_BASE_URL:-https://knoxx.promethean.rest}
 http_client=${KNOXX_HTTP_CLIENT:-curl}
 
 case "$event_type" in
-  git.*) ;;
+  git.push|git.pull-request.merged|git.verification.requested) ;;
   *)
-    echo "dispatch-knoxx-git-event: event type must start with git." >&2
+    echo "dispatch-knoxx-git-event: unsupported Git event type" >&2
     exit 2
     ;;
 esac
@@ -41,8 +41,6 @@ event_json=$(jq -cn \
     "event/payload": $payload}')
 
 "$http_client" --fail-with-body --silent --show-error \
-  --retry 3 \
-  --retry-all-errors \
   --connect-timeout 10 \
   --max-time 60 \
   -H "X-API-Key: ${KNOXX_API_KEY}" \

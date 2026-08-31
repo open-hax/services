@@ -9,6 +9,7 @@
  :action/id :actions/start-agent-session
  :action/kind :actions/start-agent-session
  :action/handler "knoxx.backend.domain.action.registry/run-action!"
- :action/responds-to [:git.pull-request.merged
+ :action/responds-to [:git.push
+                      :git.pull-request.merged
                       :git.verification.requested]
  :action/result :agent/session}

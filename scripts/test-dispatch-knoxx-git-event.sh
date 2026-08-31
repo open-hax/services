@@ -24,6 +24,8 @@ expect_success() {
 
 expect_failure "non-Git event types are refused" \
   env KNOXX_API_KEY=test KNOXX_HTTP_CLIENT=true "$DISPATCH" user.created evt-1 '{}'
+expect_failure "undeclared Git event types are refused" \
+  env KNOXX_API_KEY=test KNOXX_HTTP_CLIENT=true "$DISPATCH" git.unknown evt-1 '{}'
 expect_failure "an event id is required" \
   env KNOXX_API_KEY=test KNOXX_HTTP_CLIENT=true "$DISPATCH" git.push '' '{}'
 expect_failure "the API key is required" \
