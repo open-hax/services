@@ -66,6 +66,15 @@ def main() -> int:
         failures.append("Knoxx verify.sh does not enforce the mandatory MCP token policy")
     if not mcp_auth_contract.is_file():
         failures.append("Knoxx trusted-loopback authentication resource is missing")
+    else:
+        mcp_auth_text = mcp_auth_contract.read_text()
+        if not re.search(
+            r':grant/tools\s+\["semantic_query"\s+"events_status"\]',
+            mcp_auth_text,
+        ):
+            failures.append(
+                "Knoxx trusted-loopback grant is not clamped to semantic_query and events_status"
+            )
 
     for template in sorted((ROOT / "digitalocean" / "services").glob("*/env.template")):
         placeholders: set[str] = set()

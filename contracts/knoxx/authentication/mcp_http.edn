@@ -2,9 +2,10 @@
 ;;
 ;; The production verifier runs inside the backend container. Its bearer is
 ;; accepted only from loopback and resolves the dedicated deploy_verifier
-;; actor, whose role exposes exactly the two read-only tools in
-;; :cap/deploy-verify. The method is inert without the separately provisioned
-;; KNOXX_MCP_LOOPBACK_TOKEN secret.
+;; actor. Both this authentication grant and the actor's :cap/deploy-verify
+;; role clamp the bearer to the same two read-only tools, so stale membership
+;; projection cannot widen a long-lived production token. The method is inert
+;; without the separately provisioned KNOXX_MCP_LOOPBACK_TOKEN secret.
 {:contract/kind :authentication
  :contract/id "mcp_http"
  :contract/doc "Authentication methods accepted by POST /mcp."
@@ -27,4 +28,4 @@
    :auth-method/grants
    {:grant/user-email "deploy-verifier@open-hax.local"
     :grant/actor-id "deploy_verifier"
-    :grant/tools :all}}]}
+    :grant/tools ["semantic_query" "events_status"]}}]}
