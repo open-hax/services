@@ -35,9 +35,13 @@ deploy_can_use() {
     runuser -u "$DEPLOY_USER" -- test -x "$path"
 }
 
+# `--readiness` is the whole contract: the provisioner answers and exits before
+# its root check and before any install, unit, or model mutation, so this
+# verifier never provisions. Do not add an environment flag beside it; the
+# provisioner reads none, and a second signal it ignores would only imply a
+# readiness-only mode that the flag alone already guarantees.
 ollama_ready() {
-  [ -x "$OLLAMA_PROVISIONER" ] \
-    && OLLAMA_READINESS_ONLY=1 "$OLLAMA_PROVISIONER" --readiness
+  [ -x "$OLLAMA_PROVISIONER" ] && "$OLLAMA_PROVISIONER" --readiness
 }
 
 results=$(mktemp)
