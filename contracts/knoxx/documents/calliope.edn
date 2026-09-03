@@ -12,4 +12,5 @@
 {:document/id :open-hax.documents/calliope
  :document/title "Calliope"
  :document/source-locale :en
+ :document/anchor? true
  :document/source {:path "publication-source/calliope.md"}}

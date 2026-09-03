@@ -28,11 +28,18 @@ contracts/
 
 ## Policy notes
 
-- **No schedules, no triggers** are deployed for now — those contract
-  categories are intentionally absent from `contracts/knoxx/`. Reintroduce
-  them deliberately, via PR to this repo.
+- No schedules are deployed for now. Knoxx deploys two deliberate event
+  triggers in `contracts/knoxx/namespaces/publication.edn`: one starts the
+  contract-owned translation agent after publication admission derives and
+  claims translation work; the other crafts a review-bound post draft from an
+  admitted anchor revision.
 - EDN changes take effect on service restart; no app rebuild required.
 - Deploy scripts must not rewrite contracts at deploy time (see receipts.edn,
   2026-06-02): contract changes land here via PR, deploys only ship them.
-- Provider/model routing facts belong in the Proxx EDN policies here — not in
-  `.env` files, compose files, or TypeScript conditionals.
+- Admission-generated draft resources are runtime state. Knoxx writes them to
+  `KNOXX_GENERATED_CONTRACTS_DIR` on its durable workspace, never into this
+  read-only deployed contract tree.
+- Shared Proxx provider/model routing facts belong in the Proxx EDN policies
+  here. A Knoxx agent-specific deployment override may select a directly
+  configured local provider, but it must name a deployed Knoxx model resource
+  and the service gate must fail when that provider or model is unavailable.

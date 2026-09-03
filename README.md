@@ -48,6 +48,9 @@ and `docs/reports/`; it is not an alternative runtime.
   shared published-content directory, its single writer, and read-only reader
 - [`docs/knoxx-git-event-bridge.md`](docs/knoxx-git-event-bridge.md) — the
   metadata-only GitHub-to-Knoxx event path and the explicit Git-driver boundary
+- [`docs/knoxx-ollama-embeddings.md`](docs/knoxx-ollama-embeddings.md) — direct
+  host-Ollama embedding routing, its live 768-vector gate, and the mandatory
+  1024-to-768 Mongo migration warning
 
 ## Boundary rule
 

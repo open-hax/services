@@ -12,4 +12,5 @@
 {:document/id :open-hax.documents/how-this-page-got-here
  :document/title "How This Page Got Here"
  :document/source-locale :en
+ :document/anchor? true
  :document/source {:path "publication-source/how-this-page-got-here.md"}}

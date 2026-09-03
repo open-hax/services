@@ -12,4 +12,5 @@
 {:document/id :open-hax.documents/services
  :document/title "Services"
  :document/source-locale :en
+ :document/anchor? true
  :document/source {:path "publication-source/services.md"}}
