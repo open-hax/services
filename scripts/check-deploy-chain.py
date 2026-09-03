@@ -32,6 +32,13 @@ STACK_WORKFLOW = (
 
 def main() -> int:
     document = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    if set(document.get("on", {})) != {"workflow_call"}:
+        print(
+            "deploy chain error: reusable production chain has an unlocked "
+            "entrypoint",
+            file=sys.stderr,
+        )
+        return 1
     jobs = document["jobs"]
     host_prerequisite = jobs.get("provision-host", {})
     deploy_proxx_needs = jobs.get("deploy-proxx", {}).get("needs", [])
@@ -54,30 +61,118 @@ def main() -> int:
         return 1
 
     host_workflow = yaml.load(HOST_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
-    host_call = host_workflow.get("on", {}).get("workflow_call", {})
-    host_concurrency = host_workflow.get("concurrency", {})
-    host_concurrency_group = " ".join(host_concurrency.get("group", "").split())
+    host_events = host_workflow.get("on", {})
+    host_call = host_events.get("workflow_call", {})
+    host_dispatch = host_events.get("workflow_dispatch", {})
+    host_job = host_workflow.get("jobs", {}).get("host", {})
+    bootstrap_host = next(
+        (
+            step
+            for step in host_job.get("steps", [])
+            if step.get("name") == "Bootstrap host"
+        ),
+        {},
+    )
+    resolve_target = next(
+        (
+            step
+            for step in host_job.get("steps", [])
+            if step.get("name") == "Resolve target"
+        ),
+        {},
+    )
+    resolve_environment = resolve_target.get("env", {})
+    resolve_run = resolve_target.get("run", "")
+    verify_host = next(
+        (
+            step
+            for step in host_job.get("steps", [])
+            if step.get("name") == "Verify host"
+        ),
+        {},
+    )
+    verify_environment = verify_host.get("env", {})
+    remove_credentials = next(
+        (
+            step
+            for step in host_job.get("steps", [])
+            if step.get("name") == "Remove deployment credentials"
+        ),
+        {},
+    )
+    cleanup_environment = remove_credentials.get("env", {})
+    host_callers = []
+    chain_callers = []
+    workflow_paths = sorted(
+        set(HOST_WORKFLOW.parent.glob("*.yml"))
+        | set(HOST_WORKFLOW.parent.glob("*.yaml"))
+    )
+    for workflow_path in workflow_paths:
+        workflow = yaml.load(workflow_path.read_text(), Loader=yaml.BaseLoader)
+        for job_name, job in workflow.get("jobs", {}).items():
+            if job.get("uses") == "./.github/workflows/digitalocean-host.yml":
+                host_callers.append(
+                    (
+                        workflow_path.name,
+                        job_name,
+                        job.get("with", {}).get(
+                            "caller_holds_production_host_lock"
+                        ),
+                    )
+                )
+            if job.get("uses") == "./.github/workflows/deploy-stack-chain.yml":
+                chain_callers.append((workflow_path.name, job_name))
     stack_workflow = yaml.load(STACK_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     stack_concurrency = (
         stack_workflow.get("jobs", {}).get("deploy", {}).get("concurrency", {})
     )
     if (
-        host_call.get("inputs", {}).get("operation", {}).get("default")
-        != "bootstrap"
+        host_call.get("inputs", {}).get("operation", {}).get("required")
+        != "true"
+        or host_call.get("inputs", {}).get("operation", {}).get("default")
+        is not None
         or host_call.get("inputs", {})
         .get("caller_holds_production_host_lock", {})
-        .get("default")
-        != "false"
-        or "inputs.caller_holds_production_host_lock" not in host_concurrency_group
-        or "digitalocean-production-host-prerequisite-{0}" not in host_concurrency_group
-        or "'digitalocean-production-host'" not in host_concurrency_group
-        or host_concurrency.get("cancel-in-progress") != "false"
+        .get("required")
+        != "true"
+        or "push" in host_events
+        or "operation" in host_dispatch.get("inputs", {})
+        or host_workflow.get("concurrency") is not None
+        or host_job.get("if") != "github.event_name != 'pull_request'"
+        or bootstrap_host.get("if")
+        != "steps.target.outputs.operation == 'bootstrap'"
+        or host_callers
+        != [("deploy-stack-chain.yml", "provision-host", "true")]
+        or chain_callers != [("deploy-stack.yml", "deploy")]
+        or resolve_environment.get("INPUT_HOST") != "${{ inputs.host || '' }}"
+        or resolve_environment.get("INPUT_OPERATION")
+        != "${{ inputs.operation || 'verify' }}"
+        or "host bootstrap requires the Deploy Stack production lock"
+        not in resolve_run
+        or "${{ github.run_id }}" not in verify_environment.get(
+            "REMOTE_VERIFY_SCRIPT", ""
+        )
+        or "${{ github.run_attempt }}" not in verify_environment.get(
+            "REMOTE_VERIFY_SCRIPT", ""
+        )
+        or "${{ github.run_id }}" not in verify_environment.get(
+            "REMOTE_VERIFY_REPORT", ""
+        )
+        or "${{ github.run_attempt }}" not in verify_environment.get(
+            "REMOTE_VERIFY_REPORT", ""
+        )
+        or cleanup_environment != verify_environment
+        or "${REMOTE_VERIFY_SCRIPT}" not in verify_host.get("run", "")
+        or "${REMOTE_VERIFY_REPORT}" not in verify_host.get("run", "")
+        or remove_credentials.get("if") != "always()"
+        or "rm -f -- '${REMOTE_VERIFY_SCRIPT}' '${REMOTE_VERIFY_REPORT}'"
+        not in remove_credentials.get("run", "")
         or stack_concurrency.get("group") != "digitalocean-production-host"
         or stack_concurrency.get("cancel-in-progress") != "false"
     ):
         print(
-            "deploy chain error: stack deployment and independent host mutation "
-            "do not share the complete production-host boundary",
+            "deploy chain error: host bootstrap is not confined to the locked "
+            "Deploy Stack orchestrator",
             file=sys.stderr,
         )
         return 1

@@ -9,6 +9,10 @@ trap 'rm -rf "$fixture_dir"' EXIT
 mkdir -p "$fixture_dir/bin"
 printf '%s\n' 9785247dea264d9072f09f6c9c0eb4b8e666892826a3d8388eba3e8fb9ed1db9 \
   > "$fixture_dir/archive-sha256"
+printf '%s\n' '[Service]' 'ExecStart=/fixture/bin/ollama serve' \
+  > "$fixture_dir/ollama.service"
+/usr/bin/sha256sum "$fixture_dir/ollama.service" | awk '{print $1}' \
+  > "$fixture_dir/ollama.service.open-hax-applied-sha256"
 
 cat > "$fixture_dir/bin/ollama" <<'SH'
 #!/usr/bin/env bash
@@ -167,6 +171,8 @@ readiness() {
     RUNUSER_BIN="$fixture_dir/bin/runuser" \
     UFW_STATUS_FILE="${MOCK_UFW_STATUS_FILE:-$fixture_dir/firewall-good.txt}" \
     OLLAMA_MARKER_PATH="$fixture_dir/archive-sha256" \
+    OLLAMA_UNIT_PATH="$fixture_dir/ollama.service" \
+    OLLAMA_UNIT_APPLIED_SHA256_PATH="$fixture_dir/ollama.service.open-hax-applied-sha256" \
     bash "$provisioner" --readiness
 }
 
@@ -270,6 +276,14 @@ if MOCK_OLLAMA_RUNTIME_ACCESSIBLE=0 readiness >/dev/null 2>&1; then
   echo "Ollama readiness accepted a runtime inaccessible to User=ollama" >&2
   exit 1
 fi
+printf '%s\n' ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  > "$fixture_dir/ollama.service.open-hax-applied-sha256"
+if readiness >/dev/null 2>&1; then
+  echo "Ollama readiness accepted a systemd unit without an applied receipt" >&2
+  exit 1
+fi
+/usr/bin/sha256sum "$fixture_dir/ollama.service" | awk '{print $1}' \
+  > "$fixture_dir/ollama.service.open-hax-applied-sha256"
 if MOCK_OLLAMA_MODELS=missing readiness >/dev/null 2>&1; then
   echo "Ollama readiness accepted missing required models" >&2
   exit 1
@@ -292,7 +306,9 @@ install_root="$provision_fixture/opt/ollama/v0.33.2"
 ollama_home="$provision_fixture/var/lib/ollama"
 models_dir="$ollama_home/models"
 unit_path="$provision_fixture/etc/systemd/system/ollama.service"
+unit_applied_sha256_path="${unit_path}.open-hax-applied-sha256"
 link_path="$provision_fixture/usr/local/bin/ollama"
+service_active_state="$provision_fixture/ollama-service-active"
 mkdir -p "$provision_bin" "$(dirname "$install_root")" "$(dirname "$unit_path")" \
   "$(dirname "$link_path")"
 : > "$provision_log"
@@ -418,7 +434,9 @@ printf 'systemctl' >> "$MOCK_PROVISION_LOG"
 printf ' %s' "$@" >> "$MOCK_PROVISION_LOG"
 printf '\n' >> "$MOCK_PROVISION_LOG"
 case "$1" in
-  daemon-reload|enable|restart|is-enabled|is-active) exit 0 ;;
+  daemon-reload|enable|is-enabled) exit 0 ;;
+  is-active) [ -f "$MOCK_SERVICE_ACTIVE_STATE" ] ;;
+  start|restart) : > "$MOCK_SERVICE_ACTIVE_STATE" ;;
   *) exit 64 ;;
 esac
 SH
@@ -443,7 +461,11 @@ case "$url" in
     ;;
   */api/version) printf '{"version":"0.33.2"}\n' ;;
   */api/tags)
-    printf '%s\n' '{"models":[{"name":"gemma4:e2b","digest":"7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e"},{"name":"nomic-embed-text:latest","digest":"0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"}]}'
+    if [ "${MOCK_OLLAMA_MODELS:-complete}" = missing ]; then
+      printf '%s\n' '{"models":[]}'
+    else
+      printf '%s\n' '{"models":[{"name":"gemma4:e2b","digest":"7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e"},{"name":"nomic-embed-text:latest","digest":"0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"}]}'
+    fi
     ;;
   *) exit 64 ;;
 esac
@@ -506,12 +528,14 @@ provision() {
     MOCK_PROVISION_LOG="$provision_log" \
     MOCK_NETWORK_STATE="$network_state" \
     MOCK_FIREWALL_STATE="$firewall_state" \
+    MOCK_SERVICE_ACTIVE_STATE="$service_active_state" \
     OLLAMA_INSTALL_ROOT="$install_root" \
     OLLAMA_BIN="$install_root/bin/ollama" \
     OLLAMA_MARKER_PATH="$install_root/.open-hax-archive-sha256" \
     OLLAMA_HOME_DIR="$ollama_home" \
     OLLAMA_MODELS_DIR="$models_dir" \
     OLLAMA_UNIT_PATH="$unit_path" \
+    OLLAMA_UNIT_APPLIED_SHA256_PATH="$unit_applied_sha256_path" \
     OLLAMA_LINK_PATH="$link_path" \
     SYSTEMCTL_BIN="$provision_bin/systemctl" \
     CURL_BIN="$provision_bin/curl" \
@@ -533,29 +557,78 @@ assert_count() {
 }
 
 provision
+assert_count 1 'systemctl start ollama.service' "$provision_log"
+assert_count 0 'systemctl restart ollama.service' "$provision_log"
 # A subsequent bootstrap must repair the exact inaccessible mode produced by
 # the historical mktemp-and-move path without downloading the archive again.
 chmod 0700 "$(dirname "$install_root")" "$install_root"
 provision
-assert_count 1 'archive downloaded' "$provision_log"
-assert_count 1 'archive extracted' "$provision_log"
+assert_count 1 'systemctl start ollama.service' "$provision_log"
+assert_count 0 'systemctl restart ollama.service' "$provision_log"
+# Simulate an interrupted prior bootstrap: the desired unit reached disk, but
+# its active daemon never earned the matching applied receipt. The retry must
+# restart exactly once; comparing only the two unit files would miss this. A
+# later model failure must retain that receipt so its retry does not restart
+# the now-correct daemon a second time.
+printf '%s\n' ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  > "$unit_applied_sha256_path"
+if MOCK_OLLAMA_MODELS=missing provision 2>/dev/null; then
+  echo "Ollama provisioning accepted missing models after unit activation" >&2
+  exit 1
+fi
+assert_count 1 'systemctl restart ollama.service' "$provision_log"
+if [ "$(cat "$unit_applied_sha256_path")" \
+  != "$(/usr/bin/sha256sum "$unit_path" | awk '{print $1}')" ]; then
+  echo "Ollama provisioning did not receipt the unit before model reconciliation" >&2
+  exit 1
+fi
+provision
+assert_count 1 'systemctl restart ollama.service' "$provision_log"
+
+# Reinstalling an absent immutable runtime invalidates the applied receipt
+# before the new files are published. Simulate a later firewall failure: its
+# retry must still activate the new files even though runtime_installed is a
+# fresh process-local zero and the desired unit already reached disk.
+rm -rf "$install_root"
+printf '%s\n' '11434/tcp ALLOW IN Anywhere' >> "$firewall_state"
+if provision 2>/dev/null; then
+  echo "Ollama provisioning accepted firewall drift after runtime reinstall" >&2
+  exit 1
+fi
+assert_count 1 'systemctl restart ollama.service' "$provision_log"
+if [ -e "$unit_applied_sha256_path" ]; then
+  echo "Ollama runtime reinstall retained a stale applied-unit receipt" >&2
+  exit 1
+fi
+grep -vF '11434/tcp ALLOW IN Anywhere' "$firewall_state" \
+  > "${firewall_state}.next"
+mv "${firewall_state}.next" "$firewall_state"
+provision
+assert_count 2 'archive downloaded' "$provision_log"
+assert_count 2 'archive extracted' "$provision_log"
 assert_count 1 \
   'docker network create --driver bridge --internal --subnet 172.30.114.0/29 --gateway 172.30.114.1 --opt com.docker.network.bridge.name=knoxx-ollama0 --label org.open-hax.boundary=knoxx-ollama-backend knoxx-ollama' \
   "$provision_log"
-assert_count 2 \
+assert_count 6 \
   'ufw allow in on knoxx-ollama0 from 172.30.114.2 to 172.30.114.1 port 11434 proto tcp comment Ollama from Knoxx backend only' \
   "$provision_log"
-assert_count 2 \
+assert_count 6 \
   'ufw --force delete allow from 172.16.0.0/12 to 172.17.0.1 port 11434 proto tcp comment Ollama from Docker bridge networks' \
   "$provision_log"
-assert_count 2 \
+assert_count 6 \
   'ufw --force delete allow from 172.16.0.0/12 to 172.17.0.1 port 11434 proto tcp' \
   "$provision_log"
-assert_count 2 'systemctl daemon-reload' "$provision_log"
-assert_count 2 'systemctl enable ollama.service' "$provision_log"
+assert_count 5 'systemctl daemon-reload' "$provision_log"
+assert_count 5 'systemctl enable ollama.service' "$provision_log"
+assert_count 1 'systemctl start ollama.service' "$provision_log"
 assert_count 2 'systemctl restart ollama.service' "$provision_log"
 assert_count 1 "$exact_firewall_rule" "$firewall_state"
 assert_count 1 'Environment="OLLAMA_HOST=172.30.114.1:11434"' "$unit_path"
+if [ "$(cat "$unit_applied_sha256_path")" \
+  != "$(/usr/bin/sha256sum "$unit_path" | awk '{print $1}')" ]; then
+  echo "Ollama provisioning did not receipt the applied systemd unit" >&2
+  exit 1
+fi
 if [ "$(stat -c %a "$(dirname "$install_root")")" != 755 ] \
   || [ "$(stat -c %a "$install_root")" != 755 ] \
   || [ "$(stat -c %a "$install_root/bin")" != 755 ] \

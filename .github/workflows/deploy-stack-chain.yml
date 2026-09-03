@@ -63,8 +63,8 @@ jobs:
   # Build jobs may run while the host is prepared, but no production service
   # deploy starts until this exact checkout has installed and verified the
   # provisioner it expects. deploy-stack.yml holds the production-host lock
-  # across this entire chain; the flag below lets this nested prerequisite use
-  # a child group without deadlocking on that outer lock.
+  # across this entire chain; the required flag below attests that this nested
+  # bootstrap is running inside that single production mutation queue.
   provision-host:
     uses: ./.github/workflows/digitalocean-host.yml
     with:

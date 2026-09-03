@@ -32,6 +32,7 @@ OLLAMA_MARKER_PATH=${OLLAMA_MARKER_PATH:-${OLLAMA_INSTALL_ROOT}/.open-hax-archiv
 OLLAMA_HOME_DIR=${OLLAMA_HOME_DIR:-/var/lib/ollama}
 OLLAMA_MODELS_DIR=${OLLAMA_MODELS_DIR:-${OLLAMA_HOME_DIR}/models}
 OLLAMA_UNIT_PATH=${OLLAMA_UNIT_PATH:-/etc/systemd/system/ollama.service}
+OLLAMA_UNIT_APPLIED_SHA256_PATH=${OLLAMA_UNIT_APPLIED_SHA256_PATH:-${OLLAMA_UNIT_PATH}.open-hax-applied-sha256}
 OLLAMA_LINK_PATH=${OLLAMA_LINK_PATH:-/usr/local/bin/ollama}
 SYSTEMCTL_BIN=${SYSTEMCTL_BIN:-/usr/bin/systemctl}
 CURL_BIN=${CURL_BIN:-/usr/bin/curl}
@@ -264,8 +265,19 @@ runtime_is_ready() {
   [ "$marker" = "$OLLAMA_ARCHIVE_SHA256" ]
 }
 
-ollama_is_ready() {
-  local base_url version_payload tags
+unit_is_applied() {
+  local applied_sha256 unit_sha256
+  [ -f "$OLLAMA_UNIT_PATH" ] && [ -f "$OLLAMA_UNIT_APPLIED_SHA256_PATH" ] \
+    || return 1
+  unit_sha256=$(sha256sum "$OLLAMA_UNIT_PATH" | awk '{print $1}') \
+    || return 1
+  applied_sha256=$(cat "$OLLAMA_UNIT_APPLIED_SHA256_PATH" 2>/dev/null) \
+    || return 1
+  [ -n "$unit_sha256" ] && [ "$applied_sha256" = "$unit_sha256" ]
+}
+
+ollama_daemon_is_ready() {
+  local base_url version_payload
   base_url=http://${OLLAMA_NETWORK_GATEWAY}:${OLLAMA_PORT}
 
   network_is_ready \
@@ -277,11 +289,24 @@ ollama_is_ready() {
     && version_payload=$("$CURL_BIN" --fail --silent --show-error --max-time 10 \
          "${base_url}/api/version") \
     && printf '%s' "$version_payload" \
-         | jq -e --arg version "$OLLAMA_VERSION" '.version == $version' >/dev/null \
-    && tags=$("$CURL_BIN" --fail --silent --show-error --max-time 10 \
-         "${base_url}/api/tags") \
+         | jq -e --arg version "$OLLAMA_VERSION" '.version == $version' >/dev/null
+}
+
+ollama_models_are_ready() {
+  local base_url tags
+  base_url=http://${OLLAMA_NETWORK_GATEWAY}:${OLLAMA_PORT}
+  tags=$("$CURL_BIN" --fail --silent --show-error --max-time 10 \
+    "${base_url}/api/tags") \
     && model_digest_matches "$tags" "$OLLAMA_TRANSLATION_MODEL" "$OLLAMA_TRANSLATION_DIGEST" \
     && model_digest_matches "$tags" "$OLLAMA_EMBEDDING_MODEL" "$OLLAMA_EMBEDDING_DIGEST"
+}
+
+ollama_service_is_ready() {
+  ollama_daemon_is_ready && ollama_models_are_ready
+}
+
+ollama_is_ready() {
+  unit_is_applied && ollama_service_is_ready
 }
 
 if [ "$operation" = readiness ]; then
@@ -300,6 +325,7 @@ fi
 
 ensure_network
 install -d -o root -g root -m 0755 "$OLLAMA_INSTALL_PARENT"
+runtime_installed=0
 
 normalize_runtime_tree() {
   local tree=$1
@@ -338,7 +364,12 @@ if [ ! -e "$OLLAMA_INSTALL_ROOT" ]; then
   # mktemp creates the staging root as 0700. Normalize the pinned, immutable
   # runtime before publishing it to the unprivileged systemd user.
   normalize_runtime_tree "$staging"
+  # Invalidate the applied-unit receipt before publishing new executable
+  # files. If this run stops before activation, the next bootstrap must not
+  # mistake the old mapped process for the newly installed runtime.
+  rm -f "$OLLAMA_UNIT_APPLIED_SHA256_PATH"
   mv "$staging" "$OLLAMA_INSTALL_ROOT"
+  runtime_installed=1
   staging=
   rm -f "$archive"
   trap - EXIT
@@ -381,6 +412,18 @@ Environment="OLLAMA_MODELS=${OLLAMA_MODELS_DIR}"
 [Install]
 WantedBy=multi-user.target
 UNIT
+if ! desired_unit_sha256=$(sha256sum "$unit_tmp" | awk '{print $1}'); then
+  echo "ollama: cannot hash the reviewed systemd unit" >&2
+  exit 1
+fi
+applied_unit_sha256=$(cat "$OLLAMA_UNIT_APPLIED_SHA256_PATH" 2>/dev/null || true)
+unit_changed=1
+if [ -f "$OLLAMA_UNIT_PATH" ] \
+  && cmp -s "$unit_tmp" "$OLLAMA_UNIT_PATH" \
+  && [ "$applied_unit_sha256" = "$desired_unit_sha256" ] \
+  && [ "$runtime_installed" = 0 ]; then
+  unit_changed=0
+fi
 install -o root -g root -m 0644 "$unit_tmp" "$OLLAMA_UNIT_PATH"
 rm -f "$unit_tmp"
 trap - EXIT
@@ -408,7 +451,15 @@ firewall_is_ready
 
 "$SYSTEMCTL_BIN" daemon-reload
 "$SYSTEMCTL_BIN" enable ollama.service
-"$SYSTEMCTL_BIN" restart ollama.service
+if "$SYSTEMCTL_BIN" is-active --quiet ollama.service; then
+  if [ "$unit_changed" = 1 ]; then
+    "$SYSTEMCTL_BIN" restart ollama.service
+  else
+    echo "ollama: active service already uses the reviewed unit; leaving it running"
+  fi
+else
+  "$SYSTEMCTL_BIN" start ollama.service
+fi
 
 base_url=http://${OLLAMA_NETWORK_GATEWAY}:${OLLAMA_PORT}
 version_ready=0
@@ -426,6 +477,19 @@ done
   echo "ollama: pinned daemon did not become ready on ${base_url}" >&2
   exit 1
 }
+ollama_daemon_is_ready
+
+# Receipt the active unit before model reconciliation. Model pulls can fail
+# without invalidating a daemon that already activated the reviewed unit; a
+# retry must resume that reconciliation without interrupting in-flight work.
+unit_receipt_tmp=$(mktemp)
+trap 'rm -f "$unit_receipt_tmp"' EXIT
+printf '%s\n' "$desired_unit_sha256" > "$unit_receipt_tmp"
+install -o root -g root -m 0644 \
+  "$unit_receipt_tmp" "$OLLAMA_UNIT_APPLIED_SHA256_PATH"
+rm -f "$unit_receipt_tmp"
+trap - EXIT
+unit_is_applied
 
 ensure_model() {
   local model=$1 digest=$2 tags

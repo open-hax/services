@@ -51,10 +51,14 @@ queueing or an autonomous retry timer.
 
 ## Host provisioning and boundary
 
-The `Bootstrap DigitalOcean Host` workflow installs Ollama `v0.33.2` from its
+The locked `Deploy Stack` host prerequisite installs Ollama `v0.33.2` from its
 checksum-pinned Linux archive, writes and enables its systemd unit, and pulls
-both model tags. Bootstrap and host verification reject a mutable-tag drift
-unless the local model manifests match these reviewed digests:
+both model tags. An active daemon whose runtime and applied-unit receipt are
+unchanged is left running, so an ordinary deployment cannot interrupt an
+in-flight translation. A changed unit, a stale applied receipt, or a freshly
+installed runtime activates the reviewed service before the receipt advances.
+Bootstrap and host verification reject a mutable-tag drift unless the local
+model manifests match these reviewed digests:
 
 ```text
 gemma4:e2b               7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e
@@ -93,8 +97,10 @@ Every Knoxx deployment invokes the root-owned provisioner's read-only
 `--readiness` operation before Compose pulls or starts containers. A missing or
 stale provisioner (compared by SHA-256 to the deployment checkout), drifted
 external bridge, firewall rule, listener, runtime, or model manifest therefore
-blocks deployment; Compose never creates a fallback network. Run `Bootstrap
-DigitalOcean Host` to install a reviewed provisioner before deploying Knoxx.
+blocks deployment; Compose never creates a fallback network. Production
+bootstrap is available only inside the locked `Deploy Stack` orchestrator; a
+direct `DigitalOcean Host` dispatch is a verify-only observation and cannot
+displace a queued stack deployment.
 
 Both required models must be present before the Knoxx deployment runs. Normal
 production provisioning does this automatically; for a local workstation use:

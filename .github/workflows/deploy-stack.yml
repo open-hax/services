@@ -139,9 +139,10 @@ jobs:
     needs: authorize
     if: needs.authorize.outputs.should_deploy == 'true'
     concurrency:
-      # Shared with independent DigitalOcean Host runs. The nested host
-      # prerequisite uses a run-local child group because this caller already
-      # owns the shared lock for the complete stack deployment.
+      # This is the only production-host mutation queue. DigitalOcean Host is
+      # verify-only when dispatched directly; its reusable bootstrap requires
+      # this caller's lock attestation and therefore cannot evict a queued
+      # deployment with a host-only run.
       group: digitalocean-production-host
       cancel-in-progress: false
     uses: ./.github/workflows/deploy-stack-chain.yml
