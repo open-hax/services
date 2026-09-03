@@ -148,6 +148,14 @@ jobs:
 
       - name: Verify host
         run: |
+          expected_provisioner_sha=$(sha256sum digitalocean/scripts/provision-ollama.sh | awk '{print $1}')
+          installed_provisioner_sha=$(ssh production-droplet \
+            'sha256sum /usr/local/sbin/open-hax-provision-ollama 2>/dev/null' || true)
+          installed_provisioner_sha=${installed_provisioner_sha%% *}
+          if [ "$installed_provisioner_sha" != "$expected_provisioner_sha" ]; then
+            echo "installed Ollama provisioner is absent or stale" >&2
+            exit 1
+          fi
           scp digitalocean/scripts/verify-host.sh production-droplet:/tmp/verify-open-hax-host.sh
           set +e
           ssh production-droplet 'chmod 700 /tmp/verify-open-hax-host.sh && REPORT=/tmp/host-verification.json /tmp/verify-open-hax-host.sh'

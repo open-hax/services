@@ -45,7 +45,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl git jq rsync sudo unzip ufw zstd openjdk-21-jdk
+apt-get install -y ca-certificates curl git iproute2 jq rsync sudo unzip ufw zstd openjdk-21-jdk
 
 if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
   install -m 0755 -d /etc/apt/keyrings
@@ -107,11 +107,16 @@ if [ ! -x "$FIREWALL_VERIFIER" ]; then
 fi
 "$FIREWALL_VERIFIER"
 
-# Service deploys run as the unprivileged deploy user. Grant that user exactly
-# one root operation: the root-owned, argument-free, read-only firewall proof.
+# Service deploys run as the unprivileged deploy user. Grant only the root-owned
+# read-only firewall proof and the exact Ollama readiness operation. The latter
+# lets a Knoxx deployment fail before Compose if its dedicated bridge, firewall
+# source identity, listener, runtime, or model manifests drifted.
 sudoers_tmp=$(mktemp)
 trap 'rm -f "$sudoers_tmp"' EXIT
-printf '%s ALL=(root) NOPASSWD: %s\n' "$DEPLOY_USER" "$FIREWALL_VERIFIER" > "$sudoers_tmp"
+{
+  printf '%s ALL=(root) NOPASSWD: %s\n' "$DEPLOY_USER" "$FIREWALL_VERIFIER"
+  printf '%s ALL=(root) NOPASSWD: %s --readiness\n' "$DEPLOY_USER" "$OLLAMA_PROVISIONER"
+} > "$sudoers_tmp"
 visudo -cf "$sudoers_tmp" >/dev/null
 install -o root -g root -m 0440 "$sudoers_tmp" /etc/sudoers.d/open-hax-firewall-verify
 

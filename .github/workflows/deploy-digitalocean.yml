@@ -467,7 +467,7 @@ jobs:
         run: |
           set -euo pipefail
           # Quoted heredoc: the script is opaque to the runner's shell and the
-          # three values arrive as positional arguments on the host.
+          # four values arrive as positional arguments on the host.
           #
           # The body is wrapped in `{ ... } </dev/null` because it reaches the
           # remote bash on stdin, and `bash -s` parses that stream lazily. Any
@@ -479,11 +479,13 @@ jobs:
           # an empty stdin, so neither half of that can happen. See the health
           # gate below, where this produced a green deploy over 30 failed
           # probes (run 30679331293, 2026-08-01).
-          ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$SERVICE' '$DEFINITION_CHANGED'" <<'REMOTE'
+          ollama_provisioner_sha=$(sha256sum digitalocean/scripts/provision-ollama.sh | awk '{print $1}')
+          ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$SERVICE' '$DEFINITION_CHANGED' '$ollama_provisioner_sha'" <<'REMOTE'
           {
           runtime_path=$1
           service=$2
           definition_changed=$3
+          ollama_provisioner_sha=$4
           cd "$runtime_path"
 
           # docker compose resolves ${VAR} from the shell environment BEFORE
@@ -519,6 +521,18 @@ jobs:
           # Every service shares one user-defined network so Knoxx can reach
           # Proxx by name across compose projects. Creation is idempotent.
           docker network inspect open-hax >/dev/null 2>&1 || docker network create open-hax
+          # The host bootstrap owns Knoxx's dedicated Ollama bridge and exact
+          # UFW source/interface rule. Never let Compose fall back to creating
+          # an unparameterized network or deploy across host-boundary drift.
+          if [ "$service" = knoxx ]; then
+            installed_provisioner=/usr/local/sbin/open-hax-provision-ollama
+            installed_sha=$(sha256sum "$installed_provisioner" 2>/dev/null | awk '{print $1}')
+            if [ "$installed_sha" != "$ollama_provisioner_sha" ]; then
+              echo "Knoxx host Ollama provisioner is absent or stale; run Bootstrap DigitalOcean Host" >&2
+              exit 1
+            fi
+            sudo -n /usr/local/sbin/open-hax-provision-ollama --readiness
+          fi
           docker compose --project-name "$service" --env-file .env pull
 
           # compose decides whether to recreate a container from the image and

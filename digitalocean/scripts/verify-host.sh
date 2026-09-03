@@ -37,7 +37,7 @@ deploy_can_use() {
 
 ollama_ready() {
   [ -x "$OLLAMA_PROVISIONER" ] \
-    && OLLAMA_READINESS_ONLY=1 "$OLLAMA_PROVISIONER"
+    && OLLAMA_READINESS_ONLY=1 "$OLLAMA_PROVISIONER" --readiness
 }
 
 results=$(mktemp)

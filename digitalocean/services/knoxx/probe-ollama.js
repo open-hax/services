@@ -2,7 +2,7 @@
 
 // Verify the exact host-Ollama path Knoxx uses for translation and OpenPlanner
 // embeddings. verify.sh evaluates this file inside knoxx-backend, so the probe
-// crosses the same host-gateway route and sees the same container environment
+// crosses the same dedicated host-bridge route and sees the same container environment
 // as the application. PROBE_SELFTEST replaces fetch and never uses the network.
 
 const REQUIRED_TRANSLATION_MODEL = 'gemma4:e2b';
@@ -36,7 +36,7 @@ const SAVE_PUBLICATION_DRAFT_TOOL = Object.freeze({
         title: {type: 'string', minLength: 1},
         content: {type: 'string', minLength: 1},
       },
-      required: ['content'],
+      required: ['title', 'content'],
     },
   },
 });
@@ -395,8 +395,8 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
 async function selfTest() {
   const assert = require('node:assert/strict');
   const baseEnv = {
-    OLLAMA_BASE_URL: 'http://host.docker.internal:11434/',
-    EMBED_PROVIDER_BASE_URL: 'http://host.docker.internal:11434',
+    OLLAMA_BASE_URL: 'http://172.30.114.1:11434/',
+    EMBED_PROVIDER_BASE_URL: 'http://172.30.114.1:11434',
     EMBED_PROVIDER_MODEL: 'nomic-embed-text',
     EMBED_PROVIDER_DIMENSIONS: '768',
     KNOXX_DEPLOY_TRANSLATION_MODEL: 'gemma4:e2b',
@@ -478,10 +478,10 @@ async function selfTest() {
   assert.equal(good.agentToolCall.exactArguments, true);
   assert.equal(good.embedding.vectorLength, 768);
   assert.deepEqual(calls.map((call) => call.url), [
-    'http://host.docker.internal:11434/api/tags',
-    'http://host.docker.internal:11434/api/chat',
-    'http://host.docker.internal:11434/v1/chat/completions',
-    'http://host.docker.internal:11434/v1/embeddings',
+    'http://172.30.114.1:11434/api/tags',
+    'http://172.30.114.1:11434/api/chat',
+    'http://172.30.114.1:11434/v1/chat/completions',
+    'http://172.30.114.1:11434/v1/embeddings',
   ]);
   assert.deepEqual(JSON.parse(calls[1].options.body), {
     model: 'gemma4:e2b',

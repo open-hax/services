@@ -6,8 +6,9 @@
 
 ## Runtime contract
 
-The Knoxx backend reaches Ollama on its Docker host through the explicit
-`host.docker.internal:host-gateway` mapping:
+The Knoxx backend reaches Ollama through a pre-provisioned, internal Docker
+bridge. Its network namespace is the only one attached to `knoxx-ollama`, at
+`172.30.114.2`; Ollama binds the host side at `172.30.114.1:11434`:
 
 ```text
 publication_translator ──── gemma4:e2b ─────────────┐
@@ -60,14 +61,40 @@ gemma4:e2b               7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506b
 nomic-embed-text:latest  0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f
 ```
 
-The generated service binds Ollama to Docker's private bridge gateway. A daemon
-bound only to host loopback (`127.0.0.1:11434`) is not reachable as
-`host.docker.internal:11434` from `knoxx-backend` and fails verification.
+Host provisioning creates `knoxx-ollama` as an internal, non-attachable bridge
+on `172.30.114.0/29`, with the fixed Linux interface `knoxx-ollama0`. It refuses
+an existing network unless its driver, scope, internal/attachable/ingress/IPv6
+flags, IPAM entry, gateway, interface option, boundary label, and attached
+endpoint addresses all match the contract. The generated service binds Ollama
+only to `172.30.114.1:11434`; readiness also rejects a wildcard or second
+listener even when a gateway-local curl would otherwise pass.
+
+UFW admits that listener only for source `172.30.114.2` arriving on
+`knoxx-ollama0`. It rejects missing, duplicate, broad, ranged, profile-based,
+IPv6, forwarded, wrong-interface, wrong-destination, and wrong-source permits
+covering TCP 11434. The predecessor allowance for `172.16.0.0/12` is removed
+during provisioning and any surviving rule that can cover the port fails the
+readiness gate.
+
+This interface match is the sandbox boundary. `knoxx-sandboxd` and its nested
+DIND workloads join only `sandbox-control`; their host-bound traffic arrives on
+that bridge, even when the outer container NATs it. They therefore cannot
+inherit the Ollama allow by presenting a private source address. Trusted
+`knoxx-devtools` shares the backend network namespace and consequently shares
+this access. A process with the host Docker socket can still attach networks
+and is already host-equivalent; neither Knoxx container receives that socket.
 
 Port 11434 must remain unavailable from public ingress. There is no Caddy route
 or Compose-published port for it; the host firewall must also deny off-host
 connections. The desired boundary is container-to-host access, not a public
 Ollama API.
+
+Every Knoxx deployment invokes the root-owned provisioner's read-only
+`--readiness` operation before Compose pulls or starts containers. A missing or
+stale provisioner (compared by SHA-256 to the deployment checkout), drifted
+external bridge, firewall rule, listener, runtime, or model manifest therefore
+blocks deployment; Compose never creates a fallback network. Run `Bootstrap
+DigitalOcean Host` to install a reviewed provisioner before deploying Knoxx.
 
 Both required models must be present before the Knoxx deployment runs. Normal
 production provisioning does this automatically; for a local workstation use:

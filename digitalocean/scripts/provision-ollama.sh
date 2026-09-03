@@ -12,6 +12,19 @@ OLLAMA_TRANSLATION_DIGEST=7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506
 OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
 OLLAMA_EMBEDDING_DIGEST=0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f
 
+# This host bridge is an identity boundary, not merely an address route. Only
+# the Knoxx backend network namespace is attached to it by Compose. Nested DIND
+# traffic reaches the host over sandbox-control and therefore cannot satisfy
+# the firewall's incoming-interface match, even if its source is NATed.
+OLLAMA_NETWORK_NAME=knoxx-ollama
+OLLAMA_NETWORK_LABEL=org.open-hax.boundary=knoxx-ollama-backend
+OLLAMA_BRIDGE_INTERFACE=knoxx-ollama0
+OLLAMA_NETWORK_SUBNET=172.30.114.0/29
+OLLAMA_NETWORK_GATEWAY=172.30.114.1
+OLLAMA_BACKEND_ADDRESS=172.30.114.2
+OLLAMA_BACKEND_CIDR=172.30.114.2/29
+OLLAMA_PORT=11434
+
 OLLAMA_INSTALL_ROOT=/opt/ollama/v${OLLAMA_VERSION}
 OLLAMA_BIN=${OLLAMA_BIN:-${OLLAMA_INSTALL_ROOT}/bin/ollama}
 OLLAMA_MARKER_PATH=${OLLAMA_MARKER_PATH:-${OLLAMA_INSTALL_ROOT}/.open-hax-archive-sha256}
@@ -21,30 +34,203 @@ SYSTEMCTL_BIN=${SYSTEMCTL_BIN:-/usr/bin/systemctl}
 CURL_BIN=${CURL_BIN:-/usr/bin/curl}
 DOCKER_BIN=${DOCKER_BIN:-/usr/bin/docker}
 UFW_BIN=${UFW_BIN:-/usr/sbin/ufw}
+IP_BIN=${IP_BIN:-/usr/sbin/ip}
+SS_BIN=${SS_BIN:-/usr/bin/ss}
 
-docker_gateway() {
-  if [ -n "${OLLAMA_DOCKER_GATEWAY:-}" ]; then
-    printf '%s\n' "$OLLAMA_DOCKER_GATEWAY"
-    return
-  fi
-  "$DOCKER_BIN" network inspect bridge \
-    --format '{{(index .IPAM.Config 0).Gateway}}'
+case ${1:-} in
+  "") operation=provision ;;
+  --readiness) operation=readiness ;;
+  *)
+    echo "usage: provision-ollama.sh [--readiness]" >&2
+    exit 2
+    ;;
+esac
+[ "$#" -le 1 ] || {
+  echo "usage: provision-ollama.sh [--readiness]" >&2
+  exit 2
 }
 
-require_default_private_gateway() {
-  local gateway=$1 first second third fourth
-  IFS=. read -r first second third fourth <<< "$gateway"
-  if [ "$first" != 172 ] \
-    || ! [[ "$second" =~ ^[0-9]+$ ]] \
-    || [ "$second" -lt 16 ] \
-    || [ "$second" -gt 31 ] \
-    || ! [[ "$third" =~ ^[0-9]+$ ]] \
-    || ! [[ "$fourth" =~ ^[0-9]+$ ]] \
-    || [ "$third" -gt 255 ] \
-    || [ "$fourth" -gt 255 ]; then
-    echo "ollama: Docker bridge gateway must be inside 172.16.0.0/12, got '${gateway}'" >&2
-    return 1
+network_is_ready() {
+  local inspection link
+  inspection=$("$DOCKER_BIN" network inspect "$OLLAMA_NETWORK_NAME" \
+    --format '{{json .}}') || return 1
+  printf '%s' "$inspection" | jq -e \
+    --arg name "$OLLAMA_NETWORK_NAME" \
+    --arg label "$OLLAMA_NETWORK_LABEL" \
+    --arg interface "$OLLAMA_BRIDGE_INTERFACE" \
+    --arg subnet "$OLLAMA_NETWORK_SUBNET" \
+    --arg gateway "$OLLAMA_NETWORK_GATEWAY" \
+    --arg backend_cidr "$OLLAMA_BACKEND_CIDR" '
+      .Name == $name
+      and .Driver == "bridge"
+      and .Scope == "local"
+      and .Internal == true
+      and .Attachable == false
+      and .Ingress == false
+      and .ConfigOnly == false
+      and .ConfigFrom.Network == ""
+      and (.EnableIPv4 != false)
+      and .EnableIPv6 == false
+      and .IPAM.Driver == "default"
+      and (.IPAM.Options == null or .IPAM.Options == {})
+      and (.IPAM.Config | length) == 1
+      and .IPAM.Config[0].Subnet == $subnet
+      and .IPAM.Config[0].Gateway == $gateway
+      and ((.IPAM.Config[0].IPRange // "") == "")
+      and .Options["com.docker.network.bridge.name"] == $interface
+      and .Labels[($label | split("=")[0])] == ($label | split("=")[1])
+      and ([.Containers[]?] | length) <= 1
+      and all(.Containers[]?; .IPv4Address == $backend_cidr)
+    ' >/dev/null || return 1
+
+  link=$("$IP_BIN" -json address show dev "$OLLAMA_BRIDGE_INTERFACE") \
+    || return 1
+  printf '%s' "$link" | jq -e \
+    --arg gateway "$OLLAMA_NETWORK_GATEWAY" \
+    --arg interface "$OLLAMA_BRIDGE_INTERFACE" '
+      length == 1
+      and .[0].ifname == $interface
+      and any(.[0].addr_info[]?;
+        .family == "inet"
+        and .local == $gateway
+        and .prefixlen == 29
+        and .scope == "global")
+    ' >/dev/null
+}
+
+ensure_network() {
+  if "$DOCKER_BIN" network inspect "$OLLAMA_NETWORK_NAME" >/dev/null 2>&1; then
+    network_is_ready || {
+      echo "ollama: refusing drifted ${OLLAMA_NETWORK_NAME} network" >&2
+      return 1
+    }
+    return
   fi
+
+  "$DOCKER_BIN" network create \
+    --driver bridge \
+    --internal \
+    --subnet "$OLLAMA_NETWORK_SUBNET" \
+    --gateway "$OLLAMA_NETWORK_GATEWAY" \
+    --opt "com.docker.network.bridge.name=${OLLAMA_BRIDGE_INTERFACE}" \
+    --label "$OLLAMA_NETWORK_LABEL" \
+    "$OLLAMA_NETWORK_NAME" >/dev/null
+  network_is_ready
+}
+
+firewall_is_ready() {
+  local status
+  if [ -n "${UFW_STATUS_FILE:-}" ]; then
+    status=$(<"$UFW_STATUS_FILE")
+  else
+    status=$(LC_ALL=C "$UFW_BIN" status verbose)
+  fi
+
+  grep -q '^Status: active$' <<<"$status" \
+    && grep -q '^Default: deny (incoming)' <<<"$status" \
+    && awk \
+      -v expected_target="${OLLAMA_NETWORK_GATEWAY} ${OLLAMA_PORT}/tcp on ${OLLAMA_BRIDGE_INTERFACE}" \
+      -v expected_source="$OLLAMA_BACKEND_ADDRESS" \
+      -v protected_port="$OLLAMA_PORT" \
+      -v gateway="$OLLAMA_NETWORK_GATEWAY" \
+      -v bridge="$OLLAMA_BRIDGE_INTERFACE" '
+      function reject(reason) {
+        unexpected = 1
+        printf "ollama: rejected firewall rule target=%s direction=%s source=%s reason=%s\n", target, direction, source, reason > "/dev/stderr"
+      }
+
+      function numeric_spec_covers(spec, protocol, parts, count, i, bounds) {
+        count = split(spec, protocol, "/")
+        if (count > 2) return -1
+        spec = protocol[1]
+        if (spec !~ /^[0-9,:]+$/) return -1
+        if (count == 2 && protocol[2] == "udp") return 0
+        if (count == 2 && protocol[2] != "tcp") return -1
+        count = split(spec, parts, ",")
+        for (i = 1; i <= count; i++) {
+          if (parts[i] ~ /:/) {
+            split(parts[i], bounds, ":")
+            if ((protected_port + 0) >= (bounds[1] + 0) &&
+                (protected_port + 0) <= (bounds[2] + 0)) return 1
+          } else if ((parts[i] + 0) == (protected_port + 0)) {
+            return 1
+          }
+        }
+        return 0
+      }
+
+      {
+        action_index = 0
+        target = ""
+        coverage = -1
+        normalized_line = $0
+        gsub(/[[:space:]]+/, " ", normalized_line)
+        sub(/^ /, "", normalized_line)
+        sub(/ $/, "", normalized_line)
+        $0 = normalized_line
+
+        for (i = 1; i <= NF; i++) {
+          if ($i == "#") break
+          if (($i == "ALLOW" || $i == "LIMIT") &&
+              ($(i + 1) == "IN" || $(i + 1) == "OUT" || $(i + 1) == "FWD")) {
+            permit_action = $i
+            action_index = i
+          }
+        }
+        if (!action_index) next
+
+        for (i = 1; i < action_index; i++) {
+          target = target (target == "" ? "" : " ") $i
+          candidate = numeric_spec_covers($i)
+          if (candidate == 1) coverage = 1
+          else if (coverage != 1 && candidate == 0) coverage = 0
+        }
+        direction = $(action_index + 1)
+        source = $(action_index + 2)
+
+        if (target == expected_target && direction == "IN" &&
+            permit_action == "ALLOW" && source == expected_source) {
+          exact += 1
+          next
+        }
+
+        # A no-port allow to every destination, to the Ollama gateway, or on
+        # the dedicated bridge also covers the protected listener. Unknown
+        # application-profile shapes stay fail closed.
+        if (coverage != 1 &&
+            (target == "Anywhere" || target == gateway ||
+             target == "Anywhere on " bridge || target == gateway " on " bridge)) {
+          coverage = 1
+        }
+        if (coverage == -1 && (direction == "IN" || direction == "FWD")) {
+          reject("unresolved inbound or forwarded permit shape")
+          next
+        }
+        if (coverage == 1 && (direction == "IN" || direction == "FWD")) {
+          reject("rule can reach protected port")
+        }
+      }
+
+      END {
+        if (exact != 1) {
+          printf "ollama: expected exactly one allow for %s from %s; found %d\n", expected_target, expected_source, exact > "/dev/stderr"
+          exit 1
+        }
+        exit unexpected
+      }
+    ' <<<"$status"
+}
+
+listener_is_ready() {
+  local listeners
+  listeners=$("$SS_BIN" -H -ltn "sport = :${OLLAMA_PORT}") || return 1
+  awk -v expected="${OLLAMA_NETWORK_GATEWAY}:${OLLAMA_PORT}" '
+    NF {
+      count += 1
+      if ($4 == expected) exact += 1
+    }
+    END { exit !(count == 1 && exact == 1) }
+  ' <<<"$listeners"
 }
 
 model_digest_matches() {
@@ -57,13 +243,16 @@ model_digest_matches() {
 }
 
 ollama_is_ready() {
-  local gateway=$1 base_url version_payload tags
-  base_url=${OLLAMA_API_BASE_URL:-http://${gateway}:11434}
+  local base_url version_payload tags
+  base_url=http://${OLLAMA_NETWORK_GATEWAY}:${OLLAMA_PORT}
 
-  [ -x "$OLLAMA_BIN" ] \
+  network_is_ready \
+    && firewall_is_ready \
+    && [ -x "$OLLAMA_BIN" ] \
     && [ "$(cat "$OLLAMA_MARKER_PATH" 2>/dev/null || true)" = "$OLLAMA_ARCHIVE_SHA256" ] \
     && "$SYSTEMCTL_BIN" is-enabled --quiet ollama.service \
     && "$SYSTEMCTL_BIN" is-active --quiet ollama.service \
+    && listener_is_ready \
     && version_payload=$("$CURL_BIN" --fail --silent --show-error --max-time 10 \
          "${base_url}/api/version") \
     && printf '%s' "$version_payload" \
@@ -74,11 +263,8 @@ ollama_is_ready() {
     && model_digest_matches "$tags" "$OLLAMA_EMBEDDING_MODEL" "$OLLAMA_EMBEDDING_DIGEST"
 }
 
-gateway=$(docker_gateway)
-require_default_private_gateway "$gateway"
-
-if [ "${OLLAMA_READINESS_ONLY:-0}" = 1 ]; then
-  ollama_is_ready "$gateway"
+if [ "$operation" = readiness ]; then
+  ollama_is_ready
   exit
 fi
 
@@ -90,6 +276,8 @@ if [ "$(uname -s)" != Linux ] || [ "$(uname -m)" != x86_64 ]; then
   echo "ollama: the pinned host artifact requires Linux x86_64" >&2
   exit 2
 fi
+
+ensure_network
 
 if [ ! -x "${OLLAMA_INSTALL_ROOT}/bin/ollama" ]; then
   if [ -e "$OLLAMA_INSTALL_ROOT" ]; then
@@ -150,7 +338,7 @@ User=ollama
 Group=ollama
 Restart=always
 RestartSec=3
-Environment="OLLAMA_HOST=${gateway}:11434"
+Environment="OLLAMA_HOST=${OLLAMA_NETWORK_GATEWAY}:${OLLAMA_PORT}"
 Environment="OLLAMA_MODELS=${OLLAMA_MODELS_DIR}"
 
 [Install]
@@ -160,17 +348,32 @@ install -o root -g root -m 0644 "$unit_tmp" "$OLLAMA_UNIT_PATH"
 rm -f "$unit_tmp"
 trap - EXIT
 
-# Ollama binds only the Docker bridge gateway. This rule permits containers on
-# Docker's default private address pool without exposing 11434 on a public or
-# private host interface.
-"$UFW_BIN" allow from 172.16.0.0/12 to "$gateway" port 11434 proto tcp \
-  comment 'Ollama from Docker bridge networks'
+# Retire the predecessor's broad default-pool allowance when present. Any
+# other rule that can reach this port is rejected below instead of guessed at
+# or silently retained.
+legacy_gateway=$("$DOCKER_BIN" network inspect bridge \
+  --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)
+if [ -n "$legacy_gateway" ]; then
+  "$UFW_BIN" --force delete allow from 172.16.0.0/12 to "$legacy_gateway" \
+    port "$OLLAMA_PORT" proto tcp \
+    comment 'Ollama from Docker bridge networks' >/dev/null 2>&1 || true
+  "$UFW_BIN" --force delete allow from 172.16.0.0/12 to "$legacy_gateway" \
+    port "$OLLAMA_PORT" proto tcp >/dev/null 2>&1 || true
+fi
+
+# Ollama is reachable only through the dedicated bridge, from the backend's
+# reserved address. Traffic NATed out of nested DIND arrives on another host
+# interface and cannot inherit this allow.
+"$UFW_BIN" allow in on "$OLLAMA_BRIDGE_INTERFACE" \
+  from "$OLLAMA_BACKEND_ADDRESS" to "$OLLAMA_NETWORK_GATEWAY" \
+  port "$OLLAMA_PORT" proto tcp comment 'Ollama from Knoxx backend only'
+firewall_is_ready
 
 "$SYSTEMCTL_BIN" daemon-reload
 "$SYSTEMCTL_BIN" enable ollama.service
 "$SYSTEMCTL_BIN" restart ollama.service
 
-base_url=http://${gateway}:11434
+base_url=http://${OLLAMA_NETWORK_GATEWAY}:${OLLAMA_PORT}
 version_ready=0
 for _ in $(seq 1 60); do
   if version_payload=$("$CURL_BIN" --fail --silent --show-error --max-time 5 \
@@ -193,7 +396,7 @@ ensure_model() {
   if model_digest_matches "$tags" "$model" "$digest"; then
     return
   fi
-  timeout --kill-after=10s 3600s env OLLAMA_HOST="${gateway}:11434" \
+  timeout --kill-after=10s 3600s env OLLAMA_HOST="${OLLAMA_NETWORK_GATEWAY}:${OLLAMA_PORT}" \
     "$OLLAMA_BIN" pull "$model"
   tags=$("$CURL_BIN" --fail --silent --show-error --max-time 10 "${base_url}/api/tags")
   model_digest_matches "$tags" "$model" "$digest" || {
@@ -204,6 +407,6 @@ ensure_model() {
 
 ensure_model "$OLLAMA_TRANSLATION_MODEL" "$OLLAMA_TRANSLATION_DIGEST"
 ensure_model "$OLLAMA_EMBEDDING_MODEL" "$OLLAMA_EMBEDDING_DIGEST"
-ollama_is_ready "$gateway"
+ollama_is_ready
 
-echo "ollama: v${OLLAMA_VERSION} and both pinned Knoxx models are ready on ${gateway}:11434"
+echo "ollama: v${OLLAMA_VERSION} and both pinned Knoxx models are ready on ${OLLAMA_NETWORK_GATEWAY}:${OLLAMA_PORT}"

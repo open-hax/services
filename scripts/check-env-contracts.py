@@ -271,7 +271,7 @@ def main() -> int:
         ),
         "host Ollama endpoint": (
             knoxx_template,
-            "OLLAMA_BASE_URL='http://host.docker.internal:11434'",
+            "OLLAMA_BASE_URL='http://172.30.114.1:11434'",
         ),
         "pinned host Ollama runtime": (
             ollama_provisioner,
@@ -281,9 +281,29 @@ def main() -> int:
             production_host_contract,
             'version: "0.33.2"',
         ),
-        "host contract Docker-gateway bind": (
+        "host contract dedicated bridge bind": (
             production_host_contract,
-            "bind: docker-default-gateway",
+            "bind: dedicated-docker-bridge",
+        ),
+        "host contract Ollama network": (
+            production_host_contract,
+            "network: knoxx-ollama",
+        ),
+        "host contract Ollama bridge interface": (
+            production_host_contract,
+            "bridgeInterface: knoxx-ollama0",
+        ),
+        "host contract Ollama subnet": (
+            production_host_contract,
+            "subnet: 172.30.114.0/29",
+        ),
+        "host contract Ollama gateway": (
+            production_host_contract,
+            "gateway: 172.30.114.1",
+        ),
+        "host contract Ollama backend address": (
+            production_host_contract,
+            "backendAddress: 172.30.114.2",
         ),
         "pinned host Ollama archive": (
             ollama_provisioner,
@@ -305,9 +325,33 @@ def main() -> int:
             production_host_contract,
             "digest: 0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
         ),
-        "Docker-gateway-only Ollama bind": (
+        "dedicated-bridge-only Ollama bind": (
             ollama_provisioner,
-            'Environment="OLLAMA_HOST=${gateway}:11434"',
+            'Environment="OLLAMA_HOST=${OLLAMA_NETWORK_GATEWAY}:${OLLAMA_PORT}"',
+        ),
+        "dedicated internal Ollama bridge": (
+            ollama_provisioner,
+            'OLLAMA_NETWORK_NAME=knoxx-ollama',
+        ),
+        "host provisioning creates the audited Ollama network": (
+            ollama_provisioner,
+            '"$DOCKER_BIN" network create',
+        ),
+        "host provisioning retires the broad Ollama rule": (
+            ollama_provisioner,
+            'delete allow from 172.16.0.0/12',
+        ),
+        "exact-interface Ollama firewall rule": (
+            ollama_provisioner,
+            'allow in on "$OLLAMA_BRIDGE_INTERFACE"',
+        ),
+        "exact-source Ollama firewall rule": (
+            ollama_provisioner,
+            'from "$OLLAMA_BACKEND_ADDRESS" to "$OLLAMA_NETWORK_GATEWAY"',
+        ),
+        "Ollama wildcard-listener rejection": (
+            ollama_provisioner,
+            'listener_is_ready',
         ),
         "host bootstrap provisions Ollama": (
             host_bootstrap,
@@ -325,6 +369,22 @@ def main() -> int:
             host_workflow_text,
             "digitalocean/scripts/test-provision-ollama.sh",
         ),
+        "Knoxx deploy verifies the host Ollama boundary": (
+            deploy_text,
+            "sudo -n /usr/local/sbin/open-hax-provision-ollama --readiness",
+        ),
+        "Knoxx deploy rejects a stale host Ollama provisioner": (
+            deploy_text,
+            'installed_sha=$(sha256sum "$installed_provisioner"',
+        ),
+        "host verification rejects a stale Ollama provisioner": (
+            host_workflow_text,
+            'installed_provisioner_sha=${installed_provisioner_sha%% *}',
+        ),
+        "deploy user receives only Ollama readiness permission": (
+            host_bootstrap,
+            'printf \'%s ALL=(root) NOPASSWD: %s --readiness\\n\'',
+        ),
         "host Ollama endpoint container binding": (
             knoxx_compose,
             "OLLAMA_BASE_URL:",
@@ -337,9 +397,13 @@ def main() -> int:
             knoxx_compose,
             "KNOXX_GENERATED_CONTRACTS_DIR:",
         ),
-        "Ollama host-gateway mapping": (
+        "Ollama dedicated network mapping": (
             knoxx_compose,
-            '"host.docker.internal:host-gateway"',
+            "ipv4_address: 172.30.114.2",
+        ),
+        "Ollama external network identity": (
+            knoxx_compose,
+            "name: knoxx-ollama",
         ),
         "host Ollama runtime gate": (
             knoxx_verify,
@@ -520,6 +584,10 @@ def main() -> int:
         "OpenAI-compatible Ollama agent request": (
             knoxx_ollama_probe,
             "`${ollamaBaseUrl}/v1/chat/completions`",
+        ),
+        "Ollama draft tool requires every accepted argument": (
+            knoxx_ollama_probe,
+            "required: ['title', 'content']",
         ),
         "named first-turn tool choice": (
             knoxx_ollama_probe,
@@ -829,6 +897,29 @@ def main() -> int:
     knoxx_environment = knoxx_compose_document["services"]["knoxx-backend"][
         "environment"
     ]
+    knoxx_backend = knoxx_compose_document["services"]["knoxx-backend"]
+    ollama_attachment = knoxx_backend.get("networks", {}).get("ollama-access")
+    if ollama_attachment != {"ipv4_address": "172.30.114.2"}:
+        failures.append(
+            "Knoxx backend does not have the sole fixed Ollama bridge address"
+        )
+    if "extra_hosts" in knoxx_backend:
+        failures.append("Knoxx backend retains a host-gateway escape route")
+    ollama_network = knoxx_compose_document.get("networks", {}).get(
+        "ollama-access"
+    )
+    if ollama_network != {"name": "knoxx-ollama", "external": True}:
+        failures.append(
+            "Knoxx Ollama network is not the pre-provisioned external boundary"
+        )
+    for untrusted_service in ("knoxx-sandboxd", "knoxx-frontend"):
+        service_networks = knoxx_compose_document["services"][untrusted_service].get(
+            "networks", {}
+        )
+        if "ollama-access" in service_networks:
+            failures.append(
+                f"{untrusted_service} is attached to the backend-only Ollama bridge"
+            )
     expected_ollama_binding = "${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}"
     if knoxx_environment.get("EMBED_PROVIDER_BASE_URL") != expected_ollama_binding:
         failures.append(

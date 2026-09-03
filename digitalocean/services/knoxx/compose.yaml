@@ -116,7 +116,7 @@ services:
       # General hosted inference goes through Proxx, which owns provider
       # credentials. The publication translator, post drafter, and in-process
       # OpenPlanner embedding client are explicit local exceptions: all reach
-      # host Ollama through the host-gateway mapping below.
+      # host Ollama through the dedicated backend-only bridge below.
       PROXX_BASE_URL: http://proxx:8789
       PROXX_AUTH_TOKEN: ${PROXY_AUTH_TOKEN:?PROXY_AUTH_TOKEN must be set}
       PROXX_DEFAULT_MODEL: ${PROXX_DEFAULT_MODEL}
@@ -192,8 +192,6 @@ services:
       # state/knoxx/website-content.
       - ${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/srv/website-content
       - ${KNOXX_SANDBOX_ROOT_PATH:?KNOXX_SANDBOX_ROOT_PATH must be set}:/sandboxes
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     # No /var/run/docker.sock. The agent sandbox needs it, but it is a
     # root-equivalent grant and this host is about to be public.
     healthcheck:
@@ -223,6 +221,11 @@ services:
           - backend
           - knoxx-backend
       sandbox-control: {}
+      # Host provisioning creates and audits this internal bridge. The exact
+      # address is also the sole source admitted to host Ollama by UFW. Neither
+      # sandboxd nor its nested DIND workloads join this network.
+      ollama-access:
+        ipv4_address: 172.30.114.2
 
   # The devtools image runs a second shadow-cljs config whose :server build is a
   # side-effect-free Node runtime. Sharing the backend network namespace keeps
@@ -276,3 +279,6 @@ networks:
     name: open-hax
     external: true
   sandbox-control: {}
+  ollama-access:
+    name: knoxx-ollama
+    external: true
