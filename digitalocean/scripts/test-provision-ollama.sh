@@ -107,7 +107,7 @@ printf 'LISTEN 0 4096 %s 0.0.0.0:*\n' "${MOCK_OLLAMA_LISTENER:-172.30.114.1:1143
 SH
 chmod 0755 "$fixture_dir/bin/ss"
 
-base_firewall=$'Status: active\nDefault: deny (incoming), allow (outgoing), disabled (routed)\n22/tcp (OpenSSH) ALLOW IN Anywhere\n80/tcp ALLOW IN Anywhere\n443/tcp ALLOW IN Anywhere'
+base_firewall=$'Status: active\nDefault: deny (incoming), allow (outgoing), disabled (routed)\nOpenSSH ALLOW IN Anywhere\nOpenSSH (v6) ALLOW IN Anywhere (v6)\n80/tcp ALLOW IN Anywhere\n443/tcp ALLOW IN Anywhere'
 exact_firewall_rule='172.30.114.1 11434/tcp on knoxx-ollama0 ALLOW IN 172.30.114.2'
 good_firewall="${base_firewall}"$'\n'"${exact_firewall_rule}"
 printf '%s\n' "$good_firewall" > "$fixture_dir/firewall-good.txt"
@@ -135,6 +135,8 @@ printf '%s\n' "${base_firewall}"$'\n172.30.114.1 11434/tcp (v6) on knoxx-ollama0
   > "$fixture_dir/firewall-ipv6.txt"
 printf '%s\n' "${good_firewall}"$'\nOllama API ALLOW IN Anywhere' \
   > "$fixture_dir/firewall-unknown-profile.txt"
+printf '%s\n' "${good_firewall/OpenSSH ALLOW IN Anywhere/OpenSSH ALLOW FWD Anywhere}" \
+  > "$fixture_dir/firewall-openssh-forwarded.txt"
 printf '%s\n' "${good_firewall}"$'\n'"${exact_firewall_rule}" \
   > "$fixture_dir/firewall-duplicate.txt"
 printf '%s\n' "$base_firewall" > "$fixture_dir/firewall-missing.txt"
@@ -226,7 +228,7 @@ if MOCK_OLLAMA_LISTENER=$'172.30.114.1:11434\nLISTEN 0 4096 127.0.0.1:11434' \
 fi
 for firewall in broad no-interface wrong-interface wrong-source wrong-destination \
   covering-range covering-list global forwarded limited ipv6 unknown-profile \
-  duplicate missing inactive default-allow; do
+  openssh-forwarded duplicate missing inactive default-allow; do
   if MOCK_UFW_STATUS_FILE="$fixture_dir/firewall-${firewall}.txt" readiness >/dev/null 2>&1; then
     echo "Ollama readiness accepted firewall drift ${firewall}" >&2
     exit 1

@@ -196,6 +196,16 @@ firewall_is_ready() {
           next
         }
 
+        # Bootstrap installs this root-owned UFW application profile for SSH.
+        # UFW may render it by profile name rather than its resolved 22/tcp
+        # port. Admit only the exact public-bootstrap shapes; every other
+        # unresolved application profile remains fail closed below.
+        if ((target == "OpenSSH" || target == "OpenSSH (v6)") &&
+            direction == "IN" && permit_action == "ALLOW" &&
+            source == "Anywhere") {
+          next
+        }
+
         # A no-port allow to every destination, to the Ollama gateway, or on
         # the dedicated bridge also covers the protected listener. Unknown
         # application-profile shapes stay fail closed.
