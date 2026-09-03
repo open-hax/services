@@ -93,7 +93,8 @@ services:
 
       # The deployed publication agents are selected with environment overlays
       # so their canonical contracts remain portable across hosts. Thinking is
-      # resolved off; verify.sh separately proves native structured translation.
+      # resolved off; verify.sh proves both the native translation fallback and
+      # the OpenAI-compatible required-tool path with reasoning disabled.
       KNOXX_AGENT_MODEL_OVERRIDES: ${KNOXX_AGENT_MODEL_OVERRIDES:?KNOXX_AGENT_MODEL_OVERRIDES must be set}
       KNOXX_AGENT_THINKING_OVERRIDES: ${KNOXX_AGENT_THINKING_OVERRIDES:?KNOXX_AGENT_THINKING_OVERRIDES must be set}
       # Event-triggered turns share a bounded FIFO so an anchor sweep cannot

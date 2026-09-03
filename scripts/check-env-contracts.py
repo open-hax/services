@@ -408,6 +408,22 @@ def main() -> int:
             knoxx_ollama_probe,
             "`${ollamaBaseUrl}/api/chat`",
         ),
+        "OpenAI-compatible Ollama agent request": (
+            knoxx_ollama_probe,
+            "`${ollamaBaseUrl}/v1/chat/completions`",
+        ),
+        "named first-turn tool choice": (
+            knoxx_ollama_probe,
+            "function: {name: TOOL_PROBE.name}",
+        ),
+        "OpenAI-compatible reasoning disable": (
+            knoxx_ollama_probe,
+            "reasoning_effort: 'none'",
+        ),
+        "required agent tool-call assertion": (
+            knoxx_ollama_probe,
+            "agentToolCall.wellFormed",
+        ),
         "deterministic Gemma structured translation request": (
             knoxx_ollama_probe,
             "options: {temperature: 0, seed: 0}",

@@ -21,6 +21,31 @@ const INFERENCE_PROMPT = [
   `JSON schema: ${JSON.stringify(TRANSLATION_SCHEMA)}`,
   `Source text: ${JSON.stringify(TRANSLATION_SOURCE_TEXT)}`,
 ].join(' ');
+const TOOL_PROBE = Object.freeze({
+  name: 'save_publication_draft',
+});
+const SAVE_PUBLICATION_DRAFT_TOOL = Object.freeze({
+  type: 'function',
+  function: {
+    name: TOOL_PROBE.name,
+    description: 'Save one unpublished publication draft for human review.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        title: {type: 'string', minLength: 1},
+        content: {type: 'string', minLength: 1},
+      },
+      required: ['content'],
+    },
+  },
+});
+const TOOL_CALL_PROMPT = [
+  'Craft a concise review-bound Markdown draft from this source fact:',
+  JSON.stringify(TRANSLATION_SOURCE_TEXT),
+  `Call ${TOOL_PROBE.name} exactly once.`,
+  'Supply a nonblank title and complete nonblank Markdown content.',
+].join(' ');
 
 function normalizedBaseUrl(value) {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -127,6 +152,86 @@ function translationSummary(payload, requiredModel) {
   };
 }
 
+function agentToolCallSummary(payload, requiredModel) {
+  const objectPayload = Boolean(payload && typeof payload === 'object' && !Array.isArray(payload));
+  const model = objectPayload && typeof payload.model === 'string' ? payload.model : '';
+  const choices = objectPayload && Array.isArray(payload.choices) ? payload.choices : [];
+  const choice = choices.length === 1 && choices[0]
+    && typeof choices[0] === 'object' && !Array.isArray(choices[0])
+    ? choices[0]
+    : null;
+  const message = choice && choice.message
+    && typeof choice.message === 'object' && !Array.isArray(choice.message)
+    ? choice.message
+    : null;
+  const calls = message && Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  const call = calls.length === 1 && calls[0]
+    && typeof calls[0] === 'object' && !Array.isArray(calls[0])
+    ? calls[0]
+    : null;
+  const fn = call && call.function
+    && typeof call.function === 'object' && !Array.isArray(call.function)
+    ? call.function
+    : null;
+  const argumentText = fn && typeof fn.arguments === 'string' ? fn.arguments : '';
+  let args = null;
+  try {
+    args = JSON.parse(argumentText);
+  } catch {
+    args = null;
+  }
+  const exactArguments = Boolean(
+    args
+    && typeof args === 'object'
+    && !Array.isArray(args)
+    && Object.keys(args).length === 2
+    && typeof args.title === 'string'
+    && args.title.trim().length > 0
+    && typeof args.content === 'string'
+    && args.content.trim().length > 0
+  );
+  const thinkingBlank = !message
+    || ((typeof message.thinking !== 'string' || message.thinking.trim().length === 0)
+      && (typeof message.reasoning !== 'string' || message.reasoning.trim().length === 0));
+  const contentBlank = !message
+    || message.content === null
+    || typeof message.content === 'undefined'
+    || (typeof message.content === 'string' && message.content.trim().length === 0);
+  const errorFree = objectPayload && !Object.hasOwn(payload, 'error');
+  const wellFormed = Boolean(
+    objectPayload
+    && model === requiredModel
+    && choice
+    && choice.finish_reason === 'tool_calls'
+    && message
+    && message.role === 'assistant'
+    && contentBlank
+    && call
+    && call.type === 'function'
+    && fn
+    && fn.name === TOOL_PROBE.name
+    && argumentText
+    && exactArguments
+    && thinkingBlank
+    && errorFree
+  );
+
+  return {
+    model,
+    choiceCount: choices.length,
+    finishReason: choice && typeof choice.finish_reason === 'string' ? choice.finish_reason : '',
+    toolCallCount: calls.length,
+    toolName: fn && typeof fn.name === 'string' ? fn.name : '',
+    argumentsJson: args !== null,
+    exactArguments,
+    contentBlank,
+    thinkingBlank,
+    errorFree,
+    draftContentLength: exactArguments ? args.content.length : 0,
+    wellFormed,
+  };
+}
+
 async function probe(env = process.env, fetchImpl = globalThis.fetch) {
   const embedBaseUrl = normalizedBaseUrl(env.EMBED_PROVIDER_BASE_URL);
   const ollamaBaseUrl = normalizedBaseUrl(env.OLLAMA_BASE_URL);
@@ -195,6 +300,36 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
     const translationPayload = await jsonBody(translationResponse);
     const translation = translationSummary(translationPayload, translationModel);
 
+    // The post drafter uses Ollama's OpenAI-compatible required-tool transport.
+    // A native translation completion alone cannot prove this parser path or
+    // the exact save_publication_draft arguments are healthy.
+    const agentToolCallResponse = await fetchImpl(`${ollamaBaseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        model: translationModel,
+        messages: [
+          {
+            role: 'system',
+            content: 'You craft one grounded Markdown post and must call the supplied tool.',
+          },
+          {role: 'user', content: TOOL_CALL_PROMPT},
+        ],
+        tools: [SAVE_PUBLICATION_DRAFT_TOOL],
+        tool_choice: {
+          type: 'function',
+          function: {name: TOOL_PROBE.name},
+        },
+        stream: false,
+        temperature: 0,
+        seed: 0,
+        reasoning_effort: 'none',
+      }),
+      signal: AbortSignal.timeout(inferenceTimeoutMs),
+    });
+    const agentToolCallPayload = await jsonBody(agentToolCallResponse);
+    const agentToolCall = agentToolCallSummary(agentToolCallPayload, translationModel);
+
     const embeddingResponse = await fetchImpl(`${embedBaseUrl}/v1/embeddings`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -216,6 +351,8 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
         && translationResponse.status === 200
         && translation.wellFormed
         && translation.nonblankTranslatedText
+        && agentToolCallResponse.status === 200
+        && agentToolCall.wellFormed
         && embeddingResponse.status === 200
         && vectorFinite
         && dimensionsMatch,
@@ -230,6 +367,11 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
         status: translationResponse.status,
         timeoutMs: inferenceTimeoutMs,
         ...translation,
+      },
+      agentToolCall: {
+        status: agentToolCallResponse.status,
+        timeoutMs: inferenceTimeoutMs,
+        ...agentToolCall,
       },
       embedding: {
         status: embeddingResponse.status,
@@ -287,12 +429,35 @@ async function selfTest() {
     done_reason: 'stop',
     eval_count: 17,
   };
+  const agentToolCallPayload = {
+    model: 'gemma4:e2b',
+    choices: [{
+      finish_reason: 'tool_calls',
+      message: {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{
+          id: 'call_deployment_probe',
+          index: 0,
+          type: 'function',
+          function: {
+            name: 'save_publication_draft',
+            arguments: JSON.stringify({
+              content: '# Deployment Review\n\nThe deployment document is ready for human review.',
+              title: 'Deployment Review',
+            }),
+          },
+        }],
+      },
+    }],
+  };
   const embeddingPayload = {
     data: [{embedding: new Array(768).fill(0.25)}],
   };
   const goodPayloadFor = (url) => {
     if (url.endsWith('/api/tags')) return tagsPayload;
     if (url.endsWith('/api/chat')) return translationPayload;
+    if (url.endsWith('/v1/chat/completions')) return agentToolCallPayload;
     if (url.endsWith('/v1/embeddings')) return embeddingPayload;
     throw new Error(`unexpected probe URL: ${url}`);
   };
@@ -308,10 +473,14 @@ async function selfTest() {
   assert.equal(good.translation.structuredJson, true);
   assert.equal(good.translation.exactShape, true);
   assert.equal(good.translation.nonblankTranslatedText, true);
+  assert.equal(good.agentToolCall.wellFormed, true);
+  assert.equal(good.agentToolCall.toolName, 'save_publication_draft');
+  assert.equal(good.agentToolCall.exactArguments, true);
   assert.equal(good.embedding.vectorLength, 768);
   assert.deepEqual(calls.map((call) => call.url), [
     'http://host.docker.internal:11434/api/tags',
     'http://host.docker.internal:11434/api/chat',
+    'http://host.docker.internal:11434/v1/chat/completions',
     'http://host.docker.internal:11434/v1/embeddings',
   ]);
   assert.deepEqual(JSON.parse(calls[1].options.body), {
@@ -327,10 +496,30 @@ async function selfTest() {
   });
   assert.equal(calls[1].options.headers.Authorization, undefined);
   assert.deepEqual(JSON.parse(calls[2].options.body), {
+    model: 'gemma4:e2b',
+    messages: [
+      {
+        role: 'system',
+        content: 'You craft one grounded Markdown post and must call the supplied tool.',
+      },
+      {role: 'user', content: TOOL_CALL_PROMPT},
+    ],
+    tools: [SAVE_PUBLICATION_DRAFT_TOOL],
+    tool_choice: {
+      type: 'function',
+      function: {name: TOOL_PROBE.name},
+    },
+    stream: false,
+    temperature: 0,
+    seed: 0,
+    reasoning_effort: 'none',
+  });
+  assert.equal(calls[2].options.headers.Authorization, undefined);
+  assert.deepEqual(JSON.parse(calls[3].options.body), {
     model: 'nomic-embed-text',
     input: ['knoxx deployment embedding probe'],
   });
-  assert.equal(calls[2].options.headers.Authorization, undefined);
+  assert.equal(calls[3].options.headers.Authorization, undefined);
 
   const shortVector = await probe(baseEnv, async (url) => {
     if (url.endsWith('/v1/embeddings')) {
@@ -474,6 +663,124 @@ async function selfTest() {
     testCase.check(result);
   }
 
+  const withToolCall = (toolCallOverrides = {}, messageOverrides = {}, choiceOverrides = {}) => ({
+    ...agentToolCallPayload,
+    choices: [{
+      ...agentToolCallPayload.choices[0],
+      ...choiceOverrides,
+      message: {
+        ...agentToolCallPayload.choices[0].message,
+        ...messageOverrides,
+        tool_calls: [{
+          ...agentToolCallPayload.choices[0].message.tool_calls[0],
+          ...toolCallOverrides,
+          function: {
+            ...agentToolCallPayload.choices[0].message.tool_calls[0].function,
+            ...(toolCallOverrides.function || {}),
+          },
+        }],
+      },
+    }],
+  });
+  const failedToolCallCases = [
+    {
+      name: 'tool-call HTTP failure',
+      makeResponse: () => response(503, agentToolCallPayload),
+      check: (result) => assert.equal(result.agentToolCall.status, 503),
+    },
+    {
+      name: 'tool-call non-JSON HTTP body',
+      makeResponse: () => nonJsonResponse(200),
+      check: (result) => assert.equal(result.agentToolCall.wellFormed, false),
+    },
+    {
+      name: 'tool call omitted',
+      makeResponse: () => response(200, {
+        ...agentToolCallPayload,
+        choices: [{finish_reason: 'stop', message: {role: 'assistant', content: 'listo'}}],
+      }),
+      check: (result) => assert.equal(result.agentToolCall.toolCallCount, 0),
+    },
+    {
+      name: 'wrong required tool',
+      makeResponse: () => response(200, withToolCall({function: {name: 'other_tool'}})),
+      check: (result) => assert.equal(result.agentToolCall.toolName, 'other_tool'),
+    },
+    {
+      name: 'malformed tool arguments',
+      makeResponse: () => response(200, withToolCall({function: {arguments: '{"content":'}})),
+      check: (result) => assert.equal(result.agentToolCall.argumentsJson, false),
+    },
+    {
+      name: 'blank draft title',
+      makeResponse: () => response(200, withToolCall({
+        function: {
+          arguments: JSON.stringify({
+            content: '# Deployment Review\n\nReady for review.',
+            title: '   ',
+          }),
+        },
+      })),
+      check: (result) => assert.equal(result.agentToolCall.exactArguments, false),
+    },
+    {
+      name: 'blank draft content',
+      makeResponse: () => response(200, withToolCall({
+        function: {
+          arguments: JSON.stringify({
+            content: '   ',
+            title: 'Deployment Review',
+          }),
+        },
+      })),
+      check: (result) => assert.equal(result.agentToolCall.exactArguments, false),
+    },
+    {
+      name: 'extra tool argument',
+      makeResponse: () => response(200, withToolCall({
+        function: {
+          arguments: JSON.stringify({
+            content: '# Deployment Review\n\nReady for review.',
+            title: 'Deployment Review',
+            publish: true,
+          }),
+        },
+      })),
+      check: (result) => assert.equal(result.agentToolCall.exactArguments, false),
+    },
+    {
+      name: 'thinking despite reasoning effort none',
+      makeResponse: () => response(200, withToolCall({}, {reasoning: 'hidden reasoning'})),
+      check: (result) => assert.equal(result.agentToolCall.thinkingBlank, false),
+    },
+    {
+      name: 'multiple tool calls',
+      makeResponse: () => response(200, {
+        ...agentToolCallPayload,
+        choices: [{
+          ...agentToolCallPayload.choices[0],
+          message: {
+            ...agentToolCallPayload.choices[0].message,
+            tool_calls: [
+              ...agentToolCallPayload.choices[0].message.tool_calls,
+              ...agentToolCallPayload.choices[0].message.tool_calls,
+            ],
+          },
+        }],
+      }),
+      check: (result) => assert.equal(result.agentToolCall.toolCallCount, 2),
+    },
+  ];
+  for (const testCase of failedToolCallCases) {
+    const result = await probe(baseEnv, async (url) => (
+      url.endsWith('/v1/chat/completions')
+        ? testCase.makeResponse()
+        : response(200, goodPayloadFor(url))
+    ));
+    assert.equal(result.ok, false, testCase.name);
+    testCase.check(result);
+  }
+
   const wrongRoute = await probe(
     {...baseEnv, EMBED_PROVIDER_BASE_URL: 'http://proxx:8789'},
     async () => { throw new Error('fetch must not run for invalid routing'); },
@@ -505,7 +812,7 @@ async function selfTest() {
   assert.equal(unboundedInferenceTimeout.ok, false);
   assert.equal(unboundedInferenceTimeout.reason, 'invalid-ollama-configuration');
 
-  process.stdout.write('probe-ollama: native Gemma translation, route, and 768-vector matrix ok\n');
+  process.stdout.write('probe-ollama: native translation, required tool call, reasoning-off, and 768-vector matrix ok\n');
 }
 
 if (process.env.PROBE_SELFTEST === '1') {

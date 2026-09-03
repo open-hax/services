@@ -101,9 +101,11 @@ backend_json_request() {
 
 # Exercise host Ollama from the same backend container that runs both the
 # translation agent and the in-process OpenPlanner SDK. The helper checks both
-# required model ids, makes a bounded native structured Gemma translation, and
-# makes a real embedding request. Catalog-only checks cannot prove either model
-# runs, nor that the embedding model returns 768 dimensions.
+# required model ids, makes a bounded native structured Gemma translation,
+# forces one tool call through the OpenAI-compatible agent transport with
+# reasoning disabled, and makes a real embedding request. Catalog-only checks
+# cannot prove these paths run or that the embedding model returns 768
+# dimensions.
 ollama_runtime_probe() {
   local translation_model=$1 embedding_model=$2 embedding_dimensions=$3
   docker compose --project-name knoxx --env-file .env \

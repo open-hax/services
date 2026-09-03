@@ -81,8 +81,15 @@ the backend health endpoint is green. Its Ollama probe:
    translation and embedding configuration above;
 3. checks `/api/tags` for both `gemma4:e2b` and `nomic-embed-text` (an implicit
    `nomic-embed-text:latest` tag is equivalent);
-4. posts a real request to Ollama's OpenAI-compatible `/v1/embeddings` endpoint;
-5. accepts only a nonempty vector of exactly 768 finite numbers.
+4. completes one native `/api/chat` translation against the same strict schema
+   used by Knoxx's fail-closed translation recovery path;
+5. forces exactly one `save_publication_draft` call through
+   `/v1/chat/completions` with the same named `tool_choice`, deterministic seed,
+   and `reasoning_effort: none` contract used by the post-drafter agent;
+6. rejects prose, malformed or blank draft arguments, extra fields, multiple
+   calls, or any returned reasoning;
+7. posts a real request to Ollama's OpenAI-compatible `/v1/embeddings` endpoint
+   and accepts only a nonempty vector of exactly 768 finite numbers.
 
 The later MCP `semantic_query` probe still exercises Knoxx and the in-process
 OpenPlanner data plane end to end. Neither check publishes content.
