@@ -491,16 +491,44 @@ jobs:
           # authenticated probe; nothing is echoed.
           set -a; . ./.env; set +a
           attempts=30
-          # Knoxx's final behavioral gate runs two sequential Gemma canaries,
-          # each with a 90-second timeout, plus 15-second tag and embedding
-          # probes. Five attempts cap their combined worst-case time at 17.5
-          # minutes, leaving more than 12 minutes of the 30-minute job for the
-          # preceding deploy, diagnostics, reporting, and credential cleanup.
-          if [ "$service" = knoxx ]; then attempts=5; fi
+          health_budget_seconds=0
+          kill_grace_seconds=5
+          # Knoxx's verifier has many sequential bounded requests before its
+          # two 90-second Gemma canaries. Cap the complete retry loop, including
+          # those requests and retry sleeps, at 15 minutes. This leaves half of
+          # the 30-minute job for deployment, diagnostics, reporting, and
+          # credential cleanup even when one verifier consumes most of a retry.
+          if [ "$service" = knoxx ]; then
+            attempts=5
+            health_budget_seconds=900
+          fi
+          health_deadline=0
+          if [ "$health_budget_seconds" -gt 0 ]; then
+            health_deadline=$((SECONDS + health_budget_seconds))
+          fi
           for _ in $(seq 1 "$attempts"); do
-            if ./verify.sh; then exit 0; fi
-            sleep 6
+            if [ "$health_deadline" -gt 0 ]; then
+              # Reserve the kill grace inside the deadline so a verifier that
+              # ignores TERM cannot make the wall-clock cap aspirational.
+              remaining=$((health_deadline - SECONDS - kill_grace_seconds))
+              if [ "$remaining" -le 0 ]; then break; fi
+              if timeout --kill-after="${kill_grace_seconds}s" "${remaining}s" ./verify.sh; then
+                exit 0
+              fi
+            elif ./verify.sh; then
+              exit 0
+            fi
+            sleep_seconds=6
+            if [ "$health_deadline" -gt 0 ]; then
+              remaining=$((health_deadline - SECONDS))
+              if [ "$remaining" -le 0 ]; then break; fi
+              if [ "$remaining" -lt "$sleep_seconds" ]; then sleep_seconds=$remaining; fi
+            fi
+            sleep "$sleep_seconds"
           done
+          if [ "$health_deadline" -gt 0 ] && [ "$SECONDS" -ge "$health_deadline" ]; then
+            echo "--- $service health gate exhausted its ${health_budget_seconds}s wall-clock budget ---" >&2
+          fi
           echo "--- $service did not become healthy; container state ---" >&2
           docker compose --project-name "$service" --env-file .env ps >&2
           docker compose --project-name "$service" --env-file .env logs --tail 120 --no-color >&2

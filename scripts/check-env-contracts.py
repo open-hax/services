@@ -610,7 +610,7 @@ def main() -> int:
         ),
         "Gemma runtime failure diagnostic": (
             knoxx_verify,
-            "{reason, routing, catalog, translation, embedding}",
+            "{reason, routing, catalog, translation, agentToolCall, embedding}",
         ),
         "Gemma runtime success diagnostic": (
             knoxx_verify,

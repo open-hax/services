@@ -125,13 +125,22 @@ def main() -> int:
         )
         return 1
     health_run = health.get("run", "")
-    if (
-        'if [ "$service" = knoxx ]; then attempts=5; fi' not in health_run
-        or 'for _ in $(seq 1 "$attempts")' not in health_run
-    ):
+    required_health_budget = (
+        "attempts=5",
+        "health_budget_seconds=900",
+        "health_deadline=$((SECONDS + health_budget_seconds))",
+        "remaining=$((health_deadline - SECONDS - kill_grace_seconds))",
+        'timeout --kill-after="${kill_grace_seconds}s" "${remaining}s" ./verify.sh',
+        'if [ "$remaining" -lt "$sleep_seconds" ]; then sleep_seconds=$remaining; fi',
+        'for _ in $(seq 1 "$attempts")',
+    )
+    missing_health_budget = [
+        clause for clause in required_health_budget if clause not in health_run
+    ]
+    if missing_health_budget:
         print(
-            "deploy chain error: Knoxx health retries do not cap the bounded "
-            "Gemma canary schedule",
+            "deploy chain error: Knoxx health retries do not enforce a complete "
+            "verifier wall-clock budget: " + ", ".join(missing_health_budget),
             file=sys.stderr,
         )
         return 1

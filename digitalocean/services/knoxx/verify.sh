@@ -766,7 +766,7 @@ ollama_probe_ok=$(printf '%s' "$ollama_probe" | jq -r '.ok // false')
 if [ "$ollama_probe_ok" != "true" ]; then
   echo "knoxx: required host Ollama translation/embedding runtime is unavailable" >&2
   printf '%s\n' "$ollama_probe" \
-    | jq -c '{reason, routing, catalog, translation, embedding}' >&2 \
+    | jq -c '{reason, routing, catalog, translation, agentToolCall, embedding}' >&2 \
     || printf '%s\n' "$ollama_probe" >&2
   exit 1
 fi
