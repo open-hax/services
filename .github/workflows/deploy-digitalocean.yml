@@ -491,12 +491,12 @@ jobs:
           # authenticated probe; nothing is echoed.
           set -a; . ./.env; set +a
           attempts=30
-          # Knoxx's final behavioral gate may spend up to 90 seconds waiting
-          # for Gemma to return strict structured translation output. Ten
-          # bounded attempts leave room in
-          # the 30-minute job for diagnostics instead of multiplying the model
-          # timeout into an unreachable 45-minute retry schedule.
-          if [ "$service" = knoxx ]; then attempts=10; fi
+          # Knoxx's final behavioral gate runs two sequential Gemma canaries,
+          # each with a 90-second timeout, plus 15-second tag and embedding
+          # probes. Five attempts cap their combined worst-case time at 17.5
+          # minutes, leaving more than 12 minutes of the 30-minute job for the
+          # preceding deploy, diagnostics, reporting, and credential cleanup.
+          if [ "$service" = knoxx ]; then attempts=5; fi
           for _ in $(seq 1 "$attempts"); do
             if ./verify.sh; then exit 0; fi
             sleep 6

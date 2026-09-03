@@ -126,7 +126,7 @@ def main() -> int:
         return 1
     health_run = health.get("run", "")
     if (
-        'if [ "$service" = knoxx ]; then attempts=10; fi' not in health_run
+        'if [ "$service" = knoxx ]; then attempts=5; fi' not in health_run
         or 'for _ in $(seq 1 "$attempts")' not in health_run
     ):
         print(
