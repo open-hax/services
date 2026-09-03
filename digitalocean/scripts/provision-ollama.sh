@@ -25,11 +25,13 @@ OLLAMA_BACKEND_ADDRESS=172.30.114.2
 OLLAMA_BACKEND_CIDR=172.30.114.2/29
 OLLAMA_PORT=11434
 
-OLLAMA_INSTALL_ROOT=/opt/ollama/v${OLLAMA_VERSION}
+OLLAMA_INSTALL_ROOT=${OLLAMA_INSTALL_ROOT:-/opt/ollama/v${OLLAMA_VERSION}}
 OLLAMA_BIN=${OLLAMA_BIN:-${OLLAMA_INSTALL_ROOT}/bin/ollama}
 OLLAMA_MARKER_PATH=${OLLAMA_MARKER_PATH:-${OLLAMA_INSTALL_ROOT}/.open-hax-archive-sha256}
-OLLAMA_MODELS_DIR=/var/lib/ollama/models
-OLLAMA_UNIT_PATH=/etc/systemd/system/ollama.service
+OLLAMA_HOME_DIR=${OLLAMA_HOME_DIR:-/var/lib/ollama}
+OLLAMA_MODELS_DIR=${OLLAMA_MODELS_DIR:-${OLLAMA_HOME_DIR}/models}
+OLLAMA_UNIT_PATH=${OLLAMA_UNIT_PATH:-/etc/systemd/system/ollama.service}
+OLLAMA_LINK_PATH=${OLLAMA_LINK_PATH:-/usr/local/bin/ollama}
 SYSTEMCTL_BIN=${SYSTEMCTL_BIN:-/usr/bin/systemctl}
 CURL_BIN=${CURL_BIN:-/usr/bin/curl}
 DOCKER_BIN=${DOCKER_BIN:-/usr/bin/docker}
@@ -315,13 +317,13 @@ fi
   echo "ollama: installed runtime does not match the pinned archive" >&2
   exit 2
 }
-ln -sfn "${OLLAMA_INSTALL_ROOT}/bin/ollama" /usr/local/bin/ollama
+ln -sfn "${OLLAMA_INSTALL_ROOT}/bin/ollama" "$OLLAMA_LINK_PATH"
 
 if ! id ollama >/dev/null 2>&1; then
-  useradd --system --create-home --home-dir /var/lib/ollama \
+  useradd --system --create-home --home-dir "$OLLAMA_HOME_DIR" \
     --shell /usr/sbin/nologin ollama
 fi
-install -d -m 0750 -o ollama -g ollama /var/lib/ollama "$OLLAMA_MODELS_DIR"
+install -d -m 0750 -o ollama -g ollama "$OLLAMA_HOME_DIR" "$OLLAMA_MODELS_DIR"
 
 unit_tmp=$(mktemp)
 trap 'rm -f "$unit_tmp"' EXIT

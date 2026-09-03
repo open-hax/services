@@ -266,4 +266,236 @@ if MOCK_EMBEDDING_DIGEST=fffffffffffffffffffffffffffffffffffffffffffffffffffffff
   exit 1
 fi
 
-echo "Ollama host provisioning readiness self-test: ok"
+provision_fixture="$fixture_dir/provision"
+provision_bin="$provision_fixture/bin"
+provision_log="$provision_fixture/commands.log"
+network_state="$provision_fixture/network-created"
+firewall_state="$provision_fixture/firewall.txt"
+install_root="$provision_fixture/opt/ollama/v0.33.2"
+ollama_home="$provision_fixture/var/lib/ollama"
+models_dir="$ollama_home/models"
+unit_path="$provision_fixture/etc/systemd/system/ollama.service"
+link_path="$provision_fixture/usr/local/bin/ollama"
+mkdir -p "$provision_bin" "$install_root/bin" "$(dirname "$unit_path")" \
+  "$(dirname "$link_path")"
+: > "$provision_log"
+printf '%s\n' "${base_firewall}"$'\n172.17.0.1 11434/tcp ALLOW IN 172.16.0.0/12' \
+  > "$firewall_state"
+printf '%s\n' 9785247dea264d9072f09f6c9c0eb4b8e666892826a3d8388eba3e8fb9ed1db9 \
+  > "$install_root/.open-hax-archive-sha256"
+cat > "$install_root/bin/ollama" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod 0755 "$install_root/bin/ollama"
+
+cat > "$provision_bin/id" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  -u) printf '0\n' ;;
+  ollama) exit 0 ;;
+  *) exec /usr/bin/id "$@" ;;
+esac
+SH
+chmod 0755 "$provision_bin/id"
+
+cat > "$provision_bin/uname" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  -s) printf 'Linux\n' ;;
+  -m) printf 'x86_64\n' ;;
+  *) exit 64 ;;
+esac
+SH
+chmod 0755 "$provision_bin/uname"
+
+cat > "$provision_bin/install" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+arguments=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o|-g) shift 2 ;;
+    *) arguments+=("$1"); shift ;;
+  esac
+done
+exec /usr/bin/install "${arguments[@]}"
+SH
+chmod 0755 "$provision_bin/install"
+
+cat > "$provision_bin/docker" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker' >> "$MOCK_PROVISION_LOG"
+printf ' %s' "$@" >> "$MOCK_PROVISION_LOG"
+printf '\n' >> "$MOCK_PROVISION_LOG"
+
+if [ "$1" != network ]; then
+  exit 64
+fi
+if [ "$2" = create ]; then
+  expected='network create --driver bridge --internal --subnet 172.30.114.0/29 --gateway 172.30.114.1 --opt com.docker.network.bridge.name=knoxx-ollama0 --label org.open-hax.boundary=knoxx-ollama-backend knoxx-ollama'
+  [ "$*" = "$expected" ] || exit 65
+  : > "$MOCK_NETWORK_STATE"
+  printf 'mock-network-id\n'
+  exit
+fi
+if [ "$2" != inspect ]; then
+  exit 64
+fi
+if [ "$3" = bridge ]; then
+  printf '172.17.0.1\n'
+  exit
+fi
+if [ "$3" != knoxx-ollama ] || [ ! -f "$MOCK_NETWORK_STATE" ]; then
+  exit 1
+fi
+cat <<'JSON'
+{
+  "Name": "knoxx-ollama",
+  "Driver": "bridge",
+  "Scope": "local",
+  "Internal": true,
+  "Attachable": false,
+  "Ingress": false,
+  "ConfigOnly": false,
+  "ConfigFrom": {"Network": ""},
+  "EnableIPv4": true,
+  "EnableIPv6": false,
+  "IPAM": {
+    "Driver": "default",
+    "Options": {},
+    "Config": [{"Subnet": "172.30.114.0/29", "Gateway": "172.30.114.1"}]
+  },
+  "Options": {"com.docker.network.bridge.name": "knoxx-ollama0"},
+  "Labels": {"org.open-hax.boundary": "knoxx-ollama-backend"},
+  "Containers": {}
+}
+JSON
+SH
+chmod 0755 "$provision_bin/docker"
+
+cat > "$provision_bin/ufw" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ufw' >> "$MOCK_PROVISION_LOG"
+printf ' %s' "$@" >> "$MOCK_PROVISION_LOG"
+printf '\n' >> "$MOCK_PROVISION_LOG"
+
+if [ "$*" = 'status verbose' ]; then
+  cat "$MOCK_FIREWALL_STATE"
+  exit
+fi
+case "$*" in
+  '--force delete allow from 172.16.0.0/12 to 172.17.0.1 port 11434 proto tcp'*)
+    grep -vF '172.17.0.1 11434/tcp ALLOW IN 172.16.0.0/12' \
+      "$MOCK_FIREWALL_STATE" > "${MOCK_FIREWALL_STATE}.next"
+    mv "${MOCK_FIREWALL_STATE}.next" "$MOCK_FIREWALL_STATE"
+    ;;
+  'allow in on knoxx-ollama0 from 172.30.114.2 to 172.30.114.1 port 11434 proto tcp comment Ollama from Knoxx backend only')
+    exact='172.30.114.1 11434/tcp on knoxx-ollama0 ALLOW IN 172.30.114.2'
+    grep -Fxq "$exact" "$MOCK_FIREWALL_STATE" || printf '%s\n' "$exact" >> "$MOCK_FIREWALL_STATE"
+    ;;
+  *) exit 64 ;;
+esac
+SH
+chmod 0755 "$provision_bin/ufw"
+
+cat > "$provision_bin/systemctl" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'systemctl' >> "$MOCK_PROVISION_LOG"
+printf ' %s' "$@" >> "$MOCK_PROVISION_LOG"
+printf '\n' >> "$MOCK_PROVISION_LOG"
+case "$1" in
+  daemon-reload|enable|restart|is-enabled|is-active) exit 0 ;;
+  *) exit 64 ;;
+esac
+SH
+chmod 0755 "$provision_bin/systemctl"
+
+cat > "$provision_bin/curl" <<'SH'
+#!/usr/bin/env bash
+for argument in "$@"; do url=$argument; done
+case "$url" in
+  */api/version) printf '{"version":"0.33.2"}\n' ;;
+  */api/tags)
+    printf '%s\n' '{"models":[{"name":"gemma4:e2b","digest":"7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e"},{"name":"nomic-embed-text:latest","digest":"0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"}]}'
+    ;;
+  *) exit 64 ;;
+esac
+SH
+chmod 0755 "$provision_bin/curl"
+
+cat > "$provision_bin/ip" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '[{"ifname":"knoxx-ollama0","addr_info":[{"family":"inet","local":"172.30.114.1","prefixlen":29,"scope":"global"}]}]'
+SH
+chmod 0755 "$provision_bin/ip"
+
+cat > "$provision_bin/ss" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' 'LISTEN 0 4096 172.30.114.1:11434 0.0.0.0:*'
+SH
+chmod 0755 "$provision_bin/ss"
+
+provision() {
+  UFW_STATUS_FILE='' \
+    PATH="$provision_bin:$PATH" \
+    MOCK_PROVISION_LOG="$provision_log" \
+    MOCK_NETWORK_STATE="$network_state" \
+    MOCK_FIREWALL_STATE="$firewall_state" \
+    OLLAMA_INSTALL_ROOT="$install_root" \
+    OLLAMA_BIN="$install_root/bin/ollama" \
+    OLLAMA_MARKER_PATH="$install_root/.open-hax-archive-sha256" \
+    OLLAMA_HOME_DIR="$ollama_home" \
+    OLLAMA_MODELS_DIR="$models_dir" \
+    OLLAMA_UNIT_PATH="$unit_path" \
+    OLLAMA_LINK_PATH="$link_path" \
+    SYSTEMCTL_BIN="$provision_bin/systemctl" \
+    CURL_BIN="$provision_bin/curl" \
+    DOCKER_BIN="$provision_bin/docker" \
+    UFW_BIN="$provision_bin/ufw" \
+    IP_BIN="$provision_bin/ip" \
+    SS_BIN="$provision_bin/ss" \
+    bash "$provisioner" >/dev/null
+}
+
+assert_count() {
+  local expected=$1 line=$2 file=$3 count
+  count=$(grep -Fxc -- "$line" "$file" || true)
+  if [ "$count" -ne "$expected" ]; then
+    echo "expected ${expected} occurrences of '${line}', found ${count}" >&2
+    exit 1
+  fi
+}
+
+provision
+provision
+assert_count 1 \
+  'docker network create --driver bridge --internal --subnet 172.30.114.0/29 --gateway 172.30.114.1 --opt com.docker.network.bridge.name=knoxx-ollama0 --label org.open-hax.boundary=knoxx-ollama-backend knoxx-ollama' \
+  "$provision_log"
+assert_count 2 \
+  'ufw allow in on knoxx-ollama0 from 172.30.114.2 to 172.30.114.1 port 11434 proto tcp comment Ollama from Knoxx backend only' \
+  "$provision_log"
+assert_count 2 \
+  'ufw --force delete allow from 172.16.0.0/12 to 172.17.0.1 port 11434 proto tcp comment Ollama from Docker bridge networks' \
+  "$provision_log"
+assert_count 2 \
+  'ufw --force delete allow from 172.16.0.0/12 to 172.17.0.1 port 11434 proto tcp' \
+  "$provision_log"
+assert_count 2 'systemctl daemon-reload' "$provision_log"
+assert_count 2 'systemctl enable ollama.service' "$provision_log"
+assert_count 2 'systemctl restart ollama.service' "$provision_log"
+assert_count 1 "$exact_firewall_rule" "$firewall_state"
+assert_count 1 'Environment="OLLAMA_HOST=172.30.114.1:11434"' "$unit_path"
+if grep -Fq '172.16.0.0/12' "$firewall_state"; then
+  echo "Ollama provisioning retained the predecessor broad firewall rule" >&2
+  exit 1
+fi
+if [ ! -L "$link_path" ] || [ "$(readlink "$link_path")" != "$install_root/bin/ollama" ]; then
+  echo "Ollama provisioning did not install the pinned runtime link" >&2
+  exit 1
+fi
+
+echo "Ollama host provisioning and readiness self-test: ok"
