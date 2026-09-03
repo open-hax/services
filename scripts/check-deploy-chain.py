@@ -100,8 +100,11 @@ def main() -> int:
     migration_run = migration.get("run", "")
     required_migration_gate = (
         "probe-embedding-migration.js",
+        "docker ps --all",
+        "EMBED_SOURCE_CONTRACT_PRESENT",
         "EMBED_SOURCE_WRITER_ACTIVE",
         "EMBED_TARGET_DATABASE_FINGERPRINT",
+        "docker inspect --format '{{json .Config.Env}}'",
         "timeout --kill-after=5s 90s docker run --rm",
         'label=com.docker.compose.service=knoxx-backend',
     )

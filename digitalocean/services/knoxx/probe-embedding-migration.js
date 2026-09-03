@@ -2,11 +2,11 @@
 "use strict";
 
 // This probe is intentionally read-only. It permits the 1024 -> 768 embedding
-// cutover only when the current backend already runs the reviewed target, or
-// when the relevant Mongo store is genuinely unused and no incompatible
-// backend can race the inventory. Populated-store migration belongs upstream
-// in Knoxx/OpenPlanner and must provide stronger source-to-vector coverage
-// evidence before this gate can accept it.
+// cutover only when the current project container (running or stopped) already
+// records the reviewed target, or when the relevant Mongo store is genuinely
+// unused and no prior backend contract can race the inventory. Populated-store
+// migration belongs upstream in Knoxx/OpenPlanner and must provide stronger
+// source-to-vector coverage evidence before this gate can accept it.
 
 const TARGET_MODEL = "nomic-embed-text";
 const TARGET_DIMENSIONS = "768";
@@ -28,9 +28,11 @@ function validateEnvironment(env) {
   const targetDimensions = clean(env.EMBED_PROVIDER_DIMENSIONS);
   const sourceModel = clean(env.EMBED_SOURCE_MODEL);
   const sourceDimensions = clean(env.EMBED_SOURCE_DIMENSIONS);
+  const sourceContractFlag = clean(env.EMBED_SOURCE_CONTRACT_PRESENT);
   const writerFlag = clean(env.EMBED_SOURCE_WRITER_ACTIVE);
   const sourceDatabaseFingerprint = clean(env.EMBED_SOURCE_DATABASE_FINGERPRINT);
   const targetDatabaseFingerprint = clean(env.EMBED_TARGET_DATABASE_FINGERPRINT);
+  const sourceContractPresent = sourceContractFlag === "1";
   const writerActive = writerFlag === "1";
 
   if (targetModel !== TARGET_MODEL || targetDimensions !== TARGET_DIMENSIONS) {
@@ -44,11 +46,13 @@ function validateEnvironment(env) {
   if (!clean(env.MONGODB_URI) || !clean(env.MONGODB_DB)) {
     return { ok: false, reason: "missing-mongodb-contract" };
   }
-  if (!["0", "1"].includes(writerFlag)
+  if (!["0", "1"].includes(sourceContractFlag)
+      || !["0", "1"].includes(writerFlag)
+      || (writerActive && !sourceContractPresent)
       || !/^[0-9a-f]{64}$/.test(targetDatabaseFingerprint)) {
     return { ok: false, reason: "invalid-cutover-context" };
   }
-  if (writerActive
+  if (sourceContractPresent
       && sourceModel === targetModel
       && sourceDimensions === targetDimensions
       && sourceDatabaseFingerprint === targetDatabaseFingerprint) {
@@ -57,12 +61,24 @@ function validateEnvironment(env) {
       mode: "unchanged-target",
       targetModel,
       targetDimensions,
+      writerActive,
     };
   }
   if (writerActive) {
     return {
       ok: false,
       reason: "incompatible-writer-active",
+      sourceModel,
+      sourceDimensions,
+      databaseChanged: sourceDatabaseFingerprint !== targetDatabaseFingerprint,
+      targetModel,
+      targetDimensions,
+    };
+  }
+  if (sourceContractPresent) {
+    return {
+      ok: false,
+      reason: "incompatible-stopped-contract",
       sourceModel,
       sourceDimensions,
       databaseChanged: sourceDatabaseFingerprint !== targetDatabaseFingerprint,
@@ -213,6 +229,7 @@ async function selfTest() {
   const base = {
     EMBED_PROVIDER_MODEL: TARGET_MODEL,
     EMBED_PROVIDER_DIMENSIONS: TARGET_DIMENSIONS,
+    EMBED_SOURCE_CONTRACT_PRESENT: "0",
     EMBED_SOURCE_WRITER_ACTIVE: "0",
     EMBED_TARGET_DATABASE_FINGERPRINT: "a".repeat(64),
     MONGODB_URI: "mongodb://fixture.invalid",
@@ -226,7 +243,8 @@ async function selfTest() {
   expect(result.ok && result.mode === "fresh-store", "fresh store was rejected");
 
   result = await probe(
-    { ...base, EMBED_SOURCE_WRITER_ACTIVE: "1", EMBED_SOURCE_MODEL: TARGET_MODEL,
+    { ...base, EMBED_SOURCE_CONTRACT_PRESENT: "1", EMBED_SOURCE_WRITER_ACTIVE: "1",
+      EMBED_SOURCE_MODEL: TARGET_MODEL,
       EMBED_SOURCE_DIMENSIONS: TARGET_DIMENSIONS,
       EMBED_SOURCE_DATABASE_FINGERPRINT: base.EMBED_TARGET_DATABASE_FINGERPRINT },
     () => { throw new Error("unchanged target queried Mongo"); },
@@ -234,7 +252,17 @@ async function selfTest() {
   expect(result.ok && result.mode === "unchanged-target", "unchanged target was rejected");
 
   result = await probe(
-    { ...base, EMBED_SOURCE_WRITER_ACTIVE: "1", EMBED_SOURCE_MODEL: TARGET_MODEL,
+    { ...base, EMBED_SOURCE_CONTRACT_PRESENT: "1", EMBED_SOURCE_MODEL: TARGET_MODEL,
+      EMBED_SOURCE_DIMENSIONS: TARGET_DIMENSIONS,
+      EMBED_SOURCE_DATABASE_FINGERPRINT: base.EMBED_TARGET_DATABASE_FINGERPRINT },
+    () => { throw new Error("stopped unchanged target queried Mongo"); },
+  );
+  expect(result.ok && result.mode === "unchanged-target" && !result.writerActive,
+    "stopped unchanged target was rejected");
+
+  result = await probe(
+    { ...base, EMBED_SOURCE_CONTRACT_PRESENT: "1", EMBED_SOURCE_WRITER_ACTIVE: "1",
+      EMBED_SOURCE_MODEL: TARGET_MODEL,
       EMBED_SOURCE_DIMENSIONS: TARGET_DIMENSIONS,
       EMBED_SOURCE_DATABASE_FINGERPRINT: "b".repeat(64) },
     () => fakeClient(),
@@ -243,12 +271,22 @@ async function selfTest() {
     "active writer against a different database was accepted");
 
   result = await probe(
-    { ...base, EMBED_SOURCE_WRITER_ACTIVE: "1", EMBED_SOURCE_MODEL: "gte-large-en-v1.5",
+    { ...base, EMBED_SOURCE_CONTRACT_PRESENT: "1", EMBED_SOURCE_WRITER_ACTIVE: "1",
+      EMBED_SOURCE_MODEL: "gte-large-en-v1.5",
       EMBED_SOURCE_DIMENSIONS: "1024" },
     () => fakeClient(),
   );
   expect(!result.ok && result.reason === "incompatible-writer-active",
     "incompatible active writer was accepted");
+
+  result = await probe(
+    { ...base, EMBED_SOURCE_CONTRACT_PRESENT: "1",
+      EMBED_SOURCE_MODEL: "gte-large-en-v1.5", EMBED_SOURCE_DIMENSIONS: "1024",
+      EMBED_SOURCE_DATABASE_FINGERPRINT: base.EMBED_TARGET_DATABASE_FINGERPRINT },
+    () => { throw new Error("incompatible stopped contract queried Mongo"); },
+  );
+  expect(!result.ok && result.reason === "incompatible-stopped-contract",
+    "incompatible stopped backend contract was accepted");
 
   for (const name of OWNED_COLLECTIONS) {
     result = await probe(base, () => fakeClient({ counts: { [name]: 1 } }));
@@ -269,6 +307,14 @@ async function selfTest() {
   result = await probe({ ...base, EMBED_SOURCE_WRITER_ACTIVE: "maybe" }, () => fakeClient());
   expect(!result.ok && result.reason === "invalid-cutover-context",
     "invalid writer state was accepted");
+
+  result = await probe({ ...base, EMBED_SOURCE_CONTRACT_PRESENT: "maybe" }, () => fakeClient());
+  expect(!result.ok && result.reason === "invalid-cutover-context",
+    "invalid source-contract state was accepted");
+
+  result = await probe({ ...base, EMBED_SOURCE_WRITER_ACTIVE: "1" }, () => fakeClient());
+  expect(!result.ok && result.reason === "invalid-cutover-context",
+    "active writer without a durable source contract was accepted");
 
   for (const failAt of ["connect", "collections", "event_chunks", "indexes"]) {
     const counts = failAt === "indexes" ? { [GRAPH_COLLECTION]: 0 } : { event_chunks: 0 };

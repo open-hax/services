@@ -113,10 +113,11 @@ Before the service definition or rendered environment is copied to the host,
 the deployment runs `probe-embedding-migration.js` inside the prospective Knoxx
 backend image. The gate accepts only two states:
 
-- a live Knoxx backend already uses `nomic-embed-text` with 768 dimensions
-  against the same database contract (compared only by SHA-256 fingerprint),
-  so this deployment is not changing the embedding contract; or
-- no incompatible backend writer is running, `event_chunks`,
+- the existing Knoxx project container, whether running or stopped, records
+  `nomic-embed-text` with 768 dimensions against the same database contract
+  (compared only by SHA-256 fingerprint), so recovery and ordinary redeployment
+  are not changing the embedding contract; or
+- there is no prior Knoxx backend contract, `event_chunks`,
   `compacted_vectors`, `graph_node_embeddings`, and `vector_partitions` are all
   empty, and the `graph_node_embeddings.embedding_vector` Atlas search index is
   absent.
@@ -124,8 +125,9 @@ backend image. The gate accepts only two states:
 Connection, permission, timeout, malformed-inventory, and search-index listing
 failures all block the deployment. The check is read-only and passes only the
 Mongo and embedding settings into the short-lived candidate container. A
-populated 1024-dimensional deployment remains on its current containers; the
-new environment is never synced or activated.
+stopped incompatible project container also blocks instead of being mistaken
+for a new installation. A populated 1024-dimensional deployment remains on its
+current containers; the new environment is never synced or activated.
 
 `digitalocean/services/knoxx/verify.sh` runs from inside `knoxx-backend`, after
 the backend health endpoint is green. Its Ollama probe:

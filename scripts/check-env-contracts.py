@@ -557,6 +557,22 @@ def main() -> int:
             knoxx_embedding_migration_probe,
             'reason: "incompatible-writer-active"',
         ),
+        "embedding migration stopped-backend recovery": (
+            knoxx_embedding_migration_probe,
+            'EMBED_SOURCE_CONTRACT_PRESENT',
+        ),
+        "embedding migration incompatible-stopped refusal": (
+            knoxx_embedding_migration_probe,
+            'reason: "incompatible-stopped-contract"',
+        ),
+        "embedding migration inventories stopped project containers": (
+            deploy_text,
+            "docker ps --all",
+        ),
+        "embedding migration reads durable container contract": (
+            deploy_text,
+            "docker inspect --format '{{json .Config.Env}}'",
+        ),
         "bounded pre-cutover migration probe": (
             deploy_text,
             "timeout --kill-after=5s 90s docker run --rm",

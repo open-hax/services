@@ -336,17 +336,22 @@ jobs:
           chmod 600 "$probe_dir/rendered.env"
           set -a; . "$probe_dir/rendered.env"; set +a
 
-          mapfile -t current_writers < <(
-            docker ps \
+          current_backends_output=$(
+            docker ps --all \
               --filter "label=com.docker.compose.project=${service}" \
               --filter 'label=com.docker.compose.service=knoxx-backend' \
               --format '{{.ID}}'
           )
-          if [ "${#current_writers[@]}" -gt 1 ]; then
-            echo "embedding migration gate found multiple live Knoxx backend writers" >&2
+          current_backends=()
+          if [ -n "$current_backends_output" ]; then
+            mapfile -t current_backends <<<"$current_backends_output"
+          fi
+          if [ "${#current_backends[@]}" -gt 1 ]; then
+            echo "embedding migration gate found multiple Knoxx backend contracts" >&2
             exit 1
           fi
 
+          export EMBED_SOURCE_CONTRACT_PRESENT=0
           export EMBED_SOURCE_WRITER_ACTIVE=0
           export EMBED_SOURCE_MODEL=
           export EMBED_SOURCE_DIMENSIONS=
@@ -355,16 +360,35 @@ jobs:
             printf '%s\0%s' "$MONGODB_URI" "$MONGODB_DB" | sha256sum | awk '{print $1}'
           )
           export EMBED_TARGET_DATABASE_FINGERPRINT
-          if [ "${#current_writers[@]}" -eq 1 ]; then
-            export EMBED_SOURCE_WRITER_ACTIVE=1
-            current_contract=$(
-              docker exec "${current_writers[0]}" node -e \
-                'const crypto = require("node:crypto"); const database = `${process.env.MONGODB_URI || ""}\0${process.env.MONGODB_DB || ""}`; process.stdout.write(JSON.stringify({model: process.env.EMBED_PROVIDER_MODEL || "", dimensions: process.env.EMBED_PROVIDER_DIMENSIONS || "", databaseFingerprint: crypto.createHash("sha256").update(database).digest("hex")}))' \
-                2>/dev/null || true
+          if [ "${#current_backends[@]}" -eq 1 ]; then
+            backend_id=${current_backends[0]}
+            backend_running=$(docker inspect --format '{{.State.Running}}' "$backend_id")
+            case "$backend_running" in
+              true) export EMBED_SOURCE_WRITER_ACTIVE=1 ;;
+              false) ;;
+              *) echo "embedding migration gate found invalid backend state" >&2; exit 1 ;;
+            esac
+            current_environment=$(
+              docker inspect --format '{{json .Config.Env}}' "$backend_id"
             )
-            EMBED_SOURCE_MODEL=$(jq -r '.model // ""' <<<"$current_contract" 2>/dev/null || true)
-            EMBED_SOURCE_DIMENSIONS=$(jq -r '.dimensions // ""' <<<"$current_contract" 2>/dev/null || true)
-            EMBED_SOURCE_DATABASE_FINGERPRINT=$(jq -r '.databaseFingerprint // ""' <<<"$current_contract" 2>/dev/null || true)
+            jq -e 'type == "array" and all(.[]; type == "string")' \
+              <<<"$current_environment" >/dev/null
+            container_env_value() {
+              local key=$1
+              jq -r --arg prefix "${key}=" \
+                '[.[] | select(startswith($prefix)) | ltrimstr($prefix)] | last // ""' \
+                <<<"$current_environment"
+            }
+            EMBED_SOURCE_MODEL=$(container_env_value EMBED_PROVIDER_MODEL)
+            EMBED_SOURCE_DIMENSIONS=$(container_env_value EMBED_PROVIDER_DIMENSIONS)
+            source_mongodb_uri=$(container_env_value MONGODB_URI)
+            source_mongodb_db=$(container_env_value MONGODB_DB)
+            EMBED_SOURCE_DATABASE_FINGERPRINT=$(
+              printf '%s\0%s' "$source_mongodb_uri" "$source_mongodb_db" \
+                | sha256sum | awk '{print $1}'
+            )
+            unset current_environment source_mongodb_uri source_mongodb_db
+            export EMBED_SOURCE_CONTRACT_PRESENT=1
             export EMBED_SOURCE_MODEL EMBED_SOURCE_DIMENSIONS EMBED_SOURCE_DATABASE_FINGERPRINT
           fi
 
@@ -377,6 +401,7 @@ jobs:
             --env MONGODB_DB \
             --env EMBED_PROVIDER_MODEL \
             --env EMBED_PROVIDER_DIMENSIONS \
+            --env EMBED_SOURCE_CONTRACT_PRESENT \
             --env EMBED_SOURCE_WRITER_ACTIVE \
             --env EMBED_SOURCE_MODEL \
             --env EMBED_SOURCE_DIMENSIONS \
