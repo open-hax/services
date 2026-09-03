@@ -1,0 +1,32 @@
+{:contract/kind :actor
+ :actor/id "deploy_verifier"
+ :actor/kind :agent
+ ;; The verifier's own identity, deliberately not the bootstrap system
+ ;; admin's. The :trusted-loopback grant in
+ ;; contracts/knoxx/authentication/mcp_http.edn resolves its context by
+ ;; :grant/user-email and law/token-actor-honourable? then requires that
+ ;; membership's stored actor binding to be deploy_verifier — this email is
+ ;; what makes the two the same membership. It is a dedicated one because the
+ ;; role projection and the authentication grant independently clamp what the
+ ;; long-lived loopback bearer can do; a small read-only surface is the point.
+ :actor/email "deploy-verifier@open-hax.local"
+ :actor/username "deploy-verifier@open-hax.local"
+ :actor/org "open-hax"
+ :actor/label "Deploy Verifier"
+ ;; Exactly the probe role, and nothing else. Role projection replaces this
+ ;; membership's roles with this list (:replace true in
+ ;; project-actor-role-slugs!), which here touches only the verifier's own
+ ;; membership — the reason the identity had to be dedicated rather than the
+ ;; admin's.
+ :actor/roles [:role/deploy-verifier]
+ :actor/policy
+ {:principal :actor
+  :source-of-truth :contract
+  :notes
+  "The identity the post-deploy MCP gate runs as: two read-only tools via
+   :role/deploy-verifier -> :cap/deploy-verify, and no more. The loopback
+   token that reaches it is loopback-only and inert without the provisioned
+   secret, and even presented correctly it cannot write, dispatch, spawn, or
+   administer. Neither probe depends on an unrelated actor-owned external
+   credential; that keeps MCP deployment health separate from Discord account
+   provisioning."}}

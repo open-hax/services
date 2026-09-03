@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/knoxx-de
+ :publication/document :open-hax.documents/knoxx
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :de
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/de/garden/knoxx/"
+ :translation/review :required}

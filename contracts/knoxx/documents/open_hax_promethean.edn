@@ -1,0 +1,25 @@
+;; Source paths are RELATIVE, and deliberately so.
+;;
+;; `infra.publication-source-revision/document-path` resolves a relative path
+;; against the parent of the contract root the resource was loaded from, and
+;; `resource-source-root` derives that from the resource file's own provenance.
+;; In the container CONTRACTS_DIR is `/app/contracts`, so the parent is `/app`
+;; and these resolve to `/app/publication-source/...` — exactly where
+;; compose.yaml mounts `./publication-source`.
+;;
+;; The absolute `/app/...` spellings these replace resolved to the same file in
+;; the container and to nothing anywhere else, so a local instance could not read
+;; its own document source and every revision came back nil — which the gate
+;; reads as "no source", deriving no translation work at all and silently.
+;; Relative is the same path in the container and a working one outside it.
+{:document/id :open-hax.documents/promethean
+ :document/title "Open Hax Promethean Garden"
+ :document/source-locale :en
+ :document/anchor? true
+ :document/visibility :public
+ :document/source {:path "publication-source/open-hax-promethean.md"}
+ :document/translations
+ {:es {:path "publication-source/open-hax-promethean.es.md"}
+  :fr {:path "publication-source/open-hax-promethean.fr.md"}
+  :de {:path "publication-source/open-hax-promethean.de.md"}
+  :ja {:path "publication-source/open-hax-promethean.ja.md"}}}

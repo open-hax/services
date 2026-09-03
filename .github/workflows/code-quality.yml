@@ -13,7 +13,11 @@ jobs:
     name: Validate service definitions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Setup Clojure CLI
+        uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # v13.6.1
+        with:
+          cli: 1.12.5.1664
       - name: Validate YAML and scripts
         run: |
           python - <<'PY'
@@ -25,9 +29,60 @@ jobs:
               yaml.safe_load(p.read_text())
               print('yaml ok', p)
           PY
-          bash -n promethean/scripts/*.sh
           bash -n digitalocean/lib/*.sh digitalocean/scripts/*.sh
-          bash -n digitalocean/services/*/verify.sh
+          bash -n digitalocean/services/*/*.sh
+
+      - name: Parse Knoxx EDN contracts
+        run: |
+          clojure -M scripts/check-edn-contracts.clj
+          KNOXX_DOCUMENTS_DIR=contracts/knoxx/documents \
+            clojure -M digitalocean/services/knoxx/document-anchor-inventory.cljc
+
+      - name: Enforce the DigitalOcean-only deployment boundary
+        run: |
+          python scripts/check-deployment-boundary.py --self-test
+          python scripts/check-deployment-boundary.py
+
+      - name: Enforce singular immutable deploy source pins
+        run: python scripts/check-deploy-source-pins.py
+
+      - name: Enforce deploy-chain failure propagation
+        run: python scripts/check-deploy-chain.py
+
+      - name: Enforce service environment contracts
+        run: python scripts/check-env-contracts.py
+
+      - name: Enforce disabled Compose profile retirements
+        run: |
+          python scripts/check-disabled-profile-services.py --self-test
+          python scripts/check-disabled-profile-services.py
+
+      - name: Self-test the Caddy dev-auth fail-closed fallback
+        run: digitalocean/scripts/test-caddy-dev-auth-fallback.sh
+
+      - name: Self-test the dev-ingress firewall verifier
+        run: digitalocean/scripts/test-verify-dev-ingress-firewall.sh
+
+      - name: Self-test the Docker readiness guard
+        run: digitalocean/scripts/test-bootstrap-docker-readiness.sh
+
+      - name: Self-test the Knoxx MCP fail-closed policy
+        run: digitalocean/services/knoxx/test-mcp-verification-policy.sh
+
+      - name: Self-test the Knoxx content admission hook
+        run: digitalocean/services/knoxx/test-post-deploy.sh
+
+      - name: Self-test the Knoxx embedding contract receipt
+        run: digitalocean/services/knoxx/test-embedding-contract-receipt.sh
+
+      - name: Self-test the Knoxx event-agent limits
+        run: bash digitalocean/services/knoxx/test-event-agent-limits.sh
+
+      - name: Self-test the Mongo database identity contract
+        run: bash digitalocean/services/knoxx/test-mongodb-database-identity.sh
+
+      - name: Self-test the Knoxx Git event dispatcher boundary
+        run: scripts/test-dispatch-knoxx-git-event.sh
 
       # Helper scripts a verify.sh evaluates inside a container. They only ever
       # run on the production host, so a syntax error in one would surface as a
@@ -41,15 +96,25 @@ jobs:
             echo "node --check ok $js"
           done
 
-      # The Knoxx gate has to tell an OpenPlanner that was never deployed from
-      # one that is deployed and broken, and it gets that wrong in a way nothing
-      # else catches: too strict and every deploy fails (run 30758885732), too
-      # loose and a crashed upstream ships green. The probe carries its own
-      # classifier matrix; run it against the same file the gate executes.
-      - name: Self-test the OpenPlanner reachability classifier
+      # The MCP gate decodes a transport that answers text/event-stream by
+      # default and classifies a tool's own failure, which MCP reports as a
+      # *successful* JSON-RPC result carrying isError. Both are easy to get
+      # wrong in the direction that ships green: a JSON-only reader sees an
+      # empty body and a 200-means-pass reader marks every broken tool healthy.
+      - name: Self-test the MCP surface decoder and classifier
         env:
           PROBE_SELFTEST: "1"
-        run: node digitalocean/services/knoxx/probe-openplanner.js
+        run: node digitalocean/services/knoxx/probe-mcp.js
+
+      - name: Self-test the Knoxx host-Ollama deployment probe
+        env:
+          PROBE_SELFTEST: "1"
+        run: node digitalocean/services/knoxx/probe-ollama.js
+
+      - name: Self-test the Knoxx embedding migration gate
+        env:
+          PROBE_SELFTEST: "1"
+        run: node digitalocean/services/knoxx/probe-embedding-migration.js
 
       # A remote script piped to `bash -s` over ssh is parsed lazily from the
       # same stdin the script's own commands inherit. One `docker compose exec

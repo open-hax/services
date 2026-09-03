@@ -1,0 +1,17 @@
+;; English source only, deliberately.
+;;
+;; No `:document/translations` key: an authored locale file synthesises a
+;; `:translation/completed` receipt (`infra.publication-contract-content`),
+;; which satisfies the gate's `:translation-missing` blocker and therefore
+;; derives no work. The four target locales are meant to be produced by the
+;; translation agent and approved by a person, so the fallback is omitted.
+;;
+;; The source path is RELATIVE, resolved against the parent of the contract
+;; root — `/app/contracts` in the container, so this reads
+;; `/app/publication-source/how-this-page-got-here.md`.
+{:document/id :open-hax.documents/how-this-page-got-here
+ :document/title "How This Page Got Here"
+ :document/source-locale :en
+ :document/anchor? true
+ :document/visibility :public
+ :document/source {:path "publication-source/how-this-page-got-here.md"}}

@@ -1,6 +1,9 @@
 name: Deploy to DigitalOcean
 
-# Deploys one service to the DigitalOcean production host.
+# Reusable implementation that deploys one service to the DigitalOcean
+# production host. It has no direct mutation entrypoint: Deploy Stack holds the
+# single production-host lock and its workflow_call-only chain attests that lock
+# on every invocation.
 #
 # The host address, SSH user, and runtime/state roots come from
 # digitalocean/hosts/<environment>.yaml via digitalocean/lib/host-contract.sh.
@@ -42,6 +45,10 @@ on:
         required: false
         default: "{}"
         type: string
+      caller_holds_production_host_lock:
+        description: Caller owns the production-host lock for this deployment
+        required: true
+        type: boolean
     secrets:
       DIGITALOCEAN_SSH_PRIVATE_KEY: { required: true }
       MONGODB_URI: { required: false }
@@ -51,41 +58,16 @@ on:
       PROXY_TOKEN_PEPPER: { required: false }
       PROXX_SESSION_SECRET: { required: false }
       PROXX_POSTGRES_PASSWORD: { required: false }
-      OPENPLANNER_API_KEY: { required: false }
       KNOXX_API_KEY: { required: false }
       KNOXX_SESSION_SECRET: { required: false }
+      KNOXX_MCP_LOOPBACK_TOKEN: { required: false }
       KNOXX_GITHUB_OAUTH_CLIENT_ID: { required: false }
       KNOXX_GITHUB_OAUTH_CLIENT_SECRET: { required: false }
       CADDY_ACME_EMAIL: { required: false }
-  workflow_dispatch:
-    inputs:
-      service:
-        description: Service to deploy
-        required: true
-        type: choice
-        options: [smoke, proxx, openplanner, knoxx, caddy]
-      environment:
-        description: Target environment
-        required: false
-        default: production
-        type: string
-      image:
-        description: Fully qualified image reference to deploy
-        required: false
-        default: ""
-        type: string
-      extra_env:
-        description: Additional non-secret NAME=value pairs as a JSON object
-        required: false
-        default: "{}"
-        type: string
-
+      DEV_BASIC_AUTH_USER: { required: false }
+      DEV_BASIC_AUTH_HASH: { required: false }
 permissions:
   contents: read
-
-concurrency:
-  group: digitalocean-${{ inputs.environment }}-${{ inputs.service }}
-  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -106,8 +88,13 @@ jobs:
         env:
           DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
           SERVICE: ${{ inputs.service }}
+          CALLER_HOLDS_PRODUCTION_HOST_LOCK: ${{ inputs.caller_holds_production_host_lock }}
         run: |
           set -euo pipefail
+          if [ "$CALLER_HOLDS_PRODUCTION_HOST_LOCK" != true ]; then
+            echo "service deployment requires the Deploy Stack production lock" >&2
+            exit 2
+          fi
           . digitalocean/lib/host-contract.sh
           load_host_contract "$DEPLOY_ENVIRONMENT"
           assert_pinned_host_key
@@ -119,6 +106,18 @@ jobs:
               exit 2
             }
           done
+          if [ "$SERVICE" = knoxx ]; then
+            test -f "${dir}/post-deploy.sh" || {
+              echo "service knoxx is missing ${dir}/post-deploy.sh" >&2
+              exit 2
+            }
+            for helper in document-anchor-inventory.cljc embedding-contract-receipt.sh event-agent-limits.sh mongodb-database-identity.sh probe-embedding-migration.js probe-mcp.js probe-ollama.js; do
+              test -f "${dir}/${helper}" || {
+                echo "service knoxx is missing ${dir}/${helper}" >&2
+                exit 2
+              }
+            done
+          fi
 
           {
             echo "host=${OPEN_HAX_HOST}"
@@ -126,6 +125,7 @@ jobs:
             echo "service_dir=${dir}"
             echo "runtime_path=$(service_runtime_path "$SERVICE")"
             echo "state_path=$(service_state_path "$SERVICE")"
+            echo "state_root=${OPEN_HAX_STATE_ROOT}"
             echo "reports_root=${OPEN_HAX_REPORTS_ROOT}"
           } >> "$GITHUB_OUTPUT"
 
@@ -155,13 +155,31 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
 
+      - name: Verify Caddy dev-ingress firewall boundary
+        if: inputs.service == 'caddy'
+        run: |
+          set -euo pipefail
+          ssh open-hax-target \
+            'sudo -n /usr/local/sbin/open-hax-verify-dev-ingress-firewall'
+
       - name: Render runtime environment
         env:
+          # The auth resolver branches by service before rendering. Keep the
+          # stable workflow input explicit instead of relying on ambient shell
+          # state; reusable-workflow jobs do not inherit caller variables.
+          SERVICE: ${{ inputs.service }}
           SERVICE_DIR: ${{ steps.contract.outputs.service_dir }}
           # Non-secret runtime facts.
           OPEN_HAX_SERVICE_IMAGE: ${{ inputs.image }}
           OPEN_HAX_SOURCE_SHA: ${{ inputs.source_sha }}
           OPEN_HAX_STATE_PATH: ${{ steps.contract.outputs.state_path }}
+          # stateRoot itself, for the one kind of path a per-service state path
+          # cannot express: a directory SHARED between two services, where one
+          # writes and the other reads. The published content root is
+          # <stateRoot>/website-content, a peer of state/knoxx and
+          # state/website rather than a child of either, so both services must
+          # be able to name it identically. See docs/published-content-root.md.
+          OPEN_HAX_STATE_ROOT: ${{ steps.contract.outputs.state_root }}
           OPEN_HAX_HOST_ADDRESS: ${{ steps.contract.outputs.host }}
           KNOXX_API_KEY_USER_EMAIL: ${{ vars.KNOXX_API_KEY_USER_EMAIL }}
           # Secrets. Absent ones stay empty and are caught by the placeholder
@@ -173,9 +191,11 @@ jobs:
           PROXY_TOKEN_PEPPER: ${{ secrets.PROXY_TOKEN_PEPPER }}
           PROXX_SESSION_SECRET: ${{ secrets.PROXX_SESSION_SECRET }}
           PROXX_POSTGRES_PASSWORD: ${{ secrets.PROXX_POSTGRES_PASSWORD }}
-          OPENPLANNER_API_KEY: ${{ secrets.OPENPLANNER_API_KEY }}
           KNOXX_API_KEY: ${{ secrets.KNOXX_API_KEY }}
           KNOXX_SESSION_SECRET: ${{ secrets.KNOXX_SESSION_SECRET }}
+          # Mandatory for Knoxx. The render step applies the same minimum
+          # length policy as the host-side post-deploy verifier.
+          KNOXX_MCP_LOOPBACK_TOKEN: ${{ secrets.KNOXX_MCP_LOOPBACK_TOKEN }}
           KNOXX_GITHUB_OAUTH_CLIENT_ID: ${{ secrets.KNOXX_GITHUB_OAUTH_CLIENT_ID }}
           KNOXX_GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.KNOXX_GITHUB_OAUTH_CLIENT_SECRET }}
           # Let's Encrypt expiry contact. No longer borrowed from
@@ -183,13 +203,46 @@ jobs:
           # reads mail for. A secret rather than a variable because this repo is
           # public and Actions prints non-secret vars verbatim into run logs.
           CADDY_ACME_EMAIL: ${{ secrets.CADDY_ACME_EMAIL }}
+          # All dev ingress is one host-level trust boundary. A provisioned pair
+          # is preserved; an absent pair is replaced below with a one-deploy,
+          # unknowable credential so the routes remain closed by default.
+          DEV_BASIC_AUTH_USER: ${{ secrets.DEV_BASIC_AUTH_USER }}
+          DEV_BASIC_AUTH_HASH: ${{ secrets.DEV_BASIC_AUTH_HASH }}
           EXTRA_ENV: ${{ inputs.extra_env }}
         run: |
           set -euo pipefail
+          # Caddy's dev vhosts must never become public merely because a
+          # fresh environment has not provisioned operator credentials yet.
+          # Preserve a complete configured pair; reject a partial pair; and
+          # otherwise generate a valid bcrypt hash for a random password that
+          # is immediately discarded. The resulting auth wall is intentionally
+          # unusable until the environment supplies real credentials.
+          . digitalocean/lib/caddy-dev-auth.sh
+          resolve_caddy_dev_auth "$SERVICE" "$SERVICE_DIR"
+          if [ "$SERVICE" = caddy ]; then
+            echo "::add-mask::${DEV_BASIC_AUTH_HASH}"
+          fi
+
+          # Knoxx deploys always verify their MCP server. A missing/short
+          # credential stops rendering before anything is copied to the host.
+          # Other service templates do not declare this variable.
+          if [ "$SERVICE" = knoxx ]; then
+            . "${SERVICE_DIR}/mcp-verification-policy.sh"
+            require_knoxx_mcp_verification_token
+          fi
           # Process substitution keeps the loop in this shell so the exports
-          # survive into envsubst.
+          # survive into envsubst. The MCP token is refused rather than
+          # exported: it comes only from the protected environment secret, and
+          # allowing a caller to shadow it would weaken the mandatory gate.
           while IFS='=' read -r key value; do
-            [ -n "$key" ] && export "$key=$value"
+            [ -n "$key" ] || continue
+            case "$key" in
+              KNOXX_MCP_LOOPBACK_TOKEN)
+                echo "::error::extra_env may not set ${key}; it is supplied only by the protected environment secret" >&2
+                exit 2
+                ;;
+            esac
+            export "$key=$value"
           done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"${EXTRA_ENV:-\{\}}")
 
           # Substitute only the names the template declares, so nginx/caddy
@@ -216,6 +269,177 @@ jobs:
 
           chmod 600 rendered.env
           echo "rendered $(grep -cE '^[A-Z0-9_]+=' rendered.env) variables"
+
+      - name: Authenticate the host to GHCR
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          # Short-lived, job-scoped: the images are private to the org and the
+          # Droplet holds no standing registry credential.
+          printf '%s' "$REGISTRY_TOKEN" \
+            | ssh open-hax-target "docker login ghcr.io -u '$REGISTRY_USER' --password-stdin" >/dev/null
+
+      - name: Verify Knoxx embedding cutover
+        id: embedding_migration
+        if: inputs.service == 'knoxx'
+        env:
+          SERVICE: ${{ inputs.service }}
+          SERVICE_DIR: ${{ steps.contract.outputs.service_dir }}
+          STATE_PATH: ${{ steps.contract.outputs.state_path }}
+        run: |
+          set -euo pipefail
+          probe_dir=$(ssh open-hax-target 'mktemp -d /tmp/open-hax-knoxx-migration.XXXXXX')
+          case "$probe_dir" in
+            /tmp/open-hax-knoxx-migration.*) ;;
+            *) echo "unexpected remote probe path: $probe_dir" >&2; exit 2 ;;
+          esac
+          cleanup_probe() {
+            ssh open-hax-target "rm -rf '$probe_dir'" >/dev/null 2>&1 || true
+          }
+          trap cleanup_probe EXIT
+          scp rendered.env "${SERVICE_DIR}/probe-embedding-migration.js" \
+            "${SERVICE_DIR}/embedding-contract-receipt.sh" \
+            "${SERVICE_DIR}/mongodb-database-identity.sh" \
+            "open-hax-target:${probe_dir}/"
+
+          # Inventory runs in the prospective backend image before the new
+          # environment or service definition replaces the live deployment.
+          # An unchanged target can redeploy normally. A genuine 1024 -> 768
+          # cutover is permitted only when there is no prior backend contract
+          # and the store is fresh; populated state awaits an authoritative
+          # Knoxx/OpenPlanner migration verifier.
+          ssh open-hax-target \
+            "bash -euo pipefail -s -- '$probe_dir' '$SERVICE' '$STATE_PATH'" <<'REMOTE'
+          {
+          probe_dir=$1
+          service=$2
+          state_path=$3
+          probe_container="open-hax-${service}-embedding-migration"
+          receipt_path="${state_path}/embedding-contract.json"
+          cleanup_remote_probe() {
+            docker rm -f "$probe_container" >/dev/null 2>&1 || true
+            rm -rf "$probe_dir"
+          }
+          trap cleanup_remote_probe EXIT
+          chmod 600 "$probe_dir/rendered.env" \
+            "$probe_dir/embedding-contract-receipt.sh" \
+            "$probe_dir/mongodb-database-identity.sh"
+          set -a; . "$probe_dir/rendered.env"; set +a
+          # shellcheck source=/dev/null
+          . "$probe_dir/embedding-contract-receipt.sh"
+          # shellcheck source=/dev/null
+          . "$probe_dir/mongodb-database-identity.sh"
+
+          current_backends_output=$(
+            docker ps --all \
+              --filter "label=com.docker.compose.project=${service}" \
+              --filter 'label=com.docker.compose.service=knoxx-backend' \
+              --format '{{.ID}}'
+          )
+          current_backends=()
+          if [ -n "$current_backends_output" ]; then
+            mapfile -t current_backends <<<"$current_backends_output"
+          fi
+          if [ "${#current_backends[@]}" -gt 1 ]; then
+            echo "embedding migration gate found multiple Knoxx backend contracts" >&2
+            exit 1
+          fi
+
+          export EMBED_SOURCE_CONTRACT_PRESENT=0
+          export EMBED_SOURCE_WRITER_ACTIVE=0
+          export EMBED_SOURCE_MODEL=
+          export EMBED_SOURCE_DIMENSIONS=
+          export EMBED_SOURCE_DATABASE_FINGERPRINT=
+          if ! EMBED_TARGET_DATABASE_FINGERPRINT=$(
+              mongodb_database_fingerprint "$MONGODB_URI" "$MONGODB_DB"
+            ); then
+            echo "embedding migration gate rejected target Mongo database identity" >&2
+            exit 1
+          fi
+          export EMBED_TARGET_DATABASE_FINGERPRINT
+          if [ "${#current_backends[@]}" -eq 1 ]; then
+            backend_id=${current_backends[0]}
+            backend_running=$(docker inspect --format '{{.State.Running}}' "$backend_id")
+            case "$backend_running" in
+              true) export EMBED_SOURCE_WRITER_ACTIVE=1 ;;
+              false) ;;
+              *) echo "embedding migration gate found invalid backend state" >&2; exit 1 ;;
+            esac
+            current_environment=$(
+              docker inspect --format '{{json .Config.Env}}' "$backend_id"
+            )
+            jq -e 'type == "array" and all(.[]; type == "string")' \
+              <<<"$current_environment" >/dev/null
+            container_env_value() {
+              local key=$1
+              jq -r --arg prefix "${key}=" \
+                '[.[] | select(startswith($prefix)) | ltrimstr($prefix)] | last // ""' \
+                <<<"$current_environment"
+            }
+            EMBED_SOURCE_MODEL=$(container_env_value EMBED_PROVIDER_MODEL)
+            EMBED_SOURCE_DIMENSIONS=$(container_env_value EMBED_PROVIDER_DIMENSIONS)
+            source_mongodb_uri=$(container_env_value MONGODB_URI)
+            source_mongodb_db=$(container_env_value MONGODB_DB)
+            if ! EMBED_SOURCE_DATABASE_FINGERPRINT=$(
+                mongodb_database_fingerprint "$source_mongodb_uri" "$source_mongodb_db"
+              ); then
+              unset current_environment source_mongodb_uri source_mongodb_db
+              echo "embedding migration gate rejected existing backend Mongo database identity" >&2
+              exit 1
+            fi
+            unset current_environment source_mongodb_uri source_mongodb_db
+            export EMBED_SOURCE_CONTRACT_PRESENT=1
+            export EMBED_SOURCE_MODEL EMBED_SOURCE_DIMENSIONS EMBED_SOURCE_DATABASE_FINGERPRINT
+          else
+            # A removed container is not proof that the embedding contract
+            # vanished: Mongo and the service state survive container removal.
+            # A strict credential-free receipt retains that contract. Missing
+            # evidence still takes the fresh-store inventory path; malformed
+            # or stale evidence blocks below.
+            read_embedding_contract_receipt "$receipt_path"
+            if [ "$EMBED_RECEIPT_PRESENT" = 1 ]; then
+              export EMBED_SOURCE_CONTRACT_PRESENT=1
+              EMBED_SOURCE_MODEL=$EMBED_RECEIPT_MODEL
+              EMBED_SOURCE_DIMENSIONS=$EMBED_RECEIPT_DIMENSIONS
+              EMBED_SOURCE_DATABASE_FINGERPRINT=$EMBED_RECEIPT_DATABASE_FINGERPRINT
+              export EMBED_SOURCE_MODEL EMBED_SOURCE_DIMENSIONS EMBED_SOURCE_DATABASE_FINGERPRINT
+            fi
+          fi
+
+          docker pull "$KNOXX_BACKEND_IMAGE"
+          probe_code=$(cat "$probe_dir/probe-embedding-migration.js")
+          docker rm -f "$probe_container" >/dev/null 2>&1 || true
+          timeout --kill-after=5s 90s docker run --rm \
+            --name "$probe_container" \
+            --env MONGODB_URI \
+            --env MONGODB_DB \
+            --env EMBED_PROVIDER_MODEL \
+            --env EMBED_PROVIDER_DIMENSIONS \
+            --env EMBED_SOURCE_CONTRACT_PRESENT \
+            --env EMBED_SOURCE_WRITER_ACTIVE \
+            --env EMBED_SOURCE_MODEL \
+            --env EMBED_SOURCE_DIMENSIONS \
+            --env EMBED_SOURCE_DATABASE_FINGERPRINT \
+            --env EMBED_TARGET_DATABASE_FINGERPRINT \
+            --workdir /app \
+            --entrypoint node \
+            "$KNOXX_BACKEND_IMAGE" \
+            --input-type=commonjs -e "$probe_code"
+
+          # Persist the approved target before a new writer can start. The
+          # helper writes a 0600 same-directory temporary file and atomically
+          # renames it, so cancellation cannot publish partial JSON. A later
+          # target with a different model, dimension, or database fingerprint
+          # is rejected as an incompatible stopped contract.
+          write_embedding_contract_receipt \
+            "$receipt_path" \
+            "$EMBED_PROVIDER_MODEL" \
+            "$EMBED_PROVIDER_DIMENSIONS" \
+            "$EMBED_TARGET_DATABASE_FINGERPRINT"
+          } </dev/null
+          REMOTE
 
       - name: Sync service definition
         id: sync
@@ -281,19 +505,11 @@ jobs:
           # never travels through the repo.
           scp rendered.env "open-hax-target:${RUNTIME_PATH}/.env"
           ssh open-hax-target "chmod 600 '${RUNTIME_PATH}/.env' && chmod +x '${RUNTIME_PATH}/verify.sh'"
+          if [ "$SERVICE" = knoxx ]; then
+            ssh open-hax-target "chmod +x '${RUNTIME_PATH}/post-deploy.sh'"
+          fi
 
           echo "definition_changed=${definition_changed}" >> "$GITHUB_OUTPUT"
-
-      - name: Authenticate the host to GHCR
-        env:
-          REGISTRY_TOKEN: ${{ github.token }}
-          REGISTRY_USER: ${{ github.actor }}
-        run: |
-          set -euo pipefail
-          # Short-lived, job-scoped: the images are private to the org and the
-          # Droplet holds no standing registry credential.
-          printf '%s' "$REGISTRY_TOKEN" \
-            | ssh open-hax-target "docker login ghcr.io -u '$REGISTRY_USER' --password-stdin" >/dev/null
 
       - name: Deploy
         env:
@@ -303,7 +519,7 @@ jobs:
         run: |
           set -euo pipefail
           # Quoted heredoc: the script is opaque to the runner's shell and the
-          # three values arrive as positional arguments on the host.
+          # four values arrive as positional arguments on the host.
           #
           # The body is wrapped in `{ ... } </dev/null` because it reaches the
           # remote bash on stdin, and `bash -s` parses that stream lazily. Any
@@ -315,11 +531,13 @@ jobs:
           # an empty stdin, so neither half of that can happen. See the health
           # gate below, where this produced a green deploy over 30 failed
           # probes (run 30679331293, 2026-08-01).
-          ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$SERVICE' '$DEFINITION_CHANGED'" <<'REMOTE'
+          ollama_provisioner_sha=$(sha256sum digitalocean/scripts/provision-ollama.sh | awk '{print $1}')
+          ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$SERVICE' '$DEFINITION_CHANGED' '$ollama_provisioner_sha'" <<'REMOTE'
           {
           runtime_path=$1
           service=$2
           definition_changed=$3
+          ollama_provisioner_sha=$4
           cd "$runtime_path"
 
           # docker compose resolves ${VAR} from the shell environment BEFORE
@@ -355,6 +573,21 @@ jobs:
           # Every service shares one user-defined network so Knoxx can reach
           # Proxx by name across compose projects. Creation is idempotent.
           docker network inspect open-hax >/dev/null 2>&1 || docker network create open-hax
+          # The host bootstrap owns Knoxx's dedicated Ollama bridge and exact
+          # UFW source/interface rule. Never let Compose fall back to creating
+          # an unparameterized network or deploy across host-boundary drift.
+          if [ "$service" = knoxx ]; then
+            installed_provisioner=/usr/local/sbin/open-hax-provision-ollama
+            if ! installed_sha=$(sha256sum "$installed_provisioner" | awk '{print $1}'); then
+              echo "cannot hash the installed Knoxx host Ollama provisioner" >&2
+              exit 1
+            fi
+            if [ "$installed_sha" != "$ollama_provisioner_sha" ]; then
+              echo "Knoxx host Ollama provisioner is absent or stale; run Bootstrap DigitalOcean Host" >&2
+              exit 1
+            fi
+            sudo -n /usr/local/sbin/open-hax-provision-ollama --readiness
+          fi
           docker compose --project-name "$service" --env-file .env pull
 
           # compose decides whether to recreate a container from the image and
@@ -372,6 +605,30 @@ jobs:
             echo "definition changed; recreating containers"
           fi
           docker compose --project-name "$service" --env-file .env up -d --remove-orphans $recreate
+
+          # A service moved behind a disabled Compose profile is still part of
+          # the configuration model, so --remove-orphans deliberately leaves an
+          # older container running. Service definitions may declare those
+          # migrations in disabled-profile-services. Validate that each entry
+          # really is profiled, then stop and remove only that project service;
+          # named volumes and durable bind-mounted state are preserved.
+          if [ -f disabled-profile-services ]; then
+            while IFS= read -r profile_service; do
+              [ -n "$profile_service" ] || continue
+              profile_count=$(docker compose --project-name "$service" --env-file .env \
+                --profile '*' config --format json \
+                | jq -r --arg service "$profile_service" \
+                    '.services[$service].profiles // [] | length')
+              if [ "$profile_count" -lt 1 ]; then
+                echo "disabled profile service '$profile_service' is missing or has no profile" >&2
+                exit 2
+              fi
+              echo "retiring disabled profile service $profile_service"
+              docker compose --project-name "$service" --env-file .env \
+                --profile '*' rm -sf "$profile_service"
+            done < <(sed -E 's/[[:space:]]*#.*$//; /^[[:space:]]*$/d; s/^[[:space:]]+//; s/[[:space:]]+$//' \
+                       disabled-profile-services)
+          fi
           } </dev/null
           REMOTE
 
@@ -395,14 +652,72 @@ jobs:
           # verify.sh reads the service's own credentials to make an
           # authenticated probe; nothing is echoed.
           set -a; . ./.env; set +a
-          for _ in $(seq 1 30); do
-            if ./verify.sh; then exit 0; fi
-            sleep 6
+          attempts=30
+          health_budget_seconds=0
+          kill_grace_seconds=5
+          # Knoxx's verifier has many sequential bounded requests before its
+          # two 90-second Gemma canaries. Cap the complete retry loop, including
+          # those requests and retry sleeps, at 15 minutes. This leaves half of
+          # the 30-minute job for deployment, diagnostics, reporting, and
+          # credential cleanup even when one verifier consumes most of a retry.
+          if [ "$service" = knoxx ]; then
+            attempts=5
+            health_budget_seconds=900
+          fi
+          health_deadline=0
+          if [ "$health_budget_seconds" -gt 0 ]; then
+            health_deadline=$((SECONDS + health_budget_seconds))
+          fi
+          for _ in $(seq 1 "$attempts"); do
+            if [ "$health_deadline" -gt 0 ]; then
+              # Reserve the kill grace inside the deadline so a verifier that
+              # ignores TERM cannot make the wall-clock cap aspirational.
+              remaining=$((health_deadline - SECONDS - kill_grace_seconds))
+              if [ "$remaining" -le 0 ]; then break; fi
+              if timeout --kill-after="${kill_grace_seconds}s" "${remaining}s" ./verify.sh; then
+                exit 0
+              fi
+            elif ./verify.sh; then
+              exit 0
+            fi
+            sleep_seconds=6
+            if [ "$health_deadline" -gt 0 ]; then
+              remaining=$((health_deadline - SECONDS))
+              if [ "$remaining" -le 0 ]; then break; fi
+              if [ "$remaining" -lt "$sleep_seconds" ]; then sleep_seconds=$remaining; fi
+            fi
+            sleep "$sleep_seconds"
           done
+          if [ "$health_deadline" -gt 0 ] && [ "$SECONDS" -ge "$health_deadline" ]; then
+            echo "--- $service health gate exhausted its ${health_budget_seconds}s wall-clock budget ---" >&2
+          fi
           echo "--- $service did not become healthy; container state ---" >&2
           docker compose --project-name "$service" --env-file .env ps >&2
           docker compose --project-name "$service" --env-file .env logs --tail 120 --no-color >&2
           exit 1
+          } </dev/null
+          REMOTE
+
+      - name: Admit Knoxx publication content
+        id: post_deploy
+        if: inputs.service == 'knoxx'
+        env:
+          RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
+        run: |
+          set -euo pipefail
+          # This is intentionally separate from the retrying health gate. Content
+          # admission is idempotent, but it is a deployment activation and should
+          # be requested exactly once after the new contracts and source anchors
+          # are live, not once per readiness retry.
+          ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH'" <<'REMOTE'
+          {
+          runtime_path=$1
+          cd "$runtime_path"
+          # Keep Compose interpolation pinned to the rendered environment, as in
+          # the Deploy and Health gate steps. The hook sends credentials only on
+          # loopback from inside the backend container and never prints them.
+          set -a; . ./.env; set +a
+          ./post-deploy.sh
           } </dev/null
           REMOTE
 
@@ -414,15 +729,17 @@ jobs:
           SERVICE: ${{ inputs.service }}
           IMAGE: ${{ inputs.image }}
           SOURCE_SHA: ${{ inputs.source_sha }}
+          EMBEDDING_MIGRATION_RESULT: ${{ steps.embedding_migration.outcome }}
           HEALTH_RESULT: ${{ steps.health.outcome }}
+          POST_DEPLOY_RESULT: ${{ steps.post_deploy.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           ssh open-hax-target \
-            "bash -euo pipefail -s -- '$SERVICE' '$RUNTIME_PATH' '$IMAGE' '$SOURCE_SHA' '$HEALTH_RESULT' '$RUN_URL'" \
+            "bash -euo pipefail -s -- '$SERVICE' '$RUNTIME_PATH' '$IMAGE' '$SOURCE_SHA' '$EMBEDDING_MIGRATION_RESULT' '$HEALTH_RESULT' '$POST_DEPLOY_RESULT' '$RUN_URL'" \
             <<'REMOTE' > report.json
           {
-          service=$1; runtime_path=$2; image=$3; source_sha=$4; health=$5; run_url=$6
+          service=$1; runtime_path=$2; image=$3; source_sha=$4; embedding_migration=$5; health=$6; post_deploy=$7; run_url=$8
           cd "$runtime_path"
           containers=$(docker compose --project-name "$service" ps --format json 2>/dev/null | jq -sc '.' || echo '[]')
           listening=$(ss -ltnH 2>/dev/null | awk '{print $4}' | sort -u \
@@ -431,14 +748,17 @@ jobs:
             --arg service "$service" \
             --arg image "$image" \
             --arg sourceSha "$source_sha" \
+            --arg embeddingMigration "$embedding_migration" \
             --arg health "$health" \
+            --arg postDeploy "$post_deploy" \
             --arg runUrl "$run_url" \
             --arg host "$(hostname)" \
             --arg deployedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --argjson containers "$containers" \
             --argjson listening "$listening" \
             '{service: $service, image: $image, sourceSha: $sourceSha,
-              health: $health, runUrl: $runUrl, host: $host,
+              embeddingMigration: $embeddingMigration,
+              health: $health, postDeploy: $postDeploy, runUrl: $runUrl, host: $host,
               deployedAt: $deployedAt, containers: $containers,
               listeningSockets: $listening}'
           } </dev/null

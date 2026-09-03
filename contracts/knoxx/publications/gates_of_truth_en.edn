@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/gates-of-truth-en
+ :publication/document :open-hax.documents/gates-of-truth
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :en
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/garden/gates-of-truth/"
+ :translation/review :none}

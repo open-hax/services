@@ -5,8 +5,8 @@
 # Single node, not the four-node federation in the app repo's
 # docker-compose.federation-runtime.yml. One node is enough here, and the
 # duplicated bare network aliases across federation projects were the root
-# cause of the 2026-06-01 /v1/models flap recorded in
-# promethean/docs/drift-notes.md.
+# cause of the 2026-06-01 /v1/models flap recorded in the historical inventory
+# reports under docs/reports/.
 #
 # Bound to loopback. The caddy service owns 80/443.
 

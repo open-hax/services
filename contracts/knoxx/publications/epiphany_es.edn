@@ -1,0 +1,9 @@
+{:publication/id :open-hax.publications/epiphany-es
+ :publication/document :open-hax.documents/epiphany
+ :publication/garden :open-hax.gardens/promethean
+ :publication/target :open-hax.publication/static-site
+ :publication/locale :es
+ :publication/revision :source/current
+ :publication/state :published
+ :publication/path "/es/garden/epiphany/"
+ :translation/review :required}

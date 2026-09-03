@@ -1,9 +1,14 @@
 name: Deploy Stack Chain
 
-# Reusable body of deploy-stack.yml: builds and deploys proxx, knoxx and
-# caddy in dependency order.
+# Reusable body of deploy-stack.yml: provisions the host, then deploys proxx,
+# knoxx, caddy and the website in dependency order. Image builds may run while
+# host provisioning completes.
 #
-#   proxx ──> knoxx ──> caddy
+#   proxx ──> knoxx ──> caddy ──> website
+#
+# The website comes last because its gate asserts TLS on its public hostname,
+# which means reaching through Caddy; putting it before Caddy would instead make
+# the ingress gate depend on an upstream that does not exist yet.
 #
 # Ordering is enforced here rather than with depends_on, because these are
 # separate compose projects. It is load-bearing: the Knoxx backend's /health
@@ -18,17 +23,31 @@ on:
   workflow_call:
     inputs:
       proxx_ref:
-        description: open-hax/proxx ref to deploy
-        required: false
-        default: main
+        description: Immutable open-hax/proxx ref to deploy
+        required: true
         type: string
       knoxx_ref:
         description: open-hax/knoxx ref to deploy
         required: false
         default: main
         type: string
+      openplanner_ref:
+        description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
+        required: true
+        type: string
+      website_ref:
+        description: open-hax/website ref to deploy
+        required: false
+        default: main
+        type: string
       include_ingress:
         description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
+        required: false
+        default: true
+        type: boolean
+      include_website:
+        description: >-
+          Build and deploy open-hax/website. No DNS is changed either way.
         required: false
         default: true
         type: boolean
@@ -41,6 +60,26 @@ permissions:
   packages: write
 
 jobs:
+  # Build jobs may run while the host is prepared, but no production service
+  # deploy starts until this exact checkout has installed and verified the
+  # provisioner it expects. deploy-stack.yml holds the production-host lock
+  # across this entire chain; the required flag below attests that this nested
+  # bootstrap is running inside that single production mutation queue.
+  provision-host:
+    uses: ./.github/workflows/digitalocean-host.yml
+    with:
+      operation: bootstrap
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
+  # The deployment consumes the immutable SHA emitted by Knoxx's own release
+  # gate. This keeps application validation in Knoxx while making it an actual
+  # prerequisite of both label-authorized and manually dispatched deploys.
+  knoxx-preflight:
+    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@356014b6bf41b22effbb61dc68607d5be806b9b2
+    with:
+      source_ref: ${{ inputs.knoxx_ref }}
+
   build-proxx:
     uses: ./.github/workflows/build-images.yml
     with:
@@ -48,41 +87,55 @@ jobs:
       source_ref: ${{ inputs.proxx_ref }}
 
   deploy-proxx:
-    needs: build-proxx
+    needs: [provision-host, build-proxx]
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: proxx
       image: ${{ needs.build-proxx.outputs.image }}
       source_sha: ${{ needs.build-proxx.outputs.source_sha }}
+      caller_holds_production_host_lock: true
     secrets: inherit
 
   # Both Knoxx images build while Proxx deploys.
   build-knoxx-backend:
+    needs: knoxx-preflight
     uses: ./.github/workflows/build-images.yml
     with:
       service: knoxx-backend
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ needs.knoxx-preflight.outputs.source_sha }}
 
   build-knoxx-frontend:
+    needs: knoxx-preflight
     uses: ./.github/workflows/build-images.yml
     with:
       service: knoxx-frontend
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ needs.knoxx-preflight.outputs.source_sha }}
+
+  build-knoxx-devtools:
+    needs: knoxx-preflight
+    uses: ./.github/workflows/build-knoxx-devtools.yml
+    with:
+      source_ref: ${{ needs.knoxx-preflight.outputs.source_sha }}
+      openplanner_ref: ${{ inputs.openplanner_ref }}
 
   deploy-knoxx:
-    needs: [deploy-proxx, build-knoxx-backend, build-knoxx-frontend]
+    needs: [deploy-proxx, build-knoxx-backend, build-knoxx-frontend, build-knoxx-devtools]
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: knoxx
       image: ${{ needs.build-knoxx-backend.outputs.image }}
       source_sha: ${{ needs.build-knoxx-backend.outputs.source_sha }}
-      # OpenPlanner REST is intentionally absent from this stack. Supply a
-      # conspicuous non-secret sentinel so the shared renderer and Compose
-      # contract remain strict about blank values without requiring an unused
-      # production credential. If a listener unexpectedly appears, the CMS
-      # probe sends this sentinel, receives a non-200 response, and fails.
+      # OpenPlanner REST is intentionally absent from this stack. Garden,
+      # publication and translation-review surfaces resolve from Knoxx's own
+      # contracts and in-process evidence stores, and the deploy gate requires
+      # them unconditionally.
+      #
+      # KNOXX_MCP_LOOPBACK_TOKEN is deliberately absent here: it is inherited
+      # from the protected production environment. The called deploy workflow
+      # fails closed before rendering if the secret is absent or too short.
       extra_env: >-
-        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_EXPECT_OPENPLANNER_REST": "false", "OPENPLANNER_API_KEY": "disabled-no-openplanner-upstream"}
+        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}@${{ needs.build-knoxx-devtools.outputs.digest }}"}
+      caller_holds_production_host_lock: true
     secrets: inherit
 
   deploy-caddy:
@@ -91,4 +144,36 @@ jobs:
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: caddy
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
+  # Builds alongside the rest of the chain; deploys last.
+  build-website:
+    if: inputs.include_website
+    uses: ./.github/workflows/build-images.yml
+    with:
+      service: website
+      source_ref: ${{ inputs.website_ref }}
+
+  deploy-website:
+    needs: [build-website, deploy-caddy]
+    # deploy-caddy is conditional, and a skipped ingress must not silently skip
+    # the website with it: the website's gate classifies an absent ingress as a
+    # WARN owned by caddy and still proves the site serves on loopback. When
+    # ingress was requested, however, a skipped Caddy means an upstream
+    # dependency failed; never advance the website through that broken chain.
+    if: >-
+      always()
+      && inputs.include_website
+      && needs.build-website.result == 'success'
+      && (
+        (!inputs.include_ingress && needs.deploy-caddy.result == 'skipped')
+        || (inputs.include_ingress && needs.deploy-caddy.result == 'success')
+      )
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: website
+      image: ${{ needs.build-website.outputs.image }}
+      source_sha: ${{ needs.build-website.outputs.source_sha }}
+      caller_holds_production_host_lock: true
     secrets: inherit

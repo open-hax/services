@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Knoxx devtools: the backend compiled once at build time, then watched with an
+# nREPL at runtime (see start-devtools.sh).
+#
+# ## Why node is the base and the JRE is the layer
+#
+# This used to be the other way round — a temurin base with `/usr/local` copied
+# in from a node image — and the base tag it named,
+# `eclipse-temurin:21-jre-bookworm`, no longer exists. Temurin retired its
+# Debian variants, so the pull failed with "not found" and took the whole deploy
+# chain with it: build-knoxx-devtools is a `needs` of deploy-knoxx, which gates
+# deploy-caddy, which is the ingress.
+#
+# Inverting it fixes the tag and removes a glibc hazard at the same time. Node's
+# binaries stay in the image they were built for, and only the JRE moves — which
+# is the safe direction, because a JRE built against an older glibc runs on a
+# newer one. jammy is 2.35 and bookworm is 2.36, so the JRE is the older half.
+# Copying `/usr/local` the other way (bookworm node onto a noble base) would
+# point the same trick at the fragile direction. `sandbox/Dockerfile` already
+# used this layering; now both agree.
+#
+# No clojure CLI here, deliberately. `build-knoxx-devtools.yml` overwrites
+# `shadow-cljs.edn` with `shadow-cljs.devtools.edn`, which declares
+# `:source-paths` and `:dependencies` — so shadow-cljs resolves its own Maven
+# dependencies through the JRE above. The *production* backend build is the one
+# in `:deps` mode, and it gets the CLI in `build-images.yml`.
+FROM eclipse-temurin:21-jre-jammy AS jre
+
+FROM node:22-bookworm-slim
+
+USER 0:0
+
+COPY --from=jre /opt/java/openjdk /opt/java/openjdk
+ENV JAVA_HOME=/opt/java/openjdk
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# The unprivileged user is *renamed*, not created. The node image already owns
+# uid 1000 as `node`, so `useradd --uid 1000 agent` fails with "UID 1000 is not
+# unique" — which the temurin base did not, having no uid 1000 at all. Renaming
+# keeps this image's external contract identical (USER 1000:1000,
+# HOME=/home/agent) rather than moving the uid the deploy is written against.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends bash ca-certificates procps \
+ && rm -rf /var/lib/apt/lists/* \
+ && corepack enable \
+ && corepack prepare pnpm@10.14.0 --activate \
+ && usermod --login agent --home /home/agent --move-home node \
+ && groupmod --new-name agent node \
+ && mkdir -p /workspace/source/backend /home/agent/.cache \
+ && chown -R 1000:1000 /workspace /home/agent
+
+COPY --chown=1000:1000 source /workspace/source
+COPY --chown=1000:1000 contract-runtime /workspace/contract-runtime
+COPY --chown=1000:1000 openplanner /workspace/openplanner
+COPY --chown=1000:1000 --chmod=0755 start-devtools.sh /usr/local/bin/start-knoxx-devtools
+
+USER 1000:1000
+ENV HOME=/home/agent
+ENV XDG_CACHE_HOME=/home/agent/.cache
+WORKDIR /workspace/source/backend
+
+RUN pnpm install --frozen-lockfile --ignore-scripts \
+ && pnpm exec shadow-cljs compile server
+
+CMD ["/usr/local/bin/start-knoxx-devtools"]

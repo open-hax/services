@@ -1,0 +1,27 @@
+;; SPDX-License-Identifier: GPL-3.0-or-later
+;; This image-local config intentionally reuses build id :server because the
+;; Knoxx nrepl.eval tool defaults to that id. Unlike the production :server
+;; build, this one starts no HTTP server, consumers, schedules, or gateways.
+{:source-paths ["src/cljs"
+                "../shared/src/cljs"
+                "../../contract-runtime/src/cljs"]
+ :dependencies
+ [[cider/cider-nrepl "0.50.2"]
+  [refactor-nrepl "3.9.1"]
+  [metosin/malli "0.16.4"]
+  [funcool/promesa "11.0.678"]]
+ :nrepl {:port 4500}
+ :js-options {:js-provider :import}
+ :builds
+ {:server
+  {:target :node-script
+   :output-to "target/repl/repl.cjs"
+   :main knoxx.backend.repl/main
+   :devtools {:autoload true}
+   :compiler-options
+   {:output-feature-set :es-next
+    :optimizations :none
+    :source-map true
+    :infer-externs false
+    :macros {:knoxx.backend.macros true}
+    :warnings {:infer-warning false}}}}}
