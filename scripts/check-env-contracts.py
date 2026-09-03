@@ -93,6 +93,20 @@ def main() -> int:
         / "knoxx"
         / "test-event-agent-limits.sh"
     ).read_text()
+    knoxx_mongodb_identity = (
+        ROOT
+        / "digitalocean"
+        / "services"
+        / "knoxx"
+        / "mongodb-database-identity.sh"
+    ).read_text()
+    knoxx_mongodb_identity_test = (
+        ROOT
+        / "digitalocean"
+        / "services"
+        / "knoxx"
+        / "test-mongodb-database-identity.sh"
+    ).read_text()
     knoxx_ollama_probe_path = (
         ROOT / "digitalocean" / "services" / "knoxx" / "probe-ollama.js"
     )
@@ -239,7 +253,7 @@ def main() -> int:
         ),
         "event-agent turn-timeout helper deployment": (
             deploy_text,
-            "for helper in event-agent-limits.sh probe-embedding-migration.js probe-mcp.js probe-ollama.js",
+            "for helper in event-agent-limits.sh mongodb-database-identity.sh probe-embedding-migration.js probe-mcp.js probe-ollama.js",
         ),
         "event-agent turn-timeout regression CI wiring": (
             code_quality_text,
@@ -572,6 +586,38 @@ def main() -> int:
         "embedding migration reads durable container contract": (
             deploy_text,
             "docker inspect --format '{{json .Config.Env}}'",
+        ),
+        "embedding migration credential-free database fingerprint": (
+            knoxx_mongodb_identity,
+            "seedlist=${authority##*@}",
+        ),
+        "embedding migration harmless-option-insensitive database fingerprint": (
+            knoxx_mongodb_identity,
+            'case "${option_key,,}" in',
+        ),
+        "embedding migration SRV endpoint identity": (
+            knoxx_mongodb_identity,
+            'identity="${identity}?srvServiceName=${srv_service_name}"',
+        ),
+        "embedding migration replica-set identity": (
+            knoxx_mongodb_identity,
+            'replicaSet=${replica_set}',
+        ),
+        "embedding migration stable seed ordering": (
+            knoxx_mongodb_identity,
+            "LC_ALL=C sort -u",
+        ),
+        "embedding migration database identity helper source": (
+            deploy_text,
+            '. "$probe_dir/mongodb-database-identity.sh"',
+        ),
+        "embedding migration database identity regression": (
+            knoxx_mongodb_identity_test,
+            "equivalent Mongo database identities produced different fingerprints",
+        ),
+        "embedding migration database identity CI": (
+            code_quality_text,
+            "bash digitalocean/services/knoxx/test-mongodb-database-identity.sh",
         ),
         "bounded pre-cutover migration probe": (
             deploy_text,

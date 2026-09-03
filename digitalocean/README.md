@@ -9,14 +9,16 @@ The initial deployment uses one Ubuntu Droplet for ingress and application runti
 1. Provision the Droplet through the DigitalOcean control plane.
 2. Record its address and Droplet ID in `hosts/production.yaml`.
 3. Add the matching private key to the GitHub `production` environment as `DIGITALOCEAN_SSH_PRIVATE_KEY`.
-4. Run `Bootstrap DigitalOcean Host`. The bootstrap installs the pinned Ollama
-   runtime, creates its backend-only `knoxx-ollama` bridge and firewall rule,
-   binds Ollama only to that bridge, and pulls the two digest-pinned models
-   required by Knoxx.
+4. Run `Bootstrap DigitalOcean Host` for the initial host. The bootstrap
+   installs the pinned Ollama runtime, creates its backend-only `knoxx-ollama`
+   bridge and firewall rule, binds Ollama only to that bridge, and pulls the two
+   digest-pinned models required by Knoxx.
 5. Merge a reviewed Services PR carrying `deploy`, or manually dispatch
-   `Deploy Stack`. The chain builds Proxx, the Knoxx backend and frontend,
-   Knoxx devtools, and the website, then deploys Proxx, Knoxx, Caddy, and the
-   website in dependency order.
+   `Deploy Stack`. The chain repeats that idempotent host bootstrap under the
+   same production-host lock, which remains held until the whole deployment
+   finishes. Image builds may run alongside bootstrap, but no service deploy
+   starts until it passes; Proxx, Knoxx, Caddy, and the website then deploy in
+   dependency order.
 6. Run `Verify DigitalOcean Host` and retain its JSON artifact.
 
 ## Secrets

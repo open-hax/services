@@ -25,9 +25,9 @@ Production is declared under [`digitalocean/`](digitalocean/README.md):
 - `digitalocean/known_hosts/production` is the pinned SSH host key.
 - `.github/workflows/deploy-stack.yml` is the only callable stack deployment
   entry point.
-- `.github/workflows/deploy-stack-chain.yml` builds Proxx, both Knoxx images,
-  Knoxx devtools, and the website before deploying the dependency-ordered
-  stack through `.github/workflows/deploy-digitalocean.yml`.
+- `.github/workflows/deploy-stack-chain.yml` provisions and verifies the host,
+  builds Proxx, both Knoxx images, Knoxx devtools, and the website, then deploys
+  the dependency-ordered stack through `.github/workflows/deploy-digitalocean.yml`.
 - GitHub's protected `production` environment supplies deployment credentials
   and runtime secrets.
 

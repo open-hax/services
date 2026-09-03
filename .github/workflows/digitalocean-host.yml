@@ -1,6 +1,18 @@
 name: DigitalOcean Host
 
 on:
+  workflow_call:
+    inputs:
+      operation:
+        description: Host operation required before a stack deployment
+        required: false
+        default: bootstrap
+        type: string
+      caller_holds_production_host_lock:
+        description: Caller owns the production-host lock for this entire invocation
+        required: false
+        default: false
+        type: boolean
   pull_request:
     paths:
       - digitalocean/**
@@ -27,7 +39,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: digitalocean-production-host
+  # An independent host run owns the production-host lock directly. The stack
+  # caller already holds that lock across its complete deployment, so its
+  # nested prerequisite must use a run-local child group instead of waiting on
+  # its own caller forever.
+  group: >-
+    ${{ inputs.caller_holds_production_host_lock
+        && format('digitalocean-production-host-prerequisite-{0}', github.run_id)
+        || 'digitalocean-production-host' }}
   cancel-in-progress: false
 
 jobs:
@@ -96,7 +115,7 @@ jobs:
         id: target
         env:
           INPUT_HOST: ${{ github.event_name == 'workflow_dispatch' && inputs.host || '' }}
-          INPUT_OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'bootstrap' }}
+          INPUT_OPERATION: ${{ inputs.operation || 'bootstrap' }}
         run: |
           host="$INPUT_HOST"
           if [ -z "$host" ]; then

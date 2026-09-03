@@ -126,7 +126,7 @@ jobs:
               echo "service knoxx is missing ${dir}/post-deploy.sh" >&2
               exit 2
             }
-            for helper in event-agent-limits.sh probe-embedding-migration.js probe-mcp.js probe-ollama.js; do
+            for helper in event-agent-limits.sh mongodb-database-identity.sh probe-embedding-migration.js probe-mcp.js probe-ollama.js; do
               test -f "${dir}/${helper}" || {
                 echo "service knoxx is missing ${dir}/${helper}" >&2
                 exit 2
@@ -314,14 +314,15 @@ jobs:
           }
           trap cleanup_probe EXIT
           scp rendered.env "${SERVICE_DIR}/probe-embedding-migration.js" \
+            "${SERVICE_DIR}/mongodb-database-identity.sh" \
             "open-hax-target:${probe_dir}/"
 
           # Inventory runs in the prospective backend image before the new
           # environment or service definition replaces the live deployment.
           # An unchanged target can redeploy normally. A genuine 1024 -> 768
-          # cutover is permitted only for a fresh store with no incompatible
-          # writer; populated state awaits an authoritative Knoxx/OpenPlanner
-          # migration verifier.
+          # cutover is permitted only when there is no prior backend contract
+          # and the store is fresh; populated state awaits an authoritative
+          # Knoxx/OpenPlanner migration verifier.
           ssh open-hax-target \
             "bash -euo pipefail -s -- '$probe_dir' '$SERVICE'" <<'REMOTE'
           {
@@ -333,8 +334,10 @@ jobs:
             rm -rf "$probe_dir"
           }
           trap cleanup_remote_probe EXIT
-          chmod 600 "$probe_dir/rendered.env"
+          chmod 600 "$probe_dir/rendered.env" "$probe_dir/mongodb-database-identity.sh"
           set -a; . "$probe_dir/rendered.env"; set +a
+          # shellcheck source=/dev/null
+          . "$probe_dir/mongodb-database-identity.sh"
 
           current_backends_output=$(
             docker ps --all \
@@ -357,7 +360,7 @@ jobs:
           export EMBED_SOURCE_DIMENSIONS=
           export EMBED_SOURCE_DATABASE_FINGERPRINT=
           EMBED_TARGET_DATABASE_FINGERPRINT=$(
-            printf '%s\0%s' "$MONGODB_URI" "$MONGODB_DB" | sha256sum | awk '{print $1}'
+            mongodb_database_fingerprint "$MONGODB_URI" "$MONGODB_DB"
           )
           export EMBED_TARGET_DATABASE_FINGERPRINT
           if [ "${#current_backends[@]}" -eq 1 ]; then
@@ -384,8 +387,7 @@ jobs:
             source_mongodb_uri=$(container_env_value MONGODB_URI)
             source_mongodb_db=$(container_env_value MONGODB_DB)
             EMBED_SOURCE_DATABASE_FINGERPRINT=$(
-              printf '%s\0%s' "$source_mongodb_uri" "$source_mongodb_db" \
-                | sha256sum | awk '{print $1}'
+              mongodb_database_fingerprint "$source_mongodb_uri" "$source_mongodb_db"
             )
             unset current_environment source_mongodb_uri source_mongodb_db
             export EMBED_SOURCE_CONTRACT_PRESENT=1

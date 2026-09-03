@@ -16,10 +16,72 @@ SERVICE_DEPLOY_WORKFLOW = (
     / "workflows"
     / "deploy-digitalocean.yml"
 )
+HOST_WORKFLOW = (
+    Path(__file__).resolve().parents[1]
+    / ".github"
+    / "workflows"
+    / "digitalocean-host.yml"
+)
+STACK_WORKFLOW = (
+    Path(__file__).resolve().parents[1]
+    / ".github"
+    / "workflows"
+    / "deploy-stack.yml"
+)
 
 
 def main() -> int:
     document = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    jobs = document["jobs"]
+    host_prerequisite = jobs.get("provision-host", {})
+    deploy_proxx_needs = jobs.get("deploy-proxx", {}).get("needs", [])
+    if isinstance(deploy_proxx_needs, str):
+        deploy_proxx_needs = [deploy_proxx_needs]
+    if (
+        host_prerequisite.get("uses") != "./.github/workflows/digitalocean-host.yml"
+        or host_prerequisite.get("with", {}).get("operation") != "bootstrap"
+        or host_prerequisite.get("with", {}).get(
+            "caller_holds_production_host_lock"
+        )
+        != "true"
+        or "provision-host" not in deploy_proxx_needs
+    ):
+        print(
+            "deploy chain error: production services do not wait for the "
+            "reviewed host bootstrap",
+            file=sys.stderr,
+        )
+        return 1
+
+    host_workflow = yaml.load(HOST_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    host_call = host_workflow.get("on", {}).get("workflow_call", {})
+    host_concurrency = host_workflow.get("concurrency", {})
+    host_concurrency_group = " ".join(host_concurrency.get("group", "").split())
+    stack_workflow = yaml.load(STACK_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    stack_concurrency = (
+        stack_workflow.get("jobs", {}).get("deploy", {}).get("concurrency", {})
+    )
+    if (
+        host_call.get("inputs", {}).get("operation", {}).get("default")
+        != "bootstrap"
+        or host_call.get("inputs", {})
+        .get("caller_holds_production_host_lock", {})
+        .get("default")
+        != "false"
+        or "inputs.caller_holds_production_host_lock" not in host_concurrency_group
+        or "digitalocean-production-host-prerequisite-{0}" not in host_concurrency_group
+        or "'digitalocean-production-host'" not in host_concurrency_group
+        or host_concurrency.get("cancel-in-progress") != "false"
+        or stack_concurrency.get("group") != "digitalocean-production-host"
+        or stack_concurrency.get("cancel-in-progress") != "false"
+    ):
+        print(
+            "deploy chain error: stack deployment and independent host mutation "
+            "do not share the complete production-host boundary",
+            file=sys.stderr,
+        )
+        return 1
+
     condition = " ".join(document["jobs"]["deploy-website"]["if"].split())
     required = (
         "!inputs.include_ingress && needs.deploy-caddy.result == 'skipped'",

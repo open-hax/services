@@ -72,6 +72,9 @@ jobs:
       - name: Self-test the Knoxx event-agent limits
         run: bash digitalocean/services/knoxx/test-event-agent-limits.sh
 
+      - name: Self-test the Mongo database identity contract
+        run: bash digitalocean/services/knoxx/test-mongodb-database-identity.sh
+
       - name: Self-test the Knoxx Git event dispatcher boundary
         run: scripts/test-dispatch-knoxx-git-event.sh
 

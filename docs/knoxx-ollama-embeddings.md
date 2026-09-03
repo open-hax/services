@@ -115,8 +115,10 @@ backend image. The gate accepts only two states:
 
 - the existing Knoxx project container, whether running or stopped, records
   `nomic-embed-text` with 768 dimensions against the same database contract
-  (compared only by SHA-256 fingerprint), so recovery and ordinary redeployment
-  are not changing the embedding contract; or
+  (compared only by a SHA-256 fingerprint of URI scheme, normalized seed hosts,
+  the endpoint-selecting SRV service name, an explicitly selected replica set,
+  and `MONGODB_DB`), so recovery and ordinary redeployment are not changing the
+  embedding contract; or
 - there is no prior Knoxx backend contract, `event_chunks`,
   `compacted_vectors`, `graph_node_embeddings`, and `vector_partitions` are all
   empty, and the `graph_node_embeddings.embedding_vector` Atlas search index is
@@ -128,6 +130,15 @@ Mongo and embedding settings into the short-lived candidate container. A
 stopped incompatible project container also blocks instead of being mistaken
 for a new installation. A populated 1024-dimensional deployment remains on its
 current containers; the new environment is never synced or activated.
+
+Database identity intentionally excludes URI credentials, path, and
+transport/retry options. Rotating a password or TLS/retry option therefore does
+not look like a vector migration, while a cluster seed, `MONGODB_DB`, or
+endpoint-selecting `srvServiceName`/`replicaSet` change still does. The source
+URI is handled only inside the remote shell and is unset after its
+credential-free fingerprint is computed. Unix-socket authorities and ambiguous
+legacy/whitespace option spellings fail closed instead of being normalized into
+a potentially different TCP or DNS endpoint.
 
 `digitalocean/services/knoxx/verify.sh` runs from inside `knoxx-backend`, after
 the backend health endpoint is green. Its Ollama probe:

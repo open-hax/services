@@ -41,9 +41,11 @@ name: Deploy Stack
 #
 # A direct push to main produces no event here and still never deploys.
 #
-# The deploy chain lives in deploy-stack-chain.yml behind one workflow_call
-# so the single concurrency slot covers proxx → knoxx → caddy → website end to
-# end; per-job groups would let a newer run preempt an older run mid-chain.
+# The deploy chain lives in deploy-stack-chain.yml behind one workflow_call.
+# Its single production-host concurrency slot covers host provisioning and
+# proxx → knoxx → caddy → website end to end, excluding independent host
+# mutation for the same interval. Per-job groups would let a newer run preempt
+# an older run mid-chain.
 
 on:
   pull_request_target:
@@ -137,7 +139,10 @@ jobs:
     needs: authorize
     if: needs.authorize.outputs.should_deploy == 'true'
     concurrency:
-      group: deploy-stack-production
+      # Shared with independent DigitalOcean Host runs. The nested host
+      # prerequisite uses a run-local child group because this caller already
+      # owns the shared lock for the complete stack deployment.
+      group: digitalocean-production-host
       cancel-in-progress: false
     uses: ./.github/workflows/deploy-stack-chain.yml
     with:
