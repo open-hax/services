@@ -73,4 +73,22 @@ expect_fail global-limit "${good}"$'\nAnywhere LIMIT IN Anywhere'
 expect_fail routed-allow "${good}"$'\n5173/tcp ALLOW FWD 172.18.0.0/16'
 expect_fail wrong-fixed-peer "${good/172.31.255.2/172.31.255.3}"
 
+# ufw renders a destination-scoped rule as "<address> <ports>". provision-ollama.sh
+# creates exactly one on this host, so the verifier must resolve that shape
+# instead of failing it closed as an unknown application profile — while still
+# refusing any destination-scoped rule that could reach a protected port, and
+# never letting one stand in for a required unscoped allow.
+expect_pass destination-scoped-ollama "${good}"$'\n172.30.114.1 11434/tcp on knoxx-ollama0 ALLOW IN 172.30.114.2'
+expect_pass destination-scoped-no-interface "${good}"$'\n172.30.114.1 11434/tcp ALLOW IN 172.30.114.2'
+expect_pass destination-scoped-cidr "${good}"$'\n172.30.114.0/24 11434/tcp ALLOW IN 172.30.114.2'
+expect_pass destination-scoped-v6 "${good}"$'\nfd00::1 11434/tcp ALLOW IN fd00::2'
+expect_pass destination-scoped-protected-udp "${good}"$'\n172.30.114.1 5173/udp ALLOW IN Anywhere'
+expect_fail destination-scoped-protected "${good}"$'\n172.30.114.1 5173/tcp ALLOW IN 172.18.0.0/16'
+expect_fail destination-scoped-protected-expected-peer "${good}"$'\n172.30.114.1 5173/tcp ALLOW IN 172.31.255.2'
+expect_fail destination-scoped-covering-range "${good}"$'\n172.30.114.1 7999:8001/tcp ALLOW IN 172.30.114.2'
+expect_fail destination-scoped-covering-list "${good}"$'\n172.30.114.1 5172,5173/tcp ALLOW IN 172.30.114.2'
+expect_fail destination-scoped-routed "${good}"$'\n172.30.114.1 5173/tcp ALLOW FWD 172.30.114.2'
+expect_fail destination-scoped-instead-of-required "${good/$'\n5173/tcp ALLOW IN 172.31.255.2'/$'\n172.30.114.1 5173/tcp ALLOW IN 172.31.255.2'}"
+expect_fail destination-scoped-unknown-protocol "${good}"$'\n172.30.114.1 11434/sctp ALLOW IN 172.30.114.2'
+
 echo "dev-ingress firewall verifier self-test: ok"
