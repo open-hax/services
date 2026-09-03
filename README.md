@@ -59,9 +59,10 @@ in this repo: the descriptor a service declares, the lifecycle phases and the
 promotion rule between them, the contract every `verify.sh` gate must satisfy,
 and how a service serves content another service writes.
 
-Every service is declared for the **DigitalOcean lane**. The Promethean lane
-(`promethean/`, `deploy-promethean.yml`) accepts no new services and is being
-retired; see the model's §1 for the migration inventory.
+Every service is declared for the DigitalOcean lane and deployed to the droplet
+in `digitalocean/hosts/production.yaml`. The earlier SSH-and-rsync lane was
+removed in `services#67`; `scripts/check-deployment-boundary.py` fails the build
+on any new reference to it.
 
 ## Boundary rule
 
