@@ -8,13 +8,20 @@ FIREWALL_VERIFIER=${FIREWALL_VERIFIER:-/usr/local/sbin/open-hax-verify-dev-ingre
 OLLAMA_PROVISIONER=${OLLAMA_PROVISIONER:-/usr/local/sbin/open-hax-provision-ollama}
 status=passed
 
+# A fail-closed gate that discards its own reason costs a host round trip to
+# diagnose, which is exactly what the first production run of this verifier
+# cost. The report stays machine-readable on stdout; the failing check's own
+# diagnostic goes to stderr, where the deploy log keeps it.
 check() {
   local name=$1
   shift
-  if "$@" >/dev/null 2>&1; then
+  local output
+  if output=$("$@" 2>&1); then
     printf '%s\tpassed\n' "$name"
   else
     printf '%s\tfailed\n' "$name"
+    printf 'host verification: %s failed\n' "$name" >&2
+    [ -n "$output" ] && printf '%s\n' "$output" >&2
     status=failed
   fi
 }

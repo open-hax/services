@@ -160,8 +160,39 @@ if ! awk -v expected="$expected_source" -v app_profiles="$app_profiles" '
       target_has_interface = 1
       sub(/ on [^ ]+$/, "", target_spec)
     }
+
+    # ufw renders a destination-scoped rule as "<address> <ports>". This host
+    # has one: provision-ollama.sh binds host Ollama to the Knoxx container
+    # over the dedicated knoxx-ollama0 bridge. Resolve the port half so the
+    # rule is judged on the ports it opens instead of being mistaken for an
+    # unknown application profile. The address half must be a bare literal or
+    # CIDR and the port half must parse, or nothing is resolved and the rule
+    # stays fail closed in the checks below.
+    target_destination = ""
+    if (!target_is_profile && target_spec ~ /^[^ ]+ [^ ]+$/) {
+      split(target_spec, destination_fields, " ")
+      if ((destination_fields[1] ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?$/ ||
+           destination_fields[1] ~ /^[0-9A-Fa-f:]*:[0-9A-Fa-f:.]*(\/[0-9]+)?$/) &&
+          numeric_target_covers_required(destination_fields[2]) >= 0) {
+        target_destination = destination_fields[1]
+        target_spec = destination_fields[2]
+      }
+    }
+
     coverage = numeric_target_covers_required(target_spec)
     if (target_is_profile || target_spec in application_profile) coverage = -1
+
+    # A destination-scoped rule is only ever out of scope, never proof that a
+    # protected port is correctly restricted: the required allows are declared
+    # without an address, so accepting one here would let the real rule go
+    # missing. It passes only when its ports cannot reach 5173, 8000, or 8097.
+    if (target_destination != "") {
+      if (coverage != 0) {
+        if (direction == "IN") reject("destination-scoped rule covers a protected port")
+        else reject("routed destination-scoped rule can cover a protected port")
+      }
+      next
+    }
 
     # This verifier owns only the three development ports. Existing explicit
     # rules for unrelated services remain outside its scope; broad, ranged, or
