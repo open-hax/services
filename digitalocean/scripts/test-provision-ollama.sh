@@ -51,9 +51,9 @@ case "$url" in
     if [ "${MOCK_OLLAMA_MODELS:-complete}" = missing ]; then
       printf '{"models":[]}\n'
     else
-      printf '{"models":[{"name":"gemma4:e2b","digest":"%s"},{"name":"nomic-embed-text:latest","digest":"%s"}]}\n' \
+      printf '{"models":[{"name":"gemma4:e2b","digest":"%s"},{"name":"qwen3-embedding:8b","digest":"%s"}]}\n' \
         "${MOCK_TRANSLATION_DIGEST:-7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e}" \
-        "${MOCK_EMBEDDING_DIGEST:-0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f}"
+        "${MOCK_EMBEDDING_DIGEST:-64b933495768fbd3b87c20583d379728a07471e0c66733a9df87cd1901b3c44b}"
     fi
     ;;
   *) exit 64 ;;
@@ -464,7 +464,7 @@ case "$url" in
     if [ "${MOCK_OLLAMA_MODELS:-complete}" = missing ]; then
       printf '%s\n' '{"models":[]}'
     else
-      printf '%s\n' '{"models":[{"name":"gemma4:e2b","digest":"7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e"},{"name":"nomic-embed-text:latest","digest":"0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"}]}'
+      printf '%s\n' '{"models":[{"name":"gemma4:e2b","digest":"7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e"},{"name":"qwen3-embedding:8b","digest":"64b933495768fbd3b87c20583d379728a07471e0c66733a9df87cd1901b3c44b"}]}'
     fi
     ;;
   *) exit 64 ;;

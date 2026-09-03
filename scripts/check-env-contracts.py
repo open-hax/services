@@ -375,11 +375,11 @@ def main() -> int:
         ),
         "pinned host embedding-model manifest": (
             ollama_provisioner,
-            "OLLAMA_EMBEDDING_DIGEST=0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+            "OLLAMA_EMBEDDING_DIGEST=64b933495768fbd3b87c20583d379728a07471e0c66733a9df87cd1901b3c44b",
         ),
         "host contract embedding-model manifest": (
             production_host_contract,
-            "digest: 0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+            "digest: 64b933495768fbd3b87c20583d379728a07471e0c66733a9df87cd1901b3c44b",
         ),
         "dedicated-bridge-only Ollama bind": (
             ollama_provisioner,
@@ -471,11 +471,11 @@ def main() -> int:
         ),
         "host Ollama embedding-model precondition": (
             knoxx_verify,
-            "embedding_model=nomic-embed-text",
+            "embedding_model=qwen3-embedding:8b",
         ),
         "host Ollama embedding-dimension precondition": (
             knoxx_verify,
-            "embedding_dimensions=768",
+            "embedding_dimensions=1024",
         ),
         "translator exact runtime trigger gate": (
             knoxx_verify,
@@ -581,21 +581,21 @@ def main() -> int:
             knoxx_compose,
             'EMBED_PROVIDER_API_KEY: ""',
         ),
-        "nomic embedding model": (
+        "pinned embedding model": (
             knoxx_template,
-            "EMBED_PROVIDER_MODEL='nomic-embed-text'",
+            "EMBED_PROVIDER_MODEL='qwen3-embedding:8b'",
         ),
-        "768-dimensional embedding contract": (
+        "1024-dimensional embedding contract": (
             knoxx_template,
-            "EMBED_PROVIDER_DIMENSIONS='768'",
+            "EMBED_PROVIDER_DIMENSIONS='1024'",
         ),
         "embedding migration target model": (
             knoxx_embedding_migration_probe,
-            'const TARGET_MODEL = "nomic-embed-text";',
+            'const TARGET_MODEL = "qwen3-embedding:8b";',
         ),
         "embedding migration target dimensions": (
             knoxx_embedding_migration_probe,
-            'const TARGET_DIMENSIONS = "768";',
+            'const TARGET_DIMENSIONS = "1024";',
         ),
         "embedding migration relevant collections": (
             knoxx_embedding_migration_probe,

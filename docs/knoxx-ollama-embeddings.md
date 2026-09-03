@@ -13,7 +13,7 @@ bridge. Its network namespace is the only one attached to `knoxx-ollama`, at
 ```text
 publication_translator ──── gemma4:e2b ─────────────┐
 publication_post_drafter ─ gemma4:e2b ─────────────┼──> host Ollama :11434
-OpenPlanner SDK ────────── nomic-embed-text, 768 dims ┘
+OpenPlanner SDK ────── qwen3-embedding:8b, 1024 dims ┘
                          POST /v1/embeddings
 ```
 
@@ -30,9 +30,37 @@ KNOXX_AGENT_THINKING_OVERRIDES=publication_translator=off,publication_post_draft
 KNOXX_EVENT_AGENT_CONCURRENCY=1
 KNOXX_EVENT_AGENT_QUEUE_LIMIT=256
 KNOXX_EVENT_AGENT_TURN_TIMEOUT_MS=300000
-EMBED_PROVIDER_MODEL=nomic-embed-text
-EMBED_PROVIDER_DIMENSIONS=768
+EMBED_PROVIDER_MODEL=qwen3-embedding:8b
+EMBED_PROVIDER_DIMENSIONS=1024
 ```
+
+## Why qwen3-embedding:8b at 1024 dimensions
+
+The embedding model is pinned to `qwen3-embedding:8b` truncated to 1024
+dimensions through Matryoshka representation learning, rather than to its
+native 4096.
+
+Two properties decided it. First, the same model is reachable two ways — local
+Ollama and `nebius/Qwen/Qwen3-Embedding-8B` through Requesty — and the vectors
+are interchangeable: over 85 chunks of this repository's own publication source,
+every chunk embedded on one route retrieved itself as top-1 from the other
+route's index at 4096, 2048, 1024, 768 and 512 dimensions, with a mean
+cross-route cosine of 0.9905. The residual gap is quantization (Ollama serves
+Q4_K_M, Nebius serves full precision), not disagreement. A deployment can
+therefore change where embeddings are computed without re-embedding what it has
+already stored.
+
+Second, 1024 is the width production already indexes. Server-side truncation to
+1024 matches a client-side truncate-and-renormalize of the native vector at
+cosine 1.000000, so the reduction is free, and the Atlas
+`graph_node_embeddings.embedding_vector` index keeps `numDimensions: 1024`
+across the cutover. Only its contents need to be rebuilt, not its definition.
+
+Note the limits. Cross-route cosine is 0.99, not 1.00 — retrieval survives a
+route swap but bit-exact vector equality does not, so nothing may de-duplicate
+or key on exact vector identity. Nearest-neighbour ordering agrees 93–98% of the
+time depending on width, so fine-grained rank comparisons across routes are not
+safe even though top-1 is.
 
 The event-agent settings bound deployment-triggered translation and drafting to
 one provider turn at a time, with up to 256 pending turns kept in FIFO order.
@@ -69,7 +97,7 @@ model manifests match these reviewed digests:
 
 ```text
 gemma4:e2b               7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e
-nomic-embed-text:latest  0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f
+qwen3-embedding:8b       64b933495768fbd3b87c20583d379728a07471e0c66733a9df87cd1901b3c44b
 ```
 
 Host provisioning creates `knoxx-ollama` as an internal, non-attachable bridge
@@ -115,7 +143,7 @@ production provisioning does this automatically; for a local workstation use:
 
 ```sh
 ollama pull gemma4:e2b
-ollama pull nomic-embed-text
+ollama pull qwen3-embedding:8b
 ```
 
 The deploy verifier's container-originated catalog and embedding calls are the
@@ -128,7 +156,7 @@ the deployment runs `probe-embedding-migration.js` inside the prospective Knoxx
 backend image. The gate accepts only three states:
 
 - the existing Knoxx project container, whether running or stopped, records
-  `nomic-embed-text` with 768 dimensions against the same database contract
+  `qwen3-embedding:8b` with 1024 dimensions against the same database contract
   (compared only by a SHA-256 fingerprint of URI scheme, normalized seed hosts,
   the endpoint-selecting SRV service name, an explicitly selected replica set,
   and `MONGODB_DB`), so recovery and ordinary redeployment are not changing the
@@ -172,8 +200,7 @@ the backend health endpoint is green. Its Ollama probe:
 1. requires `/health` to report host Ollama configured and reachable;
 2. requires both publication agents, the event-agent limiter, and the exact
    translation and embedding configuration above;
-3. checks `/api/tags` for both `gemma4:e2b` and `nomic-embed-text` (an implicit
-   `nomic-embed-text:latest` tag is equivalent);
+3. checks `/api/tags` for both `gemma4:e2b` and `qwen3-embedding:8b`;
 4. completes one native `/api/chat` translation against the same strict schema
    used by Knoxx's fail-closed translation recovery path;
 5. forces exactly one `save_publication_draft` call through
@@ -186,7 +213,7 @@ the backend health endpoint is green. Its Ollama probe:
 6. rejects prose, malformed or blank draft arguments, extra fields, multiple
    calls, or any returned reasoning;
 7. posts a real request to Ollama's OpenAI-compatible `/v1/embeddings` endpoint
-   and accepts only a nonempty vector of exactly 768 finite numbers.
+   and accepts only a nonempty vector of exactly 1024 finite numbers.
 
 The later MCP `semantic_query` probe still exercises Knoxx and the in-process
 OpenPlanner data plane end to end. Neither check publishes content.
@@ -194,13 +221,15 @@ OpenPlanner data plane end to end. Neither check publishes content.
 ## Migration warning: existing 1024-dimensional state
 
 Production previously configured `gte-large-en-v1.5` through Proxx with 1024
-dimensions. Changing environment variables to `nomic-embed-text` and 768
-dimensions does **not** migrate existing Mongo data.
+dimensions. Changing environment variables to `qwen3-embedding:8b` and 1024
+dimensions does **not** migrate existing Mongo data. The dimension is
+unchanged, so the Atlas index keeps its shape, but the vectors themselves are
+from a different model and are not comparable to the retained ones.
 
 There are three distinct hazards in the current OpenPlanner SDK:
 
 - Event vectors retain their recorded `embedding_model` and
-  `embedding_dimensions`. Model/dimension partitions keep new 768-dimensional
+  `embedding_dimensions`. Model/dimension partitions keep new 1024-dimensional
   vectors separate, but creating a new partition does not re-embed old rows.
 - Text search generates a query embedding for every query-visible partition
   using that partition's recorded model. A retained
@@ -208,13 +237,13 @@ There are three distinct hazards in the current OpenPlanner SDK:
   provider for a model it does not have and fail the search.
 - The `graph_node_embeddings` search index named `embedding_vector` is created
   with the configured dimension only when it is absent. Startup does not
-  reconcile an existing 1024-dimensional index definition to 768 dimensions.
+  reconcile an existing 1024-dimensional index definition to 1024 dimensions.
 
 Deployment admission is idempotent by source revision. Replaying an already
 recorded anchor is not, by itself, a request to re-embed every existing event or
 graph node.
 
-The live Ollama probe consequently proves that **new** 768-dimensional
+The live Ollama probe consequently proves that **new** 1024-dimensional
 embeddings can be generated. It does not prove that stored vectors or Atlas
 search-index definitions have been migrated.
 
@@ -224,7 +253,7 @@ The current gate deliberately has no operator override and does not interpret a
 manual backfill claim as migration proof. Before Services can admit this route
 change over an existing Mongo database, Knoxx/OpenPlanner must supply a tested,
 read-only verifier that proves retained-source coverage, absence of legacy
-partitions, target vector dimensions, and a ready/queryable 768-dimensional
+partitions, target vector dimensions, and a ready/queryable 1024-dimensional
 graph index. The operational preparation remains:
 
 1. Take the normal recoverable database snapshot.
@@ -232,10 +261,10 @@ graph index. The operational preparation remains:
    `compacted_vectors`, `graph_node_embeddings`, and `vector_partitions`, and
    inspect the `graph_node_embeddings.embedding_vector` search-index definition.
 3. Use an OpenPlanner-owned, tested re-index/backfill procedure to re-embed the
-   retained source material with `nomic-embed-text`, converge query-visible
-   partitions on 768 dimensions, and recreate the graph-node vector index with
-   `numDimensions: 768`.
-4. Run the Knoxx deploy verifier and require the real 768-vector probe and MCP
+   retained source material with `qwen3-embedding:8b`, converge query-visible
+   partitions on 1024 dimensions, and recreate the graph-node vector index with
+   `numDimensions: 1024`.
+4. Run the Knoxx deploy verifier and require the real 1024-vector probe and MCP
    semantic query to pass before declaring the deployment healthy.
 
 Useful read-only inventory shapes in `mongosh` are:

@@ -9,8 +9,8 @@ OLLAMA_VERSION=0.33.2
 OLLAMA_ARCHIVE_SHA256=9785247dea264d9072f09f6c9c0eb4b8e666892826a3d8388eba3e8fb9ed1db9
 OLLAMA_TRANSLATION_MODEL=gemma4:e2b
 OLLAMA_TRANSLATION_DIGEST=7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
-OLLAMA_EMBEDDING_DIGEST=0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f
+OLLAMA_EMBEDDING_MODEL=qwen3-embedding:8b
+OLLAMA_EMBEDDING_DIGEST=64b933495768fbd3b87c20583d379728a07471e0c66733a9df87cd1901b3c44b
 
 # This host bridge is an identity boundary, not merely an address route. Only
 # the Knoxx backend network namespace is attached to it by Compose. Nested DIND
