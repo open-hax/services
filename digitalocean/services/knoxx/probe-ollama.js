@@ -303,6 +303,13 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
     // The post drafter uses Ollama's OpenAI-compatible required-tool transport.
     // A native translation completion alone cannot prove this parser path or
     // the exact save_publication_draft arguments are healthy.
+    //
+    // The body is the deployed request, field for field. The openai-completions
+    // adapter emits `reasoning_effort` only when the model declares reasoning
+    // AND compat.supportsReasoningEffort; contracts/knoxx/models/gemma4_e2b.edn
+    // declares both false, so production omits the field and so does this
+    // canary. check-edn-contracts.clj holds that declaration in place, and the
+    // thinkingBlank assertion below still proves the turn carried no reasoning.
     const agentToolCallResponse = await fetchImpl(`${ollamaBaseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -323,7 +330,6 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
         stream: false,
         temperature: 0,
         seed: 0,
-        reasoning_effort: 'none',
       }),
       signal: AbortSignal.timeout(inferenceTimeoutMs),
     });
@@ -512,8 +518,12 @@ async function selfTest() {
     stream: false,
     temperature: 0,
     seed: 0,
-    reasoning_effort: 'none',
   });
+  // The deployed openai-completions adapter emits reasoning_effort only for a
+  // model contract that declares reasoning; gemma4:e2b declares it off, so the
+  // production request carries no such field and neither may this canary.
+  const agentRequestBody = JSON.parse(calls[2].options.body);
+  assert.equal('reasoning_effort' in agentRequestBody, false);
   assert.equal(calls[2].options.headers.Authorization, undefined);
   assert.deepEqual(JSON.parse(calls[3].options.body), {
     model: 'nomic-embed-text',
@@ -749,7 +759,7 @@ async function selfTest() {
       check: (result) => assert.equal(result.agentToolCall.exactArguments, false),
     },
     {
-      name: 'thinking despite reasoning effort none',
+      name: 'thinking despite a non-reasoning model contract',
       makeResponse: () => response(200, withToolCall({}, {reasoning: 'hidden reasoning'})),
       check: (result) => assert.equal(result.agentToolCall.thinkingBlank, false),
     },

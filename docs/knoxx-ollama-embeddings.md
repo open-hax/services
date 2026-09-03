@@ -177,8 +177,12 @@ the backend health endpoint is green. Its Ollama probe:
 4. completes one native `/api/chat` translation against the same strict schema
    used by Knoxx's fail-closed translation recovery path;
 5. forces exactly one `save_publication_draft` call through
-   `/v1/chat/completions` with the same named `tool_choice`, deterministic seed,
-   and `reasoning_effort: none` contract used by the post-drafter agent;
+   `/v1/chat/completions` with the same named `tool_choice` and deterministic
+   seed the post-drafter agent sends, and with no `reasoning_effort` field:
+   `gemma4:e2b` declares `:model/reasoning false` and
+   `:supportsReasoningEffort false`, so the openai-completions adapter omits
+   that field in production and `scripts/check-edn-contracts.clj` keeps the
+   declaration in place;
 6. rejects prose, malformed or blank draft arguments, extra fields, multiple
    calls, or any returned reasoning;
 7. posts a real request to Ollama's OpenAI-compatible `/v1/embeddings` endpoint

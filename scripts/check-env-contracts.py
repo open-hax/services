@@ -115,6 +115,12 @@ def main() -> int:
         if knoxx_ollama_probe_path.is_file()
         else ""
     )
+    knoxx_edn_contract_law_path = ROOT / "scripts" / "check-edn-contracts.clj"
+    knoxx_edn_contract_law = (
+        knoxx_edn_contract_law_path.read_text()
+        if knoxx_edn_contract_law_path.is_file()
+        else ""
+    )
     knoxx_embedding_migration_probe_path = (
         ROOT
         / "digitalocean"
@@ -703,9 +709,22 @@ def main() -> int:
             knoxx_ollama_probe,
             "function: {name: TOOL_PROBE.name}",
         ),
-        "OpenAI-compatible reasoning disable": (
+        # The openai-completions adapter emits reasoning_effort only when the
+        # model declares reasoning and compat supports the field. gemma4:e2b
+        # declares both off, so the deployed post-drafter request omits it and
+        # the canary must omit it too, or the health gate probes a shape
+        # production never sends.
+        "OpenAI-compatible reasoning field omission": (
             knoxx_ollama_probe,
-            "reasoning_effort: 'none'",
+            "assert.equal('reasoning_effort' in agentRequestBody, false);",
+        ),
+        "OpenAI-compatible reasoning contract law": (
+            knoxx_edn_contract_law,
+            ":supportsReasoningEffort",
+        ),
+        "OpenAI-compatible reasoning contract law CI": (
+            code_quality_text,
+            "clojure -M scripts/check-edn-contracts.clj",
         ),
         "required agent tool-call assertion": (
             knoxx_ollama_probe,
