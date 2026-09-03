@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 "use strict";
 
-// This probe is intentionally read-only. It permits the 1024 -> 768 embedding
+// This probe is intentionally read-only. It permits the embedding
 // cutover only when the current project container (running or stopped) already
 // records the reviewed target, or when the relevant Mongo store is genuinely
 // unused and no prior backend contract can race the inventory. Populated-store
 // migration belongs upstream in Knoxx/OpenPlanner and must provide stronger
 // source-to-vector coverage evidence before this gate can accept it.
 
-const TARGET_MODEL = "nomic-embed-text";
-const TARGET_DIMENSIONS = "768";
+const TARGET_MODEL = "qwen3-embedding:8b";
+const TARGET_DIMENSIONS = "1024";
 const OWNED_COLLECTIONS = [
   "event_chunks",
   "compacted_vectors",
@@ -301,7 +301,9 @@ async function selfTest() {
   expect(!result.ok && result.reason === "populated-store-requires-authoritative-migration",
     "existing graph index was accepted");
 
-  result = await probe({ ...base, EMBED_PROVIDER_DIMENSIONS: "1024" }, () => fakeClient());
+  // The target is qwen3-embedding:8b truncated to 1024. Its untruncated native
+  // width is the realistic misconfiguration, so that is what this rejects.
+  result = await probe({ ...base, EMBED_PROVIDER_DIMENSIONS: "4096" }, () => fakeClient());
   expect(!result.ok && result.reason === "unexpected-target", "wrong target was accepted");
 
   result = await probe({ ...base, EMBED_SOURCE_WRITER_ACTIVE: "maybe" }, () => fakeClient());

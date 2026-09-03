@@ -104,7 +104,7 @@ backend_json_request() {
 # required model ids, makes a bounded native structured Gemma translation,
 # forces one tool call through the OpenAI-compatible agent transport with
 # reasoning disabled, and makes a real embedding request. Catalog-only checks
-# cannot prove these paths run or that the embedding model returns 768
+# cannot prove these paths run or that the embedding model returns 1024
 # dimensions.
 ollama_runtime_probe() {
   local translation_model=$1 embedding_model=$2 embedding_dimensions=$3
@@ -142,8 +142,8 @@ transport=$(printf '%s' "$body" | jq -r '.dependencies.openplanner.detail.transp
 [ "$ollama_ok" = "true" ] || { echo "knoxx: host Ollama is unreachable" >&2; exit 1; }
 
 translation_model=gemma4:e2b
-embedding_model=nomic-embed-text
-embedding_dimensions=768
+embedding_model=qwen3-embedding:8b
+embedding_dimensions=1024
 for publication_agent in publication_translator publication_post_drafter; do
   case ",${KNOXX_AGENT_MODEL_OVERRIDES:-}," in
     *",${publication_agent}=${translation_model},"*) ;;

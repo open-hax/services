@@ -403,11 +403,11 @@ async function selfTest() {
   const baseEnv = {
     OLLAMA_BASE_URL: 'http://172.30.114.1:11434/',
     EMBED_PROVIDER_BASE_URL: 'http://172.30.114.1:11434',
-    EMBED_PROVIDER_MODEL: 'nomic-embed-text',
-    EMBED_PROVIDER_DIMENSIONS: '768',
+    EMBED_PROVIDER_MODEL: 'qwen3-embedding:8b',
+    EMBED_PROVIDER_DIMENSIONS: '1024',
     KNOXX_DEPLOY_TRANSLATION_MODEL: 'gemma4:e2b',
-    KNOXX_DEPLOY_EMBEDDING_MODEL: 'nomic-embed-text',
-    KNOXX_DEPLOY_EMBEDDING_DIMENSIONS: '768',
+    KNOXX_DEPLOY_EMBEDDING_MODEL: 'qwen3-embedding:8b',
+    KNOXX_DEPLOY_EMBEDDING_DIMENSIONS: '1024',
     BACKEND_PROBE_TIMEOUT_MS: '15000',
     KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS: '90000',
   };
@@ -421,7 +421,7 @@ async function selfTest() {
     async json() { throw new Error('not json'); },
   });
   const tagsPayload = {
-    models: [{name: 'gemma4:e2b'}, {name: 'nomic-embed-text:latest'}],
+    models: [{name: 'gemma4:e2b'}, {name: 'qwen3-embedding:8b'}],
   };
   const translationPayload = {
     model: 'gemma4:e2b',
@@ -458,7 +458,7 @@ async function selfTest() {
     }],
   };
   const embeddingPayload = {
-    data: [{embedding: new Array(768).fill(0.25)}],
+    data: [{embedding: new Array(1024).fill(0.25)}],
   };
   const goodPayloadFor = (url) => {
     if (url.endsWith('/api/tags')) return tagsPayload;
@@ -482,7 +482,7 @@ async function selfTest() {
   assert.equal(good.agentToolCall.wellFormed, true);
   assert.equal(good.agentToolCall.toolName, 'save_publication_draft');
   assert.equal(good.agentToolCall.exactArguments, true);
-  assert.equal(good.embedding.vectorLength, 768);
+  assert.equal(good.embedding.vectorLength, 1024);
   assert.deepEqual(calls.map((call) => call.url), [
     'http://172.30.114.1:11434/api/tags',
     'http://172.30.114.1:11434/api/chat',
@@ -526,14 +526,14 @@ async function selfTest() {
   assert.equal('reasoning_effort' in agentRequestBody, false);
   assert.equal(calls[2].options.headers.Authorization, undefined);
   assert.deepEqual(JSON.parse(calls[3].options.body), {
-    model: 'nomic-embed-text',
+    model: 'qwen3-embedding:8b',
     input: ['knoxx deployment embedding probe'],
   });
   assert.equal(calls[3].options.headers.Authorization, undefined);
 
   const shortVector = await probe(baseEnv, async (url) => {
     if (url.endsWith('/v1/embeddings')) {
-      return response(200, {data: [{embedding: new Array(767).fill(0.25)}]});
+      return response(200, {data: [{embedding: new Array(1023).fill(0.25)}]});
     }
     return response(200, goodPayloadFor(url));
   });
@@ -543,7 +543,7 @@ async function selfTest() {
 
   const missingTranslationModel = await probe(baseEnv, async (url) => {
     if (url.endsWith('/api/tags')) {
-      return response(200, {models: [{name: 'nomic-embed-text:latest'}]});
+      return response(200, {models: [{name: 'qwen3-embedding:8b'}]});
     }
     return response(200, goodPayloadFor(url));
   });
@@ -806,14 +806,16 @@ async function selfTest() {
   assert.equal(wrongTranslationModel.ok, false);
   assert.equal(wrongTranslationModel.reason, 'invalid-ollama-configuration');
 
+  // 4096 is qwen3-embedding:8b's native width, so a deployment that forgets to
+  // request Matryoshka truncation lands here rather than on a nonsense number.
   const wrongConfiguredDimensions = await probe(
-    {...baseEnv, EMBED_PROVIDER_DIMENSIONS: '1024'},
+    {...baseEnv, EMBED_PROVIDER_DIMENSIONS: '4096'},
     async () => { throw new Error('fetch must not run for mismatched embedding dimensions'); },
   );
   assert.equal(wrongConfiguredDimensions.ok, false);
   assert.equal(wrongConfiguredDimensions.reason, 'invalid-ollama-configuration');
-  assert.equal(wrongConfiguredDimensions.expectedDimensions, 768);
-  assert.equal(wrongConfiguredDimensions.configuredDimensions, 1024);
+  assert.equal(wrongConfiguredDimensions.expectedDimensions, 1024);
+  assert.equal(wrongConfiguredDimensions.configuredDimensions, 4096);
 
   const unboundedInferenceTimeout = await probe(
     {...baseEnv, KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS: '180001'},
@@ -822,7 +824,7 @@ async function selfTest() {
   assert.equal(unboundedInferenceTimeout.ok, false);
   assert.equal(unboundedInferenceTimeout.reason, 'invalid-ollama-configuration');
 
-  process.stdout.write('probe-ollama: native translation, required tool call, reasoning-off, and 768-vector matrix ok\n');
+  process.stdout.write('probe-ollama: native translation, required tool call, reasoning-off, and 1024-vector matrix ok\n');
 }
 
 if (process.env.PROBE_SELFTEST === '1') {
