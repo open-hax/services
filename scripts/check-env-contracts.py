@@ -143,6 +143,42 @@ def main() -> int:
         if knoxx_post_deploy_test_path.is_file()
         else ""
     )
+    knoxx_document_inventory_path = (
+        ROOT
+        / "digitalocean"
+        / "services"
+        / "knoxx"
+        / "document-anchor-inventory.cljc"
+    )
+    knoxx_document_inventory = (
+        knoxx_document_inventory_path.read_text()
+        if knoxx_document_inventory_path.is_file()
+        else ""
+    )
+    knoxx_embedding_receipt_path = (
+        ROOT
+        / "digitalocean"
+        / "services"
+        / "knoxx"
+        / "embedding-contract-receipt.sh"
+    )
+    knoxx_embedding_receipt = (
+        knoxx_embedding_receipt_path.read_text()
+        if knoxx_embedding_receipt_path.is_file()
+        else ""
+    )
+    knoxx_embedding_receipt_test_path = (
+        ROOT
+        / "digitalocean"
+        / "services"
+        / "knoxx"
+        / "test-embedding-contract-receipt.sh"
+    )
+    knoxx_embedding_receipt_test = (
+        knoxx_embedding_receipt_test_path.read_text()
+        if knoxx_embedding_receipt_test_path.is_file()
+        else ""
+    )
     mcp_auth_contract = (
         ROOT / "contracts" / "knoxx" / "authentication" / "mcp_http.edn"
     )
@@ -253,7 +289,7 @@ def main() -> int:
         ),
         "event-agent turn-timeout helper deployment": (
             deploy_text,
-            "for helper in event-agent-limits.sh mongodb-database-identity.sh probe-embedding-migration.js probe-mcp.js probe-ollama.js",
+            "for helper in document-anchor-inventory.cljc embedding-contract-receipt.sh event-agent-limits.sh mongodb-database-identity.sh probe-embedding-migration.js probe-mcp.js probe-ollama.js",
         ),
         "event-agent turn-timeout regression CI wiring": (
             code_quality_text,
@@ -787,21 +823,45 @@ def main() -> int:
     # host and reconciles it against the endpoint response. Keep both the
     # production invariants and their fail-closed regression cases in CI.
     required_admission_reconciliation = {
-        "runtime authored-anchor inventory": (
+        "runtime real-EDN authored-anchor inventory": (
             knoxx_post_deploy,
-            "document_resources=(\"$documents_dir\"/*.edn)",
+            "/app/node_modules/.bin/nbb -e",
+        ),
+        "shared JVM ownership validation": (
+            code_quality_text,
+            "clojure -M digitalocean/services/knoxx/document-anchor-inventory.cljc",
+        ),
+        "complete EDN input consumption": (
+            knoxx_document_inventory,
+            "resource must contain exactly one form",
+        ),
+        "top-level anchor validation": (
+            knoxx_document_inventory,
+            "must declare top-level :document/anchor? true",
+        ),
+        "decoded nonblank organization validation": (
+            knoxx_document_inventory,
+            "whitespace-only-pattern",
+        ),
+        "unambiguous public/organization boundary": (
+            knoxx_document_inventory,
+            "must not declare both public visibility and an organization owner",
+        ),
+        "public-only deployment corpus": (
+            knoxx_document_inventory,
+            "Services-authored deployment anchors must be explicitly public",
+        ),
+        "document symlink refusal": (
+            knoxx_document_inventory,
+            "must be a regular non-symlink file",
+        ),
+        "recursive document-tree drift refusal": (
+            knoxx_document_inventory,
+            "document resource subdirectories are not allowed",
         ),
         "injection-safe expected-anchor JSON": (
             knoxx_post_deploy,
             '--argjson expected "$expected_anchor_ids_json"',
-        ),
-        "strict authored-anchor parse cardinality": (
-            knoxx_post_deploy,
-            '"${#resource_ids[@]}" -ne 1 ] || [ "${#anchor_flags[@]}" -ne 1',
-        ),
-        "duplicate authored-anchor inventory refusal": (
-            knoxx_post_deploy,
-            "duplicate authored anchor id",
         ),
         "typed admission transport response": (
             knoxx_post_deploy,
@@ -851,6 +911,58 @@ def main() -> int:
             knoxx_post_deploy_test,
             '"duplicate authored resource id"',
         ),
+        "missing authored-document ownership regression": (
+            knoxx_post_deploy_test,
+            '"missing authored document ownership"',
+        ),
+        "blank authored-document owner regression": (
+            knoxx_post_deploy_test,
+            '"blank authored document owner"',
+        ),
+        "organization-owned deployment-anchor regression": (
+            knoxx_post_deploy_test,
+            '"organization-owned deployment anchor"',
+        ),
+        "nested ownership-marker regression": (
+            knoxx_post_deploy_test,
+            '"nested ownership marker"',
+        ),
+        "escaped blank owner regression": (
+            knoxx_post_deploy_test,
+            '"escaped blank authored document owner"',
+        ),
+        "duplicate visibility regression": (
+            knoxx_post_deploy_test,
+            '"duplicate document visibility"',
+        ),
+        "duplicate owner regression": (
+            knoxx_post_deploy_test,
+            '"duplicate document owner"',
+        ),
+        "malformed owner regression": (
+            knoxx_post_deploy_test,
+            '"malformed document owner"',
+        ),
+        "ambiguous public/owner regression": (
+            knoxx_post_deploy_test,
+            '"ambiguous public and organization ownership"',
+        ),
+        "trailing form regression": (
+            knoxx_post_deploy_test,
+            '"trailing document form"',
+        ),
+        "symlinked document regression": (
+            knoxx_post_deploy_test,
+            '"symlinked document resource"',
+        ),
+        "nested document-tree regression": (
+            knoxx_post_deploy_test,
+            '"nested document resource"',
+        ),
+        "hidden document regression": (
+            knoxx_post_deploy_test,
+            '"hidden document resource"',
+        ),
         "malformed transport regression": (
             knoxx_post_deploy_test,
             '"malformed transport"',
@@ -869,6 +981,51 @@ def main() -> int:
         ),
     }
     for label, (text, required) in required_admission_reconciliation.items():
+        if required not in text:
+            failures.append(f"Knoxx deployment is missing {label}")
+    inventory_position = knoxx_post_deploy.find(
+        "/app/node_modules/.bin/nbb -e"
+    )
+    admission_position = knoxx_post_deploy.find(
+        "/api/publications/documents/admit"
+    )
+    if (
+        inventory_position < 0
+        or admission_position < 0
+        or inventory_position > admission_position
+    ):
+        failures.append(
+            "Knoxx deployment does not validate the authored document inventory "
+            "before admission"
+        )
+
+    required_embedding_receipt = {
+        "strict embedding receipt schema": (
+            knoxx_embedding_receipt,
+            '(keys | sort) == ["databaseFingerprint", "dimensions", "model", "version"]',
+        ),
+        "atomic embedding receipt publication": (
+            knoxx_embedding_receipt,
+            'mv -f -- "$receipt_tmp" "$receipt_path"',
+        ),
+        "embedding receipt symlink refusal": (
+            knoxx_embedding_receipt,
+            "regular non-symlink file",
+        ),
+        "partial embedding receipt regression": (
+            knoxx_embedding_receipt_test,
+            'fail "partial receipt was accepted"',
+        ),
+        "failed embedding receipt write preservation": (
+            knoxx_embedding_receipt_test,
+            'fail "failed write changed the prior receipt"',
+        ),
+        "embedding receipt CI self-test": (
+            code_quality_text,
+            "digitalocean/services/knoxx/test-embedding-contract-receipt.sh",
+        ),
+    }
+    for label, (text, required) in required_embedding_receipt.items():
         if required not in text:
             failures.append(f"Knoxx deployment is missing {label}")
     if "mid-run stays in flight" in knoxx_verify:
@@ -1008,24 +1165,6 @@ def main() -> int:
             "Knoxx publication translations do not use the in-process agent runner"
         )
 
-    # Deployment admission is an anchor sweep. A new document resource that
-    # silently omits this flag would ship successfully but never enter the
-    # deployment-triggered indexing and translation pipeline.
-    deployed_documents = sorted(
-        (ROOT / "contracts" / "knoxx" / "documents").glob("*.edn")
-    )
-    if not deployed_documents:
-        failures.append("Knoxx deploys no document resources")
-    for document_resource in deployed_documents:
-        if not re.search(
-            r"(?m)^\s*:document/anchor\?\s+true(?:\s|[}\]])",
-            document_resource.read_text(),
-        ):
-            failures.append(
-                f"{document_resource.relative_to(ROOT)} does not declare "
-                ":document/anchor? true"
-            )
-
     for template in sorted((ROOT / "digitalocean" / "services").glob("*/env.template")):
         placeholders: set[str] = set()
         for line in template.read_text().splitlines():
@@ -1043,7 +1182,7 @@ def main() -> int:
     print("Knoxx host-Ollama inference and embedding probes are fail closed")
     print("Knoxx embedding cutover requires an unchanged target or fresh store")
     print("Knoxx post-drafter contracts and runtime trigger/agent/tool proof are wired")
-    print(f"all {len(deployed_documents)} deployed Knoxx documents declare anchors")
+    print("Knoxx deployed document inventory uses one shared real-EDN ownership validator")
     return 0
 
 

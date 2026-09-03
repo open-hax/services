@@ -16,6 +16,7 @@
  :document/title "Open Hax Promethean Garden"
  :document/source-locale :en
  :document/anchor? true
+ :document/visibility :public
  :document/source {:path "publication-source/open-hax-promethean.md"}
  :document/translations
  {:es {:path "publication-source/open-hax-promethean.es.md"}

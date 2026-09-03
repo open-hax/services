@@ -18,7 +18,10 @@ The initial deployment uses one Ubuntu Droplet for ingress and application runti
    bootstrap under the same production-host lock, which remains held until the
    whole deployment finishes. Image builds may run alongside bootstrap, but no
    service deploy starts until it passes; Proxx, Knoxx, Caddy, and the website
-   then deploy in dependency order.
+   then deploy in dependency order. The individual service workflow is
+   reusable-only and rejects callers that do not attest this outer lock; there
+   is no standalone service mutation capable of overlapping or evicting a
+   pending stack deployment.
 6. Manually dispatch `DigitalOcean Host` to run its verify-only production
    check and retain the JSON artifact. Production bootstrap is deliberately
    available only through the locked `Deploy Stack` orchestrator.

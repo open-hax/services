@@ -33,7 +33,10 @@ jobs:
           bash -n digitalocean/services/*/*.sh
 
       - name: Parse Knoxx EDN contracts
-        run: clojure -M scripts/check-edn-contracts.clj
+        run: |
+          clojure -M scripts/check-edn-contracts.clj
+          KNOXX_DOCUMENTS_DIR=contracts/knoxx/documents \
+            clojure -M digitalocean/services/knoxx/document-anchor-inventory.cljc
 
       - name: Enforce the DigitalOcean-only deployment boundary
         run: |
@@ -68,6 +71,9 @@ jobs:
 
       - name: Self-test the Knoxx content admission hook
         run: digitalocean/services/knoxx/test-post-deploy.sh
+
+      - name: Self-test the Knoxx embedding contract receipt
+        run: digitalocean/services/knoxx/test-embedding-contract-receipt.sh
 
       - name: Self-test the Knoxx event-agent limits
         run: bash digitalocean/services/knoxx/test-event-agent-limits.sh

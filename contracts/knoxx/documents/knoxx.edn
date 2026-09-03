@@ -13,4 +13,5 @@
  :document/title "Knoxx"
  :document/source-locale :en
  :document/anchor? true
+ :document/visibility :public
  :document/source {:path "publication-source/knoxx.md"}}

@@ -9,52 +9,42 @@ set -euo pipefail
 docker_bin=${KNOXX_DOCKER_BIN:-docker}
 timeout_ms=${KNOXX_POST_DEPLOY_TIMEOUT_MS:-120000}
 request_body='{"anchors":true,"generateDrafts":true}'
-documents_dir=contracts/documents
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+inventory_reader=${script_dir}/document-anchor-inventory.cljc
 
 fail() {
   echo "knoxx: $*" >&2
   exit 1
 }
 
-# Inventory the deployed files, not the checkout that launched the workflow.
-# Services ships one authored document map per file and statically requires all
-# of them to be anchors. Keep the runtime parser deliberately strict: drifted or
-# ambiguous EDN must stop the deployment instead of shrinking the expected set.
-shopt -s nullglob
-document_resources=("$documents_dir"/*.edn)
-if [ "${#document_resources[@]}" -eq 0 ]; then
-  fail "no authored document resources found under ${documents_dir}"
+# Inventory the deployed, container-visible files, not the checkout that
+# launched the workflow. The same CLJC source runs under JVM Clojure in CI and
+# the backend image's production NBB dependency here. A real EDN reader proves
+# that ownership keys are top-level, decodes escaped strings before testing for
+# blank org ids, and rejects duplicate keys or trailing forms before admission
+# can persist work for any other anchor.
+if [ ! -f "$inventory_reader" ]; then
+  fail "document anchor inventory reader is missing"
 fi
-
-declare -a expected_anchor_ids=()
-declare -A seen_anchor_ids=()
-for document_resource in "${document_resources[@]}"; do
-  mapfile -t resource_ids < <(
-    sed -nE \
-      's|^[[:space:]]*(\{[[:space:]]*)?:document/id[[:space:]]+:([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)([[:space:]}].*)?$|\2|p' \
-      "$document_resource"
-  )
-  mapfile -t anchor_flags < <(
-    sed -nE '/^[[:space:]]*:document\/anchor\?[[:space:]]+true([[:space:]}]|$)/p' \
-      "$document_resource"
-  )
-  if [ "${#resource_ids[@]}" -ne 1 ] || [ "${#anchor_flags[@]}" -ne 1 ]; then
-    fail "${document_resource} must contain exactly one qualified :document/id and one :document/anchor? true"
-  fi
-
-  document_id=${resource_ids[0]}
-  if [ -n "${seen_anchor_ids[$document_id]+present}" ]; then
-    fail "duplicate authored anchor id '${document_id}' in ${documents_dir}"
-  fi
-  seen_anchor_ids[$document_id]=1
-  expected_anchor_ids+=("$document_id")
-done
-
-# The ids are grammar-clamped above and JSON-encoded by jq. They are never
-# interpolated into a jq program or the in-container JavaScript.
-expected_anchor_ids_json=$(
-  printf '%s\n' "${expected_anchor_ids[@]}" \
-    | jq -Rsc 'split("\n") | map(select(length > 0))'
+inventory_program=$(cat "$inventory_reader")
+if ! expected_anchor_ids_json=$(
+  "$docker_bin" compose --project-name knoxx --env-file .env \
+    exec -T \
+      -e KNOXX_DOCUMENTS_DIR=/app/contracts/documents \
+    knoxx-backend /app/node_modules/.bin/nbb -e "$inventory_program" </dev/null
+); then
+  fail "authored document inventory validation failed"
+fi
+if ! printf '%s' "$expected_anchor_ids_json" | jq -e '
+  type == "array"
+  and length > 0
+  and all(.[]; type == "string" and test("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"))
+  and length == (unique | length)
+' >/dev/null; then
+  fail "authored document inventory returned malformed ids"
+fi
+mapfile -t expected_anchor_ids < <(
+  printf '%s' "$expected_anchor_ids_json" | jq -r '.[]'
 )
 
 response=$(

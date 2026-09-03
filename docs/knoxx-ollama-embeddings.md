@@ -49,6 +49,13 @@ is likewise re-derived from an anchored source revision whose deterministic
 manifest is still absent. This is reconciliation, not a claim of durable
 queueing or an autonomous retry timer.
 
+Every Services-authored anchor is explicitly public. The deployment hook fails
+closed before admission unless every file in that deployment-owned corpus
+declares `:document/visibility :public`. The shared sweep cannot accidentally
+admit an anchor owned by a different organization after already persisting work
+for earlier files. Knoxx-generated drafts remain runtime-owned, private, and
+organization-owned while they await review.
+
 ## Host provisioning and boundary
 
 The locked `Deploy Stack` host prerequisite installs Ollama `v0.33.2` from its
@@ -100,7 +107,8 @@ external bridge, firewall rule, listener, runtime, or model manifest therefore
 blocks deployment; Compose never creates a fallback network. Production
 bootstrap is available only inside the locked `Deploy Stack` orchestrator; a
 direct `DigitalOcean Host` dispatch is a verify-only observation and cannot
-displace a queued stack deployment.
+displace a queued stack deployment. The individual service deployment is also
+reusable-only and accepts calls solely from that locked stack chain.
 
 Both required models must be present before the Knoxx deployment runs. Normal
 production provisioning does this automatically; for a local workstation use:
@@ -117,7 +125,7 @@ authoritative reachability check; a successful host-local `curl` is not.
 
 Before the service definition or rendered environment is copied to the host,
 the deployment runs `probe-embedding-migration.js` inside the prospective Knoxx
-backend image. The gate accepts only two states:
+backend image. The gate accepts only three states:
 
 - the existing Knoxx project container, whether running or stopped, records
   `nomic-embed-text` with 768 dimensions against the same database contract
@@ -125,17 +133,29 @@ backend image. The gate accepts only two states:
   the endpoint-selecting SRV service name, an explicitly selected replica set,
   and `MONGODB_DB`), so recovery and ordinary redeployment are not changing the
   embedding contract; or
+- no project container remains, but the service state contains the strict
+  versioned `embedding-contract.json` receipt for the same model, dimensions,
+  and credential-free database fingerprint; or
 - there is no prior Knoxx backend contract, `event_chunks`,
   `compacted_vectors`, `graph_node_embeddings`, and `vector_partitions` are all
   empty, and the `graph_node_embeddings.embedding_vector` Atlas search index is
   absent.
 
-Connection, permission, timeout, malformed-inventory, and search-index listing
-failures all block the deployment. The check is read-only and passes only the
-Mongo and embedding settings into the short-lived candidate container. A
-stopped incompatible project container also blocks instead of being mistaken
-for a new installation. A populated 1024-dimensional deployment remains on its
-current containers; the new environment is never synced or activated.
+Connection, permission, timeout, malformed-inventory, malformed or symlinked
+receipt, and search-index listing failures all block the deployment. The check
+is read-only and passes only the Mongo and embedding settings into the
+short-lived candidate container. A stopped incompatible project container or a
+stale receipt also blocks instead of being mistaken for a new installation. A
+populated 1024-dimensional deployment remains on its current containers; the
+new environment is never synced or activated.
+
+After the bounded probe approves the target, the deploy writes the
+credential-free receipt as a mode-`0600` same-directory temporary file and
+atomically renames it before a new writer starts. A cancellation therefore
+cannot publish partial JSON or leave a target writer able to populate Mongo
+without durable cutover evidence. Live or stopped container environment remains
+the first source of truth; the receipt is recovery evidence only when the
+container has been removed.
 
 Database identity intentionally excludes URI credentials, path, and
 transport/retry options. Rotating a password or TLS/retry option therefore does

@@ -93,6 +93,7 @@ jobs:
       service: proxx
       image: ${{ needs.build-proxx.outputs.image }}
       source_sha: ${{ needs.build-proxx.outputs.source_sha }}
+      caller_holds_production_host_lock: true
     secrets: inherit
 
   # Both Knoxx images build while Proxx deploys.
@@ -134,6 +135,7 @@ jobs:
       # fails closed before rendering if the secret is absent or too short.
       extra_env: >-
         {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}@${{ needs.build-knoxx-devtools.outputs.digest }}"}
+      caller_holds_production_host_lock: true
     secrets: inherit
 
   deploy-caddy:
@@ -142,6 +144,7 @@ jobs:
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: caddy
+      caller_holds_production_host_lock: true
     secrets: inherit
 
   # Builds alongside the rest of the chain; deploys last.
@@ -172,4 +175,5 @@ jobs:
       service: website
       image: ${{ needs.build-website.outputs.image }}
       source_sha: ${{ needs.build-website.outputs.source_sha }}
+      caller_holds_production_host_lock: true
     secrets: inherit

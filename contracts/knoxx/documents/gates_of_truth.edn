@@ -13,4 +13,5 @@
  :document/title "Gates of Truth"
  :document/source-locale :en
  :document/anchor? true
+ :document/visibility :public
  :document/source {:path "publication-source/gates-of-truth.md"}}

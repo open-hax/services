@@ -1,6 +1,9 @@
 name: Deploy to DigitalOcean
 
-# Deploys one service to the DigitalOcean production host.
+# Reusable implementation that deploys one service to the DigitalOcean
+# production host. It has no direct mutation entrypoint: Deploy Stack holds the
+# single production-host lock and its workflow_call-only chain attests that lock
+# on every invocation.
 #
 # The host address, SSH user, and runtime/state roots come from
 # digitalocean/hosts/<environment>.yaml via digitalocean/lib/host-contract.sh.
@@ -42,6 +45,10 @@ on:
         required: false
         default: "{}"
         type: string
+      caller_holds_production_host_lock:
+        description: Caller owns the production-host lock for this deployment
+        required: true
+        type: boolean
     secrets:
       DIGITALOCEAN_SSH_PRIVATE_KEY: { required: true }
       MONGODB_URI: { required: false }
@@ -59,35 +66,8 @@ on:
       CADDY_ACME_EMAIL: { required: false }
       DEV_BASIC_AUTH_USER: { required: false }
       DEV_BASIC_AUTH_HASH: { required: false }
-  workflow_dispatch:
-    inputs:
-      service:
-        description: Service to deploy
-        required: true
-        type: choice
-        options: [smoke, proxx, knoxx, caddy, website]
-      environment:
-        description: Target environment
-        required: false
-        default: production
-        type: string
-      image:
-        description: Fully qualified image reference to deploy
-        required: false
-        default: ""
-        type: string
-      extra_env:
-        description: Additional non-secret NAME=value pairs as a JSON object
-        required: false
-        default: "{}"
-        type: string
-
 permissions:
   contents: read
-
-concurrency:
-  group: digitalocean-${{ inputs.environment }}-${{ inputs.service }}
-  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -108,8 +88,13 @@ jobs:
         env:
           DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
           SERVICE: ${{ inputs.service }}
+          CALLER_HOLDS_PRODUCTION_HOST_LOCK: ${{ inputs.caller_holds_production_host_lock }}
         run: |
           set -euo pipefail
+          if [ "$CALLER_HOLDS_PRODUCTION_HOST_LOCK" != true ]; then
+            echo "service deployment requires the Deploy Stack production lock" >&2
+            exit 2
+          fi
           . digitalocean/lib/host-contract.sh
           load_host_contract "$DEPLOY_ENVIRONMENT"
           assert_pinned_host_key
@@ -126,7 +111,7 @@ jobs:
               echo "service knoxx is missing ${dir}/post-deploy.sh" >&2
               exit 2
             }
-            for helper in event-agent-limits.sh mongodb-database-identity.sh probe-embedding-migration.js probe-mcp.js probe-ollama.js; do
+            for helper in document-anchor-inventory.cljc embedding-contract-receipt.sh event-agent-limits.sh mongodb-database-identity.sh probe-embedding-migration.js probe-mcp.js probe-ollama.js; do
               test -f "${dir}/${helper}" || {
                 echo "service knoxx is missing ${dir}/${helper}" >&2
                 exit 2
@@ -302,6 +287,7 @@ jobs:
         env:
           SERVICE: ${{ inputs.service }}
           SERVICE_DIR: ${{ steps.contract.outputs.service_dir }}
+          STATE_PATH: ${{ steps.contract.outputs.state_path }}
         run: |
           set -euo pipefail
           probe_dir=$(ssh open-hax-target 'mktemp -d /tmp/open-hax-knoxx-migration.XXXXXX')
@@ -314,6 +300,7 @@ jobs:
           }
           trap cleanup_probe EXIT
           scp rendered.env "${SERVICE_DIR}/probe-embedding-migration.js" \
+            "${SERVICE_DIR}/embedding-contract-receipt.sh" \
             "${SERVICE_DIR}/mongodb-database-identity.sh" \
             "open-hax-target:${probe_dir}/"
 
@@ -324,18 +311,24 @@ jobs:
           # and the store is fresh; populated state awaits an authoritative
           # Knoxx/OpenPlanner migration verifier.
           ssh open-hax-target \
-            "bash -euo pipefail -s -- '$probe_dir' '$SERVICE'" <<'REMOTE'
+            "bash -euo pipefail -s -- '$probe_dir' '$SERVICE' '$STATE_PATH'" <<'REMOTE'
           {
           probe_dir=$1
           service=$2
+          state_path=$3
           probe_container="open-hax-${service}-embedding-migration"
+          receipt_path="${state_path}/embedding-contract.json"
           cleanup_remote_probe() {
             docker rm -f "$probe_container" >/dev/null 2>&1 || true
             rm -rf "$probe_dir"
           }
           trap cleanup_remote_probe EXIT
-          chmod 600 "$probe_dir/rendered.env" "$probe_dir/mongodb-database-identity.sh"
+          chmod 600 "$probe_dir/rendered.env" \
+            "$probe_dir/embedding-contract-receipt.sh" \
+            "$probe_dir/mongodb-database-identity.sh"
           set -a; . "$probe_dir/rendered.env"; set +a
+          # shellcheck source=/dev/null
+          . "$probe_dir/embedding-contract-receipt.sh"
           # shellcheck source=/dev/null
           . "$probe_dir/mongodb-database-identity.sh"
 
@@ -399,6 +392,20 @@ jobs:
             unset current_environment source_mongodb_uri source_mongodb_db
             export EMBED_SOURCE_CONTRACT_PRESENT=1
             export EMBED_SOURCE_MODEL EMBED_SOURCE_DIMENSIONS EMBED_SOURCE_DATABASE_FINGERPRINT
+          else
+            # A removed container is not proof that the embedding contract
+            # vanished: Mongo and the service state survive container removal.
+            # A strict credential-free receipt retains that contract. Missing
+            # evidence still takes the fresh-store inventory path; malformed
+            # or stale evidence blocks below.
+            read_embedding_contract_receipt "$receipt_path"
+            if [ "$EMBED_RECEIPT_PRESENT" = 1 ]; then
+              export EMBED_SOURCE_CONTRACT_PRESENT=1
+              EMBED_SOURCE_MODEL=$EMBED_RECEIPT_MODEL
+              EMBED_SOURCE_DIMENSIONS=$EMBED_RECEIPT_DIMENSIONS
+              EMBED_SOURCE_DATABASE_FINGERPRINT=$EMBED_RECEIPT_DATABASE_FINGERPRINT
+              export EMBED_SOURCE_MODEL EMBED_SOURCE_DIMENSIONS EMBED_SOURCE_DATABASE_FINGERPRINT
+            fi
           fi
 
           docker pull "$KNOXX_BACKEND_IMAGE"
@@ -420,6 +427,17 @@ jobs:
             --entrypoint node \
             "$KNOXX_BACKEND_IMAGE" \
             --input-type=commonjs -e "$probe_code"
+
+          # Persist the approved target before a new writer can start. The
+          # helper writes a 0600 same-directory temporary file and atomically
+          # renames it, so cancellation cannot publish partial JSON. A later
+          # target with a different model, dimension, or database fingerprint
+          # is rejected as an incompatible stopped contract.
+          write_embedding_contract_receipt \
+            "$receipt_path" \
+            "$EMBED_PROVIDER_MODEL" \
+            "$EMBED_PROVIDER_DIMENSIONS" \
+            "$EMBED_TARGET_DATABASE_FINGERPRINT"
           } </dev/null
           REMOTE
 

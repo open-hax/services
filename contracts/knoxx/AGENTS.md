@@ -257,6 +257,20 @@ Runtime behavior:
 
 Legacy aliases accepted by the runtime are `:context-policy`, `:contextPolicy`, `:maxMessages`, `:max_chars`, and `:preserveSystem`, but new EDN resources should use the kebab-case `:context` form above.
 
+## Document Resources
+
+Deployment-authored documents under `documents/` enter the admission sweep only
+when they declare `:document/anchor? true`. Every anchored document must also
+declare its tenant boundary: use `:document/visibility :public` for intentionally
+shared content, or a nonblank string `:document/org-id` for organization-owned
+content. Do not declare both: public visibility takes precedence at runtime, so
+combining it with an organization owner is ambiguous and rejected by the deploy
+inventory. Missing ownership is never an implicit public grant. Knoxx-generated
+drafts are private and carry the requesting organization id. The Services-owned
+`documents/` deployment corpus is a shared publication surface and is stricter:
+every file there must be explicitly public. Organization-owned documents are
+runtime state and are not admitted through this single automation-actor sweep.
+
 ### Common mistakes in agent resources
 
 - `:agent {:role :contract_librarian}` — wrong. Use `:role/contract-librarian`.
@@ -377,4 +391,5 @@ Result: ResolvedToolSuite { :tools :denied :denied-reasons }
 - action resources identify registered behavior with `:action/kind` and `:action/handler`; they do not contain trigger or schedule maps
 - `:data` is static config; do not put mutable logs, timestamps, world_state, rosters, or invented `data/` folder paths there unless a real state backend consumes them
 - `:contract/kind` is present and is a keyword while the loader migration keeps this discriminator
+- anchored documents declare either `:document/visibility :public` or a nonblank string `:document/org-id`
 - EDN is valid — balanced brackets, no trailing commas, no JSON syntax

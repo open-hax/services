@@ -13,4 +13,5 @@
  :document/title "eta-mu"
  :document/source-locale :en
  :document/anchor? true
+ :document/visibility :public
  :document/source {:path "publication-source/eta-mu.md"}}

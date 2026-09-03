@@ -13,4 +13,5 @@
  :document/title "BitchTracker"
  :document/source-locale :en
  :document/anchor? true
+ :document/visibility :public
  :document/source {:path "publication-source/bitch-tracker.md"}}

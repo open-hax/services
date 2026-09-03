@@ -103,6 +103,7 @@ def main() -> int:
     cleanup_environment = remove_credentials.get("env", {})
     host_callers = []
     chain_callers = []
+    service_deploy_callers = []
     workflow_paths = sorted(
         set(HOST_WORKFLOW.parent.glob("*.yml"))
         | set(HOST_WORKFLOW.parent.glob("*.yaml"))
@@ -122,6 +123,16 @@ def main() -> int:
                 )
             if job.get("uses") == "./.github/workflows/deploy-stack-chain.yml":
                 chain_callers.append((workflow_path.name, job_name))
+            if job.get("uses") == "./.github/workflows/deploy-digitalocean.yml":
+                service_deploy_callers.append(
+                    (
+                        workflow_path.name,
+                        job_name,
+                        job.get("with", {}).get(
+                            "caller_holds_production_host_lock"
+                        ),
+                    )
+                )
     stack_workflow = yaml.load(STACK_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     stack_concurrency = (
         stack_workflow.get("jobs", {}).get("deploy", {}).get("concurrency", {})
@@ -194,6 +205,47 @@ def main() -> int:
     service_deploy = yaml.load(
         SERVICE_DEPLOY_WORKFLOW.read_text(), Loader=yaml.BaseLoader
     )
+    service_events = service_deploy.get("on", {})
+    service_call = service_events.get("workflow_call", {})
+    expected_service_callers = [
+        ("deploy-stack-chain.yml", "deploy-proxx", "true"),
+        ("deploy-stack-chain.yml", "deploy-knoxx", "true"),
+        ("deploy-stack-chain.yml", "deploy-caddy", "true"),
+        ("deploy-stack-chain.yml", "deploy-website", "true"),
+    ]
+    contract_step = next(
+        (
+            step
+            for step in service_deploy.get("jobs", {}).get("deploy", {}).get("steps", [])
+            if step.get("name") == "Load and validate host contract"
+        ),
+        {},
+    )
+    if (
+        set(service_events) != {"workflow_call"}
+        or service_call.get("inputs", {})
+        .get("caller_holds_production_host_lock", {})
+        .get("required")
+        != "true"
+        or service_call.get("inputs", {})
+        .get("caller_holds_production_host_lock", {})
+        .get("default")
+        is not None
+        or service_deploy.get("concurrency") is not None
+        or service_deploy_callers != expected_service_callers
+        or contract_step.get("env", {}).get(
+            "CALLER_HOLDS_PRODUCTION_HOST_LOCK"
+        )
+        != "${{ inputs.caller_holds_production_host_lock }}"
+        or "service deployment requires the Deploy Stack production lock"
+        not in contract_step.get("run", "")
+    ):
+        print(
+            "deploy chain error: service mutation is not confined to the "
+            "locked Deploy Stack orchestrator",
+            file=sys.stderr,
+        )
+        return 1
     steps = service_deploy["jobs"]["deploy"]["steps"]
     named_steps = {
         step.get("name"): (index, step)
@@ -241,9 +293,21 @@ def main() -> int:
     registry_index, _ = named_steps["Authenticate the host to GHCR"]
     migration_index, migration = named_steps["Verify Knoxx embedding cutover"]
     _, sync = named_steps["Sync service definition"]
-    if 'test -f "${dir}/post-deploy.sh"' not in contract.get("run", ""):
+    contract_run = contract.get("run", "")
+    required_knoxx_helpers = (
+        "document-anchor-inventory.cljc",
+        "embedding-contract-receipt.sh",
+        "post-deploy.sh",
+    )
+    missing_knoxx_helpers = [
+        helper
+        for helper in required_knoxx_helpers
+        if helper not in contract_run
+    ]
+    if missing_knoxx_helpers:
         print(
-            "deploy chain error: Knoxx post-deploy hook is not a required service file",
+            "deploy chain error: Knoxx deployment helper contract is incomplete: "
+            + ", ".join(missing_knoxx_helpers),
             file=sys.stderr,
         )
         return 1
@@ -257,6 +321,7 @@ def main() -> int:
     migration_run = migration.get("run", "")
     required_migration_gate = (
         "probe-embedding-migration.js",
+        "embedding-contract-receipt.sh",
         "docker ps --all",
         "EMBED_SOURCE_CONTRACT_PRESENT",
         "EMBED_SOURCE_WRITER_ACTIVE",
@@ -264,6 +329,9 @@ def main() -> int:
         "docker inspect --format '{{json .Config.Env}}'",
         "timeout --kill-after=5s 90s docker run --rm",
         'label=com.docker.compose.service=knoxx-backend',
+        'receipt_path="${state_path}/embedding-contract.json"',
+        'read_embedding_contract_receipt "$receipt_path"',
+        'write_embedding_contract_receipt',
     )
     missing_migration_gate = [
         clause for clause in required_migration_gate if clause not in migration_run
@@ -272,6 +340,10 @@ def main() -> int:
         migration.get("if") != "inputs.service == 'knoxx'"
         or missing_migration_gate
         or migration_run.count("--entrypoint node") != 1
+        or migration.get("env", {}).get("STATE_PATH")
+        != "${{ steps.contract.outputs.state_path }}"
+        or migration_run.find("write_embedding_contract_receipt")
+        < migration_run.find("timeout --kill-after=5s 90s docker run --rm")
     ):
         print(
             "deploy chain error: Knoxx embedding migration gate is not a "
