@@ -22,6 +22,19 @@ def main() -> int:
     deploy_text = deploy_path.read_text()
     document = yaml.load(deploy_text, Loader=yaml.BaseLoader)
     code_quality_text = (WORKFLOWS / "code-quality.yml").read_text()
+    host_workflow_text = (WORKFLOWS / "digitalocean-host.yml").read_text()
+    production_host_contract = (
+        ROOT / "digitalocean" / "hosts" / "production.yaml"
+    ).read_text()
+    host_bootstrap = (
+        ROOT / "digitalocean" / "scripts" / "bootstrap-host.sh"
+    ).read_text()
+    host_verify = (
+        ROOT / "digitalocean" / "scripts" / "verify-host.sh"
+    ).read_text()
+    ollama_provisioner = (
+        ROOT / "digitalocean" / "scripts" / "provision-ollama.sh"
+    ).read_text()
     render = next(
         step
         for step in document["jobs"]["deploy"]["steps"]
@@ -86,6 +99,18 @@ def main() -> int:
     knoxx_ollama_probe = (
         knoxx_ollama_probe_path.read_text()
         if knoxx_ollama_probe_path.is_file()
+        else ""
+    )
+    knoxx_embedding_migration_probe_path = (
+        ROOT
+        / "digitalocean"
+        / "services"
+        / "knoxx"
+        / "probe-embedding-migration.js"
+    )
+    knoxx_embedding_migration_probe = (
+        knoxx_embedding_migration_probe_path.read_text()
+        if knoxx_embedding_migration_probe_path.is_file()
         else ""
     )
     knoxx_post_deploy_path = (
@@ -214,7 +239,7 @@ def main() -> int:
         ),
         "event-agent turn-timeout helper deployment": (
             deploy_text,
-            "for helper in event-agent-limits.sh probe-mcp.js probe-ollama.js",
+            "for helper in event-agent-limits.sh probe-embedding-migration.js probe-mcp.js probe-ollama.js",
         ),
         "event-agent turn-timeout regression CI wiring": (
             code_quality_text,
@@ -247,6 +272,58 @@ def main() -> int:
         "host Ollama endpoint": (
             knoxx_template,
             "OLLAMA_BASE_URL='http://host.docker.internal:11434'",
+        ),
+        "pinned host Ollama runtime": (
+            ollama_provisioner,
+            "OLLAMA_VERSION=0.33.2",
+        ),
+        "host contract Ollama runtime": (
+            production_host_contract,
+            'version: "0.33.2"',
+        ),
+        "host contract Docker-gateway bind": (
+            production_host_contract,
+            "bind: docker-default-gateway",
+        ),
+        "pinned host Ollama archive": (
+            ollama_provisioner,
+            "OLLAMA_ARCHIVE_SHA256=9785247dea264d9072f09f6c9c0eb4b8e666892826a3d8388eba3e8fb9ed1db9",
+        ),
+        "pinned host translation-model manifest": (
+            ollama_provisioner,
+            "OLLAMA_TRANSLATION_DIGEST=7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e",
+        ),
+        "host contract translation-model manifest": (
+            production_host_contract,
+            "digest: 7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e",
+        ),
+        "pinned host embedding-model manifest": (
+            ollama_provisioner,
+            "OLLAMA_EMBEDDING_DIGEST=0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+        ),
+        "host contract embedding-model manifest": (
+            production_host_contract,
+            "digest: 0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+        ),
+        "Docker-gateway-only Ollama bind": (
+            ollama_provisioner,
+            'Environment="OLLAMA_HOST=${gateway}:11434"',
+        ),
+        "host bootstrap provisions Ollama": (
+            host_bootstrap,
+            '"$OLLAMA_PROVISIONER"',
+        ),
+        "host verification requires Ollama": (
+            host_verify,
+            "check ollama-host-runtime ollama_ready",
+        ),
+        "host workflow installs the Ollama provisioner": (
+            host_workflow_text,
+            "/usr/local/sbin/open-hax-provision-ollama",
+        ),
+        "host workflow tests Ollama provisioning readiness": (
+            host_workflow_text,
+            "digitalocean/scripts/test-provision-ollama.sh",
         ),
         "host Ollama endpoint container binding": (
             knoxx_compose,
@@ -391,6 +468,38 @@ def main() -> int:
         "768-dimensional embedding contract": (
             knoxx_template,
             "EMBED_PROVIDER_DIMENSIONS='768'",
+        ),
+        "embedding migration target model": (
+            knoxx_embedding_migration_probe,
+            'const TARGET_MODEL = "nomic-embed-text";',
+        ),
+        "embedding migration target dimensions": (
+            knoxx_embedding_migration_probe,
+            'const TARGET_DIMENSIONS = "768";',
+        ),
+        "embedding migration relevant collections": (
+            knoxx_embedding_migration_probe,
+            '"vector_partitions",',
+        ),
+        "embedding migration graph-index inventory": (
+            knoxx_embedding_migration_probe,
+            '.listSearchIndexes(GRAPH_INDEX)',
+        ),
+        "embedding migration populated-store refusal": (
+            knoxx_embedding_migration_probe,
+            'reason: "populated-store-requires-authoritative-migration"',
+        ),
+        "embedding migration incompatible-writer refusal": (
+            knoxx_embedding_migration_probe,
+            'reason: "incompatible-writer-active"',
+        ),
+        "bounded pre-cutover migration probe": (
+            deploy_text,
+            "timeout --kill-after=5s 90s docker run --rm",
+        ),
+        "embedding migration probe regression CI": (
+            code_quality_text,
+            "node digitalocean/services/knoxx/probe-embedding-migration.js",
         ),
         "OpenAI-compatible Ollama embedding request": (
             knoxx_ollama_probe,
@@ -766,7 +875,8 @@ def main() -> int:
         print("\n".join(f"environment contract error: {failure}" for failure in failures), file=sys.stderr)
         return 1
     print("all active service placeholders have deployment-time providers")
-    print("Knoxx host-Ollama inference and embedding probe contract is fail closed")
+    print("Knoxx host-Ollama inference and embedding probes are fail closed")
+    print("Knoxx embedding cutover requires an unchanged target or fresh store")
     print("Knoxx post-drafter contracts and runtime trigger/agent/tool proof are wired")
     print(f"all {len(deployed_documents)} deployed Knoxx documents declare anchors")
     return 0

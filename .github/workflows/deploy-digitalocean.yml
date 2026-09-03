@@ -126,7 +126,7 @@ jobs:
               echo "service knoxx is missing ${dir}/post-deploy.sh" >&2
               exit 2
             }
-            for helper in event-agent-limits.sh probe-mcp.js probe-ollama.js; do
+            for helper in event-agent-limits.sh probe-embedding-migration.js probe-mcp.js probe-ollama.js; do
               test -f "${dir}/${helper}" || {
                 echo "service knoxx is missing ${dir}/${helper}" >&2
                 exit 2
@@ -285,6 +285,110 @@ jobs:
           chmod 600 rendered.env
           echo "rendered $(grep -cE '^[A-Z0-9_]+=' rendered.env) variables"
 
+      - name: Authenticate the host to GHCR
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          # Short-lived, job-scoped: the images are private to the org and the
+          # Droplet holds no standing registry credential.
+          printf '%s' "$REGISTRY_TOKEN" \
+            | ssh open-hax-target "docker login ghcr.io -u '$REGISTRY_USER' --password-stdin" >/dev/null
+
+      - name: Verify Knoxx embedding cutover
+        id: embedding_migration
+        if: inputs.service == 'knoxx'
+        env:
+          SERVICE: ${{ inputs.service }}
+          SERVICE_DIR: ${{ steps.contract.outputs.service_dir }}
+        run: |
+          set -euo pipefail
+          probe_dir=$(ssh open-hax-target 'mktemp -d /tmp/open-hax-knoxx-migration.XXXXXX')
+          case "$probe_dir" in
+            /tmp/open-hax-knoxx-migration.*) ;;
+            *) echo "unexpected remote probe path: $probe_dir" >&2; exit 2 ;;
+          esac
+          cleanup_probe() {
+            ssh open-hax-target "rm -rf '$probe_dir'" >/dev/null 2>&1 || true
+          }
+          trap cleanup_probe EXIT
+          scp rendered.env "${SERVICE_DIR}/probe-embedding-migration.js" \
+            "open-hax-target:${probe_dir}/"
+
+          # Inventory runs in the prospective backend image before the new
+          # environment or service definition replaces the live deployment.
+          # An unchanged target can redeploy normally. A genuine 1024 -> 768
+          # cutover is permitted only for a fresh store with no incompatible
+          # writer; populated state awaits an authoritative Knoxx/OpenPlanner
+          # migration verifier.
+          ssh open-hax-target \
+            "bash -euo pipefail -s -- '$probe_dir' '$SERVICE'" <<'REMOTE'
+          {
+          probe_dir=$1
+          service=$2
+          probe_container="open-hax-${service}-embedding-migration"
+          cleanup_remote_probe() {
+            docker rm -f "$probe_container" >/dev/null 2>&1 || true
+            rm -rf "$probe_dir"
+          }
+          trap cleanup_remote_probe EXIT
+          chmod 600 "$probe_dir/rendered.env"
+          set -a; . "$probe_dir/rendered.env"; set +a
+
+          mapfile -t current_writers < <(
+            docker ps \
+              --filter "label=com.docker.compose.project=${service}" \
+              --filter 'label=com.docker.compose.service=knoxx-backend' \
+              --format '{{.ID}}'
+          )
+          if [ "${#current_writers[@]}" -gt 1 ]; then
+            echo "embedding migration gate found multiple live Knoxx backend writers" >&2
+            exit 1
+          fi
+
+          export EMBED_SOURCE_WRITER_ACTIVE=0
+          export EMBED_SOURCE_MODEL=
+          export EMBED_SOURCE_DIMENSIONS=
+          export EMBED_SOURCE_DATABASE_FINGERPRINT=
+          EMBED_TARGET_DATABASE_FINGERPRINT=$(
+            printf '%s\0%s' "$MONGODB_URI" "$MONGODB_DB" | sha256sum | awk '{print $1}'
+          )
+          export EMBED_TARGET_DATABASE_FINGERPRINT
+          if [ "${#current_writers[@]}" -eq 1 ]; then
+            export EMBED_SOURCE_WRITER_ACTIVE=1
+            current_contract=$(
+              docker exec "${current_writers[0]}" node -e \
+                'const crypto = require("node:crypto"); const database = `${process.env.MONGODB_URI || ""}\0${process.env.MONGODB_DB || ""}`; process.stdout.write(JSON.stringify({model: process.env.EMBED_PROVIDER_MODEL || "", dimensions: process.env.EMBED_PROVIDER_DIMENSIONS || "", databaseFingerprint: crypto.createHash("sha256").update(database).digest("hex")}))' \
+                2>/dev/null || true
+            )
+            EMBED_SOURCE_MODEL=$(jq -r '.model // ""' <<<"$current_contract" 2>/dev/null || true)
+            EMBED_SOURCE_DIMENSIONS=$(jq -r '.dimensions // ""' <<<"$current_contract" 2>/dev/null || true)
+            EMBED_SOURCE_DATABASE_FINGERPRINT=$(jq -r '.databaseFingerprint // ""' <<<"$current_contract" 2>/dev/null || true)
+            export EMBED_SOURCE_MODEL EMBED_SOURCE_DIMENSIONS EMBED_SOURCE_DATABASE_FINGERPRINT
+          fi
+
+          docker pull "$KNOXX_BACKEND_IMAGE"
+          probe_code=$(cat "$probe_dir/probe-embedding-migration.js")
+          docker rm -f "$probe_container" >/dev/null 2>&1 || true
+          timeout --kill-after=5s 90s docker run --rm \
+            --name "$probe_container" \
+            --env MONGODB_URI \
+            --env MONGODB_DB \
+            --env EMBED_PROVIDER_MODEL \
+            --env EMBED_PROVIDER_DIMENSIONS \
+            --env EMBED_SOURCE_WRITER_ACTIVE \
+            --env EMBED_SOURCE_MODEL \
+            --env EMBED_SOURCE_DIMENSIONS \
+            --env EMBED_SOURCE_DATABASE_FINGERPRINT \
+            --env EMBED_TARGET_DATABASE_FINGERPRINT \
+            --workdir /app \
+            --entrypoint node \
+            "$KNOXX_BACKEND_IMAGE" \
+            --input-type=commonjs -e "$probe_code"
+          } </dev/null
+          REMOTE
+
       - name: Sync service definition
         id: sync
         env:
@@ -354,17 +458,6 @@ jobs:
           fi
 
           echo "definition_changed=${definition_changed}" >> "$GITHUB_OUTPUT"
-
-      - name: Authenticate the host to GHCR
-        env:
-          REGISTRY_TOKEN: ${{ github.token }}
-          REGISTRY_USER: ${{ github.actor }}
-        run: |
-          set -euo pipefail
-          # Short-lived, job-scoped: the images are private to the org and the
-          # Droplet holds no standing registry credential.
-          printf '%s' "$REGISTRY_TOKEN" \
-            | ssh open-hax-target "docker login ghcr.io -u '$REGISTRY_USER' --password-stdin" >/dev/null
 
       - name: Deploy
         env:
@@ -567,16 +660,17 @@ jobs:
           SERVICE: ${{ inputs.service }}
           IMAGE: ${{ inputs.image }}
           SOURCE_SHA: ${{ inputs.source_sha }}
+          EMBEDDING_MIGRATION_RESULT: ${{ steps.embedding_migration.outcome }}
           HEALTH_RESULT: ${{ steps.health.outcome }}
           POST_DEPLOY_RESULT: ${{ steps.post_deploy.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           ssh open-hax-target \
-            "bash -euo pipefail -s -- '$SERVICE' '$RUNTIME_PATH' '$IMAGE' '$SOURCE_SHA' '$HEALTH_RESULT' '$POST_DEPLOY_RESULT' '$RUN_URL'" \
+            "bash -euo pipefail -s -- '$SERVICE' '$RUNTIME_PATH' '$IMAGE' '$SOURCE_SHA' '$EMBEDDING_MIGRATION_RESULT' '$HEALTH_RESULT' '$POST_DEPLOY_RESULT' '$RUN_URL'" \
             <<'REMOTE' > report.json
           {
-          service=$1; runtime_path=$2; image=$3; source_sha=$4; health=$5; post_deploy=$6; run_url=$7
+          service=$1; runtime_path=$2; image=$3; source_sha=$4; embedding_migration=$5; health=$6; post_deploy=$7; run_url=$8
           cd "$runtime_path"
           containers=$(docker compose --project-name "$service" ps --format json 2>/dev/null | jq -sc '.' || echo '[]')
           listening=$(ss -ltnH 2>/dev/null | awk '{print $4}' | sort -u \
@@ -585,6 +679,7 @@ jobs:
             --arg service "$service" \
             --arg image "$image" \
             --arg sourceSha "$source_sha" \
+            --arg embeddingMigration "$embedding_migration" \
             --arg health "$health" \
             --arg postDeploy "$post_deploy" \
             --arg runUrl "$run_url" \
@@ -593,6 +688,7 @@ jobs:
             --argjson containers "$containers" \
             --argjson listening "$listening" \
             '{service: $service, image: $image, sourceSha: $sourceSha,
+              embeddingMigration: $embeddingMigration,
               health: $health, postDeploy: $postDeploy, runUrl: $runUrl, host: $host,
               deployedAt: $deployedAt, containers: $containers,
               listeningSockets: $listening}'

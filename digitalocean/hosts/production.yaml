@@ -39,6 +39,15 @@ storage:
 
 inference:
   gateway: proxx
+  localRuntime:
+    engine: ollama
+    version: "0.33.2"
+    bind: docker-default-gateway
+    models:
+      - id: "gemma4:e2b"
+        digest: 7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e
+      - id: "nomic-embed-text:latest"
+        digest: 0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f
   providerSecrets:
     - REQUESTY_API_KEY
 

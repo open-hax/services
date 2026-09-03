@@ -1,6 +1,6 @@
 # Knoxx host-Ollama embedding deployment
 
-> Status: **deployment contract and migration warning.** Services owns the
+> Status: **deployment contract and fail-closed migration gate.** Services owns the
 > runtime route and deploy gate described here. OpenPlanner owns vector schema,
 > re-embedding, and index-migration behavior.
 
@@ -48,20 +48,29 @@ is likewise re-derived from an anchored source revision whose deterministic
 manifest is still absent. This is reconciliation, not a claim of durable
 queueing or an autonomous retry timer.
 
-## Host preconditions
+## Host provisioning and boundary
 
-Ollama must listen on an address reachable through Docker's host-gateway. A
-daemon bound only to host loopback (`127.0.0.1:11434`) is not reachable as
-`host.docker.internal:11434` from `knoxx-backend` and will fail the gate. Bind
-Ollama to the host's Docker-facing address, or to `0.0.0.0:11434` only when the
-host firewall provides the equivalent restriction.
+The `Bootstrap DigitalOcean Host` workflow installs Ollama `v0.33.2` from its
+checksum-pinned Linux archive, writes and enables its systemd unit, and pulls
+both model tags. Bootstrap and host verification reject a mutable-tag drift
+unless the local model manifests match these reviewed digests:
+
+```text
+gemma4:e2b               7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e
+nomic-embed-text:latest  0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f
+```
+
+The generated service binds Ollama to Docker's private bridge gateway. A daemon
+bound only to host loopback (`127.0.0.1:11434`) is not reachable as
+`host.docker.internal:11434` from `knoxx-backend` and fails verification.
 
 Port 11434 must remain unavailable from public ingress. There is no Caddy route
 or Compose-published port for it; the host firewall must also deny off-host
 connections. The desired boundary is container-to-host access, not a public
 Ollama API.
 
-Both required models must be present before the Knoxx deployment runs:
+Both required models must be present before the Knoxx deployment runs. Normal
+production provisioning does this automatically; for a local workstation use:
 
 ```sh
 ollama pull gemma4:e2b
@@ -71,7 +80,25 @@ ollama pull nomic-embed-text
 The deploy verifier's container-originated catalog and embedding calls are the
 authoritative reachability check; a successful host-local `curl` is not.
 
-## What the deployment gate proves
+## What the deployment gates prove
+
+Before the service definition or rendered environment is copied to the host,
+the deployment runs `probe-embedding-migration.js` inside the prospective Knoxx
+backend image. The gate accepts only two states:
+
+- a live Knoxx backend already uses `nomic-embed-text` with 768 dimensions
+  against the same database contract (compared only by SHA-256 fingerprint),
+  so this deployment is not changing the embedding contract; or
+- no incompatible backend writer is running, `event_chunks`,
+  `compacted_vectors`, `graph_node_embeddings`, and `vector_partitions` are all
+  empty, and the `graph_node_embeddings.embedding_vector` Atlas search index is
+  absent.
+
+Connection, permission, timeout, malformed-inventory, and search-index listing
+failures all block the deployment. The check is read-only and passes only the
+Mongo and embedding settings into the short-lived candidate container. A
+populated 1024-dimensional deployment remains on its current containers; the
+new environment is never synced or activated.
 
 `digitalocean/services/knoxx/verify.sh` runs from inside `knoxx-backend`, after
 the backend health endpoint is green. Its Ollama probe:
@@ -121,14 +148,19 @@ The live Ollama probe consequently proves that **new** 768-dimensional
 embeddings can be generated. It does not prove that stored vectors or Atlas
 search-index definitions have been migrated.
 
-## Required operator precondition for a populated database
+## Populated-database migration remains blocked
 
-Before promoting this route change over an existing Mongo database:
+The current gate deliberately has no operator override and does not interpret a
+manual backfill claim as migration proof. Before Services can admit this route
+change over an existing Mongo database, Knoxx/OpenPlanner must supply a tested,
+read-only verifier that proves retained-source coverage, absence of legacy
+partitions, target vector dimensions, and a ready/queryable 768-dimensional
+graph index. The operational preparation remains:
 
 1. Take the normal recoverable database snapshot.
 2. Inventory `embedding_model` and `embedding_dimensions` in `event_chunks`,
-   `graph_node_embeddings`, and `vector_partitions`, and inspect the
-   `graph_node_embeddings.embedding_vector` search-index definition.
+   `compacted_vectors`, `graph_node_embeddings`, and `vector_partitions`, and
+   inspect the `graph_node_embeddings.embedding_vector` search-index definition.
 3. Use an OpenPlanner-owned, tested re-index/backfill procedure to re-embed the
    retained source material with `nomic-embed-text`, converge query-visible
    partitions on 768 dimensions, and recreate the graph-node vector index with
@@ -140,6 +172,11 @@ Useful read-only inventory shapes in `mongosh` are:
 
 ```javascript
 db.event_chunks.aggregate([
+  {$group: {_id: {model: "$embedding_model", dimensions: "$embedding_dimensions"}, count: {$sum: 1}}},
+  {$sort: {"_id.model": 1, "_id.dimensions": 1}}
+])
+
+db.compacted_vectors.aggregate([
   {$group: {_id: {model: "$embedding_model", dimensions: "$embedding_dimensions"}, count: {$sum: 1}}},
   {$sort: {"_id.model": 1, "_id.dimensions": 1}}
 ])
@@ -158,6 +195,7 @@ db.graph_node_embeddings.getSearchIndexes("embedding_vector")
 ```
 
 This repository intentionally does not improvise a destructive Mongo migration.
-If the inventory finds 1024-dimensional state, the promotion remains blocked
-until the owning OpenPlanner migration is selected, run, and verified. Restoring
-the old environment alone is not a substitute after a partial re-index.
+Any populated relevant collection or existing graph-vector index blocks the
+first cutover until the owning migration and its authoritative verifier land.
+Restoring the old environment alone is not a substitute after a partial
+re-index.

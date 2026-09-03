@@ -45,7 +45,11 @@ def main() -> int:
     }
     required_steps = (
         "Load and validate host contract",
+        "Render runtime environment",
+        "Authenticate the host to GHCR",
+        "Verify Knoxx embedding cutover",
         "Sync service definition",
+        "Deploy",
         "Health gate",
         "Admit Knoxx publication content",
         "Collect deployment report",
@@ -76,6 +80,9 @@ def main() -> int:
         return 1
 
     _, contract = named_steps["Load and validate host contract"]
+    render_index, _ = named_steps["Render runtime environment"]
+    registry_index, _ = named_steps["Authenticate the host to GHCR"]
+    migration_index, migration = named_steps["Verify Knoxx embedding cutover"]
     _, sync = named_steps["Sync service definition"]
     if 'test -f "${dir}/post-deploy.sh"' not in contract.get("run", ""):
         print(
@@ -90,13 +97,47 @@ def main() -> int:
         )
         return 1
 
+    migration_run = migration.get("run", "")
+    required_migration_gate = (
+        "probe-embedding-migration.js",
+        "EMBED_SOURCE_WRITER_ACTIVE",
+        "EMBED_TARGET_DATABASE_FINGERPRINT",
+        "timeout --kill-after=5s 90s docker run --rm",
+        'label=com.docker.compose.service=knoxx-backend',
+    )
+    missing_migration_gate = [
+        clause for clause in required_migration_gate if clause not in migration_run
+    ]
+    if (
+        migration.get("if") != "inputs.service == 'knoxx'"
+        or missing_migration_gate
+        or migration_run.count("--entrypoint node") != 1
+    ):
+        print(
+            "deploy chain error: Knoxx embedding migration gate is not a "
+            "single bounded pre-cutover probe: " + ", ".join(missing_migration_gate),
+            file=sys.stderr,
+        )
+        return 1
+
     health_index, health = named_steps["Health gate"]
     admission_index, admission = named_steps["Admit Knoxx publication content"]
     report_index, report = named_steps["Collect deployment report"]
-    if not health_index < admission_index < report_index:
+    sync_index, _ = named_steps["Sync service definition"]
+    deploy_index, _ = named_steps["Deploy"]
+    if not (
+        render_index
+        < registry_index
+        < migration_index
+        < sync_index
+        < deploy_index
+        < health_index
+        < admission_index
+        < report_index
+    ):
         print(
-            "deploy chain error: Knoxx content admission must run once after "
-            "health and before deployment reporting",
+            "deploy chain error: render, registry auth, embedding migration, "
+            "sync, deploy, health, admission, and report ordering drifted",
             file=sys.stderr,
         )
         return 1
@@ -115,12 +156,16 @@ def main() -> int:
     report_env = report.get("env", {})
     report_run = report.get("run", "")
     if (
-        report_env.get("POST_DEPLOY_RESULT") != "${{ steps.post_deploy.outcome }}"
+        report_env.get("EMBEDDING_MIGRATION_RESULT")
+        != "${{ steps.embedding_migration.outcome }}"
+        or 'embeddingMigration: $embeddingMigration' not in report_run
+        or report_env.get("POST_DEPLOY_RESULT")
+        != "${{ steps.post_deploy.outcome }}"
         or 'postDeploy: $postDeploy' not in report_run
     ):
         print(
             "deploy chain error: deployment report does not preserve the "
-            "post-deploy admission outcome",
+            "embedding-migration and post-deploy outcomes",
             file=sys.stderr,
         )
         return 1

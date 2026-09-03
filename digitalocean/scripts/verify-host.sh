@@ -5,6 +5,7 @@ DEPLOY_USER=${DEPLOY_USER:-deploy}
 RUNTIME_ROOT=${RUNTIME_ROOT:-/srv/open-hax}
 REPORT=${REPORT:-host-verification.json}
 FIREWALL_VERIFIER=${FIREWALL_VERIFIER:-/usr/local/sbin/open-hax-verify-dev-ingress-firewall}
+OLLAMA_PROVISIONER=${OLLAMA_PROVISIONER:-/usr/local/sbin/open-hax-provision-ollama}
 status=passed
 
 check() {
@@ -34,6 +35,11 @@ deploy_can_use() {
     runuser -u "$DEPLOY_USER" -- test -x "$path"
 }
 
+ollama_ready() {
+  [ -x "$OLLAMA_PROVISIONER" ] \
+    && OLLAMA_READINESS_ONLY=1 "$OLLAMA_PROVISIONER"
+}
+
 results=$(mktemp)
 trap 'rm -f "$results"' EXIT
 check docker command -v docker >> "$results"
@@ -49,6 +55,7 @@ for directory in services state config reports; do
 done
 check firewall-active firewall_active >> "$results"
 check firewall-dev-ingress-scoped firewall_dev_ingress_scoped >> "$results"
+check ollama-host-runtime ollama_ready >> "$results"
 
 python3 - "$results" "$REPORT" "$status" <<'PY'
 import json, platform, socket, sys

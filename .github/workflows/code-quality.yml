@@ -102,6 +102,11 @@ jobs:
           PROBE_SELFTEST: "1"
         run: node digitalocean/services/knoxx/probe-ollama.js
 
+      - name: Self-test the Knoxx embedding migration gate
+        env:
+          PROBE_SELFTEST: "1"
+        run: node digitalocean/services/knoxx/probe-embedding-migration.js
+
       # A remote script piped to `bash -s` over ssh is parsed lazily from the
       # same stdin the script's own commands inherit. One `docker compose exec
       # -T` in a verify.sh was enough to swallow a health gate's failure

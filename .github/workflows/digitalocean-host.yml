@@ -46,8 +46,11 @@ jobs:
           bash -n digitalocean/scripts/verify-dev-ingress-firewall.sh
           bash -n digitalocean/scripts/test-verify-dev-ingress-firewall.sh
           bash -n digitalocean/scripts/test-bootstrap-docker-readiness.sh
+          bash -n digitalocean/scripts/provision-ollama.sh
+          bash -n digitalocean/scripts/test-provision-ollama.sh
           digitalocean/scripts/test-verify-dev-ingress-firewall.sh
           digitalocean/scripts/test-bootstrap-docker-readiness.sh
+          digitalocean/scripts/test-provision-ollama.sh
           python3 - <<'PY'
           import ipaddress
           from pathlib import Path
@@ -137,8 +140,10 @@ jobs:
         run: |
           scp digitalocean/scripts/verify-dev-ingress-firewall.sh \
             production-droplet:/tmp/open-hax-verify-dev-ingress-firewall
+          scp digitalocean/scripts/provision-ollama.sh \
+            production-droplet:/tmp/open-hax-provision-ollama
           ssh production-droplet \
-            'install -o root -g root -m 0755 /tmp/open-hax-verify-dev-ingress-firewall /usr/local/sbin/open-hax-verify-dev-ingress-firewall && rm -f /tmp/open-hax-verify-dev-ingress-firewall'
+            'install -o root -g root -m 0755 /tmp/open-hax-verify-dev-ingress-firewall /usr/local/sbin/open-hax-verify-dev-ingress-firewall && install -o root -g root -m 0755 /tmp/open-hax-provision-ollama /usr/local/sbin/open-hax-provision-ollama && rm -f /tmp/open-hax-verify-dev-ingress-firewall /tmp/open-hax-provision-ollama'
           ssh production-droplet 'bash -s' < digitalocean/scripts/bootstrap-host.sh
 
       - name: Verify host

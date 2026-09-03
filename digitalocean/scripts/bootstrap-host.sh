@@ -5,6 +5,7 @@ DEPLOY_USER=${DEPLOY_USER:-deploy}
 RUNTIME_ROOT=${RUNTIME_ROOT:-/srv/open-hax}
 DEV_INGRESS_SOURCE=${DEV_INGRESS_SOURCE:-172.31.255.2}
 FIREWALL_VERIFIER=${FIREWALL_VERIFIER:-/usr/local/sbin/open-hax-verify-dev-ingress-firewall}
+OLLAMA_PROVISIONER=${OLLAMA_PROVISIONER:-/usr/local/sbin/open-hax-provision-ollama}
 DOCKER_BOOT_LINK=${DOCKER_BOOT_LINK:-/etc/systemd/system/multi-user.target.wants/docker.service}
 DOCKER_UNIT_PATH=${DOCKER_UNIT_PATH:-/lib/systemd/system/docker.service}
 SYSTEMCTL_BIN=${SYSTEMCTL_BIN:-/usr/bin/systemctl}
@@ -44,7 +45,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl git jq rsync sudo unzip ufw openjdk-21-jdk
+apt-get install -y ca-certificates curl git jq rsync sudo unzip ufw zstd openjdk-21-jdk
 
 if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
   install -m 0755 -d /etc/apt/keyrings
@@ -119,5 +120,11 @@ if docker_is_ready_for_boot; then
 else
   systemctl enable --now docker
 fi
+
+if [ ! -x "$OLLAMA_PROVISIONER" ]; then
+  echo "missing root-owned Ollama provisioner at ${OLLAMA_PROVISIONER}" >&2
+  exit 2
+fi
+"$OLLAMA_PROVISIONER"
 
 echo "bootstrap complete"
