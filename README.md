@@ -52,6 +52,18 @@ and `docs/reports/`; it is not an alternative runtime.
   host-Ollama embedding routing, its live 768-vector gate, and the mandatory
   1024-to-768 Mongo migration warning
 
+## Deployment model
+
+[`docs/deployment-model.md`](docs/deployment-model.md) defines what a service is
+in this repo: the descriptor a service declares, the lifecycle phases and the
+promotion rule between them, the contract every `verify.sh` gate must satisfy,
+and how a service serves content another service writes.
+
+Every service is declared for the DigitalOcean lane and deployed to the droplet
+in `digitalocean/hosts/production.yaml`. The earlier SSH-and-rsync lane was
+removed in `services#67`; `scripts/check-deployment-boundary.py` fails the build
+on any new reference to it.
+
 ## Boundary rule
 
 If a change decides where a service runs, which port it binds, which hostname
