@@ -14,6 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Setup Clojure CLI
+        uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # v13.6.1
+        with:
+          cli: 1.12.5.1664
       - name: Validate YAML and scripts
         run: |
           python - <<'PY'
@@ -27,6 +31,12 @@ jobs:
           PY
           bash -n digitalocean/lib/*.sh digitalocean/scripts/*.sh
           bash -n digitalocean/services/*/*.sh
+
+      - name: Parse Knoxx EDN contracts
+        run: |
+          clojure -M scripts/check-edn-contracts.clj
+          KNOXX_DOCUMENTS_DIR=contracts/knoxx/documents \
+            clojure -M digitalocean/services/knoxx/document-anchor-inventory.cljc
 
       - name: Enforce the DigitalOcean-only deployment boundary
         run: |
@@ -59,6 +69,18 @@ jobs:
       - name: Self-test the Knoxx MCP fail-closed policy
         run: digitalocean/services/knoxx/test-mcp-verification-policy.sh
 
+      - name: Self-test the Knoxx content admission hook
+        run: digitalocean/services/knoxx/test-post-deploy.sh
+
+      - name: Self-test the Knoxx embedding contract receipt
+        run: digitalocean/services/knoxx/test-embedding-contract-receipt.sh
+
+      - name: Self-test the Knoxx event-agent limits
+        run: bash digitalocean/services/knoxx/test-event-agent-limits.sh
+
+      - name: Self-test the Mongo database identity contract
+        run: bash digitalocean/services/knoxx/test-mongodb-database-identity.sh
+
       - name: Self-test the Knoxx Git event dispatcher boundary
         run: scripts/test-dispatch-knoxx-git-event.sh
 
@@ -83,6 +105,16 @@ jobs:
         env:
           PROBE_SELFTEST: "1"
         run: node digitalocean/services/knoxx/probe-mcp.js
+
+      - name: Self-test the Knoxx host-Ollama deployment probe
+        env:
+          PROBE_SELFTEST: "1"
+        run: node digitalocean/services/knoxx/probe-ollama.js
+
+      - name: Self-test the Knoxx embedding migration gate
+        env:
+          PROBE_SELFTEST: "1"
+        run: node digitalocean/services/knoxx/probe-embedding-migration.js
 
       # A remote script piped to `bash -s` over ssh is parsed lazily from the
       # same stdin the script's own commands inherit. One `docker compose exec

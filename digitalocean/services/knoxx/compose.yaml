@@ -86,6 +86,24 @@ services:
       # rewrite them (receipts.edn 2026-06-02, commit 91dd693).
       CONTRACTS_DIR: /app/contracts
 
+      # Admission-generated document and publication resources are runtime
+      # state, not deploy-owned truth. Keep them on the durable writable
+      # workspace while the Services contract tree remains read-only.
+      KNOXX_GENERATED_CONTRACTS_DIR: ${KNOXX_GENERATED_CONTRACTS_DIR:?KNOXX_GENERATED_CONTRACTS_DIR must be set}
+
+      # The deployed publication agents are selected with environment overlays
+      # so their canonical contracts remain portable across hosts. Thinking is
+      # resolved off; verify.sh proves both the native translation fallback and
+      # the OpenAI-compatible required-tool path with reasoning disabled.
+      KNOXX_AGENT_MODEL_OVERRIDES: ${KNOXX_AGENT_MODEL_OVERRIDES:?KNOXX_AGENT_MODEL_OVERRIDES must be set}
+      KNOXX_AGENT_THINKING_OVERRIDES: ${KNOXX_AGENT_THINKING_OVERRIDES:?KNOXX_AGENT_THINKING_OVERRIDES must be set}
+      # Event-triggered turns share a bounded FIFO so an anchor sweep cannot
+      # open one Ollama session per emitted translation/draft event.
+      KNOXX_EVENT_AGENT_CONCURRENCY: ${KNOXX_EVENT_AGENT_CONCURRENCY:?KNOXX_EVENT_AGENT_CONCURRENCY must be set}
+      KNOXX_EVENT_AGENT_QUEUE_LIMIT: ${KNOXX_EVENT_AGENT_QUEUE_LIMIT:?KNOXX_EVENT_AGENT_QUEUE_LIMIT must be set}
+      KNOXX_EVENT_AGENT_TURN_TIMEOUT_MS: ${KNOXX_EVENT_AGENT_TURN_TIMEOUT_MS:?KNOXX_EVENT_AGENT_TURN_TIMEOUT_MS must be set}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}
+
       # Required by the deployment renderer and post-deploy gate. The
       # authentication contract accepts it only from loopback, which lets the
       # probe execute inside this container without exposing another off-host
@@ -95,15 +113,20 @@ services:
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI must be set}
       MONGODB_DB: ${MONGODB_DB}
 
-      # Inference goes through Proxx, which owns the provider credentials.
+      # General hosted inference goes through Proxx, which owns provider
+      # credentials. The publication translator, post drafter, and in-process
+      # OpenPlanner embedding client are explicit local exceptions: all reach
+      # host Ollama through the dedicated backend-only bridge below.
       PROXX_BASE_URL: http://proxx:8789
       PROXX_AUTH_TOKEN: ${PROXY_AUTH_TOKEN:?PROXY_AUTH_TOKEN must be set}
       PROXX_DEFAULT_MODEL: ${PROXX_DEFAULT_MODEL}
 
-      # The SDK sources its own embeddings, also via Proxx.
+      # The SDK sources its own embeddings directly from host Ollama's OpenAI-
+      # compatible /v1/embeddings endpoint. Do not send the Proxx credential to
+      # this local provider.
       KNOXX_OPENPLANNER_CLIENT_MODE: mongo
-      EMBED_PROVIDER_BASE_URL: http://proxx:8789
-      EMBED_PROVIDER_API_KEY: ${PROXY_AUTH_TOKEN}
+      EMBED_PROVIDER_BASE_URL: ${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}
+      EMBED_PROVIDER_API_KEY: ""
       EMBED_PROVIDER_MODEL: ${EMBED_PROVIDER_MODEL}
       EMBED_PROVIDER_DIMENSIONS: ${EMBED_PROVIDER_DIMENSIONS}
 
@@ -173,7 +196,8 @@ services:
     # root-equivalent grant and this host is about to be public.
     healthcheck:
       # 401 counts as healthy: it proves the process is up and enforcing auth.
-      # A 503 does not — it means Proxx is unreachable.
+      # A 503 does not — at least one required inference/data dependency is
+      # unavailable (including Proxx, Mongo/OpenPlanner, or host Ollama).
       test:
         - CMD
         - node
@@ -185,7 +209,7 @@ services:
       interval: 30s
       timeout: 15s
       retries: 10
-      # The first probe is slow: it waits on the Proxx dependency check.
+      # The first probe is slow: it waits on upstream dependency checks.
       start_period: 120s
     networks:
       default:
@@ -197,6 +221,11 @@ services:
           - backend
           - knoxx-backend
       sandbox-control: {}
+      # Host provisioning creates and audits this internal bridge. The exact
+      # address is also the sole source admitted to host Ollama by UFW. Neither
+      # sandboxd nor its nested DIND workloads join this network.
+      ollama-access:
+        ipv4_address: 172.30.114.2
 
   # The devtools image runs a second shadow-cljs config whose :server build is a
   # side-effect-free Node runtime. Sharing the backend network namespace keeps
@@ -250,3 +279,6 @@ networks:
     name: open-hax
     external: true
   sandbox-control: {}
+  ollama-access:
+    name: knoxx-ollama
+    external: true

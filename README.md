@@ -25,9 +25,9 @@ Production is declared under [`digitalocean/`](digitalocean/README.md):
 - `digitalocean/known_hosts/production` is the pinned SSH host key.
 - `.github/workflows/deploy-stack.yml` is the only callable stack deployment
   entry point.
-- `.github/workflows/deploy-stack-chain.yml` builds Proxx, both Knoxx images,
-  Knoxx devtools, and the website before deploying the dependency-ordered
-  stack through `.github/workflows/deploy-digitalocean.yml`.
+- `.github/workflows/deploy-stack-chain.yml` provisions and verifies the host,
+  builds Proxx, both Knoxx images, Knoxx devtools, and the website, then deploys
+  the dependency-ordered stack through `.github/workflows/deploy-digitalocean.yml`.
 - GitHub's protected `production` environment supplies deployment credentials
   and runtime secrets.
 
@@ -48,6 +48,9 @@ and `docs/reports/`; it is not an alternative runtime.
   shared published-content directory, its single writer, and read-only reader
 - [`docs/knoxx-git-event-bridge.md`](docs/knoxx-git-event-bridge.md) — the
   metadata-only GitHub-to-Knoxx event path and the explicit Git-driver boundary
+- [`docs/knoxx-ollama-embeddings.md`](docs/knoxx-ollama-embeddings.md) — direct
+  host-Ollama embedding routing, its live 768-vector gate, and the mandatory
+  1024-to-768 Mongo migration warning
 
 ## Boundary rule
 

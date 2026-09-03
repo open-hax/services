@@ -115,14 +115,14 @@ name that does not resolve here fails issuance for itself.
      caddy:2.8-alpine \
      caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
    ```
-7. **Bootstrap and verify the host firewall.** Run `Bootstrap DigitalOcean
-   Host` with the `bootstrap` operation and retain its verification report. The
-   report must contain a passing `firewall-dev-ingress-scoped` check.
-8. **Deploy** with the `deploy` label on the merged PR, or dispatch `Deploy
-   Stack` manually. Every Caddy deploy re-runs the installed firewall verifier
-   before rendering or changing the service. A Caddyfile change is a bind mount,
-   and compose hashes the image and the environment but never the contents of a
-   bind mount — the deploy step's rsync itemization is what forces the recreate.
+7. **Bootstrap, verify, and deploy.** Use the `deploy` label on the merged PR,
+   or dispatch `Deploy Stack` manually. Its locked host prerequisite performs
+   the bootstrap and produces the verification report; that report must contain
+   a passing `firewall-dev-ingress-scoped` check. Every Caddy deploy re-runs the
+   installed firewall verifier before rendering or changing the service. A
+   Caddyfile change is a bind mount, and compose hashes the image and the
+   environment but never the contents of a bind mount — the deploy step's rsync
+   itemization is what forces the recreate.
 
 ### Firewall migration and proof
 

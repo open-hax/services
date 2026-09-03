@@ -1,7 +1,8 @@
 name: Deploy Stack Chain
 
-# Reusable body of deploy-stack.yml: builds and deploys proxx, knoxx, caddy
-# and the website in dependency order.
+# Reusable body of deploy-stack.yml: provisions the host, then deploys proxx,
+# knoxx, caddy and the website in dependency order. Image builds may run while
+# host provisioning completes.
 #
 #   proxx ──> knoxx ──> caddy ──> website
 #
@@ -59,6 +60,18 @@ permissions:
   packages: write
 
 jobs:
+  # Build jobs may run while the host is prepared, but no production service
+  # deploy starts until this exact checkout has installed and verified the
+  # provisioner it expects. deploy-stack.yml holds the production-host lock
+  # across this entire chain; the required flag below attests that this nested
+  # bootstrap is running inside that single production mutation queue.
+  provision-host:
+    uses: ./.github/workflows/digitalocean-host.yml
+    with:
+      operation: bootstrap
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
   # The deployment consumes the immutable SHA emitted by Knoxx's own release
   # gate. This keeps application validation in Knoxx while making it an actual
   # prerequisite of both label-authorized and manually dispatched deploys.
@@ -74,12 +87,13 @@ jobs:
       source_ref: ${{ inputs.proxx_ref }}
 
   deploy-proxx:
-    needs: build-proxx
+    needs: [provision-host, build-proxx]
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: proxx
       image: ${{ needs.build-proxx.outputs.image }}
       source_sha: ${{ needs.build-proxx.outputs.source_sha }}
+      caller_holds_production_host_lock: true
     secrets: inherit
 
   # Both Knoxx images build while Proxx deploys.
@@ -121,6 +135,7 @@ jobs:
       # fails closed before rendering if the secret is absent or too short.
       extra_env: >-
         {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}@${{ needs.build-knoxx-devtools.outputs.digest }}"}
+      caller_holds_production_host_lock: true
     secrets: inherit
 
   deploy-caddy:
@@ -129,6 +144,7 @@ jobs:
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: caddy
+      caller_holds_production_host_lock: true
     secrets: inherit
 
   # Builds alongside the rest of the chain; deploys last.
@@ -159,4 +175,5 @@ jobs:
       service: website
       image: ${{ needs.build-website.outputs.image }}
       source_sha: ${{ needs.build-website.outputs.source_sha }}
+      caller_holds_production_host_lock: true
     secrets: inherit

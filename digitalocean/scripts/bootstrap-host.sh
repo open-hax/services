@@ -5,6 +5,7 @@ DEPLOY_USER=${DEPLOY_USER:-deploy}
 RUNTIME_ROOT=${RUNTIME_ROOT:-/srv/open-hax}
 DEV_INGRESS_SOURCE=${DEV_INGRESS_SOURCE:-172.31.255.2}
 FIREWALL_VERIFIER=${FIREWALL_VERIFIER:-/usr/local/sbin/open-hax-verify-dev-ingress-firewall}
+OLLAMA_PROVISIONER=${OLLAMA_PROVISIONER:-/usr/local/sbin/open-hax-provision-ollama}
 DOCKER_BOOT_LINK=${DOCKER_BOOT_LINK:-/etc/systemd/system/multi-user.target.wants/docker.service}
 DOCKER_UNIT_PATH=${DOCKER_UNIT_PATH:-/lib/systemd/system/docker.service}
 SYSTEMCTL_BIN=${SYSTEMCTL_BIN:-/usr/bin/systemctl}
@@ -44,7 +45,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl git jq rsync sudo unzip ufw openjdk-21-jdk
+apt-get install -y ca-certificates curl git iproute2 jq rsync sudo unzip ufw zstd openjdk-21-jdk
 
 if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
   install -m 0755 -d /etc/apt/keyrings
@@ -106,11 +107,16 @@ if [ ! -x "$FIREWALL_VERIFIER" ]; then
 fi
 "$FIREWALL_VERIFIER"
 
-# Service deploys run as the unprivileged deploy user. Grant that user exactly
-# one root operation: the root-owned, argument-free, read-only firewall proof.
+# Service deploys run as the unprivileged deploy user. Grant only the root-owned
+# read-only firewall proof and the exact Ollama readiness operation. The latter
+# lets a Knoxx deployment fail before Compose if its dedicated bridge, firewall
+# source identity, listener, runtime, or model manifests drifted.
 sudoers_tmp=$(mktemp)
 trap 'rm -f "$sudoers_tmp"' EXIT
-printf '%s ALL=(root) NOPASSWD: %s\n' "$DEPLOY_USER" "$FIREWALL_VERIFIER" > "$sudoers_tmp"
+{
+  printf '%s ALL=(root) NOPASSWD: %s\n' "$DEPLOY_USER" "$FIREWALL_VERIFIER"
+  printf '%s ALL=(root) NOPASSWD: %s --readiness\n' "$DEPLOY_USER" "$OLLAMA_PROVISIONER"
+} > "$sudoers_tmp"
 visudo -cf "$sudoers_tmp" >/dev/null
 install -o root -g root -m 0440 "$sudoers_tmp" /etc/sudoers.d/open-hax-firewall-verify
 
@@ -119,5 +125,11 @@ if docker_is_ready_for_boot; then
 else
   systemctl enable --now docker
 fi
+
+if [ ! -x "$OLLAMA_PROVISIONER" ]; then
+  echo "missing root-owned Ollama provisioner at ${OLLAMA_PROVISIONER}" >&2
+  exit 2
+fi
+"$OLLAMA_PROVISIONER"
 
 echo "bootstrap complete"

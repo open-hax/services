@@ -1,23 +1,27 @@
 name: DigitalOcean Host
 
+# Production bootstrap is reusable only: Deploy Stack owns the one mutation
+# queue around the complete chain. Pull requests validate locally, and a
+# direct manual dispatch is intentionally verify-only. There is no push
+# trigger, so a host-only run cannot replace a pending labelled deployment in
+# GitHub's one-pending-run concurrency group.
 on:
+  workflow_call:
+    inputs:
+      operation:
+        description: Host operation required before a stack deployment
+        required: true
+        type: string
+      caller_holds_production_host_lock:
+        description: Caller owns the production-host lock for this entire invocation
+        required: true
+        type: boolean
   pull_request:
-    paths:
-      - digitalocean/**
-      - .github/workflows/digitalocean-host.yml
-  push:
-    branches: [main]
     paths:
       - digitalocean/**
       - .github/workflows/digitalocean-host.yml
   workflow_dispatch:
     inputs:
-      operation:
-        description: Host operation
-        required: true
-        default: verify
-        type: choice
-        options: [bootstrap, verify]
       host:
         description: Optional Droplet IPv4 override
         required: false
@@ -25,10 +29,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: digitalocean-production-host
-  cancel-in-progress: false
 
 jobs:
   validate:
@@ -46,8 +46,11 @@ jobs:
           bash -n digitalocean/scripts/verify-dev-ingress-firewall.sh
           bash -n digitalocean/scripts/test-verify-dev-ingress-firewall.sh
           bash -n digitalocean/scripts/test-bootstrap-docker-readiness.sh
+          bash -n digitalocean/scripts/provision-ollama.sh
+          bash -n digitalocean/scripts/test-provision-ollama.sh
           digitalocean/scripts/test-verify-dev-ingress-firewall.sh
           digitalocean/scripts/test-bootstrap-docker-readiness.sh
+          digitalocean/scripts/test-provision-ollama.sh
           python3 - <<'PY'
           import ipaddress
           from pathlib import Path
@@ -92,8 +95,9 @@ jobs:
       - name: Resolve target
         id: target
         env:
-          INPUT_HOST: ${{ github.event_name == 'workflow_dispatch' && inputs.host || '' }}
-          INPUT_OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'bootstrap' }}
+          INPUT_HOST: ${{ inputs.host || '' }}
+          INPUT_OPERATION: ${{ inputs.operation || 'verify' }}
+          CALLER_HOLDS_PRODUCTION_HOST_LOCK: ${{ inputs.caller_holds_production_host_lock || false }}
         run: |
           host="$INPUT_HOST"
           if [ -z "$host" ]; then
@@ -106,6 +110,11 @@ jobs:
               raise SystemExit('host must be a global unicast IPv4 address')
           PY
           case "$INPUT_OPERATION" in bootstrap|verify) ;; *) exit 2 ;; esac
+          if [ "$INPUT_OPERATION" = bootstrap ] \
+            && [ "$CALLER_HOLDS_PRODUCTION_HOST_LOCK" != true ]; then
+            echo "host bootstrap requires the Deploy Stack production lock" >&2
+            exit 2
+          fi
           echo "host=$host" >> "$GITHUB_OUTPUT"
           echo "operation=$INPUT_OPERATION" >> "$GITHUB_OUTPUT"
 
@@ -137,23 +146,44 @@ jobs:
         run: |
           scp digitalocean/scripts/verify-dev-ingress-firewall.sh \
             production-droplet:/tmp/open-hax-verify-dev-ingress-firewall
+          scp digitalocean/scripts/provision-ollama.sh \
+            production-droplet:/tmp/open-hax-provision-ollama
           ssh production-droplet \
-            'install -o root -g root -m 0755 /tmp/open-hax-verify-dev-ingress-firewall /usr/local/sbin/open-hax-verify-dev-ingress-firewall && rm -f /tmp/open-hax-verify-dev-ingress-firewall'
+            'install -o root -g root -m 0755 /tmp/open-hax-verify-dev-ingress-firewall /usr/local/sbin/open-hax-verify-dev-ingress-firewall && install -o root -g root -m 0755 /tmp/open-hax-provision-ollama /usr/local/sbin/open-hax-provision-ollama && rm -f /tmp/open-hax-verify-dev-ingress-firewall /tmp/open-hax-provision-ollama'
           ssh production-droplet 'bash -s' < digitalocean/scripts/bootstrap-host.sh
 
       - name: Verify host
+        env:
+          REMOTE_VERIFY_SCRIPT: /tmp/verify-open-hax-host-${{ github.run_id }}-${{ github.run_attempt }}.sh
+          REMOTE_VERIFY_REPORT: /tmp/host-verification-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: |
-          scp digitalocean/scripts/verify-host.sh production-droplet:/tmp/verify-open-hax-host.sh
+          expected_provisioner_sha=$(sha256sum digitalocean/scripts/provision-ollama.sh | awk '{print $1}')
+          installed_provisioner_sha=$(ssh production-droplet \
+            'sha256sum /usr/local/sbin/open-hax-provision-ollama 2>/dev/null' || true)
+          installed_provisioner_sha=${installed_provisioner_sha%% *}
+          if [ "$installed_provisioner_sha" != "$expected_provisioner_sha" ]; then
+            echo "installed Ollama provisioner is absent or stale" >&2
+            exit 1
+          fi
+          scp digitalocean/scripts/verify-host.sh \
+            "production-droplet:${REMOTE_VERIFY_SCRIPT}"
           set +e
-          ssh production-droplet 'chmod 700 /tmp/verify-open-hax-host.sh && REPORT=/tmp/host-verification.json /tmp/verify-open-hax-host.sh'
+          ssh production-droplet \
+            "chmod 700 '${REMOTE_VERIFY_SCRIPT}' && REPORT='${REMOTE_VERIFY_REPORT}' '${REMOTE_VERIFY_SCRIPT}'"
           status=$?
           set -e
-          scp production-droplet:/tmp/host-verification.json host-verification.json || true
+          scp "production-droplet:${REMOTE_VERIFY_REPORT}" host-verification.json || true
           exit "$status"
 
       - name: Remove deployment credentials
         if: always()
-        run: rm -f ~/.ssh/digitalocean
+        env:
+          REMOTE_VERIFY_SCRIPT: /tmp/verify-open-hax-host-${{ github.run_id }}-${{ github.run_attempt }}.sh
+          REMOTE_VERIFY_REPORT: /tmp/host-verification-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: |
+          ssh production-droplet \
+            "rm -f -- '${REMOTE_VERIFY_SCRIPT}' '${REMOTE_VERIFY_REPORT}'" || true
+          rm -f ~/.ssh/digitalocean
 
       - name: Upload verification report
         if: always()

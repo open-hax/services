@@ -7,6 +7,11 @@ set -euo pipefail
 
 : "${KNOXX_API_KEY:?KNOXX_API_KEY missing from the rendered environment}"
 
+verify_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# The helper is deployed beside this verifier at runtime.
+# shellcheck disable=SC1091
+. "$verify_dir/event-agent-limits.sh"
+
 FRONTEND=http://127.0.0.1:8080
 
 # The backend is not published to the host; reach it on the compose network.
@@ -19,6 +24,10 @@ FRONTEND=http://127.0.0.1:8080
 # deploy open, so every probe is bounded end to end. AbortSignal covers the body
 # read as well as the connect, and the abort surfaces as status 0.
 BACKEND_PROBE_TIMEOUT_MS=${BACKEND_PROBE_TIMEOUT_MS:-15000}
+# Gemma4:e2b can take materially longer than an ordinary health request to
+# produce a strict-schema translation. Keep its behavioral canary on a separate,
+# realistic bound so ordinary HTTP probes remain fast.
+KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS=${KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS:-90000}
 
 # AbortSignal.timeout throws synchronously for negative, fractional, infinite or
 # oversized values, which would escape the probe's own .catch and abort the gate
@@ -31,6 +40,16 @@ case "$BACKEND_PROBE_TIMEOUT_MS" in
 esac
 if [ "$BACKEND_PROBE_TIMEOUT_MS" -lt 1 ] || [ "$BACKEND_PROBE_TIMEOUT_MS" -gt 600000 ]; then
   echo "knoxx: BACKEND_PROBE_TIMEOUT_MS must be between 1 and 600000, got '${BACKEND_PROBE_TIMEOUT_MS}'" >&2
+  exit 1
+fi
+case "$KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS" in
+  ''|*[!0-9]*)
+    echo "knoxx: KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS must be a positive integer of milliseconds, got '${KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS}'" >&2
+    exit 1
+    ;;
+esac
+if [ "$KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS" -lt 1 ] || [ "$KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS" -gt 180000 ]; then
+  echo "knoxx: KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS must be between 1 and 180000, got '${KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS}'" >&2
   exit 1
 fi
 
@@ -80,8 +99,27 @@ backend_json_request() {
     " </dev/null
 }
 
-# 1. Backend health. Reports 503 until Proxx is reachable, which is the point:
-#    a green Knoxx with dead inference is not a demo.
+# Exercise host Ollama from the same backend container that runs both the
+# translation agent and the in-process OpenPlanner SDK. The helper checks both
+# required model ids, makes a bounded native structured Gemma translation,
+# forces one tool call through the OpenAI-compatible agent transport with
+# reasoning disabled, and makes a real embedding request. Catalog-only checks
+# cannot prove these paths run or that the embedding model returns 768
+# dimensions.
+ollama_runtime_probe() {
+  local translation_model=$1 embedding_model=$2 embedding_dimensions=$3
+  docker compose --project-name knoxx --env-file .env \
+    exec -T -e BACKEND_PROBE_TIMEOUT_MS="$BACKEND_PROBE_TIMEOUT_MS" \
+    -e KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS="$KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS" \
+    -e KNOXX_DEPLOY_TRANSLATION_MODEL="$translation_model" \
+    -e KNOXX_DEPLOY_EMBEDDING_MODEL="$embedding_model" \
+    -e KNOXX_DEPLOY_EMBEDDING_DIMENSIONS="$embedding_dimensions" \
+    knoxx-backend node -e "$(< ./probe-ollama.js)" </dev/null
+}
+
+# 1. Backend health. Reports 503 while a required inference or data dependency
+#    is unavailable. A green Knoxx with dead Proxx, Mongo, or Ollama is not a
+#    usable agent system.
 health=$(backend_curl /health)
 status=$(printf '%s' "$health" | jq -r '.status')
 body=$(printf '%s' "$health" | jq -r '.body')
@@ -94,10 +132,64 @@ fi
 
 proxx_ok=$(printf '%s' "$body" | jq -r '.dependencies.proxx.reachable // false')
 op_ok=$(printf '%s' "$body" | jq -r '.dependencies.openplanner.reachable // false')
+ollama_configured=$(printf '%s' "$body" | jq -r '.dependencies.ollama.configured // false')
+ollama_ok=$(printf '%s' "$body" | jq -r '.dependencies.ollama.reachable // false')
 transport=$(printf '%s' "$body" | jq -r '.dependencies.openplanner.detail.transport // "unknown"')
 
 [ "$proxx_ok" = "true" ] || { echo "knoxx: proxx unreachable" >&2; exit 1; }
 [ "$op_ok" = "true" ] || { echo "knoxx: openplanner data plane unreachable" >&2; exit 1; }
+[ "$ollama_configured" = "true" ] || { echo "knoxx: host Ollama is not configured" >&2; exit 1; }
+[ "$ollama_ok" = "true" ] || { echo "knoxx: host Ollama is unreachable" >&2; exit 1; }
+
+translation_model=gemma4:e2b
+embedding_model=nomic-embed-text
+embedding_dimensions=768
+for publication_agent in publication_translator publication_post_drafter; do
+  case ",${KNOXX_AGENT_MODEL_OVERRIDES:-}," in
+    *",${publication_agent}=${translation_model},"*) ;;
+    *)
+      echo "knoxx: ${publication_agent} is not pinned to ${translation_model}" >&2
+      exit 1
+      ;;
+  esac
+  case ",${KNOXX_AGENT_THINKING_OVERRIDES:-}," in
+    *",${publication_agent}=off,"*) ;;
+    *)
+      echo "knoxx: ${publication_agent} thinking override is not off" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ "${KNOXX_TRANSLATION_RUNNER:-}" != "agent" ]; then
+  echo "knoxx: publication translations are not configured for the in-process agent runner" >&2
+  exit 1
+fi
+
+for limiter_name in KNOXX_EVENT_AGENT_CONCURRENCY KNOXX_EVENT_AGENT_QUEUE_LIMIT; do
+  limiter_value=${!limiter_name:-}
+  case "$limiter_value" in
+    ''|*[!0-9]*)
+      echo "knoxx: ${limiter_name} must be a positive integer" >&2
+      exit 1
+      ;;
+  esac
+  if [ "$limiter_value" -lt 1 ]; then
+    echo "knoxx: ${limiter_name} must be at least 1" >&2
+    exit 1
+  fi
+done
+
+validate_knoxx_event_agent_turn_timeout
+
+if [ "${EMBED_PROVIDER_MODEL:-}" != "$embedding_model" ]; then
+  echo "knoxx: OpenPlanner embedding model is not pinned to ${embedding_model}" >&2
+  exit 1
+fi
+if [ "${EMBED_PROVIDER_DIMENSIONS:-}" != "$embedding_dimensions" ]; then
+  echo "knoxx: OpenPlanner embedding dimensions are not pinned to ${embedding_dimensions}" >&2
+  exit 1
+fi
 
 # The whole point of the isolation: the data plane must be in-process, not a
 # REST hop to a service that is not deployed.
@@ -300,8 +392,12 @@ fi
 # the phrase, and that trigger's enabled/agent/listener would then satisfy every
 # assertion below while the publication trigger went unchecked. If this id ever
 # changes the check fails loudly, which is the correct failure.
-translation_trigger=$(printf '%s' "$events_body" | jq -c \
-  '[.runtime.triggers[]? | select((.id // "") == "publication/translation-needed")] | first // empty')
+translation_trigger_id="publication/translation-needed"
+translation_agent_id="publication_translator"
+translation_listener_id="pi"
+translation_tool_id="save_translation"
+translation_trigger=$(printf '%s' "$events_body" | jq -c --arg id "$translation_trigger_id" \
+  '[.runtime.triggers[]? | select((.id // "") == $id)] | first // empty')
 
 if [ -z "$translation_trigger" ]; then
   echo "knoxx: no trigger subscribes to publication/translation-needed" >&2
@@ -314,14 +410,34 @@ fi
 trigger_enabled=$(printf '%s' "$translation_trigger" | jq -r '.enabled')
 trigger_agent=$(printf '%s' "$translation_trigger" | jq -r '.agent // empty')
 trigger_listener=$(printf '%s' "$translation_trigger" | jq -r '.listener // empty')
+trigger_emitter=$(printf '%s' "$translation_trigger" | jq -r '.emitter // empty')
+trigger_action=$(printf '%s' "$translation_trigger" | jq -r '.action // empty')
+trigger_resource_policies=$(printf '%s' "$translation_trigger" | jq -r '.resourcePoliciesFromEvent // false')
+trigger_execution_snapshot=$(printf '%s' "$translation_trigger" | jq -r '.executionSnapshotFromEvent // false')
 
 if [ "$trigger_enabled" != "true" ]; then
   echo "knoxx: the publication translation trigger is present but disabled" >&2
   exit 1
 fi
 
-if [ -z "$trigger_agent" ]; then
-  echo "knoxx: the publication translation trigger names no agent contract" >&2
+if [ "$trigger_agent" != "$translation_agent_id" ]; then
+  echo "knoxx: publication translation trigger names '${trigger_agent}', expected '${translation_agent_id}'" >&2
+  exit 1
+fi
+if [ "$trigger_listener" != "$translation_listener_id" ]; then
+  echo "knoxx: publication translation trigger listener is '${trigger_listener}', expected '${translation_listener_id}'" >&2
+  exit 1
+fi
+if [ "$trigger_emitter" != "knoxx-publication" ]; then
+  echo "knoxx: publication translation trigger emitter is '${trigger_emitter}', expected 'knoxx-publication'" >&2
+  exit 1
+fi
+if [ "$trigger_action" != "start-agent-session" ]; then
+  echo "knoxx: publication translation trigger action is '${trigger_action}', expected 'start-agent-session'" >&2
+  exit 1
+fi
+if [ "$trigger_resource_policies" != "true" ] || [ "$trigger_execution_snapshot" != "true" ]; then
+  echo "knoxx: publication translation trigger does not pin event resource policy and execution" >&2
   exit 1
 fi
 
@@ -336,7 +452,7 @@ fi
 # Asked AS THE TRIGGER'"'"'S LISTENER. The catalog is actor-scoped, and the default
 # actor is not the one a triggered session runs as — a bare lookup reports "does
 # not resolve" for a contract that resolves fine for the right actor.
-agents_catalog=$(backend_curl "/api/knoxx/agents/catalog${trigger_listener:+?actorId=$trigger_listener}")
+agents_catalog=$(backend_curl "/api/knoxx/agents/catalog?actorId=${translation_listener_id}")
 agents_status=$(printf '%s' "$agents_catalog" | jq -r '.status')
 agents_body=$(printf '%s' "$agents_catalog" | jq -r '.body')
 if [ "$agents_status" != "200" ]; then
@@ -345,23 +461,153 @@ if [ "$agents_status" != "200" ]; then
   exit 1
 fi
 
-resolved_agent=$(printf '%s' "$agents_body" | jq -r --arg id "$trigger_agent" \
+catalog_actor=$(printf '%s' "$agents_body" | jq -r '.actor_id // empty')
+if [ "$catalog_actor" != "$translation_listener_id" ]; then
+  echo "knoxx: translation catalog resolved actor '${catalog_actor}', expected '${translation_listener_id}'" >&2
+  exit 1
+fi
+
+resolved_agent=$(printf '%s' "$agents_body" | jq -c --arg id "$translation_agent_id" \
   '[.agents[]? | select((.id // "") == $id)] | first // empty')
 
 if [ -z "$resolved_agent" ]; then
-  echo "knoxx: the translation trigger names agent '${trigger_agent}', which does" >&2
+  echo "knoxx: the translation trigger names agent '${translation_agent_id}', which does" >&2
   echo "       not resolve in the deployed catalog — no session would start" >&2
   printf '%s\n' "$agents_body" | jq -r '[.agents[]?.id]' >&2
   exit 1
 fi
 
-echo "knoxx: translation producer ok (trigger -> agent '${trigger_agent}')"
+resolved_translation_model=$(printf '%s' "$resolved_agent" | jq -r '.model // empty')
+resolved_translation_thinking=$(printf '%s' "$resolved_agent" | jq -r '.["thinking-level"] // empty')
+resolved_translation_tools_choice=$(printf '%s' "$resolved_agent" | jq -r '.["tools-choice"] // empty')
+if [ "$resolved_translation_model" != "$translation_model" ]; then
+  echo "knoxx: translator resolved model '${resolved_translation_model}', expected '${translation_model}'" >&2
+  exit 1
+fi
+if [ "$resolved_translation_thinking" != "off" ]; then
+  echo "knoxx: translator resolved thinking '${resolved_translation_thinking}', expected 'off'" >&2
+  exit 1
+fi
+if [ "$resolved_translation_tools_choice" != "required-first" ]; then
+  echo "knoxx: translator resolved tools choice '${resolved_translation_tools_choice}', expected 'required-first'" >&2
+  exit 1
+fi
+if ! printf '%s' "$resolved_agent" | jq -e --arg tool "$translation_tool_id" \
+  '((.["tool-ids"] // []) | length) == 1 and ((.["tool-ids"] // []) | index($tool)) != null' \
+  >/dev/null; then
+  echo "knoxx: translator does not resolve exactly required tool '${translation_tool_id}'" >&2
+  printf '%s\n' "$resolved_agent" | jq -c '{id, toolIds: (.["tool-ids"] // [])}' >&2
+  exit 1
+fi
+
+echo "knoxx: translation producer ok (trigger -> agent '${translation_agent_id}' -> ${translation_model}/off -> required-first tool '${translation_tool_id}')"
+
+# The indexed-document admission endpoint only waits for an event-triggered
+# turn to be accepted into the bounded queue. Prove the post-drafter contract
+# and its only lawful write tool resolve before admission can report success.
+# This is deliberately the exact trigger id, agent id and actor that the shipped
+# publication namespace declares; a similarly named trigger must not satisfy it.
+draft_trigger_id="publication/craft-post-from-indexed-document"
+draft_agent_id="publication_post_drafter"
+draft_listener_id="pi"
+draft_tool_id="save_publication_draft"
+
+draft_trigger=$(printf '%s' "$events_body" | jq -c --arg id "$draft_trigger_id" \
+  '[.runtime.triggers[]? | select((.id // "") == $id)] | first // empty')
+
+if [ -z "$draft_trigger" ]; then
+  echo "knoxx: no trigger has exact id ${draft_trigger_id}" >&2
+  printf '%s\n' "$events_body" | jq -r '.runtime.triggers // []' >&2
+  exit 1
+fi
+
+draft_trigger_enabled=$(printf '%s' "$draft_trigger" | jq -r '.enabled')
+draft_trigger_agent=$(printf '%s' "$draft_trigger" | jq -r '.agent // empty')
+draft_trigger_listener=$(printf '%s' "$draft_trigger" | jq -r '.listener // empty')
+draft_trigger_emitter=$(printf '%s' "$draft_trigger" | jq -r '.emitter // empty')
+draft_trigger_action=$(printf '%s' "$draft_trigger" | jq -r '.action // empty')
+draft_trigger_condition=$(printf '%s' "$draft_trigger" | jq -r '.condition // false')
+draft_trigger_resource_policies=$(printf '%s' "$draft_trigger" | jq -r '.resourcePoliciesFromEvent // false')
+
+if [ "$draft_trigger_enabled" != "true" ]; then
+  echo "knoxx: publication post-drafter trigger is present but disabled" >&2
+  exit 1
+fi
+if [ "$draft_trigger_agent" != "$draft_agent_id" ]; then
+  echo "knoxx: publication post-drafter trigger names '${draft_trigger_agent}', expected '${draft_agent_id}'" >&2
+  exit 1
+fi
+if [ "$draft_trigger_listener" != "$draft_listener_id" ]; then
+  echo "knoxx: publication post-drafter trigger listener is '${draft_trigger_listener}', expected '${draft_listener_id}'" >&2
+  exit 1
+fi
+if [ "$draft_trigger_emitter" != "knoxx-publication" ]; then
+  echo "knoxx: publication post-drafter trigger emitter is '${draft_trigger_emitter}', expected 'knoxx-publication'" >&2
+  exit 1
+fi
+if [ "$draft_trigger_action" != "start-agent-session" ]; then
+  echo "knoxx: publication post-drafter trigger action is '${draft_trigger_action}', expected 'start-agent-session'" >&2
+  exit 1
+fi
+if [ "$draft_trigger_condition" != "true" ] || [ "$draft_trigger_resource_policies" != "true" ]; then
+  echo "knoxx: publication post-drafter trigger is missing its generation condition or event policy pin" >&2
+  exit 1
+fi
+
+drafter_catalog=$(backend_curl "/api/knoxx/agents/catalog?actorId=${draft_listener_id}")
+drafter_catalog_status=$(printf '%s' "$drafter_catalog" | jq -r '.status')
+drafter_catalog_body=$(printf '%s' "$drafter_catalog" | jq -r '.body')
+if [ "$drafter_catalog_status" != "200" ]; then
+  echo "knoxx: post-drafter agent catalog returned ${drafter_catalog_status}" >&2
+  printf '%s\n' "$drafter_catalog_body" >&2
+  exit 1
+fi
+
+drafter_catalog_actor=$(printf '%s' "$drafter_catalog_body" | jq -r '.actor_id // empty')
+if [ "$drafter_catalog_actor" != "$draft_listener_id" ]; then
+  echo "knoxx: post-drafter catalog resolved actor '${drafter_catalog_actor}', expected '${draft_listener_id}'" >&2
+  exit 1
+fi
+
+resolved_drafter=$(printf '%s' "$drafter_catalog_body" | jq -c --arg id "$draft_agent_id" \
+  '[.agents[]? | select((.id // "") == $id)] | first // empty')
+if [ -z "$resolved_drafter" ]; then
+  echo "knoxx: post-drafter agent '${draft_agent_id}' does not resolve for actor '${draft_listener_id}'" >&2
+  printf '%s\n' "$drafter_catalog_body" | jq -r '[.agents[]?.id]' >&2
+  exit 1
+fi
+
+if ! printf '%s' "$resolved_drafter" | jq -e --arg tool "$draft_tool_id" \
+  '((.["tool-ids"] // []) | length) == 1 and ((.["tool-ids"] // []) | index($tool)) != null' \
+  >/dev/null; then
+  echo "knoxx: post-drafter agent '${draft_agent_id}' does not resolve exactly required tool '${draft_tool_id}'" >&2
+  printf '%s\n' "$resolved_drafter" | jq -c '{id, toolIds: (.["tool-ids"] // [])}' >&2
+  exit 1
+fi
+
+resolved_drafter_model=$(printf '%s' "$resolved_drafter" | jq -r '.model // empty')
+resolved_drafter_thinking=$(printf '%s' "$resolved_drafter" | jq -r '.["thinking-level"] // empty')
+resolved_drafter_tools_choice=$(printf '%s' "$resolved_drafter" | jq -r '.["tools-choice"] // empty')
+if [ "$resolved_drafter_model" != "$translation_model" ]; then
+  echo "knoxx: post-drafter resolved model '${resolved_drafter_model}', expected '${translation_model}'" >&2
+  exit 1
+fi
+if [ "$resolved_drafter_thinking" != "off" ]; then
+  echo "knoxx: post-drafter resolved thinking '${resolved_drafter_thinking}', expected 'off'" >&2
+  exit 1
+fi
+if [ "$resolved_drafter_tools_choice" != "required-first" ]; then
+  echo "knoxx: post-drafter resolved tools choice '${resolved_drafter_tools_choice}', expected 'required-first'" >&2
+  exit 1
+fi
+
+echo "knoxx: post-draft producer ok (trigger -> agent '${draft_agent_id}' -> ${translation_model}/off -> required-first tool '${draft_tool_id}')"
 
 # KNOWN GAP, printed every run rather than left to be rediscovered. See
 # `knoxx.backend.infra.translation-agent-dispatch/known-gap`.
-echo "knoxx: WARN an agent-dispatched translation claim whose session dies" >&2
-echo "knoxx: WARN mid-run stays in flight — there is no session read that can" >&2
-echo "knoxx: WARN settle it, so that revision needs an operator" >&2
+echo "knoxx: WARN accepted translation claims replay after restart, and incomplete" >&2
+echo "knoxx: WARN agent turns become retriable, but there is no autonomous retry timer" >&2
+echo "knoxx: WARN until the next admission or explicit reconciliation" >&2
 
 # 1f. The MCP tool surface. A healthy backend with a broken tool surface is a
 # real and previously undetectable failure: schema conversion producing nothing
@@ -512,4 +758,21 @@ case "$proxied" in
   *) echo "knoxx: frontend -> backend proxy returned ${proxied}" >&2; exit 1 ;;
 esac
 
-echo "knoxx: healthy; proxx reachable, openplanner data plane in-process (${transport}), auth enforced"
+# Keep the expensive inference proof last. A readiness retry caused by a route,
+# catalog, MCP, auth, or frontend failure should not spend up to 90 seconds
+# re-running Gemma before it reaches the actual failing gate.
+ollama_probe=$(ollama_runtime_probe "$translation_model" "$embedding_model" "$embedding_dimensions")
+ollama_probe_ok=$(printf '%s' "$ollama_probe" | jq -r '.ok // false')
+if [ "$ollama_probe_ok" != "true" ]; then
+  echo "knoxx: required host Ollama translation/embedding runtime is unavailable" >&2
+  printf '%s\n' "$ollama_probe" \
+    | jq -c '{reason, routing, catalog, translation, agentToolCall, embedding}' >&2 \
+    || printf '%s\n' "$ollama_probe" >&2
+  exit 1
+fi
+
+echo "knoxx: host Ollama models ${translation_model} and ${embedding_model} are available"
+echo "knoxx: ${translation_model} returned strict structured translation output"
+echo "knoxx: ${embedding_model} returned a nonempty ${embedding_dimensions}-dimensional vector"
+
+echo "knoxx: healthy; proxx + host Ollama reachable, openplanner data plane in-process (${transport}), auth enforced"
