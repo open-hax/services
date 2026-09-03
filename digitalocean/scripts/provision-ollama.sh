@@ -26,6 +26,7 @@ OLLAMA_BACKEND_CIDR=172.30.114.2/29
 OLLAMA_PORT=11434
 
 OLLAMA_INSTALL_ROOT=${OLLAMA_INSTALL_ROOT:-/opt/ollama/v${OLLAMA_VERSION}}
+OLLAMA_INSTALL_PARENT=$(dirname -- "$OLLAMA_INSTALL_ROOT")
 OLLAMA_BIN=${OLLAMA_BIN:-${OLLAMA_INSTALL_ROOT}/bin/ollama}
 OLLAMA_MARKER_PATH=${OLLAMA_MARKER_PATH:-${OLLAMA_INSTALL_ROOT}/.open-hax-archive-sha256}
 OLLAMA_HOME_DIR=${OLLAMA_HOME_DIR:-/var/lib/ollama}
@@ -38,6 +39,7 @@ DOCKER_BIN=${DOCKER_BIN:-/usr/bin/docker}
 UFW_BIN=${UFW_BIN:-/usr/sbin/ufw}
 IP_BIN=${IP_BIN:-/usr/sbin/ip}
 SS_BIN=${SS_BIN:-/usr/bin/ss}
+RUNUSER_BIN=${RUNUSER_BIN:-/usr/sbin/runuser}
 
 case ${1:-} in
   "") operation=provision ;;
@@ -254,14 +256,21 @@ model_digest_matches() {
     >/dev/null
 }
 
+runtime_is_ready() {
+  local marker
+  "$RUNUSER_BIN" -u ollama -- test -x "$OLLAMA_BIN" || return 1
+  marker=$("$RUNUSER_BIN" -u ollama -- cat "$OLLAMA_MARKER_PATH" 2>/dev/null) \
+    || return 1
+  [ "$marker" = "$OLLAMA_ARCHIVE_SHA256" ]
+}
+
 ollama_is_ready() {
   local base_url version_payload tags
   base_url=http://${OLLAMA_NETWORK_GATEWAY}:${OLLAMA_PORT}
 
   network_is_ready \
     && firewall_is_ready \
-    && [ -x "$OLLAMA_BIN" ] \
-    && [ "$(cat "$OLLAMA_MARKER_PATH" 2>/dev/null || true)" = "$OLLAMA_ARCHIVE_SHA256" ] \
+    && runtime_is_ready \
     && "$SYSTEMCTL_BIN" is-enabled --quiet ollama.service \
     && "$SYSTEMCTL_BIN" is-active --quiet ollama.service \
     && listener_is_ready \
@@ -290,15 +299,24 @@ if [ "$(uname -s)" != Linux ] || [ "$(uname -m)" != x86_64 ]; then
 fi
 
 ensure_network
+install -d -o root -g root -m 0755 "$OLLAMA_INSTALL_PARENT"
 
-if [ ! -x "${OLLAMA_INSTALL_ROOT}/bin/ollama" ]; then
-  if [ -e "$OLLAMA_INSTALL_ROOT" ]; then
-    echo "ollama: refusing to replace incomplete pinned directory ${OLLAMA_INSTALL_ROOT}" >&2
-    exit 2
-  fi
-  install -d -m 0755 /opt/ollama
+normalize_runtime_tree() {
+  local tree=$1
+  chown -R root:root "$tree"
+  chmod -R u=rwX,go=rX "$tree"
+  chmod 0755 "$tree/bin/ollama"
+}
+
+if [ -L "$OLLAMA_INSTALL_ROOT" ] \
+  || { [ -e "$OLLAMA_INSTALL_ROOT" ] && [ ! -d "$OLLAMA_INSTALL_ROOT" ]; }; then
+  echo "ollama: refusing non-directory pinned path ${OLLAMA_INSTALL_ROOT}" >&2
+  exit 2
+fi
+
+if [ ! -e "$OLLAMA_INSTALL_ROOT" ]; then
   archive=$(mktemp)
-  staging=$(mktemp -d "/opt/ollama/.v${OLLAMA_VERSION}.XXXXXX")
+  staging=$(mktemp -d "${OLLAMA_INSTALL_PARENT}/.v${OLLAMA_VERSION}.XXXXXX")
   cleanup_install() {
     rm -f "$archive"
     if [ -n "${staging:-}" ] && [ -d "$staging" ]; then
@@ -311,12 +329,15 @@ if [ ! -x "${OLLAMA_INSTALL_ROOT}/bin/ollama" ]; then
     --output "$archive" \
     "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/ollama-linux-amd64.tar.zst"
   printf '%s  %s\n' "$OLLAMA_ARCHIVE_SHA256" "$archive" | sha256sum -c -
-  tar --zstd -xf "$archive" -C "$staging"
+  tar --no-same-owner --zstd -xf "$archive" -C "$staging"
   [ -x "$staging/bin/ollama" ] || {
     echo "ollama: pinned archive did not contain bin/ollama" >&2
     exit 2
   }
   printf '%s\n' "$OLLAMA_ARCHIVE_SHA256" > "$staging/.open-hax-archive-sha256"
+  # mktemp creates the staging root as 0700. Normalize the pinned, immutable
+  # runtime before publishing it to the unprivileged systemd user.
+  normalize_runtime_tree "$staging"
   mv "$staging" "$OLLAMA_INSTALL_ROOT"
   staging=
   rm -f "$archive"
@@ -327,6 +348,10 @@ fi
   echo "ollama: installed runtime does not match the pinned archive" >&2
   exit 2
 }
+# Repair the complete immutable tree if a prior bootstrap left ownership or
+# modes inaccessible to User=ollama. Marker validation happens first so an
+# unrecognized existing tree is never normalized into service.
+normalize_runtime_tree "$OLLAMA_INSTALL_ROOT"
 ln -sfn "${OLLAMA_INSTALL_ROOT}/bin/ollama" "$OLLAMA_LINK_PATH"
 
 if ! id ollama >/dev/null 2>&1; then

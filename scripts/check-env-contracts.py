@@ -611,6 +611,18 @@ def main() -> int:
             deploy_text,
             '. "$probe_dir/mongodb-database-identity.sh"',
         ),
+        "embedding migration target identity diagnostic": (
+            deploy_text,
+            "embedding migration gate rejected target Mongo database identity",
+        ),
+        "embedding migration source identity diagnostic": (
+            deploy_text,
+            "embedding migration gate rejected existing backend Mongo database identity",
+        ),
+        "Ollama provisioner hash diagnostic": (
+            deploy_text,
+            "cannot hash the installed Knoxx host Ollama provisioner",
+        ),
         "embedding migration database identity regression": (
             knoxx_mongodb_identity_test,
             "equivalent Mongo database identities produced different fingerprints",

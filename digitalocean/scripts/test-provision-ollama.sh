@@ -26,6 +26,16 @@ esac
 SH
 chmod 0755 "$fixture_dir/bin/systemctl"
 
+cat > "$fixture_dir/bin/runuser" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$1" = -u ] && [ "$2" = ollama ] && [ "$3" = -- ] || exit 64
+[ "${MOCK_OLLAMA_RUNTIME_ACCESSIBLE:-1}" = 1 ] || exit 1
+shift 3
+"$@"
+SH
+chmod 0755 "$fixture_dir/bin/runuser"
+
 cat > "$fixture_dir/bin/curl" <<'SH'
 #!/usr/bin/env bash
 for argument in "$@"; do url=$argument; done
@@ -154,6 +164,7 @@ readiness() {
     DOCKER_BIN="$fixture_dir/bin/docker" \
     IP_BIN="$fixture_dir/bin/ip" \
     SS_BIN="$fixture_dir/bin/ss" \
+    RUNUSER_BIN="$fixture_dir/bin/runuser" \
     UFW_STATUS_FILE="${MOCK_UFW_STATUS_FILE:-$fixture_dir/firewall-good.txt}" \
     OLLAMA_MARKER_PATH="$fixture_dir/archive-sha256" \
     bash "$provisioner" --readiness
@@ -255,6 +266,10 @@ if MOCK_OLLAMA_ENABLED=0 readiness >/dev/null 2>&1; then
   echo "Ollama readiness accepted a disabled service" >&2
   exit 1
 fi
+if MOCK_OLLAMA_RUNTIME_ACCESSIBLE=0 readiness >/dev/null 2>&1; then
+  echo "Ollama readiness accepted a runtime inaccessible to User=ollama" >&2
+  exit 1
+fi
 if MOCK_OLLAMA_MODELS=missing readiness >/dev/null 2>&1; then
   echo "Ollama readiness accepted missing required models" >&2
   exit 1
@@ -278,18 +293,11 @@ ollama_home="$provision_fixture/var/lib/ollama"
 models_dir="$ollama_home/models"
 unit_path="$provision_fixture/etc/systemd/system/ollama.service"
 link_path="$provision_fixture/usr/local/bin/ollama"
-mkdir -p "$provision_bin" "$install_root/bin" "$(dirname "$unit_path")" \
+mkdir -p "$provision_bin" "$(dirname "$install_root")" "$(dirname "$unit_path")" \
   "$(dirname "$link_path")"
 : > "$provision_log"
 printf '%s\n' "${base_firewall}"$'\n172.17.0.1 11434/tcp ALLOW IN 172.16.0.0/12' \
   > "$firewall_state"
-printf '%s\n' 9785247dea264d9072f09f6c9c0eb4b8e666892826a3d8388eba3e8fb9ed1db9 \
-  > "$install_root/.open-hax-archive-sha256"
-cat > "$install_root/bin/ollama" <<'SH'
-#!/usr/bin/env bash
-exit 0
-SH
-chmod 0755 "$install_root/bin/ollama"
 
 cat > "$provision_bin/id" <<'SH'
 #!/usr/bin/env bash
@@ -418,8 +426,21 @@ chmod 0755 "$provision_bin/systemctl"
 
 cat > "$provision_bin/curl" <<'SH'
 #!/usr/bin/env bash
-for argument in "$@"; do url=$argument; done
+set -euo pipefail
+output=
+url=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output) output=$2; shift 2 ;;
+    *) url=$1; shift ;;
+  esac
+done
 case "$url" in
+  https://github.com/ollama/ollama/releases/download/*/ollama-linux-amd64.tar.zst)
+    [ -n "$output" ] || exit 64
+    : > "$output"
+    printf '%s\n' 'archive downloaded' >> "$MOCK_PROVISION_LOG"
+    ;;
   */api/version) printf '{"version":"0.33.2"}\n' ;;
   */api/tags)
     printf '%s\n' '{"models":[{"name":"gemma4:e2b","digest":"7fbdbf8f5e45a75bb122155ed546e765b4d9c53a1285f62fd9f506baa1c5a47e"},{"name":"nomic-embed-text:latest","digest":"0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"}]}'
@@ -428,6 +449,44 @@ case "$url" in
 esac
 SH
 chmod 0755 "$provision_bin/curl"
+
+cat > "$provision_bin/sha256sum" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "$*" = '-c -' ]; then
+  cat >/dev/null
+  exit 0
+fi
+exec /usr/bin/sha256sum "$@"
+SH
+chmod 0755 "$provision_bin/sha256sum"
+
+cat > "$provision_bin/tar" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$#" -eq 6 ] && [ "$1" = --no-same-owner ] && [ "$2" = --zstd ] \
+  && [ "$3" = -xf ] && [ "$5" = -C ] \
+  || exit 64
+staging=$6
+mkdir -p "$staging/bin"
+cat > "$staging/bin/ollama" <<'OLLAMA'
+#!/usr/bin/env bash
+exit 0
+OLLAMA
+chmod 0755 "$staging/bin/ollama"
+printf '%s\n' 'archive extracted' >> "$MOCK_PROVISION_LOG"
+SH
+chmod 0755 "$provision_bin/tar"
+
+cat > "$provision_bin/chown" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'chown' >> "$MOCK_PROVISION_LOG"
+printf ' %s' "$@" >> "$MOCK_PROVISION_LOG"
+printf '\n' >> "$MOCK_PROVISION_LOG"
+[ "$1" = -R ] && [ "$2" = root:root ] && [ "$#" -eq 3 ]
+SH
+chmod 0755 "$provision_bin/chown"
 
 cat > "$provision_bin/ip" <<'SH'
 #!/usr/bin/env bash
@@ -460,6 +519,7 @@ provision() {
     UFW_BIN="$provision_bin/ufw" \
     IP_BIN="$provision_bin/ip" \
     SS_BIN="$provision_bin/ss" \
+    RUNUSER_BIN="$fixture_dir/bin/runuser" \
     bash "$provisioner" >/dev/null
 }
 
@@ -473,7 +533,12 @@ assert_count() {
 }
 
 provision
+# A subsequent bootstrap must repair the exact inaccessible mode produced by
+# the historical mktemp-and-move path without downloading the archive again.
+chmod 0700 "$(dirname "$install_root")" "$install_root"
 provision
+assert_count 1 'archive downloaded' "$provision_log"
+assert_count 1 'archive extracted' "$provision_log"
 assert_count 1 \
   'docker network create --driver bridge --internal --subnet 172.30.114.0/29 --gateway 172.30.114.1 --opt com.docker.network.bridge.name=knoxx-ollama0 --label org.open-hax.boundary=knoxx-ollama-backend knoxx-ollama' \
   "$provision_log"
@@ -491,6 +556,18 @@ assert_count 2 'systemctl enable ollama.service' "$provision_log"
 assert_count 2 'systemctl restart ollama.service' "$provision_log"
 assert_count 1 "$exact_firewall_rule" "$firewall_state"
 assert_count 1 'Environment="OLLAMA_HOST=172.30.114.1:11434"' "$unit_path"
+if [ "$(stat -c %a "$(dirname "$install_root")")" != 755 ] \
+  || [ "$(stat -c %a "$install_root")" != 755 ] \
+  || [ "$(stat -c %a "$install_root/bin")" != 755 ] \
+  || [ "$(stat -c %a "$install_root/bin/ollama")" != 755 ] \
+  || [ "$(stat -c %a "$install_root/.open-hax-archive-sha256")" != 644 ]; then
+  echo "Ollama provisioning left the runtime path inaccessible to User=ollama" >&2
+  exit 1
+fi
+if find "$install_root" -perm /022 -print -quit | grep -q .; then
+  echo "Ollama provisioning left non-root write permission in the runtime tree" >&2
+  exit 1
+fi
 if grep -Fq '172.16.0.0/12' "$firewall_state"; then
   echo "Ollama provisioning retained the predecessor broad firewall rule" >&2
   exit 1

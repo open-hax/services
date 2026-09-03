@@ -359,9 +359,12 @@ jobs:
           export EMBED_SOURCE_MODEL=
           export EMBED_SOURCE_DIMENSIONS=
           export EMBED_SOURCE_DATABASE_FINGERPRINT=
-          EMBED_TARGET_DATABASE_FINGERPRINT=$(
-            mongodb_database_fingerprint "$MONGODB_URI" "$MONGODB_DB"
-          )
+          if ! EMBED_TARGET_DATABASE_FINGERPRINT=$(
+              mongodb_database_fingerprint "$MONGODB_URI" "$MONGODB_DB"
+            ); then
+            echo "embedding migration gate rejected target Mongo database identity" >&2
+            exit 1
+          fi
           export EMBED_TARGET_DATABASE_FINGERPRINT
           if [ "${#current_backends[@]}" -eq 1 ]; then
             backend_id=${current_backends[0]}
@@ -386,9 +389,13 @@ jobs:
             EMBED_SOURCE_DIMENSIONS=$(container_env_value EMBED_PROVIDER_DIMENSIONS)
             source_mongodb_uri=$(container_env_value MONGODB_URI)
             source_mongodb_db=$(container_env_value MONGODB_DB)
-            EMBED_SOURCE_DATABASE_FINGERPRINT=$(
-              mongodb_database_fingerprint "$source_mongodb_uri" "$source_mongodb_db"
-            )
+            if ! EMBED_SOURCE_DATABASE_FINGERPRINT=$(
+                mongodb_database_fingerprint "$source_mongodb_uri" "$source_mongodb_db"
+              ); then
+              unset current_environment source_mongodb_uri source_mongodb_db
+              echo "embedding migration gate rejected existing backend Mongo database identity" >&2
+              exit 1
+            fi
             unset current_environment source_mongodb_uri source_mongodb_db
             export EMBED_SOURCE_CONTRACT_PRESENT=1
             export EMBED_SOURCE_MODEL EMBED_SOURCE_DIMENSIONS EMBED_SOURCE_DATABASE_FINGERPRINT
@@ -553,7 +560,10 @@ jobs:
           # an unparameterized network or deploy across host-boundary drift.
           if [ "$service" = knoxx ]; then
             installed_provisioner=/usr/local/sbin/open-hax-provision-ollama
-            installed_sha=$(sha256sum "$installed_provisioner" 2>/dev/null | awk '{print $1}')
+            if ! installed_sha=$(sha256sum "$installed_provisioner" | awk '{print $1}'); then
+              echo "cannot hash the installed Knoxx host Ollama provisioner" >&2
+              exit 1
+            fi
             if [ "$installed_sha" != "$ollama_provisioner_sha" ]; then
               echo "Knoxx host Ollama provisioner is absent or stale; run Bootstrap DigitalOcean Host" >&2
               exit 1
