@@ -10,8 +10,7 @@
 > file is authoritative for **where the directory is and who may write it**.
 >
 > Companion: `docs/deployment-model.md` §4 (the model this declaration
-> instantiates). That document is not on `main` yet; it lives on
-> `claude/knoxx-translation-deployment-gr0lgf`.
+> instantiates).
 
 ## 1. The host question, answered: same host
 
