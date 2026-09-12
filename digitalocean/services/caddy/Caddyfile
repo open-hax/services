@@ -201,3 +201,13 @@
 		header_up -x-open-hax-bridge-auth
 	}
 }
+
+# BEGIN managed Knoxx nested HTTPS placeholders
+# Exact hostnames use Caddy automatic HTTPS and renewal (no DNS plugin needed).
+# Replace a hostname's placeholder with an explicit upstream when it is ready.
+testing.knoxx.promethean.rest, stealth.knoxx.promethean.rest, yoga.knoxx.promethean.rest, staging.knoxx.promethean.rest {
+	import common
+	header Cache-Control "no-store"
+	respond "Service not configured." 404
+}
+# END managed Knoxx nested HTTPS placeholders
