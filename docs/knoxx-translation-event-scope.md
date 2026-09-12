@@ -7,11 +7,14 @@ resource exactly. Without the opt-in, the generic agent action uses ambient
 configuration and loses the requesting organization and membership before
 session hydration and durable run projection.
 
-The companion application change in open-hax/knoxx#305 validates a closed scope and requires
-a trusted dispatch bound to the named emitter before using it. Services owns only
+The companion application change in [open-hax/knoxx#305](https://github.com/open-hax/knoxx/pull/305),
+published at [2a87453f](https://github.com/open-hax/knoxx/commit/2a87453f1106d845215c8518e7dff6bc84df4919),
+validates a closed scope and requires a trusted dispatch bound to the named
+emitter before using it. That commit also reports the loaded trigger's
+`scopeFromEvent` field for deployment verification. Services owns only
 the deployment declaration. It does not infer authority or duplicate that runtime
-logic. This PR is held until that runtime change is published, reviewed, and
-merged; the initial Services review preceded its publication. Deploy this
+logic. This PR is held until that runtime change is reviewed and merged; the
+initial Services review preceded its publication. Deploy this
 declaration with the reviewed runtime that implements it.
 
 Verification: parsed EDN equals the application-owned resource, its
