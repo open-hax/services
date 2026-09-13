@@ -49,6 +49,9 @@ jobs:
       - name: Enforce deploy-chain failure propagation
         run: python scripts/check-deploy-chain.py
 
+      - name: Test service environment admission and receiver boundaries
+        run: python3 -m unittest discover -s scripts/tests -p 'test_environment*.py'
+
       - name: Enforce service environment contracts
         run: python scripts/check-env-contracts.py
 

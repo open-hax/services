@@ -1,0 +1,5 @@
+FROM caddy:2.8-alpine
+COPY dist /srv
+COPY Environment.Caddyfile /etc/caddy/Caddyfile
+USER 1000:1000
+EXPOSE 8080
