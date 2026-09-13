@@ -8,9 +8,13 @@ Knoxx (`157.245.125.134`, SSH `err@knoxx.promethean.rest`):
 - `yoga.knoxx.promethean.rest`
 - `staging.knoxx.promethean.rest`
 
-The Caddy sites return `404` with `Service not configured.` and `Cache-Control:
-no-store`. They have no application upstream. The device labels do not route
-to those devices. HTTP redirects to HTTPS with 308.
+As of 2026-09-13, Stealth and Yoga route to their own isolated Knoxx applications
+through private SSH ingress. Testing and staging have fixed upstream slots and
+return a 503 placeholder until an admitted application build is deployed. The
+matching `stealth.axxium`, `yoga.axxium`, `testing.axxium` and `staging.axxium`
+hostnames also use exact HTTPS sites. Stealth's Axxium application is intentionally
+stopped for the cross-host independence acceptance run; its origin returns 502.
+HTTP redirects to HTTPS with 308. See [environment promotion](environments/promotion.md).
 
 Caddy obtained a separate publicly trusted Let's Encrypt certificate for each
 full hostname. Automatic renewal uses the existing persistent
@@ -36,8 +40,8 @@ dev-auth routes retain their configuration.
 4. Validate the Caddyfile using the deployment's environment and deploy through
    the existing ingress workflow. Caddy can issue exact-host certificates via
    HTTP-01 or TLS-ALPN-01; DNS must resolve here and challenges must reach it.
-5. Run `digitalocean/scripts/verify-knoxx-nested-https.sh` for the four existing
-   placeholders. For a new name, use `curl -sS -D - https://<full-hostname>/`
+5. Run `digitalocean/scripts/verify-knoxx-nested-https.sh` for the four Knoxx hostnames. It distinguishes application responses from
+   unconfigured testing/staging placeholders. For a new name, use `curl -sS -D - https://<full-hostname>/`
    with normal trust checking, inspect its SAN and expiry, and verify the
    expected response. A configured application needs its own health check.
 
