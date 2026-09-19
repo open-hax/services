@@ -1,0 +1,158 @@
+name: Deploy Service Environment
+on:
+  workflow_call:
+    inputs:
+      controller_sha:
+        type: string
+        required: true
+      service:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: true
+      pull_request:
+        type: string
+        required: true
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  admit:
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.admission.outputs.source_sha }}
+    steps:
+      - name: Validate controller arguments
+        env:
+          CONTROLLER_SHA: ${{ inputs.controller_sha }}
+          SERVICE: ${{ inputs.service }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          PR_NUMBER: ${{ inputs.pull_request }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ENVIRONMENT" =~ ^(testing|staging)$ ]]
+          [[ "$SERVICE" =~ ^(knoxx|axxium)$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          test "$SOURCE_REPOSITORY" = "open-hax/$SERVICE"
+      - uses: actions/checkout@v5
+        with:
+          repository: open-hax/services
+          ref: ${{ inputs.controller_sha }}
+          persist-credentials: false
+      - id: admission
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pull_request }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: python3 scripts/github_environment_admission.py "$SOURCE_REPOSITORY" "$PR_NUMBER" "$ENVIRONMENT"
+  build:
+    needs: admit
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: open-hax/services
+          ref: ${{ inputs.controller_sha }}
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.admit.outputs.source_sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        if: inputs.service == 'knoxx'
+        with:
+          repository: open-hax/openplanner
+          ref: 07085d6557b75834ce6f50e6c54b8ca47e1c7c08
+          path: openplanner
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: DeLaGuardo/setup-clojure@13
+        with:
+          cli: latest
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: Build isolated application artifacts
+        env:
+          SERVICE: ${{ inputs.service }}
+          SOURCE_SHA: ${{ needs.admit.outputs.source_sha }}
+        run: bash controller/scripts/build-service-environment.sh "$SERVICE" "$SOURCE_SHA" "$GITHUB_WORKSPACE/source" "$GITHUB_WORKSPACE/artifact"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: service-environment-images
+          path: |
+            artifact/images.tar
+            artifact/images.sha256
+          if-no-files-found: error
+          retention-days: 3
+  deploy:
+    needs: [admit, build]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: promethean-${{ inputs.service }}-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: open-hax/services
+          ref: ${{ inputs.controller_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: service-environment-images
+          path: artifact
+      - name: Recheck the lease and immutable revision inside the deployment slot
+        id: recheck
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pull_request }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          BUILT_SHA: ${{ needs.admit.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/github_environment_admission.py "$SOURCE_REPOSITORY" "$PR_NUMBER" "$ENVIRONMENT" > admission.json
+          test "$(python3 -c 'import json; print(json.load(open("admission.json"))["source_sha"])')" = "$BUILT_SHA"
+          test "$(sha256sum artifact/images.tar | cut -d' ' -f1)" = "$(cat artifact/images.sha256)"
+      - name: Deploy through the restricted environment receiver
+        env:
+          SERVICE: ${{ inputs.service }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          SOURCE_SHA: ${{ needs.admit.outputs.source_sha }}
+          DEPLOY_SSH_KEY: ${{ secrets.PROMETHEAN_ENVIRONMENT_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.PROMETHEAN_ENVIRONMENT_KNOWN_HOSTS }}
+          DEPLOY_TARGET: ${{ vars.PROMETHEAN_ENVIRONMENT_SSH_TARGET }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS" && test -n "$DEPLOY_TARGET"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/environment_key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/environment_key"
+          trap 'rm -f "$HOME/.ssh/environment_key"' EXIT
+          ssh -i "$HOME/.ssh/environment_key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes "$DEPLOY_TARGET" \
+            "receive $ENVIRONMENT $SERVICE $SOURCE_SHA" < artifact/images.tar
+      - name: Verify public HTTPS and readiness
+        env:
+          SERVICE: ${{ inputs.service }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 \
+            "https://$ENVIRONMENT.$SERVICE.promethean.rest/api/auth/config"

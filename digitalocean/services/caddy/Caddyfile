@@ -201,3 +201,86 @@
 		header_up -x-open-hax-bridge-auth
 	}
 }
+
+# BEGIN managed service promotion environments
+testing.axxium.promethean.rest {
+    import common
+    tls {
+        issuer acme
+    }
+    reverse_proxy 172.31.255.1:19071 {
+        header_up -x-open-hax-bridge-auth
+    }
+    handle_errors {
+        header Cache-Control "no-store"
+        respond "Service not configured or unavailable." 503
+    }
+}
+staging.axxium.promethean.rest {
+    import common
+    tls {
+        issuer acme
+    }
+    reverse_proxy 172.31.255.1:19072 {
+        header_up -x-open-hax-bridge-auth
+    }
+    handle_errors {
+        header Cache-Control "no-store"
+        respond "Service not configured or unavailable." 503
+    }
+}
+testing.knoxx.promethean.rest {
+    import common
+    tls {
+        issuer acme
+    }
+    reverse_proxy 172.31.255.1:19082 {
+        header_up -x-open-hax-bridge-auth
+    }
+    handle_errors {
+        header Cache-Control "no-store"
+        respond "Service not configured or unavailable." 503
+    }
+}
+staging.knoxx.promethean.rest {
+    import common
+    tls {
+        issuer acme
+    }
+    reverse_proxy 172.31.255.1:19083 {
+        header_up -x-open-hax-bridge-auth
+    }
+    handle_errors {
+        header Cache-Control "no-store"
+        respond "Service not configured or unavailable." 503
+    }
+}
+# END managed service promotion environments
+
+# BEGIN managed Axxium host environments
+stealth.axxium.promethean.rest {
+    tls {
+        issuer acme
+    }
+    reverse_proxy 172.31.255.1:19077
+}
+yoga.axxium.promethean.rest {
+    tls {
+        issuer acme
+    }
+    reverse_proxy 172.31.255.1:19078
+}
+# END managed Axxium host environments
+
+stealth.knoxx.promethean.rest {
+    import common
+    reverse_proxy 172.31.255.1:19080 {
+        header_up -x-open-hax-bridge-auth
+    }
+}
+yoga.knoxx.promethean.rest {
+    import common
+    reverse_proxy 172.31.255.1:19081 {
+        header_up -x-open-hax-bridge-auth
+    }
+}

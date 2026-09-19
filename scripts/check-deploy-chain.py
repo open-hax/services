@@ -60,6 +60,15 @@ def main() -> int:
         )
         return 1
 
+    if host_prerequisite.get("needs") != "knoxx-preflight":
+        print("deploy chain error: production host can change before qualification", file=sys.stderr)
+        return 1
+    website = jobs.get("deploy-website", {})
+    if ("deploy-knoxx" not in website.get("needs", [])
+            or "needs.deploy-knoxx.result == 'success'" not in website.get("if", "")):
+        print("deploy chain error: optional ingress can bypass production qualification", file=sys.stderr)
+        return 1
+
     host_workflow = yaml.load(HOST_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     host_events = host_workflow.get("on", {})
     host_call = host_events.get("workflow_call", {})

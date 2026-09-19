@@ -27,9 +27,8 @@ on:
         required: true
         type: string
       knoxx_ref:
-        description: open-hax/knoxx ref to deploy
-        required: false
-        default: main
+        description: Immutable merged open-hax/knoxx commit to qualify
+        required: true
         type: string
       openplanner_ref:
         description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
@@ -66,6 +65,7 @@ jobs:
   # across this entire chain; the required flag below attests that this nested
   # bootstrap is running inside that single production mutation queue.
   provision-host:
+    needs: knoxx-preflight
     uses: ./.github/workflows/digitalocean-host.yml
     with:
       operation: bootstrap
@@ -74,9 +74,9 @@ jobs:
 
   # The deployment consumes the immutable SHA emitted by Knoxx's own release
   # gate. This keeps application validation in Knoxx while making it an actual
-  # prerequisite of both label-authorized and manually dispatched deploys.
+  # prerequisite of every manually dispatched production deployment.
   knoxx-preflight:
-    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@356014b6bf41b22effbb61dc68607d5be806b9b2
+    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@baa875d695d63c19cbb815432ecd57db90fd2d86
     with:
       source_ref: ${{ inputs.knoxx_ref }}
 
@@ -156,7 +156,7 @@ jobs:
       source_ref: ${{ inputs.website_ref }}
 
   deploy-website:
-    needs: [build-website, deploy-caddy]
+    needs: [build-website, deploy-caddy, deploy-knoxx]
     # deploy-caddy is conditional, and a skipped ingress must not silently skip
     # the website with it: the website's gate classifies an absent ingress as a
     # WARN owned by caddy and still proves the site serves on loopback. When
@@ -166,6 +166,7 @@ jobs:
       always()
       && inputs.include_website
       && needs.build-website.result == 'success'
+      && needs.deploy-knoxx.result == 'success'
       && (
         (!inputs.include_ingress && needs.deploy-caddy.result == 'skipped')
         || (inputs.include_ingress && needs.deploy-caddy.result == 'success')
