@@ -495,7 +495,11 @@ def main() -> int:
         ),
         "translator event authority gate": (
             knoxx_verify,
-            '[ "$trigger_resource_policies" != "true" ] || [ "$trigger_execution_snapshot" != "true" ]',
+            '[ "$trigger_resource_policies" != "true" ] || [ "$trigger_execution_snapshot" != "true" ] || [ "$trigger_scope" != "true" ]',
+        ),
+        "translator resolved event scope inspection": (
+            knoxx_verify,
+            "jq -r '.scopeFromEvent // false'",
         ),
         "translator exact runtime write-tool gate": (
             knoxx_verify,

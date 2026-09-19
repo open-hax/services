@@ -50,7 +50,9 @@ jobs:
         run: python scripts/check-deploy-chain.py
 
       - name: Enforce service environment contracts
-        run: python scripts/check-env-contracts.py
+        run: |
+          python scripts/check-env-contracts.py
+          node --test scripts/test-translation-trigger-gate.mjs
 
       - name: Enforce disabled Compose profile retirements
         run: |
