@@ -19,9 +19,19 @@ else
   pnpm -C "$source_root/frontend" install --frozen-lockfile
   pnpm -C "$source_root/backend" typecheck
   pnpm -C "$source_root/backend" test
+  # The backend image copies dist; typecheck/test do not build the server.
+  # Match build-images.yml: this :optimizations :none target uses compile.
+  pnpm -C "$source_root/backend" exec shadow-cljs compile server
+  test -f "$source_root/backend/dist/server.js"
+  test -d "$source_root/backend/dist/cljs-runtime"
   pnpm -C "$source_root/frontend" typecheck
   pnpm -C "$source_root/frontend" build
-  cp "$source_root/frontend/public/index.html" "$source_root/frontend/dist/index.html"
+  # Stage the application shell used by the production builder, not public/.
+  cp "$source_root/frontend/index.html" "$source_root/frontend/dist/index.html"
+  test -f "$source_root/frontend/dist/index.html"
+  test -f "$source_root/frontend/dist/app.css"
+  test -f "$source_root/frontend/dist/cljs/app.js"
+  test -f "$source_root/frontend/dist/bridge/style.css"
   docker build -t "promethean-knoxx-base:$source_sha" "$source_root/backend"
   pnpm --dir "$workspace_root/openplanner" --filter @open-hax/openplanner-sdk deploy --prod --legacy \
     --config.node-linker=hoisted "$artifact_dir/sdk-deploy"
