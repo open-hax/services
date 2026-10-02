@@ -31,7 +31,21 @@ The DNS-only A records for `axxium.promethean.rest` and
 uses PDS `/tls-check` to permit on-demand certificates only for the PDS host
 and existing account handles. The first hosted account is
 `calliope.axxium.promethean.rest`, with PLC DID
-`did:plc:322llrygnobkk4l7uxy7gxty`.
+`did:plc:322llrygnobkk4l7uxy7gxty`. After its first profile record, the
+Bluesky relay reports the PDS host and account as active, and the public
+AppView returns Calliope's profile.
+
+After bringing up a new public PDS, publish a profile or other repository
+record, request a crawl, and verify that the relay and AppView have indexed it:
+
+```sh
+curl -fsS -X POST https://bsky.network/xrpc/com.atproto.sync.requestCrawl \
+  -H 'content-type: application/json' \
+  -d '{"hostname":"axxium.promethean.rest"}'
+curl -fsS 'https://bsky.network/xrpc/com.atproto.sync.getHostStatus?hostname=axxium.promethean.rest'
+curl -fsS 'https://bsky.network/xrpc/com.atproto.sync.getRepoStatus?did=did:plc:322llrygnobkk4l7uxy7gxty'
+curl -fsS 'https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=calliope.axxium.promethean.rest'
+```
 
 On the host, run the local gate after loading the rendered environment:
 
