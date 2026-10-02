@@ -16,3 +16,12 @@
   spore: none
   receipt-refs: none
   note: Reusable workflow callers require explicit immutable PR head and reviewed pin.
+- ts: 2026-10-02T22:14:20.380636Z
+  session: codex-local-review-qualification
+  task: Qualify open-hax/services#93 and append corrective provenance
+  p-efficiency: 0.8
+  p-friction: 0.3
+  p-skill-candidate: 0.2
+  spore: none
+  receipt-refs: 2026-10-02T22:14:20.380636Z
+  note: Preserve historical receipts and reflections; corrective entries carry immutable pin and audit links. Credentials and pending reviews remain explicit blockers.
