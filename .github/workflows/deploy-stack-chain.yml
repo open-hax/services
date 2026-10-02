@@ -151,7 +151,9 @@ jobs:
       source_ref: ${{ inputs.axxium_ref }}
 
   deploy-axxium:
-    needs: [provision-host, build-axxium]
+    # Host deployments share Docker's GHCR login; wait until Knoxx's pull and
+    # logout complete before starting Axxium's deployment.
+    needs: [provision-host, deploy-knoxx, build-axxium]
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: axxium

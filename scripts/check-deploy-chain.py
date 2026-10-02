@@ -58,7 +58,8 @@ def main() -> int:
         )
         != "true"
         or "provision-host" not in deploy_proxx_needs
-        or set(deploy_axxium_needs) != {"provision-host", "build-axxium"}
+        or set(deploy_axxium_needs)
+        != {"provision-host", "deploy-knoxx", "build-axxium"}
         or "deploy-axxium" not in deploy_caddy_needs
     ):
         print(
