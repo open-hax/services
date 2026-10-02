@@ -14,7 +14,7 @@
   p-friction: 0.2
   p-skill-candidate: 0.1
   spore: none
-  receipt-refs: none
+  receipt-refs: 2026-10-02T22:08:34.643949874Z
   note: Reusable workflow callers require explicit immutable PR head and reviewed pin.
 - ts: 2026-10-02T22:14:20.380636Z
   session: codex-local-review-qualification
