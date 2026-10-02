@@ -469,8 +469,8 @@ jobs:
           # The app itself keeps Google disabled until this file lists the
           # exact public callback registered with the provider.
           if [ "$SERVICE" = axxium ]; then
-            ssh open-hax-target "test -f '${STATE_PATH}/google-client.json' && test \"\$(stat -c %a '${STATE_PATH}/google-client.json')\" = 600" || {
-              echo "::error::Axxium requires a mode-600 Google client file at ${STATE_PATH}/google-client.json" >&2
+            ssh open-hax-target "test -f '${STATE_PATH}/google-client.json' && test \"\$(stat -c %u:%a '${STATE_PATH}/google-client.json')\" = 1000:600" || {
+              echo "::error::Axxium requires a UID-1000, mode-600 Google client file at ${STATE_PATH}/google-client.json" >&2
               exit 2
             }
           fi
@@ -599,7 +599,15 @@ jobs:
           sed -nE 's/^[[:space:]]+- (\$\{[^}]*\}[^:"[:space:]]*|[^:"[:space:]]+):.*/\1/p' compose.yaml \
             | while IFS= read -r src; do
                 case "$src" in
-                  /*|\$\{*) mkdir -p "$(eval echo "$src")" ;;
+                  /*|\$\{*)
+                    resolved=$(eval echo "$src")
+                    # Axxium's credential is an operator-owned file mount.
+                    # mkdir on it fails and would turn an absent file into a directory.
+                    if [ -f "$resolved" ]; then
+                      continue
+                    fi
+                    mkdir -p "$resolved"
+                    ;;
                 esac
               done
 

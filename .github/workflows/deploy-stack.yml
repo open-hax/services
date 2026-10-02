@@ -157,7 +157,9 @@ jobs:
       # drift with the moving main branch while queued.
       proxx_ref: ${{ inputs.proxx_ref || '88471efd7f8cd27f64fc733a1c31369f00a6d432' }}
       knoxx_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.knoxx_ref || 'main' }}
-      axxium_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.axxium_ref || 'main' }}
+      # This revision supplies the AT OAuth metadata required by verify.sh.
+      # Advance it only with the Axxium release and its matching health gate.
+      axxium_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.axxium_ref || '96c0f203c8fbada75eca97763798f120ebbedf02' }}
       # Keep the production default in one place. Nested reusable workflows
       # require this input instead of carrying independent, drift-prone pins.
       openplanner_ref: ${{ inputs.openplanner_ref || '07085d6557b75834ce6f50e6c54b8ca47e1c7c08' }}

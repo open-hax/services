@@ -15,7 +15,8 @@ is pinned by digest; Axxium images are built from a source commit by
 
 The protected `production` GitHub environment supplies the six secrets named
 in `env.template`. The Google OAuth web client JSON is an operator-owned file
-at `/srv/open-hax/state/axxium/google-client.json` with mode 0600. The deploy
+at `/srv/open-hax/state/axxium/google-client.json`, owned by UID 1000 with mode
+0600 so the unprivileged Axxium container can read it. The deploy
 workflow checks that file before Compose runs. Google sign-in stays disabled
 until the file lists
 `https://axxium.promethean.rest/api/auth/google/callback` and the same URI is
