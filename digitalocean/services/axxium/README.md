@@ -19,8 +19,10 @@ at `/srv/open-hax/state/axxium/google-client.json` with mode 0600. The deploy
 workflow checks that file before Compose runs. Google sign-in stays disabled
 until the file lists
 `https://axxium.promethean.rest/api/auth/google/callback` and the same URI is
-registered in Google Cloud Console. The admin email in the production secret
-is reserved from password signup; first verified Google sign-in creates its
+registered in Google Cloud Console. Both conditions are met in the current
+deployment, and `/api/auth/config` reports `googleEnabled: true`. The admin
+email in the production secret is reserved from password signup; first
+verified Google sign-in creates its
 system-administrator actor. A separate password administrator is held in
 private host state for recovery.
 
