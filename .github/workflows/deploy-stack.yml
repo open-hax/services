@@ -63,9 +63,8 @@ on:
         default: main
         type: string
       axxium_ref:
-        description: open-hax/axxium ref to deploy
+        description: open-hax/axxium ref to deploy; defaults to the verified OAuth revision
         required: false
-        default: main
         type: string
       openplanner_ref:
         description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
