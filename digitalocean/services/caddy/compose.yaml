@@ -31,10 +31,12 @@ services:
       DEV_BASIC_AUTH_HASH: ${DEV_BASIC_AUTH_HASH:?DEV_BASIC_AUTH_HASH must be set}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./axxium-did.json:/etc/caddy/axxium-identity/did.json:ro
       # Certificates and ACME account state. Losing this means re-issuing, and
       # Let's Encrypt rate limits are per-hostname-per-week.
       - ${CADDY_STATE_PATH}/data:/data
       - ${CADDY_STATE_PATH}/config:/config
+      - ${CADDY_STATE_PATH}/managed:/etc/caddy/managed:ro
     healthcheck:
       test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
       interval: 30s
