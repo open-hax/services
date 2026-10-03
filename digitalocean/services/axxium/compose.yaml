@@ -1,0 +1,98 @@
+# Axxium's actor authority and the official AT Protocol PDS share one public
+# origin. Caddy owns 80/443; only loopback diagnostics are published here.
+name: axxium
+
+services:
+  axxium-db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: axxium
+      POSTGRES_USER: axxium
+      POSTGRES_PASSWORD: ${AXXIUM_DB_PASSWORD:?AXXIUM_DB_PASSWORD must be set}
+    volumes:
+      - ${AXXIUM_STATE_PATH}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U axxium -d axxium"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+    networks:
+      - database
+
+  axxium:
+    image: ${AXXIUM_IMAGE:?AXXIUM_IMAGE must be set}
+    restart: unless-stopped
+    depends_on:
+      axxium-db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      AXXIUM_PORT: "8787"
+      AXXIUM_HOST: 0.0.0.0
+      AXXIUM_PUBLIC_BASE_URL: https://${AXXIUM_PUBLIC_HOST:?AXXIUM_PUBLIC_HOST must be set}
+      DB_HOST: axxium-db
+      DB_PORT: "5432"
+      DB_NAME: axxium
+      DB_USER: axxium
+      DB_PASSWORD: ${AXXIUM_DB_PASSWORD:?AXXIUM_DB_PASSWORD must be set}
+      JWT_SECRET: ${AXXIUM_JWT_SECRET:?AXXIUM_JWT_SECRET must be set}
+      JWT_ISSUER: axxium
+      JWT_AUDIENCE: promethean
+      SESSION_COOKIE_SECURE: "true"
+      SESSION_COOKIE_SAME_SITE: lax
+      GOOGLE_OAUTH_CLIENT_FILE: /run/axxium/google-client.json
+      AXXIUM_BOOTSTRAP_ADMIN_EMAIL: ${AXXIUM_BOOTSTRAP_ADMIN_EMAIL:?AXXIUM_BOOTSTRAP_ADMIN_EMAIL must be set}
+    volumes:
+      - ${AXXIUM_STATE_PATH}/google-client.json:/run/axxium/google-client.json:ro
+    ports:
+      - "127.0.0.1:8787:8787"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      default:
+        aliases: [axxium]
+      database: {}
+
+  pds:
+    # Official distribution, pinned to the tested 0.4 digest. Its own account
+    # store and repo/blob data live below AXXIUM_STATE_PATH/pds.
+    image: ghcr.io/bluesky-social/pds@sha256:95d6179bc9fb10cc36ccd6dea0407fc6d99f21374bf2a1f9e8f28c0427c7e336
+    user: "1000:1000"
+    restart: unless-stopped
+    environment:
+      PDS_HOSTNAME: ${AXXIUM_PUBLIC_HOST:?AXXIUM_PUBLIC_HOST must be set}
+      PDS_PORT: "3000"
+      PDS_JWT_SECRET: ${PDS_JWT_SECRET:?PDS_JWT_SECRET must be set}
+      PDS_ADMIN_PASSWORD: ${PDS_ADMIN_PASSWORD:?PDS_ADMIN_PASSWORD must be set}
+      PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: ${PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX:?PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX must be set}
+      PDS_DATA_DIRECTORY: /pds
+      PDS_BLOBSTORE_DISK_LOCATION: /pds/blocks
+      PDS_INVITE_REQUIRED: "true"
+      PDS_RATE_LIMITS_ENABLED: "true"
+      PDS_SERVICE_NAME: Axxium AT Protocol
+    volumes:
+      - ${AXXIUM_STATE_PATH}/pds:/pds
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/xrpc/_health"]
+      interval: 30s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+    networks:
+      default:
+        aliases: [axxium-pds]
+
+networks:
+  default:
+    name: open-hax
+    external: true
+  database:
+    internal: true

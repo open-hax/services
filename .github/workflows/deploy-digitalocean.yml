@@ -66,6 +66,12 @@ on:
       CADDY_ACME_EMAIL: { required: false }
       DEV_BASIC_AUTH_USER: { required: false }
       DEV_BASIC_AUTH_HASH: { required: false }
+      AXXIUM_DB_PASSWORD: { required: false }
+      AXXIUM_JWT_SECRET: { required: false }
+      AXXIUM_BOOTSTRAP_ADMIN_EMAIL: { required: false }
+      PDS_JWT_SECRET: { required: false }
+      PDS_ADMIN_PASSWORD: { required: false }
+      PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: { required: false }
 permissions:
   contents: read
 
@@ -191,6 +197,12 @@ jobs:
           PROXY_TOKEN_PEPPER: ${{ secrets.PROXY_TOKEN_PEPPER }}
           PROXX_SESSION_SECRET: ${{ secrets.PROXX_SESSION_SECRET }}
           PROXX_POSTGRES_PASSWORD: ${{ secrets.PROXX_POSTGRES_PASSWORD }}
+          AXXIUM_DB_PASSWORD: ${{ secrets.AXXIUM_DB_PASSWORD }}
+          AXXIUM_JWT_SECRET: ${{ secrets.AXXIUM_JWT_SECRET }}
+          AXXIUM_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.AXXIUM_BOOTSTRAP_ADMIN_EMAIL }}
+          PDS_JWT_SECRET: ${{ secrets.PDS_JWT_SECRET }}
+          PDS_ADMIN_PASSWORD: ${{ secrets.PDS_ADMIN_PASSWORD }}
+          PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: ${{ secrets.PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX }}
           KNOXX_API_KEY: ${{ secrets.KNOXX_API_KEY }}
           KNOXX_SESSION_SECRET: ${{ secrets.KNOXX_SESSION_SECRET }}
           # Mandatory for Knoxx. The render step applies the same minimum
@@ -452,6 +464,27 @@ jobs:
           set -euo pipefail
           ssh open-hax-target "mkdir -p '${RUNTIME_PATH}' '${STATE_PATH}'"
 
+          # Docker treats a missing bind-mounted file as a directory. Require
+          # the operator-owned Google client before any Axxium compose action.
+          # The app itself keeps Google disabled until this file lists the
+          # exact public callback registered with the provider.
+          if [ "$SERVICE" = axxium ]; then
+            ssh open-hax-target "test -f '${STATE_PATH}/google-client.json' && test \"\$(stat -c %u:%a '${STATE_PATH}/google-client.json')\" = 1000:600" || {
+              echo "::error::Axxium requires a UID-1000, mode-600 Google client file at ${STATE_PATH}/google-client.json" >&2
+              exit 2
+            }
+          fi
+
+          # Older Caddy deployments include extra machine-specific routes at
+          # the end of their live Caddyfile. They must be moved into the durable
+          # managed mount before rsync --delete replaces the tracked file.
+          if [ "$SERVICE" = caddy ]; then
+            ssh open-hax-target "if grep -q '^# BEGIN managed service promotion environments' '${RUNTIME_PATH}/Caddyfile' 2>/dev/null; then test -s '${STATE_PATH}/managed/live-host-routes.caddy'; fi" || {
+              echo "::error::Move live Caddy managed routes into ${STATE_PATH}/managed/live-host-routes.caddy before deploying" >&2
+              exit 2
+            }
+          fi
+
           # Did an --itemize-changes log move anything? Transfers are itemized
           # as an 11-flag word (`>f+++++++++`, `cd+++++++++`, `hf`), but a
           # --delete removal is reported as `*deleting <path>` instead, so a
@@ -566,7 +599,15 @@ jobs:
           sed -nE 's/^[[:space:]]+- (\$\{[^}]*\}[^:"[:space:]]*|[^:"[:space:]]+):.*/\1/p' compose.yaml \
             | while IFS= read -r src; do
                 case "$src" in
-                  /*|\$\{*) mkdir -p "$(eval echo "$src")" ;;
+                  /*|\$\{*)
+                    resolved=$(eval echo "$src")
+                    # Axxium's credential is an operator-owned file mount.
+                    # mkdir on it fails and would turn an absent file into a directory.
+                    if [ -f "$resolved" ]; then
+                      continue
+                    fi
+                    mkdir -p "$resolved"
+                    ;;
                 esac
               done
 

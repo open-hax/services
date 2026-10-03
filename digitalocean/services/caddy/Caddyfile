@@ -6,6 +6,10 @@
 # placeholder syntax, resolved at Caddy startup.
 {
 	email {$CADDY_ACME_EMAIL}
+	# The PDS decides which account handles may receive on-demand certificates.
+	on_demand_tls {
+		ask http://axxium-pds:3000/tls-check
+	}
 	# Uncomment to exercise issuance without burning Let's Encrypt rate limits:
 	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
 }
@@ -96,6 +100,45 @@
 		transport http {
 			read_timeout 3600s
 			write_timeout 3600s
+		}
+	}
+}
+
+# Axxium is the actor authority and AT OAuth client; the official PDS owns
+# protocol discovery, DID service identity, repositories, and account handles.
+# The PDS's /tls-check gate constrains on-demand TLS for handle subdomains.
+axxium.promethean.rest, *.axxium.promethean.rest {
+	import common
+	tls {
+		on_demand
+	}
+
+	# The PDS advertises this service DID but does not publish its DID document.
+	# It is a service identity; account DIDs and signing keys remain PDS-owned.
+	@axxium_service_did {
+		host axxium.promethean.rest
+		path /.well-known/did.json
+	}
+	handle @axxium_service_did {
+		root * /etc/caddy/axxium-identity
+		rewrite * /did.json
+		header Content-Type application/did+json
+		file_server
+	}
+
+	@axxium_api {
+		host axxium.promethean.rest
+		path / /health /portal/* /api/auth/* /api/actors* /api/entities* /api/atproto/*
+	}
+	handle @axxium_api {
+		reverse_proxy axxium:8787 {
+			header_up -x-open-hax-bridge-auth
+		}
+	}
+
+	handle {
+		reverse_proxy axxium-pds:3000 {
+			header_up -x-open-hax-bridge-auth
 		}
 	}
 }
@@ -201,3 +244,7 @@
 		header_up -x-open-hax-bridge-auth
 	}
 }
+
+# The host has separately managed promotion and machine-specific routes.
+# Keep them in durable state so a services deploy cannot erase them.
+import /etc/caddy/managed/*.caddy

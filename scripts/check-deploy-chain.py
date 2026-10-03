@@ -42,8 +42,14 @@ def main() -> int:
     jobs = document["jobs"]
     host_prerequisite = jobs.get("provision-host", {})
     deploy_proxx_needs = jobs.get("deploy-proxx", {}).get("needs", [])
+    deploy_axxium_needs = jobs.get("deploy-axxium", {}).get("needs", [])
+    deploy_caddy_needs = jobs.get("deploy-caddy", {}).get("needs", [])
     if isinstance(deploy_proxx_needs, str):
         deploy_proxx_needs = [deploy_proxx_needs]
+    if isinstance(deploy_axxium_needs, str):
+        deploy_axxium_needs = [deploy_axxium_needs]
+    if isinstance(deploy_caddy_needs, str):
+        deploy_caddy_needs = [deploy_caddy_needs]
     if (
         host_prerequisite.get("uses") != "./.github/workflows/digitalocean-host.yml"
         or host_prerequisite.get("with", {}).get("operation") != "bootstrap"
@@ -52,6 +58,9 @@ def main() -> int:
         )
         != "true"
         or "provision-host" not in deploy_proxx_needs
+        or set(deploy_axxium_needs)
+        != {"provision-host", "deploy-knoxx", "build-axxium"}
+        or "deploy-axxium" not in deploy_caddy_needs
     ):
         print(
             "deploy chain error: production services do not wait for the "
@@ -210,6 +219,7 @@ def main() -> int:
     expected_service_callers = [
         ("deploy-stack-chain.yml", "deploy-proxx", "true"),
         ("deploy-stack-chain.yml", "deploy-knoxx", "true"),
+        ("deploy-stack-chain.yml", "deploy-axxium", "true"),
         ("deploy-stack-chain.yml", "deploy-caddy", "true"),
         ("deploy-stack-chain.yml", "deploy-website", "true"),
     ]

@@ -1,10 +1,11 @@
 name: Deploy Stack Chain
 
 # Reusable body of deploy-stack.yml: provisions the host, then deploys proxx,
-# knoxx, caddy and the website in dependency order. Image builds may run while
+# knoxx, axxium, caddy and the website in dependency order. Image builds may run while
 # host provisioning completes.
 #
-#   proxx ──> knoxx ──> caddy ──> website
+#   proxx ──> knoxx ──┐
+#             axxium ─┴─> caddy ──> website
 #
 # The website comes last because its gate asserts TLS on its public hostname,
 # which means reaching through Caddy; putting it before Caddy would instead make
@@ -28,6 +29,11 @@ on:
         type: string
       knoxx_ref:
         description: open-hax/knoxx ref to deploy
+        required: false
+        default: main
+        type: string
+      axxium_ref:
+        description: open-hax/axxium ref to deploy
         required: false
         default: main
         type: string
@@ -138,8 +144,26 @@ jobs:
       caller_holds_production_host_lock: true
     secrets: inherit
 
+  build-axxium:
+    uses: ./.github/workflows/build-images.yml
+    with:
+      service: axxium
+      source_ref: ${{ inputs.axxium_ref }}
+
+  deploy-axxium:
+    # Host deployments share Docker's GHCR login; wait until Knoxx's pull and
+    # logout complete before starting Axxium's deployment.
+    needs: [provision-host, deploy-knoxx, build-axxium]
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: axxium
+      image: ${{ needs.build-axxium.outputs.image }}
+      source_sha: ${{ needs.build-axxium.outputs.source_sha }}
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
   deploy-caddy:
-    needs: deploy-knoxx
+    needs: [deploy-knoxx, deploy-axxium]
     if: inputs.include_ingress
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
