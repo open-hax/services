@@ -414,6 +414,7 @@ trigger_emitter=$(printf '%s' "$translation_trigger" | jq -r '.emitter // empty'
 trigger_action=$(printf '%s' "$translation_trigger" | jq -r '.action // empty')
 trigger_resource_policies=$(printf '%s' "$translation_trigger" | jq -r '.resourcePoliciesFromEvent // false')
 trigger_execution_snapshot=$(printf '%s' "$translation_trigger" | jq -r '.executionSnapshotFromEvent // false')
+trigger_scope=$(printf '%s' "$translation_trigger" | jq -r '.scopeFromEvent // false')
 
 if [ "$trigger_enabled" != "true" ]; then
   echo "knoxx: the publication translation trigger is present but disabled" >&2
@@ -436,8 +437,8 @@ if [ "$trigger_action" != "start-agent-session" ]; then
   echo "knoxx: publication translation trigger action is '${trigger_action}', expected 'start-agent-session'" >&2
   exit 1
 fi
-if [ "$trigger_resource_policies" != "true" ] || [ "$trigger_execution_snapshot" != "true" ]; then
-  echo "knoxx: publication translation trigger does not pin event resource policy and execution" >&2
+if [ "$trigger_resource_policies" != "true" ] || [ "$trigger_execution_snapshot" != "true" ] || [ "$trigger_scope" != "true" ]; then
+  echo "knoxx: publication translation trigger does not pin event resource policy, execution, and tenant scope" >&2
   exit 1
 fi
 
