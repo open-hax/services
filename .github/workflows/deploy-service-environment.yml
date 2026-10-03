@@ -81,6 +81,7 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@13
         with:
           cli: latest
+          clj-kondo: '2025.07.28'
       - uses: pnpm/action-setup@v4
         with:
           version: 10.20.0
