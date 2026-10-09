@@ -154,6 +154,9 @@ staging record to compare against.
 The website now has an isolated staging phase. Its authored production gate
 also remains closed until unsupported mutation qualification is resolved
 explicitly. See `docs/website-staging-deployment.md` for commands and evidence.
+Stack and labelled merge deploys leave the website unchanged. Its explicit
+website scope stages the candidate; stack website opt-in is rejected in
+authorization before any host mutation while qualification is unsupported.
 
 ## 4. Publication targets — serving content another service writes
 

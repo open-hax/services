@@ -4,7 +4,12 @@ Manual `Deploy Stack` accepts `scope: website`. It builds one image, stages it
 by digest, verifies the observed receipt, and reaches the production gate. The
 single `digitalocean-production-host` lock covers both phases. Website scope
 does not bootstrap the host or build/deploy Proxx, Knoxx, devtools, or the main
-Caddy project. The default `stack` scope retains those dependencies.
+Caddy project. The default `stack` scope deploys Proxx, Knoxx and Caddy while
+leaving the website unchanged. Both manual and reusable `include_website`
+defaults are false; labelled merge deploys always pass false. A manual
+`scope: stack` with `include_website: true` is rejected by authorization before
+any host mutation, preventing a late website failure after application cutover.
+Use the explicit website scope to stage a candidate regardless of that flag.
 
 ## Authored path and qualification limit
 
@@ -26,7 +31,7 @@ input or bypass switch.
 | --- | --- | --- |
 | GitHub secret environment | `staging` | `production` |
 | Inventory | `digitalocean/hosts/staging.yaml` | `digitalocean/hosts/production.yaml` |
-| Compose project and alias | `website-staging` | `website` |
+| Compose project, service key and alias | `website-staging` | `website` |
 | Runtime | `/srv/open-hax/services/staging/website-staging` | `/srv/open-hax/services/website` |
 | Service state | `/srv/open-hax/state/staging/website-staging` | `/srv/open-hax/state/website` |
 | Content reader | `/srv/open-hax/state/staging/website-content` | `/srv/open-hax/state/website-content` |
@@ -38,6 +43,14 @@ Both phases use the reviewed host and pinned public key. Staging needs only the
 SSH deployment credential; the website template holds no database/application
 keys. Its content directory starts empty, a valid reader state. A future Knoxx
 target must explicitly select that directory. Production content is preserved.
+
+The stage helper selects `compose.staging.yaml` into a temporary definition
+tree as runtime `compose.yaml` before syncing. Its service key is
+`website-staging`: Compose automatically registers service keys as network
+aliases, so a distinct project or explicit alias alone cannot isolate the
+shared `open-hax` network. Stage health rejects a bare `website` alias in any
+attached network. Content checksums prevent unchanged staging definitions
+from forcing container recreation merely because checkout timestamps changed.
 
 Under the same lock, the stage helper installs only the committed
 `website-staging.caddy` snippet into the existing ingress managed directory. It

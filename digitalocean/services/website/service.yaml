@@ -67,7 +67,7 @@ content:
   declaration: services:docs/published-content-root.md
 
 phases:
-  # Staging is an isolated reader on the same host: project/alias
+  # Staging is an isolated reader on the same host: project/service key/alias
   # website-staging, loopback 8082, staging.website.promethean.rest and state
   # beneath the staging inventory's stateRoot. It does not publish content.
   - staging

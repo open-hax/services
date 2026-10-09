@@ -111,11 +111,13 @@ jobs:
           assert_pinned_host_key
 
           runtime_service=$SERVICE
+          compose_file=compose.yaml
           website_port=8081
           website_host=open-hax.promethean.rest
           website_require_tls=false
           if [ "$DEPLOY_ENVIRONMENT" = staging ]; then
             runtime_service=website-staging
+            compose_file=compose.staging.yaml
             website_port=8082
             website_host=staging.website.promethean.rest
             website_require_tls=true
@@ -128,6 +130,7 @@ jobs:
               exit 2
             }
           done
+          test -f "${dir}/${compose_file}"
           if [ "$SERVICE" = knoxx ]; then
             test -f "${dir}/post-deploy.sh" || {
               echo "service knoxx is missing ${dir}/post-deploy.sh" >&2
@@ -145,6 +148,8 @@ jobs:
             echo "host=${OPEN_HAX_HOST}"
             echo "ssh_user=${OPEN_HAX_SSH_USER}"
             echo "service_dir=${dir}"
+            echo "service_compose=${dir}/${compose_file}"
+            echo "compose_service=${runtime_service}"
             echo "runtime_path=$(service_runtime_path "$runtime_service")"
             echo "state_path=$(service_state_path "$runtime_service")"
             echo "state_root=${OPEN_HAX_STATE_ROOT}"
@@ -202,6 +207,7 @@ jobs:
           OPEN_HAX_SOURCE_SHA: ${{ inputs.source_sha }}
           OPEN_HAX_WEBSITE_PHASE: ${{ inputs.environment }}
           OPEN_HAX_WEBSITE_PROJECT: ${{ steps.contract.outputs.compose_project }}
+          OPEN_HAX_WEBSITE_SERVICE_NAME: ${{ steps.contract.outputs.compose_service }}
           OPEN_HAX_WEBSITE_PORT: ${{ steps.contract.outputs.website_port }}
           OPEN_HAX_WEBSITE_HOST: ${{ steps.contract.outputs.website_host }}
           OPEN_HAX_WEBSITE_REQUIRE_TLS: ${{ steps.contract.outputs.website_require_tls }}
@@ -480,9 +486,23 @@ jobs:
           RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
           STATE_PATH: ${{ steps.contract.outputs.state_path }}
           SERVICE_DIR: ${{ steps.contract.outputs.service_dir }}
+          SERVICE_COMPOSE: ${{ steps.contract.outputs.service_compose }}
           SERVICE: ${{ inputs.service }}
         run: |
           set -euo pipefail
+          # Select the trusted phase topology before transferring anything.
+          # Staging's service key must not publish the production DNS alias.
+          definition_dir=$SERVICE_DIR
+          definition_rsync=()
+          if [ "$SERVICE_COMPOSE" != "$SERVICE_DIR/compose.yaml" ]; then
+            definition_dir=$(mktemp -d)
+            trap 'rm -rf "$definition_dir"' EXIT
+            cp -a "$SERVICE_DIR/." "$definition_dir/"
+            cp -p "$SERVICE_COMPOSE" "$definition_dir/compose.yaml"
+            rm "$definition_dir/compose.staging.yaml"
+            # A new checkout's mtimes must not recreate unchanged staging.
+            definition_rsync=(--checksum)
+          fi
           ssh open-hax-target "mkdir -p '${RUNTIME_PATH}' '${STATE_PATH}'"
 
           # Did an --itemize-changes log move anything? Transfers are itemized
@@ -500,8 +520,8 @@ jobs:
           # definition actually moved. compose hashes the image and the
           # environment, never the contents of a bind mount, so without this a
           # changed config file leaves the old container running untouched.
-          rsync -az --delete --itemize-changes --exclude '.env' --exclude 'contracts' -e ssh \
-            "${SERVICE_DIR}/" "open-hax-target:${RUNTIME_PATH}/" | tee rsync.out
+          rsync -az "${definition_rsync[@]}" --delete --itemize-changes --exclude '.env' --exclude 'contracts' -e ssh \
+            "${definition_dir}/" "open-hax-target:${RUNTIME_PATH}/" | tee rsync.out
           # Accumulated, then written once at the end of this step. Two writes
           # to the same GITHUB_OUTPUT key would resolve by last-write-wins,
           # which happens to be correct here but hides the dependency.
@@ -570,6 +590,7 @@ jobs:
           test -d "$managed" && test -w "$managed"
           target="$managed/website-staging.caddy"
           backup=$(mktemp "$managed/.website-staging.rollback.XXXXXXXX")
+          trap 'rm -f "$backup" "$candidate"' EXIT
           existed=false; committed=false
           if [ -f "$target" ]; then cp "$target" "$backup"; existed=true; fi
           rollback() {

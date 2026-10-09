@@ -40,6 +40,29 @@ class WebsiteDeploymentTests(unittest.TestCase):
         self.assertEqual("digitalocean-production-host", self.entry["jobs"]["deploy"]["concurrency"]["group"])
         self.assertEqual("false", self.entry["jobs"]["deploy"]["concurrency"]["cancel-in-progress"])
 
+    def test_stack_defaults_and_merge_binding_leave_website_unchanged(self):
+        self.assertEqual("false", self.entry["on"]["workflow_dispatch"]["inputs"]["include_website"]["default"])
+        self.assertEqual("false", self.chain["on"]["workflow_call"]["inputs"]["include_website"]["default"])
+        self.assertEqual("${{ github.event_name == 'workflow_dispatch' && inputs.include_website }}",
+                         self.entry["jobs"]["deploy"]["with"]["include_website"])
+        self.assertEqual("needs.authorize.outputs.should_deploy == 'true'", self.entry["jobs"]["deploy"]["if"])
+
+    def test_authorize_rejects_stack_website_optin_before_deployment(self):
+        decide = self.entry["jobs"]["authorize"]["steps"][0]
+        self.assertEqual("${{ inputs.include_website }}", decide["env"]["INCLUDE_WEBSITE"])
+        for scope, include, status in (("stack", "true", 2), ("stack", "false", 0), ("website", "false", 0)):
+            with self.subTest(scope=scope, include=include), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary) / "outputs"
+                result = subprocess.run(["bash", "-c", decide["run"]], cwd=ROOT,
+                    env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": scope,
+                         "INCLUDE_WEBSITE": include, "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
+                self.assertEqual(status, result.returncode, result.stdout + result.stderr)
+                if status:
+                    self.assertFalse(output.exists(), "rejected opt-in must emit no deploy authorization")
+                    self.assertIn("production qualification is unsupported", result.stderr)
+                else:
+                    self.assertEqual("should_deploy=true", output.read_text().strip())
+
     def test_unscoped_application_build_or_unlocked_phase_is_rejected(self):
         broken = copy.deepcopy(self.chain)
         del broken["jobs"]["build-proxx"]["if"]
@@ -88,14 +111,78 @@ class WebsiteDeploymentTests(unittest.TestCase):
         staging, stage = self.contract("staging")
         self.assertEqual(0, production.returncode, production.stderr)
         self.assertEqual(0, staging.returncode, staging.stderr)
-        for key in ("runtime_path", "state_path", "state_root", "reports_root", "compose_project", "website_port", "website_host"):
+        for key in ("runtime_path", "state_path", "state_root", "reports_root", "compose_project", "compose_service", "service_compose", "website_port", "website_host"):
             self.assertNotEqual(prod[key], stage[key], key)
         self.assertEqual("/srv/open-hax/state", prod["state_root"])
         self.assertEqual("/srv/open-hax/state/staging", stage["state_root"])
         self.assertEqual("website-staging", stage["compose_project"])
+        self.assertEqual("website-staging", stage["compose_service"])
+        self.assertEqual("digitalocean/services/website/compose.staging.yaml", stage["service_compose"])
         self.assertEqual("8082", stage["website_port"])
         self.assertEqual("true", stage["website_require_tls"])
         self.assertEqual("/srv/open-hax/state/caddy/managed", stage["ingress_state"])
+
+    def test_compose_service_names_and_explicit_aliases_are_disjoint_between_phases(self):
+        # Compose registers the service key as well as explicit aliases. A
+        # project name alone cannot isolate DNS on the shared external network.
+        def aliases(filename, environment):
+            document = yaml.safe_load((ROOT / "digitalocean/services/website" / filename).read_text())
+            names = set(document["services"])
+            for service in document["services"].values():
+                self.assertEqual("open-hax", document["networks"]["default"]["name"])
+                for alias in service["networks"]["default"].get("aliases", []):
+                    names.add(alias.replace("${WEBSITE_NETWORK_ALIAS:-website-staging}", environment)
+                                   .replace("${WEBSITE_NETWORK_ALIAS:-website}", environment))
+            return names
+        production = aliases("compose.yaml", "website")
+        staging = aliases("compose.staging.yaml", "website-staging")
+        self.assertEqual({"website"}, production)
+        self.assertEqual({"website-staging"}, staging)
+        self.assertTrue(production.isdisjoint(staging))
+
+    def test_sync_selects_stage_topology_before_transfer_and_does_not_recreate_unchanged_bytes(self):
+        sync = step("Sync service definition")
+        self.assertEqual("${{ steps.contract.outputs.service_compose }}", sync["env"]["SERVICE_COMPOSE"])
+        real_rsync = shutil.which("rsync")
+        self.assertIsNotNone(real_rsync, "the deployment sync test requires rsync")
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            source = directory / "digitalocean/services/website"
+            source.parent.mkdir(parents=True)
+            shutil.copytree(ROOT / "digitalocean/services/website", source)
+            remote = directory / "remote"
+            remote.mkdir()
+            binary = directory / "bin"
+            binary.mkdir()
+            self.write(binary / "ssh", "#!/usr/bin/env bash\nexit 0\n")
+            self.write(binary / "scp", "#!/usr/bin/env bash\nexit 0\n")
+            self.write(binary / "rsync", '''#!/usr/bin/env python3
+import os,subprocess,sys,yaml
+from pathlib import Path
+a=sys.argv[1:]; source=Path(a[-2]); remote=Path(os.environ['STAGED_REMOTE'])
+assert '--checksum' in a
+assert source.resolve()!=Path(os.environ['SERVICE_DIR']).resolve()
+assert set(yaml.safe_load((source/'compose.yaml').read_text())['services'])=={'website-staging'}
+assert not (source/'compose.staging.yaml').exists()
+# Replace only SSH transport; retain real rsync's checksum and itemization.
+sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str(remote)+'/']).returncode)
+''')
+            output = directory / "outputs"
+            for attempt in range(2):
+                # Fresh checkouts carry new mtimes even when bytes are equal.
+                for item in source.iterdir():
+                    os.utime(item, (1700000000 + attempt, 1700000000 + attempt))
+                output.write_text("")
+                result = subprocess.run(["bash", "-c", sync["run"]], cwd=directory,
+                    env={**os.environ, "PATH": str(binary) + ":" + os.environ["PATH"],
+                         "SERVICE": "website", "SERVICE_DIR": "digitalocean/services/website",
+                         "SERVICE_COMPOSE": "digitalocean/services/website/compose.staging.yaml",
+                         "RUNTIME_PATH": "/isolated/staging/runtime", "STATE_PATH": "/isolated/staging/state",
+                         "STAGED_REMOTE": str(remote), "REAL_RSYNC": real_rsync,
+                         "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual("definition_changed=" + ("1" if attempt == 0 else "0"), output.read_text().strip())
+                self.assertEqual((source / "compose.staging.yaml").read_bytes(), (remote / "compose.yaml").read_bytes())
 
     def test_observed_receipt_rejects_failed_health_or_any_candidate_mismatch(self):
         image = "ghcr.io/open-hax/website:" + "a" * 40 + "@sha256:" + "b" * 64
@@ -128,7 +215,7 @@ class WebsiteDeploymentTests(unittest.TestCase):
         ingress = step("Install website staging ingress")
         self.assertEqual("inputs.service == 'website' && inputs.environment == 'staging'", ingress["if"])
         command = ingress["run"].split("<<'REMOTE'\n", 1)[1].rsplit("\nREMOTE", 1)[0]
-        for mode in ("ok", "missing-import", "missing-mount", "validation-failure", "reload-failure"):
+        for mode in ("ok", "missing-import", "missing-mount", "backup-copy-failure", "validation-failure", "reload-failure"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
                 runtime = directory / "runtime"
@@ -145,6 +232,8 @@ class WebsiteDeploymentTests(unittest.TestCase):
                 digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
                 binary = directory / "bin"
                 binary.mkdir()
+                if mode == "backup-copy-failure":
+                    self.write(binary / "cp", "#!/usr/bin/env bash\nexit 1\n")
                 self.write(binary / "docker", '''#!/usr/bin/env python3
 import json,os,sys
 from pathlib import Path
@@ -168,9 +257,14 @@ else: sys.exit(1)
                 self.assertEqual("preserved federation route\n", sibling.read_text())
                 if mode in ("validation-failure", "reload-failure"):
                     self.assertTrue((managed / "calls.log").read_text().endswith("validate\nreload\n"))
+                if mode == "backup-copy-failure":
+                    self.assertFalse(candidate.exists())
+                    self.assertEqual([], list(managed.glob(".website-staging.rollback.*")))
+                    self.assertFalse((managed / "calls.log").exists())
 
     def test_verifier_requires_digest_alias_real_artifact_absence_and_stage_tls(self):
-        for mode, success in (("ok", True), ("wrong-image", False), ("wrong-alias", False),
+        for mode, success in (("ok", True), ("wrong-image", False), ("wrong-alias", False), ("bare-alias", False),
+                              ("bare-alias-other-network", False), ("wrong-service", False),
                               ("html-fallback", False), ("wrong-locale", False), ("dns-absent", False), ("tls-failure", False)):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
@@ -179,11 +273,17 @@ else: sys.exit(1)
                 self.write(binary / "docker", '''#!/usr/bin/env python3
 import json,os,sys
 a=sys.argv[1:]; mode=os.environ['MODE']
-if a[0]=='compose': print('stage-container')
+if a[0]=='compose':
+ assert a[-1]=='website-staging'
+ print('stage-container')
 elif a[0]=='inspect':
  f=a[a.index('--format')+1]
  if f=='{{.Config.Image}}': print('wrong' if mode=='wrong-image' else os.environ['WEBSITE_IMAGE'])
- elif f=='{{json .NetworkSettings.Networks}}': print(json.dumps({'open-hax':{'Aliases':['wrong' if mode=='wrong-alias' else 'website-staging']}}))
+ elif f=='{{json .NetworkSettings.Networks}}':
+  networks={'open-hax':{'Aliases':['wrong' if mode=='wrong-alias' else 'website-staging']}}
+  if mode=='bare-alias': networks['open-hax']['Aliases'].append('website')
+  if mode=='bare-alias-other-network': networks['other']={'Aliases':['website']}
+  print(json.dumps(networks))
  else: print('false')
 else: sys.exit(1)
 ''')
@@ -209,6 +309,7 @@ else:
                 environment = {**os.environ, "PATH": str(binary) + ":" + os.environ["PATH"], "MODE": mode,
                     "WEBSITE_IMAGE": "ghcr.io/open-hax/website:" + "a" * 40 + "@sha256:" + "b" * 64,
                     "WEBSITE_SOURCE_SHA": "a" * 40, "WEBSITE_PHASE": "staging", "WEBSITE_PROJECT": "website-staging",
+                    "WEBSITE_SERVICE_NAME": "website" if mode == "wrong-service" else "website-staging",
                     "WEBSITE_NETWORK_ALIAS": "website-staging", "WEBSITE_REQUIRE_PUBLIC_TLS": "true",
                     "WEBSITE_LOOPBACK_PORT": "8082", "WEBSITE_CONTENT_ROOT": str(content), "WEBSITE_CONTENT_URL_PREFIX": "/published/",
                     "WEBSITE_CONTENT_BUDGET_MB": "2048", "WEBSITE_PUBLIC_HOST": "staging.website.promethean.rest", "WEBSITE_HOST_ADDRESS": "157.245.125.134"}

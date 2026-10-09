@@ -37,6 +37,7 @@ set -euo pipefail
 : "${WEBSITE_HOST_ADDRESS:?WEBSITE_HOST_ADDRESS missing from the rendered environment}"
 
 WEBSITE_PROJECT=${WEBSITE_PROJECT:-website}
+WEBSITE_SERVICE_NAME=${WEBSITE_SERVICE_NAME:-website}
 WEBSITE_PHASE=${WEBSITE_PHASE:-production}
 WEBSITE_REQUIRE_PUBLIC_TLS=${WEBSITE_REQUIRE_PUBLIC_TLS:-false}
 WEBSITE_NETWORK_ALIAS=${WEBSITE_NETWORK_ALIAS:-website}
@@ -96,7 +97,7 @@ body_of() { curl -s --max-time "$PROBE_TIMEOUT" "$1"; }
 
 echo "website: verifying ${WEBSITE_IMAGE}"
 
-container=$(docker compose --project-name "$WEBSITE_PROJECT" --env-file .env ps -q website </dev/null)
+container=$(docker compose --project-name "$WEBSITE_PROJECT" --env-file .env ps -q "$WEBSITE_SERVICE_NAME" </dev/null)
 [ -n "$container" ] || fail "no website container is running"
 
 running_image=$(docker inspect --format '{{.Config.Image}}' "$container")
@@ -107,6 +108,7 @@ running_image=$(docker inspect --format '{{.Config.Image}}' "$container")
 
 if [ "$WEBSITE_PHASE" = staging ]; then
   [ "$WEBSITE_PROJECT" = website-staging ] || fail "staging has a production Compose project"
+  [ "$WEBSITE_SERVICE_NAME" = website-staging ] || fail "staging has a production Compose service key"
   [ "$WEBSITE_LOOPBACK_PORT" = 8082 ] || fail "staging has a production loopback port"
   [ "$WEBSITE_PUBLIC_HOST" = staging.website.promethean.rest ] || fail "staging has a production hostname"
   [ "$WEBSITE_NETWORK_ALIAS" = website-staging ] || fail "staging has a production network alias"
@@ -118,6 +120,11 @@ fi
 network_aliases=$(docker inspect --format '{{json .NetworkSettings.Networks}}' "$container")
 jq -e --arg alias "$WEBSITE_NETWORK_ALIAS" 'any(.[]; (.Aliases // []) | index($alias))' \
   <<<"$network_aliases" >/dev/null || fail "the container has no ${WEBSITE_NETWORK_ALIAS} network alias"
+if [ "$WEBSITE_PHASE" = staging ]; then
+  jq -e '((.["open-hax"].Aliases // []) | index("website-staging") != null) and
+    all(.[]; (.Aliases // []) | index("website") == null)' \
+    <<<"$network_aliases" >/dev/null || fail "staging must expose website-staging on open-hax and never the production website alias"
+fi
 
 # --- 2. The content root ---------------------------------------------------
 

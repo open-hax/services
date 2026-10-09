@@ -26,8 +26,8 @@ Production is declared under [`digitalocean/`](digitalocean/README.md):
 - `.github/workflows/deploy-stack.yml` is the only callable stack deployment
   entry point.
 - `.github/workflows/deploy-stack-chain.yml` provisions and verifies the host,
-  builds Proxx, both Knoxx images, Knoxx devtools, and the website, then deploys
-  the dependency-ordered stack through `.github/workflows/deploy-digitalocean.yml`.
+  builds Proxx, both Knoxx images and Knoxx devtools, then deploys the
+  dependency-ordered application stack through `.github/workflows/deploy-digitalocean.yml`.
 - GitHub's protected `production` environment supplies deployment credentials
   and runtime secrets.
 
@@ -38,6 +38,9 @@ the explicit manual dispatch with chosen refs.
 
 Manual dispatch also accepts `scope: website` for the isolated staging and
 production handoff in [the website runbook](docs/website-staging-deployment.md).
+Stack and labelled merge deploys leave the website unchanged. Manual stack
+website opt-in is rejected before host mutation; website staging uses its
+explicit scope.
 Its receipt binds application source, image digest and serving configuration.
 Production stops at an explicit unsupported website mutation-qualification
 gate; a healthy stage does not satisfy that policy.

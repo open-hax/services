@@ -1,14 +1,14 @@
 name: Deploy Stack Chain
 
 # Reusable body of deploy-stack.yml: provisions the host, then deploys proxx,
-# knoxx, caddy and the website in dependency order. Image builds may run while
+# knoxx and caddy in dependency order. Website scope uses its isolated phases.
+# Image builds may run while
 # host provisioning completes.
 #
-#   proxx ──> knoxx ──> caddy ──> website
+#   stack: proxx ──> knoxx ──> caddy; website: stage ──> proof ──> qualification
 #
-# The website comes last because its gate asserts TLS on its public hostname,
-# which means reaching through Caddy; putting it before Caddy would instead make
-# the ingress gate depend on an upstream that does not exist yet.
+# Website scope requires the existing Caddy ingress and does not deploy the
+# application stack. Its production qualification currently fails closed.
 #
 # Ordering is enforced here rather than with depends_on, because these are
 # separate compose projects. It is load-bearing: the Knoxx backend's /health
@@ -52,9 +52,9 @@ on:
         type: boolean
       include_website:
         description: >-
-          Build and deploy open-hax/website. No DNS is changed either way.
+          Reserved stack opt-in; the canonical entrypoint rejects it until qualification exists.
         required: false
-        default: true
+        default: false
         type: boolean
 
 # packages: write is required here, not just in build-images.yml: a reusable

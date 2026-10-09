@@ -1,7 +1,8 @@
 name: Deploy Stack
 
-# Brings the production stack up in dependency order (proxx ──> knoxx ──>
-# caddy ──> website) when a merged pull request asked for it.
+# Brings the production application stack up in dependency order (proxx ──>
+# knoxx ──> caddy) when a merged pull request asked for it. Website releases
+# use the explicit website scope while production qualification is unsupported.
 #
 # OpenPlanner's HTTP service is deliberately absent. Knoxx runs the OpenPlanner
 # data plane in-process through @open-hax/openplanner-sdk
@@ -43,7 +44,7 @@ name: Deploy Stack
 #
 # The deploy chain lives in deploy-stack-chain.yml behind one workflow_call.
 # Its single production-host concurrency slot covers host provisioning and
-# proxx → knoxx → caddy → website end to end, excluding independent host
+# proxx → knoxx → caddy or the website phases end to end, excluding independent host
 # mutation for the same interval. Per-job groups would let a newer run preempt
 # an older run mid-chain.
 
@@ -84,9 +85,9 @@ on:
         type: boolean
       include_website:
         description: >-
-          Build and deploy open-hax/website. No DNS is changed either way.
+          Unsupported with stack scope; use scope=website for isolated staging.
         required: false
-        default: true
+        default: false
         type: boolean
 
 # packages: write is required here, not just in build-images.yml: a reusable
@@ -111,6 +112,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           DEPLOY_SCOPE: ${{ inputs.scope || 'stack' }}
+          INCLUDE_WEBSITE: ${{ inputs.include_website }}
           MERGED: ${{ github.event.pull_request.merged }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
@@ -123,6 +125,10 @@ jobs:
               stack|website) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
             esac
+            if [ "$DEPLOY_SCOPE" = stack ] && [ "$INCLUDE_WEBSITE" = true ]; then
+              echo '::error::Stack deployment cannot include the website while its production qualification is unsupported. Use scope=website to stage a candidate; production remains gated.' >&2
+              exit 2
+            fi
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "Manual dispatch; deploying the requested refs."
             exit 0
@@ -146,7 +152,7 @@ jobs:
   # that actually deploy. A queued deploy is only ever replaced by a newer
   # deploy, which builds main — a superset of the run it replaced.
   deploy:
-    name: Deploy proxx, knoxx, caddy, website
+    name: Deploy the selected scope
     needs: authorize
     if: needs.authorize.outputs.should_deploy == 'true'
     concurrency:
@@ -171,9 +177,8 @@ jobs:
       # A merge deploy always brings ingress with it, as the labelled-PR path
       # used to; only a manual dispatch can leave Caddy alone.
       include_ingress: ${{ github.event_name != 'workflow_dispatch' || inputs.include_ingress }}
-      # Now `|| true` like include_ingress. open-hax/website declares
-      # build:site (open-hax/website#2), which is the prerequisite this input
-      # was waiting on, so a merge deploy brings the site with it. Only a
-      # manual dispatch can leave it alone.
-      include_website: ${{ github.event_name != 'workflow_dispatch' || inputs.include_website }}
+      # Merge deploys leave the website unchanged until its real production
+      # qualification exists. Manual stack opt-in is rejected in authorize;
+      # explicit website scope enters its staging/qualification body.
+      include_website: ${{ github.event_name == 'workflow_dispatch' && inputs.include_website }}
     secrets: inherit
