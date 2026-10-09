@@ -101,7 +101,7 @@ jobs:
 
   knoxx-preflight:
     needs: resolve-knoxx
-    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@3409977bca4ba35e09967f9a99d50867a679a73c
+    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@a5c78ca56db884d73ab33e8bb7ba05f1bb29c5c7
     with:
       source_ref: ${{ needs.resolve-knoxx.outputs.source_sha }}
 
