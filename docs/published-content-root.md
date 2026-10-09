@@ -139,13 +139,25 @@ publishes `0640` files satisfies every law above and still serves nothing.
 
 ## 4. The URL surface the reader depends on
 
-The website serves the content root at a fixed prefix and **never falls back to
-the app shell there**:
+The website exposes an allowlist from the writer root at a fixed prefix and
+**never falls back to the app shell there**:
 
 ```text
 GET /published/manifest.edn                          -> 200 application/edn, or 404
 GET /published/artifacts/<doc>/<locale>/<rev>.<ext>  -> 200 with the declared media type
+GET /published/<anything-else>                     -> 404
 ```
+
+The writer root also holds private data: CMS document history and revision
+snapshots under `.ημ/cms/`, submitted translation candidates under `.translations/`,
+publication reservations/receipts under `.idempotency/`, and legacy CMS source and
+metadata under `cms/`. The reader's read-only bind mount prevents writes; it does
+not authorize serving those files. Nginx serves only the exact `manifest.edn`
+path and the `artifacts/` subtree. Hidden path segments within `artifacts/` are
+also denied, and symlinks are disabled so an artifact path cannot expose private
+siblings or files outside the content root. The writer emits regular artifact
+files. Nginx rejects raw and encoded `..` path segments before normalization can
+send a publication request to the app shell.
 
 The prefix is **the reader's**, not this repository's. `open-hax/website`
 declares it in `src/cljc/open_hax/website/domain/published.cljc`:
@@ -174,8 +186,26 @@ Two serving rules are contract, not taste:
   is required to fail loudly on a malformed manifest — would turn the ordinary
   first-deploy state into a hard failure. `verify.sh` treats a 404 here as a
   PASS and a 200 carrying the app shell as a FAIL. The site's own
-  `shadow-cljs.edn` excludes the same prefix from its `:push-state/index`, so
-  dev and production agree rather than diverging at the one place that matters.
+  `shadow-cljs.edn` excludes the same prefix from its `:push-state/index`. This
+  Services Nginx configuration additionally enforces the private-state
+  allowlist; a development static server must enforce its own equivalent
+  boundary before exposing a writer root.
+
+The Docker integration regression exercises the committed configuration against
+actual unprivileged Nginx with synthetic public and private fixtures:
+
+```bash
+docker pull nginxinc/nginx-unprivileged:1.27
+python scripts/test-website-serving-boundary.py
+```
+
+It binds an ephemeral port on `127.0.0.1`, uses uid 101 with read-only mounts,
+removes its container and fixture directory on exit, and requires public EDN,
+HTML/CSS, locale shell fallbacks, private-path denial, symlink denial, traversal
+denial, and genuine 404s for missing publications. No application build or real
+publication data is needed. Code Quality runs this regression. To reproduce the
+failure against a saved older configuration, pass `--config /absolute/nginx.conf`;
+the same assertions must fail when private synthetic files are exposed.
 
 ## 5. Disk bound
 

@@ -52,6 +52,11 @@ jobs:
       - name: Test website phase isolation and serving gates
         run: python scripts/test_website_deployment.py
 
+      - name: Exercise website publication boundary with Nginx
+        run: |
+          docker pull nginxinc/nginx-unprivileged:1.27
+          python scripts/test-website-serving-boundary.py
+
       - name: Enforce service environment contracts
         run: python scripts/check-env-contracts.py
 
