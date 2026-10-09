@@ -22,6 +22,11 @@ name: Deploy Stack Chain
 on:
   workflow_call:
     inputs:
+      scope:
+        description: stack or website; website does not mutate application services
+        required: false
+        default: stack
+        type: string
       proxx_ref:
         description: Immutable open-hax/proxx ref to deploy
         required: true
@@ -66,6 +71,7 @@ jobs:
   # across this entire chain; the required flag below attests that this nested
   # bootstrap is running inside that single production mutation queue.
   provision-host:
+    if: inputs.scope == 'stack'
     uses: ./.github/workflows/digitalocean-host.yml
     with:
       operation: bootstrap
@@ -75,12 +81,32 @@ jobs:
   # The deployment consumes the immutable SHA emitted by Knoxx's own release
   # gate. This keeps application validation in Knoxx while making it an actual
   # prerequisite of both label-authorized and manually dispatched deploys.
+  resolve-knoxx:
+    if: inputs.scope == 'stack'
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: open-hax/knoxx
+          ref: ${{ inputs.knoxx_ref }}
+          persist-credentials: false
+      - id: source
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
   knoxx-preflight:
-    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@356014b6bf41b22effbb61dc68607d5be806b9b2
+    needs: resolve-knoxx
+    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@3409977bca4ba35e09967f9a99d50867a679a73c
     with:
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ needs.resolve-knoxx.outputs.source_sha }}
 
   build-proxx:
+    if: inputs.scope == 'stack'
     uses: ./.github/workflows/build-images.yml
     with:
       service: proxx
@@ -103,6 +129,7 @@ jobs:
     with:
       service: knoxx-backend
       source_ref: ${{ needs.knoxx-preflight.outputs.source_sha }}
+      openplanner_ref: ${{ inputs.openplanner_ref }}
 
   build-knoxx-frontend:
     needs: knoxx-preflight
@@ -123,7 +150,7 @@ jobs:
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: knoxx
-      image: ${{ needs.build-knoxx-backend.outputs.image }}
+      image: ${{ needs.build-knoxx-backend.outputs.image }}@${{ needs.build-knoxx-backend.outputs.digest }}
       source_sha: ${{ needs.build-knoxx-backend.outputs.source_sha }}
       # OpenPlanner REST is intentionally absent from this stack. Garden,
       # publication and translation-review surfaces resolve from Knoxx's own
@@ -134,13 +161,13 @@ jobs:
       # from the protected production environment. The called deploy workflow
       # fails closed before rendering if the secret is absent or too short.
       extra_env: >-
-        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}@${{ needs.build-knoxx-devtools.outputs.digest }}"}
+        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}@${{ needs.build-knoxx-frontend.outputs.digest }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}@${{ needs.build-knoxx-devtools.outputs.digest }}"}
       caller_holds_production_host_lock: true
     secrets: inherit
 
   deploy-caddy:
     needs: deploy-knoxx
-    if: inputs.include_ingress
+    if: inputs.scope == 'stack' && inputs.include_ingress
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: caddy
@@ -149,7 +176,7 @@ jobs:
 
   # Builds alongside the rest of the chain; deploys last.
   build-website:
-    if: inputs.include_website
+    if: inputs.include_website || inputs.scope == 'website'
     uses: ./.github/workflows/build-images.yml
     with:
       service: website
@@ -164,16 +191,18 @@ jobs:
     # dependency failed; never advance the website through that broken chain.
     if: >-
       always()
-      && inputs.include_website
+      && (inputs.include_website || inputs.scope == 'website')
       && needs.build-website.result == 'success'
       && (
-        (!inputs.include_ingress && needs.deploy-caddy.result == 'skipped')
-        || (inputs.include_ingress && needs.deploy-caddy.result == 'success')
+        (inputs.scope == 'website' && needs.deploy-caddy.result == 'skipped')
+        || (inputs.scope == 'stack' && (
+          (!inputs.include_ingress && needs.deploy-caddy.result == 'skipped')
+          || (inputs.include_ingress && needs.deploy-caddy.result == 'success')
+        ))
       )
-    uses: ./.github/workflows/deploy-digitalocean.yml
+    uses: ./.github/workflows/deploy-website-phases.yml
     with:
-      service: website
-      image: ${{ needs.build-website.outputs.image }}
+      image: ${{ needs.build-website.outputs.image }}@${{ needs.build-website.outputs.digest }}
       source_sha: ${{ needs.build-website.outputs.source_sha }}
       caller_holds_production_host_lock: true
     secrets: inherit

@@ -49,6 +49,9 @@ jobs:
       - name: Enforce deploy-chain failure propagation
         run: python scripts/check-deploy-chain.py
 
+      - name: Test website phase isolation and serving gates
+        run: python scripts/test_website_deployment.py
+
       - name: Enforce service environment contracts
         run: python scripts/check-env-contracts.py
 

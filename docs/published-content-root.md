@@ -232,10 +232,10 @@ Two honest limits:
 
 ## 7. What this file does not decide
 
-- **Whether the website needs a staging slot.** No service on this lane has one;
-  `docs/deployment-model.md` §3 argues production needs a staging record to
-  promote from. The website is declared production-only, consistent with every
-  other service here, and the question stays open.
+- **Staging deployment policy.** The website has an isolated staging reader at
+  `/srv/open-hax/state/staging/website-content`; production retains the content
+  root described above. Its phase path and explicit unsupported production
+  qualification gate are recorded in `docs/website-staging-deployment.md`.
 - **Nothing about DNS.** The record already points here (§1), so
   `verify.sh`'s public-TLS probe is a hard requirement from the first deploy
   rather than a WARN. The WARN branch remains for the case it describes: a

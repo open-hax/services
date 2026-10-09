@@ -52,7 +52,7 @@ services:
           # Caddy resolves its upstream by this name. A service that joins the
           # network without declaring an alias is unreachable from the ingress
           # — which is the whole reason `smoke` has never been publicly served.
-          - website
+          - ${WEBSITE_NETWORK_ALIAS:-website}
 
 networks:
   default:

@@ -67,12 +67,10 @@ content:
   declaration: services:docs/published-content-root.md
 
 phases:
-  # Production only, like every other service on this lane. services#19 also
-  # declared `website-staging` at staging-open-hax.promethean.rest; that is
-  # dropped rather than forgotten, because no service on this lane has a staging
-  # slot and inventing the first one for the website would be a bigger decision
-  # than this card. Whether it needs one stays open:
-  # docs/published-content-root.md §7.
+  # Staging is an isolated reader on the same host: project/alias
+  # website-staging, loopback 8082, staging.website.promethean.rest and state
+  # beneath the staging inventory's stateRoot. It does not publish content.
+  - staging
   - production
 
 verify:

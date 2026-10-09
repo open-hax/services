@@ -1,0 +1,10 @@
+# Services-owned website staging ingress. Install in the host's existing managed
+# route directory after validating the candidate with the running Caddy process.
+# Staging shares ingress but uses its own Compose project and network alias.
+staging.website.promethean.rest {
+    import common
+    header Cache-Control "no-store"
+    reverse_proxy website-staging:8080 {
+        header_up -x-open-hax-bridge-auth
+    }
+}

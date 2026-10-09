@@ -136,8 +136,10 @@ production  the default branch's head, deploy-labelled merge only
 
 **Model rule 3 (the promotion rule).** A revision may enter `production` only if
 the same source SHA is `identical` to, or an ancestor of, what `staging` last
-recorded. The Deployments API already carries that record for any job declaring
-`environment:`, so no reporting step is needed. Two limits belong in the check's
+recorded. An environment record identifies the workflow repository's revision.
+For Services deploying another repository's image, the website phase receipt
+also binds application source, image digest, Services SHA and serving config
+hash. Two limits belong in the check's
 own output: `behind` proves ancestry, not that the exact commit was built, and it
 proves the *source SHA* was staged, not the *image*.
 
@@ -148,6 +150,10 @@ shared Docker network.
 
 A service may declare fewer phases. It may not declare production without a
 staging record to compare against.
+
+The website now has an isolated staging phase. Its authored production gate
+also remains closed until unsupported mutation qualification is resolved
+explicitly. See `docs/website-staging-deployment.md` for commands and evidence.
 
 ## 4. Publication targets — serving content another service writes
 
@@ -218,6 +224,7 @@ step is idempotent and never prints a credential. Beyond that:
   count. Re-decide once, in that header, rather than one hostname at a time.
 - **Who owns the content root's disk budget**, and what happens when a
   publication run fills it.
-- **Whether the website needs a staging slot** before it has published content.
-  Rule 3 requires a staging record to promote from, so the answer is probably yes
-  and it is cheap — but it should be a decision.
+- **Website production qualification.** The isolated staging slot now exists;
+  the website's four-batch mutation campaign and evidence verifier do not. The
+  production phase stops explicitly until that gap or an owner policy decision
+  is resolved on the concrete staged candidate.

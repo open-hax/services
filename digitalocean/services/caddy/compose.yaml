@@ -35,6 +35,7 @@ services:
       # Let's Encrypt rate limits are per-hostname-per-week.
       - ${CADDY_STATE_PATH}/data:/data
       - ${CADDY_STATE_PATH}/config:/config
+      - ${CADDY_STATE_PATH}/managed:/etc/caddy/managed:ro
     healthcheck:
       test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
       interval: 30s

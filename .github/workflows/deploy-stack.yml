@@ -53,6 +53,12 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      scope:
+        description: Stack deployment or isolated website staging and promotion
+        required: false
+        default: stack
+        type: choice
+        options: [stack, website]
       proxx_ref:
         description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
@@ -104,6 +110,7 @@ jobs:
         id: decide
         env:
           EVENT_NAME: ${{ github.event_name }}
+          DEPLOY_SCOPE: ${{ inputs.scope || 'stack' }}
           MERGED: ${{ github.event.pull_request.merged }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
@@ -112,6 +119,10 @@ jobs:
           set -euo pipefail
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            case "$DEPLOY_SCOPE" in
+              stack|website) ;;
+              *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
+            esac
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "Manual dispatch; deploying the requested refs."
             exit 0
@@ -147,6 +158,7 @@ jobs:
       cancel-in-progress: false
     uses: ./.github/workflows/deploy-stack-chain.yml
     with:
+      scope: ${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'stack' }}
       # Pin the release source at the production entry point. A manual
       # dispatch may deliberately override it; merge-authorized deploys cannot
       # drift with the moving main branch while queued.

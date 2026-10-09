@@ -36,6 +36,12 @@ label at merge time. The workflow builds application `main`, never PR code, and
 derives authorization from the immutable merge event. Operators can also use
 the explicit manual dispatch with chosen refs.
 
+Manual dispatch also accepts `scope: website` for the isolated staging and
+production handoff in [the website runbook](docs/website-staging-deployment.md).
+Its receipt binds application source, image digest and serving configuration.
+Production stops at an explicit unsupported website mutation-qualification
+gate; a healthy stage does not satisfy that policy.
+
 The former Promethean VPS implementation is retired. Its non-secret evidence is
 preserved in [`docs/history/promethean-vps.md`](docs/history/promethean-vps.md)
 and `docs/reports/`; it is not an alternative runtime.
