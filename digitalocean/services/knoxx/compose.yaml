@@ -190,7 +190,9 @@ services:
       # It is a peer of this service's state directory rather than a child of
       # it, because the reader is another service: state/website-content, not
       # state/knoxx/website-content.
-      - ${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/srv/website-content
+      # The writer still uses /srv/website-content through its image-owned
+      # alias. Its real path must lie inside the workspace provenance boundary.
+      - ${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/app/workspace/.knoxx/website-content
       - ${KNOXX_SANDBOX_ROOT_PATH:?KNOXX_SANDBOX_ROOT_PATH must be set}:/sandboxes
     # No /var/run/docker.sock. The agent sandbox needs it, but it is a
     # root-equivalent grant and this host is about to be public.

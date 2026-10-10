@@ -676,6 +676,40 @@ jobs:
                 esac
               done
 
+          # BEGIN KNOXX PUBLICATION WORKSPACE
+          # Nested bind mounts do not create their writable siblings for the
+          # unprivileged backend. Create generated contracts as the deploy user
+          # before Compose can create a root-owned .knoxx parent. Existing state
+          # with incompatible ownership requires an operator repair; do not chown.
+          if [ "$service" = knoxx ]; then
+            if [ "$(id -u)" != 1000 ]; then
+              echo "Knoxx publication workspace requires deploy UID 1000" >&2
+              exit 1
+            fi
+            # Check incumbents before mkdir, including dangling symlinks, so
+            # refusal never creates a child through an incompatible parent.
+            for publication_dir in "$KNOXX_WORKSPACE_PATH/.knoxx" "$KNOXX_WORKSPACE_PATH/.knoxx/contracts"; do
+              if [ -e "$publication_dir" ] || [ -L "$publication_dir" ]; then
+                if [ ! -d "$publication_dir" ] || [ -L "$publication_dir" ] \
+                  || [ "$(stat -c %u "$publication_dir")" != 1000 ] \
+                  || [ ! -w "$publication_dir" ] || [ ! -x "$publication_dir" ]; then
+                  echo "Knoxx publication directory must be UID 1000, writable and traversable: $publication_dir" >&2
+                  exit 1
+                fi
+              fi
+            done
+            mkdir -p "$KNOXX_WORKSPACE_PATH/.knoxx/contracts"
+            for publication_dir in "$KNOXX_WORKSPACE_PATH/.knoxx" "$KNOXX_WORKSPACE_PATH/.knoxx/contracts"; do
+              if [ ! -d "$publication_dir" ] || [ -L "$publication_dir" ] \
+                || [ "$(stat -c %u "$publication_dir")" != 1000 ] \
+                || [ ! -w "$publication_dir" ] || [ ! -x "$publication_dir" ]; then
+                echo "Knoxx publication directory must be UID 1000, writable and traversable: $publication_dir" >&2
+                exit 1
+              fi
+            done
+          fi
+          # END KNOXX PUBLICATION WORKSPACE
+
           # Every service shares one user-defined network so Knoxx can reach
           # Proxx by name across compose projects. Creation is idempotent.
           docker network inspect open-hax >/dev/null 2>&1 || docker network create open-hax

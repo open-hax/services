@@ -76,6 +76,16 @@ def main() -> int:
     knoxx_template = (
         ROOT / "digitalocean" / "services" / "knoxx" / "env.template"
     ).read_text()
+    knoxx_sdk_dockerfile = (
+        ROOT / "digitalocean" / "services" / "knoxx" / "Dockerfile.backend-sdk"
+    ).read_text()
+    knoxx_volumes = yaml.load(knoxx_compose, Loader=yaml.BaseLoader)["services"]["knoxx-backend"]["volumes"]
+    publication_mounts = [mount for mount in knoxx_volumes if mount.startswith("${WEBSITE_CONTENT_ROOT:")]
+    expected_publication_mount = "${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/app/workspace/.knoxx/website-content"
+    if publication_mounts != [expected_publication_mount]:
+        failures.append("Knoxx publication content must have exactly one contained workspace mount")
+    if knoxx_sdk_dockerfile.rfind("USER 1000") < knoxx_sdk_dockerfile.find("ln -s /app/workspace/.knoxx/website-content"):
+        failures.append("Knoxx publication alias must be installed before dropping to UID 1000")
     knoxx_operator_docs = (
         ROOT / "docs" / "knoxx-ollama-embeddings.md"
     ).read_text()
@@ -449,9 +459,49 @@ def main() -> int:
             knoxx_template,
             "KNOXX_GENERATED_CONTRACTS_DIR='/app/workspace/.knoxx/contracts'",
         ),
+        "generated workspace is durable service state": (
+            knoxx_template,
+            "KNOXX_WORKSPACE_PATH='${OPEN_HAX_STATE_PATH}/knoxx-workspace'",
+        ),
         "generated contract root container binding": (
             knoxx_compose,
             "KNOXX_GENERATED_CONTRACTS_DIR:",
+        ),
+        "publication content nested workspace mount": (
+            knoxx_compose,
+            "${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/app/workspace/.knoxx/website-content",
+        ),
+        "publication content legacy absolute writer path": (
+            knoxx_compose,
+            "KNOXX_PUBLICATION_CONTENT_ROOT: /srv/website-content",
+        ),
+        "publication content alias refuses existing paths": (
+            knoxx_sdk_dockerfile,
+            "RUN test ! -e /srv/website-content",
+        ),
+        "publication content alias refuses dangling symlinks": (
+            knoxx_sdk_dockerfile,
+            "&& test ! -L /srv/website-content",
+        ),
+        "publication content contained legacy alias": (
+            knoxx_sdk_dockerfile,
+            "&& ln -s /app/workspace/.knoxx/website-content /srv/website-content",
+        ),
+        "generated contract directory preparation": (
+            deploy_text,
+            'mkdir -p "$KNOXX_WORKSPACE_PATH/.knoxx/contracts"',
+        ),
+        "publication workspace ownership precondition": (
+            deploy_text,
+            '[ "$(stat -c %u "$publication_dir")" != 1000 ]',
+        ),
+        "publication workspace write and traversal precondition": (
+            deploy_text,
+            '[ ! -w "$publication_dir" ] || [ ! -x "$publication_dir" ]',
+        ),
+        "publication mount UID regression CI wiring": (
+            code_quality_text,
+            "python scripts/test-knoxx-publication-mounts.py",
         ),
         "Ollama dedicated network mapping": (
             knoxx_compose,

@@ -31,4 +31,12 @@ RUN rm -rf /app/node_modules/@open-hax/openplanner-sdk \
  && mv /app/vendor/openplanner-sdk /app/node_modules/@open-hax/openplanner-sdk \
  && rmdir /app/vendor
 
+# Keep existing absolute CMS paths while their real path is contained in the
+# workspace shared by immutable sources and generated publication contracts.
+# Refuse an incumbent path instead of replacing application or mounted state.
+RUN test ! -e /srv/website-content \
+ && test ! -L /srv/website-content \
+ && mkdir -p /srv \
+ && ln -s /app/workspace/.knoxx/website-content /srv/website-content
+
 USER 1000

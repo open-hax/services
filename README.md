@@ -55,11 +55,14 @@ and `docs/reports/`; it is not an alternative runtime.
   servers and the rule that live development questions use a dev instance
 - [`docs/published-content-root.md`](docs/published-content-root.md) — the
   shared published-content directory, its single writer, and read-only reader
+- [`docs/knoxx-cms-publication.md`](docs/knoxx-cms-publication.md) — the native
+  CMS save, provider translation, persisted review and publication path, plus
+  workspace containment, isolated verification, and evidence limits
 - [`docs/knoxx-git-event-bridge.md`](docs/knoxx-git-event-bridge.md) — the
   metadata-only GitHub-to-Knoxx event path and the explicit Git-driver boundary
 - [`docs/knoxx-ollama-embeddings.md`](docs/knoxx-ollama-embeddings.md) — direct
-  host-Ollama embedding routing, its live 768-vector gate, and the mandatory
-  1024-to-768 Mongo migration warning
+  host-Ollama routing through `qwen3-embedding:8b` at 1024 dimensions and the
+  fail-closed Mongo migration gate for incompatible populated stores
 
 ## Deployment model
 

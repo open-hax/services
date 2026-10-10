@@ -25,3 +25,9 @@
   spore: none
   receipt-refs: 2026-10-02T22:14:20.380636Z
   note: Preserve historical receipts and reflections; corrective entries carry immutable pin and audit links. Credentials and pending reviews remain explicit blockers.
+
+- 2026-10-10T14:05:31.417989Z — recover_services; efficiency=0.83, friction=0.58, skill-candidate=0.65. Completed native Codex SQLite file-change history recovered the missing CMS fixture faithfully after transient directories disappeared. Preserve durable scratch for resumed work and recover text without executing historical commands. Scope: source restoration and synthetic integration boundaries; final compiled fixture and native deployed execution remain pending. Receipt: receipts.edn (2026-10-10T14:05:31.417989Z). No spore created or promoted.
+
+- 2026-10-10T14:29:03.026605Z — recover_services; efficiency=0.88, friction=0.20, skill-candidate=0.45. Separate preserved protocol evidence from final source qualification: bind exact saved JSON/HTML/screenshot hashes while labeling the runtime before final repairs and restart. Proof A bytes can remain as an HTTP capture after the current writer replaces its old artifact path. Receipt: receipts.edn (2026-10-10T14:29:03.026605Z). No spore created or promoted.
+
+- 2026-10-10T14:31:14.346409Z — recover_services; efficiency=0.88, friction=0.25, skill-candidate=0.45. Append a corrective provenance receipt when the owning task completes source binding during evidence capture; keep original provider generation and final restart persistence as separate phases. Receipt: receipts.edn (2026-10-10T14:31:14.346409Z), correcting pending metadata in14:29:03.026605Z. No spore created or promoted.
