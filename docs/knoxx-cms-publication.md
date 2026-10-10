@@ -38,9 +38,10 @@ also passed the separate backend/native HTTP suites on directly observed Node
 24 and independent source review. Earlier `0cffeaad` provider proof and
 `8ab11f1` startup/frontend proof retain their original source coordinates. The
 final sections below bind those distinct phases to their source, image and
-evidence hashes. The stack qualifier now selects the test-only successor
-`24f68cb16a3eca5835b52fd109c9f38bdff7c583`; its application and deployment
-source remains unchanged from the qualified `cdb96427` images. These local
+evidence hashes. The stack qualifier now selects the CI and verifier successor
+`447c131bc3379e8d2199f1ab6ee0063bc8eb7f69`; its application, Docker, SDK and
+production deployment-verifier source remains unchanged from the qualified
+`cdb96427` images. These local
 observations do not attest to staging or production.
 
 The historical isolated walkthrough on 2026-10-10 UTC completed native password
@@ -1141,3 +1142,63 @@ bytes remain unchanged, and no runtime or provider operation was performed.
 | Record in evidence set `openhax-cms-20261010` | SHA-256 |
 | --- | --- |
 | `review-state/services-session-secret-wiring-20261010T182828Z/final-source-qualification-v2.json` | `c26cdcca08a738146d0259fb5ae2da86bc21e4b39ebcda610e434f2a65493550` |
+
+
+### CI credential and verifier source-root qualification — 2026-10-10 UTC
+
+The qualifier advances from `24f68cb16` to
+`447c131bc3379e8d2199f1ab6ee0063bc8eb7f69`. The deployment-boundary checkout
+now sets `persist-credentials: false` before preparing PyYAML. The two-line YAML
+change needs no authenticated Git writes; all other parsed workflow values are
+unchanged. Actionlint reports zero warnings; the boundary self-test/check and
+existing production-checkout test pass using the separately qualified PyYAML
+6.0.2 environment. This is local qualification, not successor hosted CI.
+
+Both native CMS verification scripts now require Git's top-level directory to
+resolve to their own physical source root. A nested directory without its own
+checkout previously inherited an enclosing repository's valid commit. Full
+40-character HEAD validation alone could therefore print an unrelated source
+identity. The new check retains that validation, normalizes physical directory
+aliases, and refuses a missing, empty or mismatched Git root before reporting
+identity, allocating fixtures, running Node or compiling with pnpm. The
+verification bodies following the identity check remain byte-identical.
+
+The existing precondition suite now exercises actual isolated Git checkouts,
+enclosing repositories and linked worktrees, including spaces and directory
+symlink entrypoints. Original scripts produce ten failures with zero errors
+against the final six-method suite; the repaired scripts pass six methods and
+22 derived isolated verifier executions. Positive controls deliberately stop at
+a Node sentinel and perform no backend compilation. Negative identity controls
+refuse before fixture, Node and pnpm markers. Both scripts separately pass Bash
+syntax, and ShellCheck and whitespace checks pass.
+
+The first saved `bash -n` command listed two scripts but Bash parsed only the
+first. The original capture and manifest remain preserved. The v2 manifest adds
+a separate successful syntax check for the locale verifier and corrects the
+evidence attribution. Independent review validates the four frozen source
+files, 35 qualification entries and the exact reconstruction of both original
+verifiers and the CI workflow.
+
+A NUL-safe tracked-commit comparison from the actual `cdb96427` image source to
+`447c131bc` contains exactly nine paths: two CI workflows, two Mongo test files,
+two CMS verification scripts, their existing precondition test and two
+append-only ledgers. Application, SDK, Docker and production deployment-verifier
+source remains unchanged. Existing image/provider/browser evidence retains
+`cdb96427` and Website `d17ed511` identities. No new live CMS, provider, database,
+image, registry or environment rollout is claimed by these repairs.
+
+Services `5e15ecd` separately records the preceding session-wiring fix. Its
+native Fixed reply and CodeRabbit acknowledgement are bound to that exact head
+and its finding thread is resolved. Its code-quality, host-definition and
+review-resolution checks pass in the saved snapshot; pending evidence jobs and
+rate-limited full review remain distinct from approval. The current Services
+successor, Knoxx successor and later Website changes need their own native
+review/check qualification.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `review-state/knoxx-ci-checkout-credentials-20261010T184518Z/qualification.json` | `82e388ffe39bc991afb37314e1600360eb5659dfc127a9c1d07cf0fdb57afb9a` |
+| `review-state/knoxx-cms-verifier-root-qualification-20261010T184613Z/final-source-qualification-v2.json` | `145ae691f416750636cf3d0c17fa05fafcb11241ec5d44f39d8199d81b28bdaf` |
+| `review-state/knoxx-four-path-native-review-repairs-independent-assessment-20261010T185223Z.json` | `9c18ac511043b9ff113b5278f0524ea11193f5e2832468c977197218056994a6` |
+| `review-state/knoxx-cdb-to-447c-tracked-source-comparison-20261010T1854/comparison.json` | `d0e9e14fceb1a186b3b88f5884c5cb30a2cff3bd4cc2709acd1220baa71f6016` |
+| `review-state/native-readonly-services5e15-stack-checkpoint-20261010T1848/independent-native-checkpoint-summary.json` | `8f03d0e550a133837a4929300f312417cae172102115b4bf94185ad8851e1b0d` |
