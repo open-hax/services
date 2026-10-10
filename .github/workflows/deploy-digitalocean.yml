@@ -269,6 +269,13 @@ jobs:
             . "${SERVICE_DIR}/mcp-verification-policy.sh"
             require_knoxx_mcp_verification_token
           fi
+          # Keep this admission tied to the selected service even if an
+          # extra_env entry shadows SERVICE in the generic export below.
+          readonly render_session_secret_service=$SERVICE
+          if [ "$render_session_secret_service" = knoxx ]; then
+            . "${SERVICE_DIR}/session-secret-policy.sh"
+            require_knoxx_session_secret_overlay "${EXTRA_ENV:-\{\}}"
+          fi
           # Process substitution keeps the loop in this shell so the exports
           # survive into envsubst. The MCP token is refused rather than
           # exported: it comes only from the protected environment secret, and
@@ -283,6 +290,12 @@ jobs:
             esac
             export "$key=$value"
           done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"${EXTRA_ENV:-\{\}}")
+
+          # Validate the final overlaid value before rendering or copying it.
+          # Knoxx decodes this key as hex; nonempty opaque text is insufficient.
+          if [ "$render_session_secret_service" = knoxx ]; then
+            require_knoxx_session_secret
+          fi
 
           # Substitute only the names the template declares, so nginx/caddy
           # style $variables in adjacent config survive untouched. grep already

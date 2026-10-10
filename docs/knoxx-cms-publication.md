@@ -28,17 +28,17 @@ reads the resulting public files; Knoxx remains the writer and review authority.
 
 ## Evidence status
 
-The latest source qualification and stack qualifier use committed Knoxx
-`8ab11f1ef9b6b1b5ec8e852b185c92a772b2492e`. Its repairs passed the native
-backend/frontend suites and independent source review. The latest complete
-image-backed CMS demonstration uses its parent
-`0cffeaad02f3818036186dcb764e06bbc5bd6cd5`. A new native CMS save, real Ollama
+The latest complete image-backed CMS demonstration uses committed Knoxx
+`cdb96427cd6ea76a230748db1bddcaee819ac0c1` and website
+`d17ed5113e1d05a00da221257cdf519399278c3f`. A fresh native CMS save, real Ollama
 translation, persisted split review and whole-output approval reached the
-packaged website reader on 2026-10-10 UTC. A separate fresh image-backed run
-also completed that entire native pipeline using the actual Node 22 backend
-image as UID 1000 and the website image as UID 101. The final
-sections below bind those distinct phases to their source, image and evidence
-hashes. These local observations do not attest to staging or production.
+packaged website reader on 2026-10-10 UTC. The backend ran as Node 22 and UID
+1000; the website reader ran as UID 101. The atomic completed-restoration repair
+also passed the separate backend/native HTTP suites on directly observed Node
+24 and independent source review. Earlier `0cffeaad` provider proof and
+`8ab11f1` startup/frontend proof retain their original source coordinates. The
+final sections below bind those distinct phases to their source, image and
+evidence hashes. These local observations do not attest to staging or production.
 
 The historical isolated walkthrough on 2026-10-10 UTC completed native password
 login, direct Ollama draft generation, CMS save, English publication, Spanish
@@ -145,6 +145,20 @@ That lets the writer publish successfully while a separate UID 101 reader
 returns 404. The fresh packaged run below reproduced this failure; a root-only
 permission repair restored exact manifest/artifact bytes without changing
 published content. See the [shared-root permission contract](published-content-root.md).
+
+The private `KNOXX_SESSION_SECRET` must be exactly 64 ASCII hexadecimal
+characters, representing 32 bytes. Knoxx decodes it as hex for AES-256-GCM;
+a 64-character URL-safe token is insufficient and can make native login return
+HTTP 500 with `Invalid key length`. Generate fresh isolated keys as 32 random
+bytes encoded to hex (for example, Python `secrets.token_hex(32)`), and write them
+directly to the private environment file. Preserve valid deployed keys unchanged;
+this is format validation, not a rotation procedure. Services checks the selected
+Knoxx value before rendering and again before container probes. An `extra_env`
+secret is checked in its raw form so its line transport cannot strip invalid
+newlines into an accepted key. Keep the descriptive private env JSON and actual
+env file consistent; preserve failed-run inputs in distinct private files when
+correcting a local fixture. Never include key values or session cookies in an
+evidence record.
 
 Allocate one dedicated run directory with this ownership layout:
 
@@ -826,7 +840,8 @@ passed with zero compiler warnings. Changed CLJS paths have zero lint errors or
 warnings; aggregate lint retains its inherited eight errors and 282 warnings.
 Independent bounded backend and frontend source reviews found no actionable
 issue. Fixtures use linked SDK `a09894c`; the actual parent image uses operational
-SDK `07085d`. Native review and exact-head hosted CI remain separate gates.
+SDK `07085d`. Native review and hosted CI for the exact source commit remain
+separate gates.
 
 The completed-plan observation does not provide atomic compare-and-swap between
 live peers. The separate Mongo array finding remains pending native adjudication:
@@ -843,3 +858,209 @@ images and rerun native materialization before promoting this source.
 | `review-state/knoxx-native-repair-independent-source-review-20261010T160958Z.json` | `4213c6f415c42b917b0beb9d8da58edc7517557f739199dd601ab0ff13210425` |
 | `review-state/knoxx-frontend-terminal-hydration-independent-assessment-20261010T161250Z.json` | `6392785bbd527a5536e441f43c7082fefa56d5e21018e50044a55fd7dd735ea6` |
 | `review-state/mongo8-array-partial-index-proof.json` | `894f4f9167df0da62b3319cf989882243d3af9a0188599acda652a1ea9fdeb97` |
+
+
+## Atomic restoration and directly observed runtime phase, 2026-10-10
+
+Committed Knoxx `cdb96427cd6ea76a230748db1bddcaee819ac0c1` adds conditional
+replacement for completed replay restoration under the existing manifest lock.
+It preserves a newer peer publication if the target changes after observation,
+including manifest bytes, artifact bytes and timestamps, and prior cache records.
+An already-current canonical requested output remains unchanged even when its
+valid artifact metadata differs. This scope does not change first publication,
+removal or existing lock takeover assumptions.
+
+The final source phase passed 56 tests / 507 assertions focused, 1,904 / 9,756
+complete backend, and 23 / 118 native HTTP. Canonical server compilation covers
+538 files with zero warnings; changed paths have zero lint diagnostics, and
+all 290 aggregate diagnostics equal the inherited eight-error/282-warning
+baseline. Fourteen actual package-manager/compiler/test processes were observed
+on the explicit Node 24.14.1 executable. The earlier Volta launcher phase had
+queried shell Node rather than its pnpm child; preserve that historical evidence
+and use the appended correction instead of retroactively assigning its runtime.
+Source-test SDK `a09894c` remains distinct from operational SDK `07085d`.
+
+Actual 8ab backend/SDK/frontend images were also built from their archived source
+with the unchanged Services `c79a796` recipes. Their source/compiled-byte matches
+and native Node 22.22.2 SDK/LMDB/lock probes remain image evidence. The historical
+compiler launcher did not capture its actual child version; the original
+Node 24 attribution is explicitly invalidated by the separate correction.
+Those images precede the cdb atomic repair.
+
+The isolated 8ab startup then exposed an invalid URL-safe session key. Preserve
+the initial failed login probe and stopped container. The correction changes
+only the private session key to 64 hex characters and restarts the owned local
+backend with the same image, state, database and account. Corrected native login
+and authenticated CMS reads return 200; anonymous CMS returns 401; configured
+SDK/Ollama health returns 200. A real `qwen3-embedding:0.6b` response contains
+1,024 finite values. Its local frontend preview serves all 325 files extracted
+from the actual image and proxies authenticated reads. This phase performs no
+new CMS save or translation dispatch. General readiness remains separately
+503 with Proxx unconfigured.
+
+The latest Website source `d17ed5113e1d05a00da221257cdf519399278c3f` was archived,
+built with every recorded Node child on 24.14.1, and packaged with the actual
+Services recipe. Its image is
+`sha256:c24f1269360428787358a7d76bfa3386b7026127994a911f3d3236a2c6e70e9b`.
+All 452 build-artifact hashes match the extracted image; its additional
+`50x.html` bytes independently match the inherited Nginx base. UID 101 serves
+the already approved 0cff Spanish artifact through read-only mounts on
+loopback 18185, matching writer bytes. Native Cua shows the translated document,
+then verifies artwork click focuses the dialog, Shift+Tab wraps to its Close
+button, and Escape restores the original card and scrolling. This is a new
+website image phase reading an existing provider artifact, not a new cdb
+provider run or a public deployment.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `review-state/knoxx-atomic-completed-restoration-node24-qualification.json` | `11769cd87a3d9766f38536d481cc6564cce6dd2fc8d7f00574ae56f95a4d981d` |
+| `review-state/knoxx-atomic-restoration-independent-assessment-20261010T1659.json` | `f84a085163ae1edebac377f33c8cbffd6fb9bacd6b48dd0c33b60bc64b2e9715` |
+| `review-state/knoxx-8ab-image-compiler-launcher-correction-20261010T1652.json` | `07d8878c0327fdacc67420d3ca6cdce8125803dc682b7cb3222ca99569b035d1` |
+| `cms-image-demo-8ab11f1/session-key-correction-proof.json` | `3ddfe97dbdace87bf4c03a13005195808dc1a619c9b7130764766948c446e4f5` |
+| `cms-image-demo-8ab11f1/corrected-startup-auth-health-proof.json` | `17242be714d5b3e4964d6c8819513a2faa31f6e2d4122c8d7e4293cac9a2aa03` |
+| `cms-image-demo-8ab11f1/frontend-preview-proof.json` | `5aebaf20bc7acc2b6e353db3b662c67577f787e7fb0e3d3d5c9f4c2e8e8bff6c` |
+| `images/website-d17ed5113e1d/image-serving-proof.json` | `5b51bf72d6de710eeb99e4122d522b70955dc5ed30e84ea98743cd1dd981b202` |
+| `images/website-d17ed5113e1d/native-browser-proof.json` | `c6841d74752dfa62251ad04ac87a69a917132d728c2c9976b40a6208ddf14ed9` |
+
+Keep source qualification, actual image startup, real provider publication,
+review approval, and staging/production admission separate. A successful step
+is evidence only of that step; it cannot supply an approval or a later phase.
+
+The shared session-secret policy is now checked before environment rendering
+and before verifier container/provider probes. Its regression suite exercises
+55 synthetic scenarios, including a valid key followed by a newline and an
+overlay that shadows the selected service. The validator preserves valid keys
+unchanged. One read-only production configuration observation on 2026-10-10
+also found the configured Knoxx key present, exactly 64 characters long, and
+entirely ASCII hexadecimal. This establishes format compatibility only; it
+does not establish deployment of the guard or approval of a successor image.
+No key value, environment dump, or key digest is in the evidence records.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `review-state/services-session-secret-qualification/final-source-qualification.json` | `eb1a87c4a0cf27cf8875c940eaeb0a3df1d07e5c0579b9a8f81be207bce0928e` |
+| `review-state/services-session-secret-independent-assessment-20261010T1710.json` | `261ac0ee37dccef8bb6634af9fa452b5257d83ceaf7017e89f19bc242384d60d` |
+| `review-state/deployed-knoxx-session-secret-compatibility-20261010T171421Z.json` | `18ec0b17ca2279c2a8abbcc4e0b9b12c9f197f8e3ff6c7091cf78854cd5ec241` |
+
+## Fresh cdb image qualification
+
+The exact committed `cdb96427` source now has a separate, sealed local image
+qualification using operational SDK `07085d` and the unchanged Services `c79a796`
+recipes. Backend image `sha256:bf39fdcf49ac0e4a140d7091132d6b1e8f5b3fdd6c857fe60feee5f4daa92e93`
+and frontend image `sha256:270ee126f0628dc35bd94a1fc325ea6d93eb1170e4359fb632880f4c6968b4b2`
+retain distinct identities. All 1,044 compiled backend files, 9,539 operational
+SDK files, and 325 frontend payload files match their captured build inputs.
+The frontend retains the inherited Nginx `50x.html` and root default; the
+Services nonroot serving override remains required.
+
+The production compilers actually ran as Node 24.14.1, recorded in 11 child
+process observations. Backend and frontend compilation both reported zero
+warnings. The packaged backend then passed native SDK exports, LMDB import,
+exclusive file lock/unlock, and publication layout as Node 22.22.2, UID/GID1000.
+The first layout fixture attempt lacked Python; the unchanged fixture passed
+with a separate read-only tooling mount. This did not add tooling to the
+application image. The Docker SDK layer's inherited build-argument warning
+remains recorded separately from compiler warnings.
+
+The root admission checked both actual immutable image IDs and all 36 hashes
+referenced by the sealed summary. These records establish compilation, payload
+and native ABI/layout evidence only. Server startup, database admission, CMS
+save, provider dispatch and publication are separate subsequent operations.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `images/knoxx-cdb96427cd6e/image-qualification-summary.json` | `a3153948ff70c4db8bec9a7dc9ad8d4fbe6a055ff60210c65fd018cd12c6deac` |
+| `images/knoxx-cdb96427cd6e/backend-image-proof.json` | `f3da9afca7d8d84e0bac77c272fd62e90fcf75e9570a36914273af5ced2232ea` |
+| `images/knoxx-cdb96427cd6e/frontend-image-proof.json` | `34cd6336e2abff2e830b6cf38ae496e7772b0e94c099dd8ca441a09c078ee427` |
+
+## Checkout-verifier caller qualification
+
+The stack qualifier now points to committed Knoxx
+`78f80c2083ca44c56a9034d97d277f5333e2f490`. Its changes after `cdb96427` are
+limited to the two CI caller workflows and append-only provenance. Both callers
+prepare an isolated `RUNNER_TEMP` Python virtual environment, install
+`PyYAML==6.0.2`, and use its interpreter for the unchanged production-checkout
+verifier. Application, SDK, Docker and deployment-verifier source is unchanged.
+The local images and provider demonstration therefore keep their original
+`cdb96427` source identity; they are not renamed as images built from `78f80c20`.
+
+A clean Python environment reproduced the missing `yaml` import. The repaired
+standalone caller passed the checkout test, three CMS-precondition tests, and
+the deployment-boundary checks. The reusable caller recorded all seven gates
+as zero. A package-retrieval failure control still failed dependency and
+checkout gates, and the pinned native aggregator classified the result as
+failure. YAML parsing, Bash syntax and actionlint passed. Independent source
+review matched all five source and 27 evidence hashes. This is local caller
+qualification; current-head hosted CI and native PR approval remain separate.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `review-state/knoxx-checkout-pyyaml-qualification-20261010T1740/final-qualification.json` | `c0a848b4366c2fc17a15a550257f64d74e72cd48f975e8d5cfb15e11049f1389` |
+| `review-state/knoxx-checkout-pyyaml-independent-assessment-20261010T1748.json` | `6ec1c720b961101e70530c1e15d7ac517cfba91322d9ed97973394b485fd0047` |
+
+## Fresh cdb native CMS and provider walkthrough
+
+The fresh `cms-image-demo-cdb96427-20261010` project and
+`knoxx_cms_image_cdb96427_20261010` database admitted the backend image above
+and website `d17ed511` image
+`sha256:c24f1269360428787358a7d76bfa3386b7026127994a911f3d3236a2c6e70e9b`.
+The original short startup wait expired before the cold backend listened.
+The same owned containers subsequently became ready; a separate auth-only
+completion used them without recreating containers or databases. Anonymous CMS
+and health requests returned 401, password login and authenticated CMS returned
+200, and native SDK/Ollama health returned 200 with an actual finite
+1,024-dimensional embedding. General health retained 503 for the deliberately
+unconfigured Proxx dependency.
+
+The native UI used a Vite preview of all 325 image-matching frontend files.
+It saved `Knoxx CMS deployment proof — cdb96427`, published English/Spanish
+intent, and dispatched the configured Knoxx translation agent. The persisted
+Mongo dispatch binding and completed candidate belong to the fresh document
+`cms.f3372829-012f-4ee3-a1df-63940249b401/doc-logical-0fdc65c6c0a27ac3d8fbed3cd83411b71511e5be08944e10518b90b00e6ed22b`.
+First-save history revision `e7aeea96` is distinct from current publication work
+revision `25a1c0b3`; neither substitutes for the other.
+
+One attributed split review persisted for candidate `d5e1c5d4`. Reconciliation
+before whole approval returned `publication/blocked` with
+`translation-review-required`. Native whole-output approval at
+`2026-10-10T17:37:16.505Z` produced `publication/materialized`. The website
+then displayed the actual Spanish candidate from the manifest's public route.
+This is agent protocol verification, not fluent-human production-copy approval.
+
+The original dispatch HTTP response was not captured. The later transcription
+of the actual UI acceptance banner has no invented original timestamp. It is
+kept separately from the read-only persisted completed dispatch record and
+its immutable EDN binding. No candidate was injected and the capture helper
+did not dispatch another provider call or approve a candidate.
+
+The capture helper's actual five private-history, idempotency and traversal
+requests returned 404 without source bytes. The SDK history directory remained
+mode `0755`; no chmod was used to satisfy a mistaken helper precondition.
+Actual public manifest/artifact responses matched writer bytes. Repeat
+reconciliation returned `publication/noop`, with unchanged bytes. The helper
+then failed while assembling its summary because it assumed a `DEFAULT_MODEL`
+environment field that this supported agent-overlay configuration does not
+declare. The executed helper, failure and successful partial captures remain
+preserved; summary completion is a separate evidence operation.
+
+A separately reviewed file-only completion verified every captured input,
+the approved Spanish text, and current writer equality, then assembled the
+final record. It records the supported
+`KNOXX_AGENT_MODEL_OVERRIDES=publication_translator=gemma4:e4b` selection
+separately from `OLLAMA_DEFAULT_MODEL`. It makes no additional HTTP,
+reconciliation, provider, CMS or database calls. The original capture's exit 1
+remains an exit 1; its successful checks and the subsequent summary completion
+have their own provenance.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `cms-image-demo-cdb96427/cdb-delayed-startup-auth-health-proof.json` | `18f0197783038916de15e635b260182abf777f5993148963c303c576761826d0` |
+| `cms-image-demo-cdb96427/cdb-persisted-dispatch-public-evidence.json` | `163e9070b0a05164458bac4587040a57ffb5a7ffdb42cfc32fc76d65f971dd0f` |
+| `cms-image-demo-cdb96427/whole-approved-reviews.json` | `ff271c0ad86fdbec65d1d05ef6551740d3a743628320a356c23a386e1ecc8a0d` |
+| `cms-image-demo-cdb96427/cdb-native-browser-proof.json` | `1d2c2c49e2cc9a15a6768b7680d4d9c810e6425eb31cb544966e169ca9f81fac` |
+| `cms-image-demo-cdb96427/cdb-v2-completed-packaged-provider-publication-proof.json` | `f83a29a98fdc9def40300a16264bc533127287f22e6308fe449d051ddcdab1d8` |
+| `review-state/cdb-provider-file-completion-independent-assessment-20261010T180137Z.json` | `3652e804902070f0e8c51b81e85edf12314c5f878bfff18c34895d7d3b1bb0aa` |
+
+These observations establish the fresh local provider-to-reader seam. They
+do not establish frontend Nginx API/WebSocket bridging, public TLS, registry
+publication, staging, production or the separate mutation-campaign policy.

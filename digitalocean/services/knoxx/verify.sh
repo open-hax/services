@@ -11,6 +11,10 @@ verify_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # The helper is deployed beside this verifier at runtime.
 # shellcheck disable=SC1091
 . "$verify_dir/event-agent-limits.sh"
+# Reject an invalid session key before any container or provider probe.
+# shellcheck disable=SC1091
+. "$verify_dir/session-secret-policy.sh"
+require_knoxx_session_secret
 
 FRONTEND=http://127.0.0.1:8080
 

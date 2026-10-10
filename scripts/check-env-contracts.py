@@ -76,6 +76,11 @@ def main() -> int:
     knoxx_template = (
         ROOT / "digitalocean" / "services" / "knoxx" / "env.template"
     ).read_text()
+    for label, text in (("render", render_run), ("verification", knoxx_verify)):
+        if "session-secret-policy.sh" not in text or "require_knoxx_session_secret" not in text:
+            failures.append(f"Knoxx {label} does not enforce the shared session-secret policy")
+    if "python scripts/test-knoxx-session-secret.py" not in code_quality_text:
+        failures.append("Knoxx session-secret boundary regressions are not wired into CI")
     knoxx_sdk_dockerfile = (
         ROOT / "digitalocean" / "services" / "knoxx" / "Dockerfile.backend-sdk"
     ).read_text()

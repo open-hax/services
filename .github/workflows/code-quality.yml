@@ -78,6 +78,9 @@ jobs:
       - name: Self-test the Knoxx MCP fail-closed policy
         run: digitalocean/services/knoxx/test-mcp-verification-policy.sh
 
+      - name: Self-test the Knoxx session-secret admission boundaries
+        run: python scripts/test-knoxx-session-secret.py
+
       - name: Self-test the Knoxx content admission hook
         run: digitalocean/services/knoxx/test-post-deploy.sh
 
