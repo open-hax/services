@@ -94,7 +94,8 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     required_proof = ('jq -e', '.health == "success"', '.image == $image',
                       '.sourceSha == $source', '.servicesSha == $services',
                       '.nginxSha == $nginx', '.phase == "staging"',
-                      '.composeProject == "website-staging"')
+                      '.composeProject == "website-staging"',
+                      '.publicHost == "staging.website.promethean.rest"')
     if proof_step.get("env", {}).get("STAGE_RECEIPT") != "${{ needs.stage.outputs.receipt }}" or any(p not in proof_step.get("run", "") for p in required_proof):
         errors.append("stage proof must bind observed health, source, digest and serving config")
     qualification = phase_jobs["production-qualification"]

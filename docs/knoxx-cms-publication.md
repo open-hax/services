@@ -1202,3 +1202,26 @@ review/check qualification.
 | `review-state/knoxx-four-path-native-review-repairs-independent-assessment-20261010T185223Z.json` | `9c18ac511043b9ff113b5278f0524ea11193f5e2832468c977197218056994a6` |
 | `review-state/knoxx-cdb-to-447c-tracked-source-comparison-20261010T1854/comparison.json` | `d0e9e14fceb1a186b3b88f5884c5cb30a2cff3bd4cc2709acd1220baa71f6016` |
 | `review-state/native-readonly-services5e15-stack-checkpoint-20261010T1848/independent-native-checkpoint-summary.json` | `8f03d0e550a133837a4929300f312417cae172102115b4bf94185ad8851e1b0d` |
+
+
+### Staging hostname proof qualification — 2026-10-10 UTC
+
+The actual staging workflow already compares `publicHost` with
+`staging.website.promethean.rest`. The deploy-chain checker now requires that
+exact authored clause, and the actual receipt mismatch matrix tests a wrong
+`publicHost` independently of all other receipt fields. Removing the predicate
+or changing it to the production hostname produces two failures against the
+previous checker; the repair rejects both controls.
+
+All 15 Website deployment test methods pass, including the 14 prior methods and
+nine actual receipt comparisons through the workflow's Bash/jq command. The
+static chain check and Python parsing pass. Seven workflow, verifier and Nginx
+context hashes remain unchanged, and exact reverse transformations reconstruct
+the previous checker/test bytes. Independent review found no actionable issue.
+These are bounded regression controls; they do not supply the separate
+production mutation campaign, native approval or a staging deployment.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `review-state/services-stage-publichost-qualification-20261010T192232Z/final-source-qualification.json` | `5f71824aba48bc7f762adf8d96a68982b146a9c0dee227009526766772735317` |
+| `review-state/services-stage-publichost-independent-assessment-20261010T192547Z.json` | `dcb144e0b75f3e697a9c3f94f3b9e84ad3b52d2eb275a6787cb48aac08b16103` |

@@ -80,6 +80,19 @@ class WebsiteDeploymentTests(unittest.TestCase):
         broken["jobs"]["production"]["needs"] = "stage"
         self.assertTrue(chain_guard.website_path_errors(self.entry, self.chain, broken))
 
+    def test_stage_proof_guard_requires_exact_public_hostname(self):
+        clause = '.publicHost == "staging.website.promethean.rest"'
+        for mode, replacement in (("removed", "true"),
+                                  ("changed", '.publicHost == "website.promethean.rest"')):
+            with self.subTest(mode=mode):
+                broken = copy.deepcopy(self.phases)
+                proof = next(s for s in broken["jobs"]["stage-proof"]["steps"]
+                             if "STAGE_RECEIPT" in s.get("env", {}))
+                self.assertIn(clause, proof["run"])
+                proof["run"] = proof["run"].replace(clause, replacement)
+                self.assertIn("stage proof must bind observed health, source, digest and serving config",
+                              chain_guard.website_path_errors(self.entry, self.chain, broken))
+
     def test_knoxx_deployment_rejects_mutable_tags_for_every_built_image(self):
         broken = copy.deepcopy(self.chain)
         broken["jobs"]["deploy-knoxx"]["with"]["image"] = "${{ needs.build-knoxx-backend.outputs.image }}"
@@ -198,7 +211,7 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
             receipt = {"service": "website", "phase": "staging", "health": "success", "image": image,
                        "sourceSha": source, "servicesSha": services, "nginxSha": hashlib.sha256(nginx.read_bytes()).hexdigest(),
                        "composeProject": "website-staging", "publicHost": "staging.website.promethean.rest"}
-            for key in (None, "health", "image", "sourceSha", "servicesSha", "nginxSha", "composeProject", "phase"):
+            for key in (None, "health", "image", "sourceSha", "servicesSha", "nginxSha", "composeProject", "phase", "publicHost"):
                 candidate = {**receipt, **({key: "wrong"} if key else {})}
                 result = subprocess.run(["bash", "-c", proof["run"]], cwd=directory,
                     env={**os.environ, "STAGE_RECEIPT": json.dumps(candidate), "IMAGE": image,
