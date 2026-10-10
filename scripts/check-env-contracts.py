@@ -17,6 +17,69 @@ EXPORT = re.compile(r"\bexport\s+([A-Z][A-Z0-9_]*)=")
 EXTRA_KEY = re.compile(r'"([A-Z][A-Z0-9_]*)"\s*:')
 
 
+# A bounded contract for these two authored prefixes, not a shell parser or a
+# general reachability proof. Require the existing source/call statements in
+# their known control flow, through rendering and before verifier probe setup.
+# Structural rewrites require reviewing this contract alongside the shell.
+SESSION_SECRET_RENDER_PREFIX = r'''
+set -euo pipefail
+. digitalocean/lib/caddy-dev-auth.sh
+resolve_caddy_dev_auth "$SERVICE" "$SERVICE_DIR"
+if [ "$SERVICE" = caddy ]; then
+echo "::add-mask::${DEV_BASIC_AUTH_HASH}"
+fi
+if [ "$SERVICE" = knoxx ]; then
+. "${SERVICE_DIR}/mcp-verification-policy.sh"
+require_knoxx_mcp_verification_token
+fi
+readonly render_session_secret_service=$SERVICE
+if [ "$render_session_secret_service" = knoxx ]; then
+. "${SERVICE_DIR}/session-secret-policy.sh"
+require_knoxx_session_secret_overlay "${EXTRA_ENV:-\{\}}"
+fi
+while IFS='=' read -r key value; do
+[ -n "$key" ] || continue
+case "$key" in
+KNOXX_MCP_LOOPBACK_TOKEN)
+echo "::error::extra_env may not set ${key}; it is supplied only by the protected environment secret" >&2
+exit 2
+;;
+esac
+export "$key=$value"
+done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"${EXTRA_ENV:-\{\}}")
+if [ "$render_session_secret_service" = knoxx ]; then
+require_knoxx_session_secret
+fi
+mapfile -t declared < <(grep -oE '\$\{[A-Z0-9_]+\}' "${SERVICE_DIR}/env.template" | sort -u)
+envsubst "${declared[*]}" < "${SERVICE_DIR}/env.template" > rendered.env
+'''.strip().splitlines()
+SESSION_SECRET_VERIFY_PREFIX = r'''
+set -euo pipefail
+: "${KNOXX_API_KEY:?KNOXX_API_KEY missing from the rendered environment}"
+verify_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+. "$verify_dir/event-agent-limits.sh"
+. "$verify_dir/session-secret-policy.sh"
+require_knoxx_session_secret
+FRONTEND=http://127.0.0.1:8080
+'''.strip().splitlines()
+
+
+def session_secret_wiring_failures(render_run: str, verify: str) -> list[str]:
+    failures = []
+    for label, text, expected in (
+        ("render", render_run, SESSION_SECRET_RENDER_PREFIX),
+        ("verification", verify, SESSION_SECRET_VERIFY_PREFIX),
+    ):
+        active_lines = [line.strip() for line in text.splitlines()
+                        if line.strip() and not line.lstrip().startswith("#")]
+        if active_lines[:len(expected)] != expected:
+            failures.append(
+                f"Knoxx {label} does not enforce the shared session-secret policy "
+                "in its authored pre-effect statement sequence"
+            )
+    return failures
+
+
 def main() -> int:
     deploy_path = WORKFLOWS / "deploy-digitalocean.yml"
     deploy_text = deploy_path.read_text()
@@ -76,9 +139,7 @@ def main() -> int:
     knoxx_template = (
         ROOT / "digitalocean" / "services" / "knoxx" / "env.template"
     ).read_text()
-    for label, text in (("render", render_run), ("verification", knoxx_verify)):
-        if "session-secret-policy.sh" not in text or "require_knoxx_session_secret" not in text:
-            failures.append(f"Knoxx {label} does not enforce the shared session-secret policy")
+    failures.extend(session_secret_wiring_failures(render_run, knoxx_verify))
     if "python scripts/test-knoxx-session-secret.py" not in code_quality_text:
         failures.append("Knoxx session-secret boundary regressions are not wired into CI")
     knoxx_sdk_dockerfile = (

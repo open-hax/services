@@ -38,7 +38,10 @@ also passed the separate backend/native HTTP suites on directly observed Node
 24 and independent source review. Earlier `0cffeaad` provider proof and
 `8ab11f1` startup/frontend proof retain their original source coordinates. The
 final sections below bind those distinct phases to their source, image and
-evidence hashes. These local observations do not attest to staging or production.
+evidence hashes. The stack qualifier now selects the test-only successor
+`24f68cb16a3eca5835b52fd109c9f38bdff7c583`; its application and deployment
+source remains unchanged from the qualified `cdb96427` images. These local
+observations do not attest to staging or production.
 
 The historical isolated walkthrough on 2026-10-10 UTC completed native password
 login, direct Ollama draft generation, CMS save, English publication, Spanish
@@ -1064,3 +1067,77 @@ have their own provenance.
 These observations establish the fresh local provider-to-reader seam. They
 do not establish frontend Nginx API/WebSocket bridging, public TLS, registry
 publication, staging, production or the separate mutation-campaign policy.
+
+
+### Native alias fixture qualification — 2026-10-10 UTC
+
+The stack qualifier advances from `78f80c20` to
+`24f68cb16a3eca5835b52fd109c9f38bdff7c583`. This successor changes two existing
+Mongo test files and append-only provenance. Application, Docker, SDK and
+production-verifier source remains unchanged; actual image and provider evidence
+keeps its `cdb96427` identity. The parent `78f80c20` hosted backend/frontend CI
+completed successfully at 18:03:06 UTC. Native CI and approval for the successor
+remain separate gates.
+
+The fixture previously projected only the first value of an indexed array.
+It could admit a collision on a later native alias or between arrays sharing a
+later key. The repair expands every value of a nonempty top-level `id` array for
+the single-field identity index, rejects shared keys across member documents,
+and permits repeated keys within one document. It retains array-with-string
+partial-index membership and the inherited empty-array fallback. The actual
+Mongo 8.2.7 probe records E11000 for scalar conflicts with both elements of a
+two-element array; the review's scalar-only membership premise remains disproven.
+The strengthened fixture addresses the genuine broader test-fidelity gap.
+
+Four new cases cover nonleading aliases through the actual graph adapter,
+scalar/array writes in both orders, overlapping array keys during index build,
+repeated keys, excluded numeric/missing identities, incumbent preservation,
+matching guarded retry selectors and node rollback. All original 13 tests and
+the entire original test-file prefix remain unchanged. Clean RED against the
+original fixture produced 24 failures and zero errors; final GREEN passed 17
+tests and 130 assertions with zero failures, errors or compiler warnings.
+Canonical touched-file lint has zero errors and warnings. The final run's three
+process observations confirm Node 24.14.1 for pnpm, Shadow and compiled tests.
+
+Independent review caught the first patch's empty-array scope mismatch. Its
+source, manifest and captures remain preserved; a one-line `seq` guard restores
+the prior fallback, followed by one focused GREEN qualification. This is a
+bounded fixture repair: generic query typing, SDK compound tuples and real
+empty-array/null/parallel-array behavior remain unqualified. These unit tests
+use the existing SDK test seam, distinct from operational SDK `07085d`. No new
+database, provider or image operation occurred.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `review-state/knoxx-mongo-multikey-repair-20261010T1835/empty-array-preservation-successor/final-source-qualification.json` | `b3ed1cd7beb848ffcd09cb2f3de39bbc95485e2df8d54cc2825a554352b1d57c` |
+| `review-state/knoxx-mongo-multikey-independent-assessment-20261010T182823Z.json` | `815a9829d20187acb087d09f7ee0b420bd7f20aaef60efb36374e1da4c9bae9c` |
+
+
+### Session-policy wiring qualification — 2026-10-10 UTC
+
+The environment checker previously accepted the policy filename and helper name
+as raw substrings. A removed enforcement call could remain mentioned in a
+comment or an unused function and still satisfy that check. The checker now
+requires the authored active statement prefixes: the render path captures the
+original service, sources the Knoxx policy and validates raw overlay input,
+exports the overlay, validates the final key, then renders. The verifier sources
+the policy and invokes its validator before probe setup.
+
+Negative source controls leave names in comments, rename calls, change source
+paths, move calls past effects, or place guards in false branches and unused
+functions. The original checker accepted all 20 mutations; the repaired checker
+rejects them. GREEN passes 11 methods and 77 derived scenarios: all original 55
+runtime scenarios, 20 wiring mutations and two comment/blank-line controls.
+All 13 original runtime test/helper method bodies remain byte-identical. The
+complete environment checker, Python syntax compilation and diff check pass.
+No configured Python linter was available; no lint pass is claimed.
+
+This is a bounded comparison of 30 render and seven verifier active statements,
+ignoring only blank and full-comment lines. Structural changes fail closed and
+require reviewing the contract with the authored shell. It is not a general
+shell parser or an arbitrary reachability proof. Workflow, verifier and helper
+bytes remain unchanged, and no runtime or provider operation was performed.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `review-state/services-session-secret-wiring-20261010T182828Z/final-source-qualification-v2.json` | `c26cdcca08a738146d0259fb5ae2da86bc21e4b39ebcda610e434f2a65493550` |

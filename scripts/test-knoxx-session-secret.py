@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """Exercise actual deploy-render and verifier boundaries with synthetic secrets."""
+import contextlib
+import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -7,6 +10,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 import yaml
 
@@ -179,6 +183,109 @@ class SessionSecretDeploymentTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 73, 'valid key did not reach the sentinel Docker probe')
                 captured = json.loads((self.fixture / 'docker-called.json').read_text())
                 self.assertTrue(captured['session'] == value, 'verifier changed the valid key')
+
+
+class SessionSecretWiringTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location(
+            'session_secret_environment_contract', ROOT / 'scripts/check-env-contracts.py')
+        self.checker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.checker)
+        self.render = WORKFLOW.read_text()
+        self.verify_path = ROOT / 'digitalocean/services/knoxx/verify.sh'
+        self.verify = self.verify_path.read_text()
+
+    def replace_statement(self, text, statement, replacement):
+        lines = text.splitlines()
+        matches = [i for i, line in enumerate(lines) if line.strip() == statement]
+        self.assertEqual(len(matches), 1, 'mutation must target one authored statement')
+        index = matches[0]
+        indent = lines[index][:len(lines[index]) - len(lines[index].lstrip())]
+        lines[index] = '\n'.join(indent + part for part in replacement.splitlines())
+        return '\n'.join(lines) + '\n'
+
+    def run_contract(self, path, text):
+        # Execute the real checker against a substituted source read. Every
+        # other repository input stays real; no shell, Docker, or provider runs.
+        original_read = Path.read_text
+
+        def read(candidate, *args, **kwargs):
+            return text if candidate == path else original_read(candidate, *args, **kwargs)
+
+        stderr = io.StringIO()
+        with mock.patch.object(Path, 'read_text', read), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+            result = self.checker.main()
+        return result, stderr.getvalue()
+
+    def test_render_wiring_rejects_comments_renames_and_wrong_control_flow(self):
+        source = '. "${SERVICE_DIR}/session-secret-policy.sh"'
+        overlay = 'require_knoxx_session_secret_overlay "${EXTRA_ENV:-\\{\\}}"'
+        validate = 'require_knoxx_session_secret'
+        render = 'envsubst "${declared[*]}" < "${SERVICE_DIR}/env.template" > rendered.env'
+        capture = 'readonly render_session_secret_service=$SERVICE'
+        cases = [
+            ('commented source', source, '# ' + source),
+            ('commented validator', validate, '# ' + validate),
+            ('commented overlay admission', overlay, '# ' + overlay),
+            ('wrong policy path', source, source.replace('/session-', '/untrusted-session-')),
+            ('renamed validator', validate, 'skip_' + validate),
+            ('renamed overlay admission', overlay, 'skip_' + overlay),
+            ('mutable original service', capture, capture.removeprefix('readonly ')),
+            ('validator in unused function', validate, 'unused_session_guard() {\n' + validate + '\n}'),
+            ('source after rendering', source, '# ' + source),
+            ('validator after rendering', validate, '# ' + validate),
+            ('guard in false branch', capture, 'if false; then\n' + capture),
+            ('guard in unused function', capture, 'unused_render_guard() {\n' + capture),
+        ]
+        for label, before, after in cases:
+            with self.subTest(label=label):
+                mutated = self.replace_statement(self.render, before, after)
+                if label == 'source after rendering':
+                    mutated = self.replace_statement(mutated, render, render + '\n' + source)
+                elif label == 'validator after rendering':
+                    mutated = self.replace_statement(mutated, render, render + '\n' + validate)
+                elif label == 'guard in false branch':
+                    mutated = self.replace_statement(mutated, render, render + '\nfi')
+                elif label == 'guard in unused function':
+                    mutated = self.replace_statement(mutated, render, render + '\n}')
+                result, error = self.run_contract(WORKFLOW, mutated)
+                self.assertEqual(result, 1, 'inactive or misplaced wiring was accepted')
+                self.assertIn('Knoxx render', error)
+
+    def test_verifier_wiring_rejects_comments_renames_and_late_calls(self):
+        source = '. "$verify_dir/session-secret-policy.sh"'
+        validate = 'require_knoxx_session_secret'
+        boundary = 'FRONTEND=http://127.0.0.1:8080'
+        cases = [
+            ('commented source', source, '# ' + source),
+            ('commented validator', validate, '# ' + validate),
+            ('wrong policy path', source, source.replace('/session-', '/untrusted-session-')),
+            ('renamed validator', validate, 'skip_' + validate),
+            ('source after probe setup', source, '# ' + source),
+            ('validator after probe setup', validate, '# ' + validate),
+            ('validator in false branch', validate, 'if false; then\n' + validate + '\nfi'),
+            ('validator in unused function', validate, 'unused_session_guard() {\n' + validate + '\n}'),
+        ]
+        for label, before, after in cases:
+            with self.subTest(label=label):
+                mutated = self.replace_statement(self.verify, before, after)
+                if label == 'source after probe setup':
+                    mutated = self.replace_statement(mutated, boundary, boundary + '\n' + source)
+                elif label == 'validator after probe setup':
+                    mutated = self.replace_statement(mutated, boundary, boundary + '\n' + validate)
+                result, error = self.run_contract(self.verify_path, mutated)
+                self.assertEqual(result, 1, 'inactive or misplaced wiring was accepted')
+                self.assertIn('Knoxx verification', error)
+
+    def test_current_wiring_tolerates_comments_and_blank_lines(self):
+        for path, text in [(WORKFLOW, self.render), (self.verify_path, self.verify)]:
+            with self.subTest(path=path.name):
+                source = next(line.strip() for line in text.splitlines()
+                              if line.strip().startswith('. ') and 'session-secret-policy.sh' in line)
+                annotated = self.replace_statement(text, source, '# explanatory comment\n\n' + source)
+                result, error = self.run_contract(path, annotated)
+                self.assertEqual(result, 0, error)
 
 
 if __name__ == '__main__':
