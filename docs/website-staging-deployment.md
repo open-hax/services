@@ -59,6 +59,11 @@ files, validates with the running Caddy process, and restores/reloads the
 previous configuration if validation or reload fails. It does not replace the
 main Caddyfile or recreate Caddy.
 
+Before the first `scope: website` staging deployment on a host, deploy Caddy
+once for that host with the managed-directory mount and import above. Website
+scope does not deploy Caddy or create that directory. The managed directory
+must already exist and be writable by the deployment user.
+
 ## Commands and evidence
 
 After this Services change merges:
