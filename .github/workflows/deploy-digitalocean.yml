@@ -663,6 +663,41 @@ jobs:
           set -a; . ./.env; set +a
           project=$service
           if [ "$service" = website ]; then project=${WEBSITE_PROJECT:-website}; fi
+          # BEGIN PUBLICATION SHARED ROOT
+          # The backend writes as UID 1000; the reader binds this root directly
+          # as UID 101 and requires o+rx. Check it before generic volume mkdir
+          # can accept a private-mode incumbent or create one under the umask.
+          # Existing state requires an operator repair; never chmod or chown it.
+          case "$service" in
+            knoxx|website)
+              if [ "$(id -u)" != 1000 ]; then
+                echo "Shared publication root requires deploy UID 1000" >&2
+                exit 1
+              fi
+              : "${WEBSITE_CONTENT_ROOT:?shared publication content root must be set}"
+              if [ ! -e "$WEBSITE_CONTENT_ROOT" ] && [ ! -L "$WEBSITE_CONTENT_ROOT" ]; then
+                # New ancestors use the deploy umask; only the final directory
+                # receives 0755. Existing ancestors and content stay untouched.
+                mkdir -p -m 0755 -- "$WEBSITE_CONTENT_ROOT"
+              fi
+              if [ ! -d "$WEBSITE_CONTENT_ROOT" ] || [ -L "$WEBSITE_CONTENT_ROOT" ] \
+                || [ "$(stat -c %u "$WEBSITE_CONTENT_ROOT")" != 1000 ] \
+                || [ ! -r "$WEBSITE_CONTENT_ROOT" ] || [ ! -w "$WEBSITE_CONTENT_ROOT" ] \
+                || [ ! -x "$WEBSITE_CONTENT_ROOT" ]; then
+                echo "Shared publication root must be a non-symlink directory owned by UID 1000, readable, writable and traversable: $WEBSITE_CONTENT_ROOT" >&2
+                exit 1
+              fi
+              publication_mode=$(stat -c %a "$WEBSITE_CONTENT_ROOT")
+              case "$publication_mode" in
+                *[57]) ;;
+                *)
+                  echo "Shared publication root must be world-readable and traversable (o+rx), got mode $publication_mode: $WEBSITE_CONTENT_ROOT" >&2
+                  exit 1
+                  ;;
+              esac
+              ;;
+          esac
+          # END PUBLICATION SHARED ROOT
           # The source may itself contain colons through required- or
           # default-value interpolation (${VAR:?msg}, ${VAR:-fallback}), so the
           # ${...} form is matched as a unit before the container path is

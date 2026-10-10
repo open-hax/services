@@ -257,6 +257,17 @@ services:
 
   knoxx-frontend:
     image: ${KNOXX_FRONTEND_IMAGE:?KNOXX_FRONTEND_IMAGE must be set}
+    # The application image inherits nginx's root default. Keep its static
+    # config and assets read-only; only cache and PID state need writable space.
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=755
+      - /var/run:rw,noexec,nosuid,nodev,size=16m,uid=1000,gid=1000,mode=755
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"
     restart: unless-stopped
     depends_on:
       knoxx-backend:

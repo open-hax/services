@@ -127,12 +127,14 @@ Host-side ownership and modes:
 Three facts make that work, and each is load-bearing:
 
 1. **The deploy user pre-creates it.** `deploy-digitalocean.yml`'s Deploy step
-   walks every absolute or `${VAR}`-rooted volume source in `compose.yaml` and
-   `mkdir -p`s it as the deploy user, because docker otherwise creates a missing
+   first creates an absent shared publication root with mode `0755` as UID
+   1000, or refuses an existing root that is a symlink, has incompatible
+   ownership, lacks writer access, or lacks reader `o+rx`. It then walks every absolute or
+   `${VAR}`-rooted volume source in `compose.yaml` and `mkdir -p`s it as the deploy user, because docker otherwise creates a missing
    bind-mount source as root and an unprivileged container then EACCESes on its
    own state directory (proxx `/app/data`, 2026-08-01). Both services declare
-   the same source, so whichever deploys first creates it and the other is a
-   no-op.
+   the same source, so whichever deploys first creates it and the other
+   verifies that incumbent. No recursive chmod or ownership change occurs.
 2. **The deploy user's uid is the backend container's uid.** This is already the
    standing arrangement for `state/knoxx/backend` and `state/knoxx-workspace`,
    which the running deployment writes to. If that ever stops being true, the
@@ -141,10 +143,13 @@ Three facts make that work, and each is load-bearing:
    reader runs as uid 101 and is not in the writer's group. Parent-directory
    modes are irrelevant — `state/` is `0750`, but the container resolves the
    bind mount inside its own mount namespace, so only the modes of the mounted
-   directory and its contents matter. A `0750` content root would 403 every
+   directory and its contents matter. A `0750` content root would deny every
    published artifact while the site kept serving its own copy: an invisible
    outage, not a failure. `digitalocean/services/website/verify.sh` asserts the
-   mode rather than trusting it.
+   mode rather than trusting it. The native image-backed walkthrough
+   reproduced HTTP 404 for an owned `0700` root with readable files; a
+   root-only `0755` repair restored byte-identical HTTP 200 responses. This
+   does not authorize recursively changing private content permissions.
 
 Law 7 ("published content has exactly one writer") is enforced by the mount, not
 by convention, and asserted by the gate: `verify.sh` reads the running
@@ -159,9 +164,9 @@ The website exposes an allowlist from the writer root at a fixed prefix and
 **never falls back to the app shell there**:
 
 ```text
-GET /published/manifest.edn                          -> 200 application/edn, or 404
-GET /published/artifacts/<doc>/<locale>/<rev>.<ext>  -> 200 with the declared media type
-GET /published/<anything-else>                     -> 404
+GET /published/manifest.edn                                                        -> 200 application/edn, or 404
+GET /published/artifacts/<namespace>/<document>/<locale>/<file-identity>.<ext>     -> 200 with the declared media type
+GET /published/<anything-else>                                                   -> 404
 ```
 
 The writer root also holds private data: CMS document history and revision
