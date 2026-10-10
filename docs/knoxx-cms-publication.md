@@ -26,6 +26,173 @@ Changing publication intent requests work. It does not approve a translation.
 Split review and whole-output approval are separate persisted steps. The website
 reads the resulting public files; Knoxx remains the writer and review authority.
 
+## Selected artwork and music: current publication recipe
+
+Use two native CMS documents for the selected collection: **OpenHax Selected
+Artwork** and **Erroneously Selected Music**. CMS owns their saved reference
+text, source history and materialized document artifacts. The eighteen selected
+artwork files remain separately staged Website assets from the 442-file corpus.
+The six songs remain canonical public Suno listening destinations. The selected
+corpus contains zero local audio tracks; this recipe establishes no audio
+ingestion, current remote playback or transfer of media-byte custody.
+
+The renderer source is Knoxx
+`29cbdb6869fb8cc214e0698f920e96e92021d40d`. The runnable verifier, documentation
+and tour successor is `662a1f8f9f522c7fc601aea6f857e36378bdecc2`; its four renderer
+paths are byte-identical to `29cbdb68`. Website source is
+`4ee2651eb83e6fc698f0c03f1d7f9441b754963f`, with the selected assets separately
+qualified. These are source coordinates, not deployed image digests. The fresh
+local image/runtime now serves both English selections and both reviewed Spanish
+selections. The artwork completion follows two retained failed attempts and a
+declared local caption-prompt experiment. The current local
+records below retain exact image and operation identities; earlier complete
+`cdb96427` translation proof keeps its historical identity. Neither phase
+attests to staging or production.
+
+Create each document with native `POST /api/cms/documents`, its title above,
+`visibility: "review"`, `parents: []`, and `content` equal to the corresponding
+Markdown block below. Optional `source_path` is `portfolio/selected-art.md` or
+`portfolio/selected-music.md`. This is source text, not `metadata.blocks`;
+unsigned metadata cannot supply publication media authority. Each media
+reference must occupy its own paragraph, separated by a blank line. Labels are
+escaped, ordinary prose retains its escaped paragraph presentation, and unsafe
+URLs, raw HTML and fenced examples remain literal. The renderer introduces no
+iframe, script, autoplay or remote-player autoload.
+
+The exact artwork selection source is:
+
+```markdown
+Selected artwork from the OpenHax collection. These eighteen works are published here through CMS-owned reference text.
+
+![Sutured Signal](/graphics/Sutured_Signal.svg)
+
+![SCLDF Seal of the Fragmented Ascent](/graphics/SCLDF_Seal_of_the_Fragmented_Ascent.svg)
+
+![SCLDF Seal of the Indelible Mark](/graphics/SCLDF_Seal_of_the_Indelible_Mark.svg)
+
+![contract promo](/graphics/contract_promo.svg)
+
+![fork tales radio logo](/graphics/fork_tales/fork_tales_radio_logo.svg)
+
+![symmetry oscillator](/graphics/symmetry_oscillator.svg)
+
+![SCLDF Clojure Saturated Stability Seal](/graphics/SCLDF_Clojure_Saturated_Stability_Seal.svg)
+
+![SCLDF Seal of the Agentic Dialectic](/graphics/SCLDF_Seal_of_the_Agentic_Dialectic.svg)
+
+![SCLDF Sovereign Refractive Survival Seal](/graphics/SCLDF_Sovereign_Refractive_Survival_Seal.svg)
+
+![SCLDF Synergy Lamination Seal](/graphics/SCLDF_Synergy_Lamination_Seal.svg)
+
+![recursive identity cult logo](/graphics/recursive_identity_cult_logo.svg)
+
+![SCLDF Shattered Equilibrium Seal](/graphics/SCLDF_Shattered_Equilibrium_Seal.svg)
+
+![cyberpunk contract sync](/graphics/cyberpunk_contract_sync.svg)
+
+![SCLDF Seal of the First Word](/graphics/SCLDF_Seal_of_the_First_Word.svg)
+
+![Seal of Divergent Remorse](/graphics/Seal_of_Divergent_Remorse.svg)
+
+![SCLDF Rhythmic Anchor Waveform](/graphics/SCLDF_Rhythmic_Anchor_Waveform.svg)
+
+![HyperSymmetryVoidSeal](/graphics/recursive_identity/HyperSymmetryVoidSeal.svg)
+
+![Symmetry Echo Seal](/graphics/recursive_identity/Symmetry_Echo_Seal.svg)
+```
+
+The exact music selection source is:
+
+```markdown
+Selected published songs by Erroneously. Open each song on Suno to listen.
+
+[The Loop Is The Cult](https://suno.com/song/9e555739-b80f-4e8a-b99b-7725c192d436)
+
+[We Are The Place](https://suno.com/song/a7d0fb41-785e-4919-84d8-0c076814192b)
+
+[Fork Tax Lullaby](https://suno.com/song/59238aca-e518-4c59-a7cb-d7f74848c8ee)
+
+[Before I Answer](https://suno.com/song/c78462de-f196-45a3-9942-92f90df95e7a)
+
+[keep-the-empty-seats-lit-seed.wav (Remix)](https://suno.com/song/6fa725ee-452c-49e3-bdb8-1cb664c640a9)
+
+[Audit the Shove](https://suno.com/song/ea5b9710-2929-4924-a14c-e0bd23ebd311)
+```
+
+Record the exact create request bytes and the returned document identity and
+source revision. Read `GET /api/cms/publications/documents` and match the newly
+saved document to its server-returned English and Spanish publication IDs and
+paths. URL-encode the complete returned resource ID for
+`PATCH /api/cms/publications/intents/:publicationId`, with
+`{"state":"published"}`. Do not derive IDs or choose an artifact by its filename.
+Desired state does not establish publication.
+
+Call native `POST /api/publications/reconcile` with
+`{"publicationId":"<returned English publication ID>"}` for each document.
+English uses its declared source-locale `:translation/review :none` policy,
+resolved current source bytes, garden admission and initialized evidence
+persistence. This is not whole-output approval of a translation. Require
+`publication/materialized`, or a `publication/noop` bound to the existing
+manifest and exact artifact bytes. Then fetch the public manifest and each
+referenced artifact, verify the eighteen images and six links, and compare every
+selected image's returned bytes with its staged asset digest. A Website gallery
+that contains the assets without these native publications does not prove that
+the CMS published the selections.
+
+For Spanish, follow the [native provider and review steps below](#walk-the-native-cms-path)
+for each returned Spanish relation: desired state, real Knoxx translation
+dispatch, completed persisted candidate, every effective split review, exact
+whole-output approval, then reconciliation and public readback. Preserve asset
+URLs and canonical song identities while translating surrounding text and
+labels. Read back the effective source/output revisions and approval digest;
+an acknowledgment, split verdict or approval response alone is insufficient.
+Corrections require a new whole-output approval and a materialization containing
+the corrected bytes. Preserve source digest, target digest, split-review,
+whole-output approval and reconciliation gates.
+
+Inspect candidate quality in the native
+[split-review surface](https://github.com/open-hax/knoxx/blob/cb8de09edffeef8c528af7b7642e620fb44b5222/docs/verification/translation-split-review.md)
+before recording a verdict. Compare each persisted split with its source:
+translate descriptive prose and captions, retain catalogue identities when
+appropriate, and preserve each canonical asset/song URL, Markdown delimiter
+and paragraph separator. Provider segment text can omit the trailing blank
+line even when the visible sentence looks adequate. Corrections belong in that
+split's `corrected_text`; restore the source's `\n\n` separator where present,
+record the actual adequacy, fluency, terminology, risk and editorial notes, then
+reload the effective candidate and compare the assembled text. Keep raw provider
+output and previous labels in their immutable history. Do not replace candidate
+bytes or mark an incomplete provider attempt as completed to reach approval.
+
+Seven out of seven approved split labels establish the split-review state;
+they do not establish whole-output approval. Submit the separate native
+whole-output approval for the current returned effective revision and digest,
+then reconcile and read the public artifact. The current music corrections and
+verdicts were entered by an AI operator through the native UI. They demonstrate
+attributed review and publication mechanics, not professional human translation
+quality approval.
+
+The Website reads the writer root through its read-only `/published` mount.
+Mount the selected committed Nginx file read-only at
+`/etc/nginx/conf.d/default.conf`, the path its server actually loads. Verify the
+live config hash and mount table; a config mounted at another path does not
+qualify the boundary. Only `/published/manifest.edn` and public
+`/published/artifacts/` files are exposed. Retain private-path, hidden-segment,
+symlink and traversal denials, and require missing artifacts to return 404
+without the shell. Static `/graphics/` assets remain on the Website origin;
+the private CMS editor's relative-image preview uses the CMS origin and needs
+its own evidence. Keep the content-root permission, single-writer and retention
+rules in the [published-content contract](published-content-root.md).
+
+Run the separately qualified
+[approved-media verifier and tour](https://github.com/open-hax/knoxx/blob/cb8de09edffeef8c528af7b7642e620fb44b5222/docs/verification/approved-cms-media.md)
+from that checkout with the exact selected SVG bytes. Its disposable native
+HTTP run passed 29 stated checks and 15 syntax/precondition controls on directly
+observed Node 24.14.1; compilation reported zero warnings. Independent inspection
+found no concrete source finding. The fixture uses a seeded principal and empty
+process-local evidence stores. Its browser tour has not run. This qualification
+does not establish password login, Mongo durability, real provider translation,
+Website image integration or deployment of the selections.
+
 ## Evidence status
 
 The latest complete image-backed CMS demonstration uses committed Knoxx
@@ -1225,3 +1392,350 @@ production mutation campaign, native approval or a staging deployment.
 | --- | --- |
 | `review-state/services-stage-publichost-qualification-20261010T192232Z/final-source-qualification.json` | `5f71824aba48bc7f762adf8d96a68982b146a9c0dee227009526766772735317` |
 | `review-state/services-stage-publichost-independent-assessment-20261010T192547Z.json` | `dcb144e0b75f3e697a9c3f94f3b9e84ad3b52d2eb275a6787cb48aac08b16103` |
+
+### Selected-media source qualification and pending image/native phase — 2026-10-10 UTC
+
+The selected-media renderer and runnable human verification have separate
+immutable identities. Knoxx `29cbdb6869fb8cc214e0698f920e96e92021d40d` supplies
+the four renderer paths. Its corrected full backend phase passed 75 JavaScript
+checks and 1,914 CLJS tests with 9,844 assertions, zero failures, zero errors and
+zero compiler warnings. All 109 newly observed Node processes in that affected
+phase ran Node 24.14.1. The original mixed audit remains preserved separately:
+127 processes, comprising 74 Node 24 and 53 Node 22 processes spawned through
+temporary root-command fixture `pnpm` calls. Qualification-only Node and pnpm
+wrappers fixed the audit without changing source, tests or timeout policy.
+
+Knoxx `cb8de09edffeef8c528af7b7642e620fb44b5222` adds only five verifier,
+documentation and tour paths plus two append-only ledgers. The four renderer
+paths remain unchanged. Its native disposable check passed 29 stated checks
+and 15 syntax/precondition controls; the actual fixture ran Node 24.14.1 and
+compilation reported zero warnings. Independent assessment found no concrete
+source finding. Both prior ledger prefixes were preserved byte-for-byte.
+Browser execution and screenshot creation are explicitly false in that seal.
+The exact prepared native handoff binds eighteen separately staged artwork
+digests, six canonical Suno song IDs and zero local audio tracks.
+
+The Services successor proposes changing only the reusable Knoxx preflight
+source pin from `447c131b` to `cb8de09e`; the referenced `deploy-production.yml`
+bytes remain unchanged. Local source-pin and deploy-chain checks passed. Native
+CI, reviews, approval and deployment are separate gates. This proposed verifier
+pin does not relabel the image application source from `29cbdb68` to `cb8de09e`.
+
+The fresh owned local phase is planned under `cms-media-demo-29cbdb68`, with
+backend `127.0.0.1:18083`, native UI `127.0.0.1:15183` and Website reader
+`127.0.0.1:18187`. These coordinates identify the planned isolated run; they do
+not establish listener readiness or a completed operation. Its Website source
+is `4ee2651eb83e6fc698f0c03f1d7f9441b754963f`. The reader configuration must
+bind the selected `nginx.conf` to `/etc/nginx/conf.d/default.conf:ro`; the
+incorrect mount destination was corrected before startup. Existing retained
+`cdb96427` project state, publications and evidence retain their own identity.
+
+| Selected-media phase | Status at recipe preparation |
+| --- | --- |
+| Immutable backend/frontend and Website image IDs, build-input and packaged-payload proof | Pending; source compilation is not an image digest |
+| Fresh password login, isolated Mongo and provider readiness | Pending |
+| Native create responses, source-history revisions and returned EN/ES publication IDs for both selections | Pending |
+| English reconciliation receipts, manifest/artifact bytes and eighteen-image/six-link reader readback | Pending |
+| Real Spanish provider candidates, effective split reviews, exact whole-output approvals and public materialization | Pending |
+| Native CMS and packaged Website browser captures | Pending; disposable tour has not run |
+| Registry publication, staging/production qualification, native approval and environment rollout | Pending; no deployment credit |
+
+Append observed results with their original source/image coordinates and hashes
+when the owned operation completes. Preserve failures and partial captures;
+replace none of the historical records above with inferred success.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `review-state/knoxx-approved-media-qualification-20261010T214814Z/final-source-qualification-v4.json` | `f6220c1a372b6d326a0959a8e934565fbd5db58d5922c9213c13bcae30bc87db` |
+| `review-state/knoxx-approved-media-verifier-qualification-20261010/final-verifier-qualification.json` | `a6a32521524c2b19c226dd853c3632e0ad889d590466e15216b65a8bf15ba4f7` |
+| `review-state/knoxx-approved-media-verifier-independent-assessment-20261010T221509Z.json` | `ef73c712ab7821a20f24d0514974f0b388a03140fd45c23032f5a196ae4637bd` |
+| `review-state/knoxx-approved-media-verifier-qualification-20261010/native-operation-handoff.json` | `1b4f128cc939b8352f5a836ed4fa3aa49d92d1793f7aa843e601cd37e1d867f2` |
+| `review-state/knoxx-approved-media-verifier-qualification-20261010/verifier-commit-proof.json` | `b524011b013ce38e6bdfc570a0f8a4578a52c878fa169d2a6a698c59b02e745a` |
+
+### Fresh selected-media images and native publication — 2026-10-10 UTC
+
+This local phase now has actual immutable images built with Services
+`369db6e04258963ee3cbdd80b6d58c888a616a27`, Knoxx `29cbdb68`, Website `4ee2651e`
+and operational SDK `07085d6557b75834ce6f50e6c54b8ca47e1c7c08`. Backend image
+`sha256:03ce773649e66be928c1dd9d30d660fdf96e2b5e5f69a50ea003042d04000d98`
+runs as UID/GID 1000, with the packaged native probe observing Node 22.22.2.
+Website image
+`sha256:2687528479103a9054c676e89497cbf017d39b0bf838b02154f50da42b9ff3ec`
+runs as UID/GID 101. Extracted payloads match all 1,048 backend, 9,539 SDK,
+325 frontend and 452 Website captured files. The inherited Nginx `50x.html`
+remains a separately recorded base-image file.
+
+The frontend image
+`sha256:1174b20fe28a603aa5225ecb09d5c03f8d8b40f8ed92369daa3a18fe8f215131`
+inherits a root default. This phase does not admit that image as a nonroot
+serving process. The native CMS browser instead uses a user-owned host Vite
+preview on port 15183; all 325 preview files match the selected frontend
+payload, and actual shell, CSS and JavaScript readbacks match their captured
+digests. The Website is the separate packaged reader on port 18187. Its selected
+Nginx config hash is
+`f603c3b0d3cf3f8534294b1b28c57de73f2d7dc4cf5160bd7a1c7de99b13b3e5`, mounted
+read-only at `/etc/nginx/conf.d/default.conf` before startup.
+
+The fresh project is `cms-media-29cbdb68-20261010`, with isolated database
+`knoxx_cms_media_29cbdb68_20261010`. Anonymous CMS returns 401; authenticated
+CMS, publications, reviews and native SDK health return 200. General health
+returns 503 for the deliberately unconfigured Proxx dependency and remains 503
+in the evidence. A separate real `qwen3-embedding:0.6b` request returns 200 with
+1,024 finite dimensions. The initial short general-health timeout and later
+read-only admission retain separate captures; a successful password session
+does not imply that every general health dependency is configured.
+
+Native CMS save and readback created the two exact source documents above.
+The art logical ID is
+`logical-723065c5133ea6fc8fa6fea22add064a1ddfbab8d73100129dde687b08296a7f`,
+with source digest
+`bd9e6634be87416e6cb70df1ee4c9966093ea9d53f90057c2ac4e71575cceee9`.
+The music logical ID is
+`logical-693696bd5d296c3e9401e0619e00e79e9fda4a4f3c542b90d9834ab9e5005c54`,
+with source digest
+`a216bf3606ffb9faf0a3ccdbb3f33704bb7f7589ce01c8b4fda7af5658d52ee8`.
+Native topology supplied both English/Spanish relations in organization
+`3448826e-b4fe-4f1e-80d8-52ad6c8986c5`, initially withheld. Source-history
+revision and resolved publication source digest remain distinct coordinates.
+
+Both English artifacts then reached the packaged reader. Music artifact
+digest is `02ed1a69069ac680db7c4516eeeb6e43276cdd89c82689b2f2d2ca1e366011c3`;
+art artifact digest is
+`c8e68e75f2eb840b1a29c9b2ef8f1f0ea3b5de1a6109fce397d2e53be92227f8`.
+All eighteen selected images returned 200 with their exact staged asset
+digests, and music contains the six unchanged canonical Suno destinations.
+Repeat native reconciliation returns `publication/noop` with unchanged
+manifest and artifact bytes. Actual private-history paths return 404 while
+their source files exist. The browser's full scroll journey confirms all
+eighteen lazy images complete with nonzero natural dimensions; a first
+viewport alone would not prove the full collection loaded. Native CMS and
+public reader captures are separate evidence.
+
+The English readback helper's two initial exits remain failures: its first
+aggregation expected qualified JSON keys after a namespaced-key conversion,
+and its next link check assumed a particular `rel` token order. The completed
+capture uses canonical reader-law decoding and actual token membership.
+These helper corrections changed no application or published bytes.
+
+The real Knoxx music dispatch completed a seven-split Spanish candidate from
+the configured local provider. Seven separate native UI review POSTs returned
+201, recording attributed corrections over that persisted candidate. The
+corrections restore paragraph delimiters and retain canonical work titles and
+song URLs. Seven approved split labels still left the exact whole output
+unapproved. The separate native whole-output approval returned 201 and bound
+effective revision
+`translation-effective-revision-d57476c9761dd1b67f56b7a8cd0f9411f9a8e081301ec0f5f4c685183b00f274`
+to digest `0b360193882a7560b411ffd11c3b7ac7f928e38c09398196cac253db9648ba23`.
+The Spanish music artifact reached the reader with digest
+`e3c1460224cf4bdc2f34f80669758ac47f6a8c0c1680abe6bf565bf4aa42affc`.
+The manifest then contained three routes: English art, English music and
+Spanish music. Repeat reconciliation was a byte-preserving noop. A real
+browser click on the reader's Español sibling link displayed `lang="es"`, the
+corrected Spanish introduction and all six destinations with no active player.
+This is AI operator review and protocol/publication evidence, not professional
+human translation certification or current external music playback.
+
+The initial Spanish artwork dispatch failed before producing a complete
+candidate: nineteen server-issued splits yielded seventeen persisted
+candidates, then strict admission refused unchanged English text. The first
+unpersisted source is `HyperSymmetryVoidSeal`. The raw unaccepted provider
+response is unavailable, so the record does not invent it. No whole approval
+or Spanish artwork route is claimed for that failed attempt.
+
+One declared owned local agent-prompt overlay clarifies translation of
+descriptive artwork captions, including grounded CamelCase words, while
+preserving URLs, Markdown and paragraph separators. The original resource is
+backed up with digest
+`207d8cf86619ca78ee3e86d280c13bf942a4bb155b235132789d9b653490414f`; the local
+overlaid resource digest is
+`34269afa8035359cffe8e7eb62262be13970f420806f88028c2fd92d6240be6d`.
+The original bytes recover exactly by removing that one insertion. Resolved
+admission retains `gemma4:e4b`, thinking off, only `save_translation`, required
+first tool use, and the strict unchanged-source guard. The immutable application
+image, CMS sources, permissions and tool grants are unchanged. This is a local
+mounted-resource experiment, distinct from the original exact-copy resource
+admission and from Services production contract pins. At overlay admission,
+fresh retry, complete artwork candidate, review, whole approval and Spanish
+readback remained pending until their own results were captured.
+
+The preparation table above is its original pending snapshot. This phase
+establishes fresh local image, source, English and Spanish music publication
+observations; it does not establish a general chat journey, external Suno
+playback, registry publication, staging, production, native approval or rollout.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `images/knoxx-media-29cbdb6869fb/image-qualification-summary.json` | `7a3b47401d347498652e1bb25d0082bfe07f2d80ca72b1e6841ba38c9d50365c` |
+| `cms-media-demo-29cbdb68/native-selected-source-creation.json` | `3b72078aa2b3d0cbe6cdab572b8b96c01ab5a807eb1f45f9480b26a93fecfb0b` |
+| `cms-media-demo-29cbdb68/created-native-publication-topology.json` | `2af3ef09013f9a78c27e56f74d2b7c2700a46765f79f6c81828c8d9af06bc8c4` |
+| `cms-media-demo-29cbdb68/native-auth-health-admission.json` | `e87050807f3e12b31ac820b473079981ba97c8a80c214a610bbd74bdc187ec29` |
+| `cms-media-demo-29cbdb68/fresh-native-embedding-health.json` | `2db7ae345703bf087640c6421be97152b887c347d5ab7fe187973bd87b6ada3c` |
+| `cms-media-demo-29cbdb68/frontend-preview-byte-readback.json` | `25001f853a604859d2d890201208d9c5707b7ed103a57a82163e90bed3d11ae5` |
+| `cms-media-demo-29cbdb68/native-english-public-reader-proof.json` | `c10113c0689fd05f469044f74301ac5df5ceedf753b99a31f2ebfe57f493e817` |
+| `cms-media-demo-29cbdb68/native-english-art-browser-lazy-journey.json` | `852171440aa28412c2cec2eb396fef67250a1ae6c36f0bb14cffef052c77b91c` |
+| `cms-media-demo-29cbdb68/music-native-ui-seven-review-responses.json` | `eb143a2fc8d7332be547e163ae6a5f35ded97e3472f24aa026911e02bb68cb9b` |
+| `cms-media-demo-29cbdb68/music-native-ui-whole-approval-response.json` | `f045791ada366f5cab2a067da78b0a99cb414f13d7d82c85c077b2fd265a0c18` |
+| `cms-media-demo-29cbdb68/native-spanish-music-public-reader-proof.json` | `18a185dfb1dc17dbe2a1bcde390563b5b57ed3ed1bb00178261ddb6fdc328810` |
+| `cms-media-demo-29cbdb68/native-spanish-music-browser-dom.json` | `8fb1ced2a990e7662b57fb7046bc8db167d4eddd040094ee45f6c547ab8a8965` |
+| `cms-media-demo-29cbdb68/owned-local-art-caption-prompt-clarification.json` | `110568fe5b69f8a2630f335f0101c717ce3717140ffa056c03381937c5bcb5e8` |
+| `cms-media-demo-29cbdb68/native-resolved-art-prompt-admission.json` | `77530edf0c75dee0f9761a6e0b5699ecffcdcd6aab765150938ebe3692664109` |
+| `cms-media-demo-29cbdb68/screenshots/06-native-public-art-en.png` | `8672660c924a253c8378b7e70706e500ac2bf271c253487bfcf2bdc3c85a6d26` |
+| `cms-media-demo-29cbdb68/screenshots/07-native-public-music-en.png` | `2e2b19d20169de33d77862fdc2f583c3be29c5f53d700dad7e40c46260116169` |
+| `cms-media-demo-29cbdb68/screenshots/10-native-public-music-es.png` | `bf54913d55ec5910191bfd8b49a526f869d05f3074543067dd0772b9d0bc0679` |
+| `review-state/services-selected-media-runbook-early-independent-assessment-20261010T2232Z.json` | `87990b84ead92af1ea0a5427fd5b1bfc33e77157158aec0d345f245be5069724` |
+
+### Fresh artwork retry admission after the declared overlay — 2026-10-10 UTC
+
+The native CMS Retry button issued a new translation dispatch POST and returned
+HTTP 200 with `dispatch/accepted`. Its new attempt is
+`efe4bed0-8140-4e74-9898-de0064033c01`, with run
+`translation-run-d4e11286b823d7579bb437c71f591a756324d7508ba338b2bda0fb3cc356ccba`.
+The persisted admitted turn records `2026-10-10T22:53:29.778Z`; the saved native
+network response was captured later at `2026-10-10T22:58:16.247Z`. These are
+distinct observation coordinates.
+
+A read-only canonical split-store read confirms this new turn admitted the
+full overlaid system prompt with digest
+`f97507e9b2b1a30b07ed626385cc9aa58c89e55f48fcf44d1415de33e6b2f1e2` and execution
+digest `fd7c92abaac85c189f1d6d4dba08f3ea2f47a1523c25a93cfa00042af2468fd2`.
+The turn retains the same nineteen source splits, `gemma4:e4b`, thinking off,
+only `save_translation` and required first tool use. Seventeen candidate splits
+are persisted in this readback snapshot. That snapshot and accepted dispatch
+prove fresh admission under the declared overlay; they do not establish a
+complete candidate, artwork approval or Spanish materialization. Those outcomes
+remain pending. The earlier failure, original resource backup, immutable
+application image and current three reader routes retain their identities.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `cms-media-demo-29cbdb68/art-native-ui-provider-retry-after-prompt-clarification.json` | `782afa9df6f6986af1b6ef858240e1a8ddae5b4c443f9163e49f2186c7fcd222` |
+| `cms-media-demo-29cbdb68/art-native-admitted-turn-decoded-after-prompt-retry.json` | `df62f35ed37b1399d9ac0f268105c835312b372ce47437b9a35f3ae85a0193fa` |
+
+### Artwork retry failure and bounded caption proposal — 2026-10-10 UTC
+
+The fresh overlaid-prompt retry subsequently returned native
+`dispatch/failed`, with `work_state=failed`, `candidate_present=false`,
+`approved=false` and retry as its sole allowed action. The native detail again
+reports refusal because translated text matched source text. Its seventeen
+persisted candidate splits remain associated with that new admitted turn;
+neither failure nor its prefix is replaced by the earlier attempt. Complete
+Spanish artwork, whole approval and a Spanish artwork route remain absent.
+
+The next bounded local proposal supplies one exact grounded example for the
+descriptive label `HyperSymmetryVoidSeal`: `Sello del Vacío de Hipersimetría`.
+It retains `/graphics/recursive_identity/HyperSymmetryVoidSeal.svg`, the image
+delimiters and the original two trailing newline bytes. This example translates
+only the words in the source label and invents no visual details. It does not
+relax the strict unchanged-source guard, change the model or tool grant, inject
+candidate completion, or bypass review and whole-output approval. The proposal
+is independently assessed as a reasonable local prompt experiment, not
+professional human translation certification or predicted provider success.
+No third retry or result is claimed by this proposal record. Any further
+operation must retain its own resource/prompt/execution identity and native
+completion, review, approval and public readback evidence.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `cms-media-demo-29cbdb68/native-translation-status-after-art-prompt-retry-1791673250134996483.json` | `cc25346e1a0f7f58bbea7f4136d9a182c042574610c226aac45114304a83459c` |
+| `review-state/art-grounded-caption-example-independent-proposal-20261010T2304.json` | `604cc6bbc0c984e9b27155c4a71f8145e0418fbb622aad5715d21873b9c7426c` |
+
+### Completed selected-artwork translation and public reader — 2026-10-10 UTC
+
+The third native artwork dispatch HTTP 200 response was captured at
+`2026-10-10T23:07:27.508Z`, with its admitted record dated
+`2026-10-10T23:06:30.488Z` and run
+`translation-run-dde65a2d953a28099aaf1e79c87fa2e630e4ed4e706db3b6a5bc1f225add6d61`.
+All nineteen candidate splits completed at `2026-10-10T23:09:56.089Z`.
+The two earlier failed runs and their seventeen-split prefixes remain retained.
+
+The second declared local prompt insertion supplies the grounded Spanish example
+`HyperSymmetryVoidSeal` → `Sello del Vacío de Hipersimetría`. The mounted agent
+resource now hashes to
+`e7ce0a8a99a17e4871b3d33848a28bd21a4f3665dae6c6e178fba750528916d8`.
+Removing both declared insertions reconstructs the original resource exactly.
+The new admitted prompt hashes to
+`be9d89a95b305f7a7d97b73e27d23535061938bb1b486ccd6dbaf538958b7dad`, with
+execution digest
+`e763f90d4335b98bf3b5fe5f17719ce601fb0bbf490eae27c1621eacb193f800`.
+The application image, nineteen source splits, `gemma4:e4b`, thinking off,
+`save_translation` grant and strict unchanged-source guard remain unchanged.
+This local experiment is not an adopted production contract.
+
+Nineteen original native split-review POSTs each returned HTTP 201. Corrections
+restore source paragraph delimiters and place grounded Spanish captions beside
+the exact original catalogue labels. They preserve all eighteen image URLs and
+their order, without inventing depicted objects or visual details. Independent
+assessment passed 124 binding checks over the actual persisted responses and
+effective output. Its snapshot still records whole approval as false. The
+separate original whole-output approval then returned HTTP 201, binding
+`translation-effective-revision-523de95e392dae7c526963d163b4c335d4f670170d08647d6f7119ae4648be2f`
+to corrected content digest
+`a228539149d52c213848489224cf6cbb3c874a5475140167744ad34fa8111b33`.
+The native UI reported `publication/materialized`.
+
+The public reader now contains exactly four routes: English and Spanish artwork,
+and English and Spanish music. The artwork's eighteen figure captions and image
+paths match the approved text. Each graphic returned HTTP 200 with bytes matching
+the corresponding separately qualified Website image asset. A real browser
+followed the existing Español link, observed `lang="es"`, the reviewed Spanish
+introduction and all eighteen loaded images. The prior three route records remain
+present; Spanish music artifact bytes are unchanged. An explicit artwork
+reconciliation returned `publication/noop` and preserved manifest/artifact bytes.
+This is AI operator editorial review and local publication evidence, not
+professional human translation certification or remote deployment.
+
+The public Spanish artwork artifact SHA-256 is `115cef61f9ca70e0b91c96d0fbb6edf8b6a6340bf1f9a7857e9bfb20a51caf6b`.
+Its reader route is `/cms/3448826e-b4fe-4f1e-80d8-52ad6c8986c5/logical-723065c5133ea6fc8fa6fea22add064a1ddfbab8d73100129dde687b08296a7f/es`.
+
+The native UI capture retains a selector failure before any review mutation and
+a refresh wait timeout after a review had already persisted; that review was not
+submitted twice. Earlier capture helpers and provider failures are not replaced
+by these successful observations.
+
+### Current deployment successors and measured qualification limit
+
+Knoxx `662a1f8f9f522c7fc601aea6f857e36378bdecc2` fixes early cleanup in the
+approved-media verifier. A controlled first-directory failure exits 73: the
+previous verifier leaves its owned run directory, while the corrected verifier
+removes it. EXIT/INT/TERM cleanup is registered before that first mutation. The
+four renderer files and reusable deployment workflow remain unchanged. Services
+now proposes this immutable workflow pin; the image above remains application
+source `29cbdb68`.
+
+Website PR4 actually merged at `2026-10-10T23:08:44Z` as
+`6fd48ac5df9a16e414efbbf2b6abe98ad331be78`; its merged tree equals qualified
+`4ee2651e` exactly. That merge does not publish or deploy the local image.
+
+The separate Knoxx runner repair has measured source `78843174` and an
+evidence-only ledger successor `c41be017`. Its actual production-config baseline
+passes 1,914 tests and 9,844 assertions. Three real pilot mutations produce two
+valid assertion kills and one valid survivor, with zero invalid executions.
+The pilot correctly exits 1. Independent evidence assessment passes 69 checks;
+that assessment does not turn the failed pilot into qualification. The private
+readiness boolean survivor has a bounded current-call-graph rationale, but no
+accepted equivalent exclusion. No four-batch campaign has run. The evidence-only
+successor receives no new baseline credit.
+
+The Website production campaign remains a separate product-owned implementation
+task. Services retains its explicit unsupported qualification failure. After
+reviewed Services and Knoxx sources merge, run the existing staging workflow with
+exact immutable source inputs as described in the staging runbook, read the real
+stage receipt and retain the expected qualification failure. An owner policy
+decision, if sought, must concern that concrete staged candidate and a reviewed
+gate change. No policy exception, registry publication, staging or production
+rollout is established by the local proof above.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `cms-media-demo-29cbdb68/owned-local-art-caption-grounded-example.json` | `684ccfddfcd95b5439a582deaf1ae7c1e0bf72992feddb590797c69f31d1a275` |
+| `cms-media-demo-29cbdb68/art-native-ui-provider-retry-after-caption-example.json` | `10858212ffe7c2ec19d377d1e7b4f37f623e907d9fa1dbbb1b91dc68ac74808d` |
+| `cms-media-demo-29cbdb68/art-native-ui-nineteen-review-responses.json` | `d140c37ef31673cb7483dbacfd0da6a4f5732720be7f0040ef5e0a0cd122273b` |
+| `cms-media-demo-29cbdb68/art-native-ui-whole-approval-response.json` | `ece7f0e3d6ab9fea9592cc8bcae512941f7959b56e3b4993fab8a040f021c56e` |
+| `cms-media-demo-29cbdb68/native-spanish-art-public-reader-proof.json` | `54dfae5326eb4169edc15b8bd85030348af3a7a1ce54819646ed06d9479ac380` |
+| `cms-media-demo-29cbdb68/native-spanish-art-browser-lazy-journey.json` | `224133179e45152e6e7db79f221c0f167223b4af8fbf345f0fc595d7147de61a` |
+| `cms-media-demo-29cbdb68/14-native-public-art-es.png` | `552576effc3c7e8f5c759af86023f7f778cfe4d6f1dcb15c4c2beca43a5ff1e6` |
+| `review-state/knoxx-art-nineteen-native-reviews-independent-assessment-20261010T2319Z.json` | `32d7449c595a2bda17868330b1127f734a60adb6bcc016a7412e6a859f04eddf` |
+| `review-state/knoxx-qualification-repair/final-pilot-measurement-v1.json` | `9b345550d08831e6520780e7faf233ac608c7267d01f2d79989310bb996f2768` |
+| `review-state/knoxx-qualification-repair/pilot-survivor-independent-assessment-20261010T2323Z.json` | `5e0b1d32a89177767d2742f5d274a9914528ce34115bb688713e8c19758af78d` |
+| `review-state/approved-media-early-cleanup-control-20261010T2303Z/red-green-proof.json` | `f465accf4b809e823a8ebd723b2c61236521e692f966f4e14b70c9db26142bcc` |
+| `review-state/website4-native-merge-readback-20261010T2312Z.json` | `c05dc4db54ff432465e17956bec54c82f83a972ba8eeea2dbb46f8cf6f336bb0` |
