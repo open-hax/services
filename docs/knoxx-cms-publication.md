@@ -1739,3 +1739,39 @@ rollout is established by the local proof above.
 | `review-state/knoxx-qualification-repair/pilot-survivor-independent-assessment-20261010T2323Z.json` | `5e0b1d32a89177767d2742f5d274a9914528ce34115bb688713e8c19758af78d` |
 | `review-state/approved-media-early-cleanup-control-20261010T2303Z/red-green-proof.json` | `f465accf4b809e823a8ebd723b2c61236521e692f966f4e14b70c9db26142bcc` |
 | `review-state/website4-native-merge-readback-20261010T2312Z.json` | `c05dc4db54ff432465e17956bec54c82f83a972ba8eeea2dbb46f8cf6f336bb0` |
+
+## Published review-runner dependency
+
+The Services review caller pins Muse to
+`ba7f47dc6db26096a2a821d7a3c7ef62cb00c879`, the actual merged revision from
+[Muse PR 22](https://github.com/octave-commons/muse/pull/22). The reusable
+eta-mu workflow remains pinned to
+`d98ab446d56ddfd24542df49b102b851f2a767fa`, with OpenCode `1.18.31` and the
+existing deterministic deployment checks. The explicit Muse input selects the
+published review plugin, agent instructions and verifier from the same source.
+
+The published guard requires every diff page to be both read and assessed
+before the first stage note, and refuses reassessment after stages begin. Its
+existing review-input controls passed locally with eight tools and 204 pages;
+the compiled verifier also passed its string, Buffer and Uint8Array inputs.
+An independent source assessment checked the complete 14-path change range,
+tool identities, schemas and the workflow's prepare/verify boundary. These
+results qualify the dependency candidate; fresh Services CI and native review
+still have to complete on the resulting commit.
+
+The two failed reviews of Services commit
+`8c1f0a231c3bc20fddc19d09fb2f01539ee0e14d` remain failed evidence. Their traces
+delivered all 49 pages but assessed only two and 48 pages respectively. The
+second trace attempted classification before the required stage and did not
+submit a review. Updating this published dependency does not accept either
+trace or establish a Services program defect. The unchanged eta-mu workflow
+does not call Muse's separate length-ended-review classifier, so this pin does
+not enable that recovery route. The proposed new tool-help wording remains a
+separate, unmerged change. Deployment readiness continues to require actual
+review settlement, required checks, protected merge and trusted-main staging.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `review-state/muse-review-tool-guidance-qualification-v1/merged-main-baseline-qualification-v1.json` | `ff8dcd24ad2e1ad20930c1de179a2a6257c02143d0bc947de11a46242eb218be` |
+| `review-state/muse-ba7-services-d98-source-compatibility-independent-assessment-v1.json` | `cb57e65ce29da7b9517d4ca1988121c2fd9d3978021a0787954db82af744acc7` |
+| `review-state/services8c1-mimo-failed-retry-diagnosis-v1/diagnosis-v1.json` | `8214a29a94bdc0513df181b8057a38b0512c33de6d0d21c5207978455bf72c43` |
