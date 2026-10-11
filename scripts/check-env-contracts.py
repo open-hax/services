@@ -150,7 +150,8 @@ def main() -> int:
     expected_publication_mount = "${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/app/workspace/.knoxx/website-content"
     if publication_mounts != [expected_publication_mount]:
         failures.append("Knoxx publication content must have exactly one contained workspace mount")
-    if knoxx_sdk_dockerfile.rfind("USER 1000") < knoxx_sdk_dockerfile.find("ln -s /app/workspace/.knoxx/website-content"):
+    alias_position = knoxx_sdk_dockerfile.find("ln -s /app/workspace/.knoxx/website-content")
+    if alias_position < 0 or knoxx_sdk_dockerfile.rfind("USER 1000") < alias_position:
         failures.append("Knoxx publication alias must be installed before dropping to UID 1000")
     knoxx_operator_docs = (
         ROOT / "docs" / "knoxx-ollama-embeddings.md"
