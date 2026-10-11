@@ -39,7 +39,7 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     if scope.get("default") != "stack" or scope.get("options") != ["stack", "website"]:
         errors.append("manual scope must retain stack as default and offer website")
     jobs = chain["jobs"]
-    for name in ("provision-host", "resolve-knoxx", "build-proxx"):
+    for name in ("provision-host", "resolve-knoxx", "knoxx-preflight", "build-proxx"):
         if jobs[name].get("if") != "inputs.scope == 'stack'":
             errors.append(f"website scope must skip {name}")
     if jobs["knoxx-preflight"].get("needs") != "resolve-knoxx" or jobs["knoxx-preflight"]["with"].get("source_ref") != "${{ needs.resolve-knoxx.outputs.source_sha }}":

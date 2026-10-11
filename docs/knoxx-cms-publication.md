@@ -1775,3 +1775,30 @@ review settlement, required checks, protected merge and trusted-main staging.
 | `review-state/muse-review-tool-guidance-qualification-v1/merged-main-baseline-qualification-v1.json` | `ff8dcd24ad2e1ad20930c1de179a2a6257c02143d0bc947de11a46242eb218be` |
 | `review-state/muse-ba7-services-d98-source-compatibility-independent-assessment-v1.json` | `cb57e65ce29da7b9517d4ca1988121c2fd9d3978021a0787954db82af744acc7` |
 | `review-state/services8c1-mimo-failed-retry-diagnosis-v1/diagnosis-v1.json` | `8214a29a94bdc0513df181b8057a38b0512c33de6d0d21c5207978455bf72c43` |
+
+## Explicit website-only qualification boundary
+
+The stack chain gives `knoxx-preflight` the explicit condition
+`inputs.scope == 'stack'`, matching `resolve-knoxx`. Website-only staging
+therefore excludes Knoxx qualification without relying solely on GitHub's
+skipped-dependency cascade. A stack run still supplies the resolved immutable
+Knoxx source to the same pinned qualification workflow.
+
+The existing deployment-chain check enforces this scope condition alongside
+host provisioning, Knoxx source resolution and the Proxx build. Extending that
+check against the previous workflow produced exactly the missing Knoxx
+preflight scope error; adding the explicit condition restored the check. The
+deployment boundary, source pins, environment contracts, disabled profiles and
+all 15 website phase tests also passed. This verifies the source guard and
+does not establish a completed remote stage, production qualification or
+rollout. The trusted-main website-only dispatch and actual stage receipt
+requirements remain the deployment path described above.
+
+This change addresses the untagged guard proposal in
+[Services review 5481513373](https://github.com/open-hax/services/pull/94#pullrequestreview-5481513373).
+The same review contains 33 separately tagged LGTM items; their acknowledgments
+remain distinct from settling this source change.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `review-state/services-knoxx-stack-scope-guard-v1/source-qualification-v1.json` | `6b9ffd122e4506584edeb4ba7b51789a8dc061df8281a97faabd20edaa525ca8` |
