@@ -51,11 +51,14 @@ jobs:
   stage-proof:
     needs: stage
     runs-on: ubuntu-latest
+    outputs:
+      receipt: ${{ steps.proof.outputs.receipt }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
       - name: Compare the observed stage receipt with this candidate
+        id: proof
         env:
           STAGE_RECEIPT: ${{ needs.stage.outputs.receipt }}
           IMAGE: ${{ inputs.image }}
@@ -73,6 +76,7 @@ jobs:
             .publicHost == "staging.website.promethean.rest"
           ' <<<"$STAGE_RECEIPT"
           printf '%s\n' "$STAGE_RECEIPT" > website-stage-proof.json
+          echo "receipt=$(jq -c . <<<"$STAGE_RECEIPT")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: website-stage-proof-${{ github.run_attempt }}
@@ -83,10 +87,27 @@ jobs:
     needs: stage-proof
     runs-on: ubuntu-latest
     steps:
-      - name: Require the website production qualification contract
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Require the explicit exact-candidate owner decision and fresh stage proof
+        env:
+          STAGE_RECEIPT: ${{ needs.stage-proof.outputs.receipt }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE: ${{ inputs.image }}
+          SERVICES_SHA: ${{ github.sha }}
+          CONTROLLER_REF: ${{ github.ref }}
         run: |
-          echo '::error::Website production qualification is unsupported: no canonical four-batch, 250-mutation-per-batch campaign or verifier exists. A healthy stage receipt is available, but it does not satisfy that policy. Production remains unchanged pending legitimate qualification or an explicit owner decision on this concrete candidate.'
-          exit 2
+          set -euo pipefail
+          test "$CONTROLLER_REF" = refs/heads/main
+          python3 scripts/website-owner-decision.py qualify \
+            --source "$SOURCE_SHA" --image "$IMAGE" --services "$SERVICES_SHA" \
+            <<<"$STAGE_RECEIPT" > website-production-qualification.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: website-production-qualification-${{ github.run_attempt }}
+          path: website-production-qualification.json
+          if-no-files-found: error
 
   production:
     needs: production-qualification
@@ -98,3 +119,34 @@ jobs:
       source_sha: ${{ inputs.source_sha }}
       caller_holds_production_host_lock: true
     secrets: inherit
+
+  production-proof:
+    needs: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Verify the observed production candidate
+        env:
+          PRODUCTION_RECEIPT: ${{ needs.production.outputs.receipt }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE: ${{ inputs.image }}
+          SERVICES_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          nginx_sha=$(sha256sum digitalocean/services/website/nginx.conf | awk '{print $1}')
+          jq -e --arg image "$IMAGE" --arg source "$SOURCE_SHA" \
+            --arg services "$SERVICES_SHA" --arg nginx "$nginx_sha" '
+            .service == "website" and .phase == "production" and
+            .health == "success" and .image == $image and
+            .sourceSha == $source and .servicesSha == $services and
+            .nginxSha == $nginx and .composeProject == "website" and
+            .publicHost == "open-hax.promethean.rest"
+          ' <<<"$PRODUCTION_RECEIPT"
+          printf '%s\n' "$PRODUCTION_RECEIPT" > website-production-proof.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: website-production-proof-${{ github.run_attempt }}
+          path: website-production-proof.json
+          if-no-files-found: error

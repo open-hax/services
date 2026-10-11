@@ -1,0 +1,566 @@
+{
+  "schemaVersion": 1,
+  "service": "website",
+  "sourceSha": "6fd48ac5df9a16e414efbbf2b6abe98ad331be78",
+  "image": "ghcr.io/open-hax/website:6fd48ac5df9a16e414efbbf2b6abe98ad331be78@sha256:ef3f2daa46b212cfcd82c2a72492946b0c44c23f1fab9b0fffde35d7199c836f",
+  "nginxSha": "f603c3b0d3cf3f8534294b1b28c57de73f2d7dc4cf5160bd7a1c7de99b13b3e5",
+  "ownerDecision": {
+    "status": "approved",
+    "owner": "riatzukiza",
+    "approvedAt": "2026-10-11T20:24:00.292774+00:00",
+    "question": "Approve a one-candidate production exception for the Website image already verified on staging? The reviewable proposal is /home/err/.local/share/openhax-codex/20261010/services-production-candidate/docs/website-candidate-promotion.md. It binds Website source 6fd48ac5df9a16e414efbbf2b6abe98ad331be78, registry digest sha256:ef3f2daa46b212cfcd82c2a72492946b0c44c23f1fab9b0fffde35d7199c836f, and the unchanged serving configuration. Approval would accept its verified build, staging health/receipt, public HTTP checks and browser rendering in place of the incomplete canonical integration/e2e plus four batches of 250 mutation tests. Reviewed trusted-main Services admission, a fresh locked staging check, preservation of existing publications and live verification still apply. It does not approve a Knoxx rollout or change the default for other candidates.",
+    "answer": "Approve this exact Website candidate (Recommended)",
+    "scope": "Only this Website source, image digest and exact public operational configuration bound by deploymentInputs: accept its verified image build, observed staging health/receipt, public HTTP artifact checks and rendered browser checks in place of the incomplete canonical integration/e2e plus four-by-250 mutation qualification. Preserve reviewed trusted-main Services admission, the host lock, fresh staging proof, existing production publications and live verification. Other candidates retain canonical production qualification. This does not approve a Knoxx rollout.",
+    "sourceSha": "6fd48ac5df9a16e414efbbf2b6abe98ad331be78",
+    "image": "ghcr.io/open-hax/website:6fd48ac5df9a16e414efbbf2b6abe98ad331be78@sha256:ef3f2daa46b212cfcd82c2a72492946b0c44c23f1fab9b0fffde35d7199c836f"
+  },
+  "previousStageProof": {
+    "servicesSha": "e87c2cdf530c2edd7f98ba45642fa222349e4ef2",
+    "runId": 38118171223,
+    "attempt": 1,
+    "artifactId": 11694277850,
+    "receiptSha256": "0012013bf110f17dbeec6800375c30eafbcb59f23c4f7f5a9a4a7600fdabb8dc"
+  },
+  "qualificationGap": "A Website qualification-harness successor discovers 79 eligible mutations under its initial operators and its measured pilot kills three. That evidence does not qualify this staged 6fd48ac5 source. Canonical immutable integration/e2e plus four disjoint batches of 250 kills have not been demonstrated for this candidate. This record is not mutation qualification.",
+  "deploymentInputs": {
+    "schemaVersion": 1,
+    "files": [
+      {
+        "path": ".github/workflows/build-images.yml",
+        "mode": "100644",
+        "sha256": "14bf50cc4d70899112185f144c6f9d7a1b3b0aa0f85f861b76206e424436e579"
+      },
+      {
+        "path": ".github/workflows/build-knoxx-devtools.yml",
+        "mode": "100644",
+        "sha256": "a3a7951ccadf23361b32d9f67d96606e79bc7f5557e0cd5b5743d7f04cce4d4e"
+      },
+      {
+        "path": ".github/workflows/code-quality.yml",
+        "mode": "100644",
+        "sha256": "c404dfda80c047d7bee6e1709e0d1ea1cbc5ecf31864bd46258df55e8396e762"
+      },
+      {
+        "path": ".github/workflows/deploy-digitalocean.yml",
+        "mode": "100644",
+        "sha256": "785392dbdb826c3fd38e7f32d4d4dddfe6d7cfa63619ed6d18518378e1cfa02f"
+      },
+      {
+        "path": ".github/workflows/deploy-stack-chain.yml",
+        "mode": "100644",
+        "sha256": "a2204a8ac014408bd684626dc14076142a47b83797951377482c042e3f63fd28"
+      },
+      {
+        "path": ".github/workflows/deploy-stack.yml",
+        "mode": "100644",
+        "sha256": "d562cfd510e9272fc6ad47aaab61fb513325da8054250f66946ff280a3d451f6"
+      },
+      {
+        "path": ".github/workflows/deploy-website-phases.yml",
+        "mode": "100644",
+        "sha256": "5f6e5c67c45633a2715167ec9b431e74a200e954afb107ec4ba74deff41904d3"
+      },
+      {
+        "path": ".github/workflows/digitalocean-host.yml",
+        "mode": "100644",
+        "sha256": "097549758c41366decc01122ba39c87fae3390a7adc328a4cab6f9b29de13289"
+      },
+      {
+        "path": ".github/workflows/eta-mu-review-gate.yml",
+        "mode": "100644",
+        "sha256": "c20f0443e4e348276e2ce45bd7ac4a78d6daff39cc1764ae1cbbda1c052bf629"
+      },
+      {
+        "path": ".github/workflows/eta-mu-review.yml",
+        "mode": "100644",
+        "sha256": "f548afb788a47f65159ccb14c328603119a130628e529358ea385c6f463fef17"
+      },
+      {
+        "path": ".github/workflows/knoxx-git-events.yml",
+        "mode": "100644",
+        "sha256": "7f9aa7a1f6267bf65ea3c86993ed9590d2f691702d704fb2bbd9294cc4f9c655"
+      },
+      {
+        "path": "digitalocean/hosts/production.yaml",
+        "mode": "100644",
+        "sha256": "5c2cfc7aa30bf16ef512ab64e7bb31f1af6e7ad1d2e34efc4b6814b7834ae5bf"
+      },
+      {
+        "path": "digitalocean/hosts/staging.yaml",
+        "mode": "100644",
+        "sha256": "f7f9835f883200732840bc65836f6c6401727423c7bbd46089106dfb4d06f535"
+      },
+      {
+        "path": "digitalocean/known_hosts/production",
+        "mode": "100644",
+        "sha256": "e5d77cd9c45e71cdfbaabc8b4034f42da1b5b4aaf856fcd314b182dd454d2109"
+      },
+      {
+        "path": "digitalocean/known_hosts/staging",
+        "mode": "100644",
+        "sha256": "e5d77cd9c45e71cdfbaabc8b4034f42da1b5b4aaf856fcd314b182dd454d2109"
+      },
+      {
+        "path": "digitalocean/lib/caddy-dev-auth.sh",
+        "mode": "100755",
+        "sha256": "776615535aa0739e10dc1297b0d2d071909534a75275a4cbd439021a6145448c"
+      },
+      {
+        "path": "digitalocean/lib/host-contract.sh",
+        "mode": "100644",
+        "sha256": "c09a6b39143af5fa88dff856886909d176aeaea69dc0a7ffe612a491f1da8124"
+      },
+      {
+        "path": "digitalocean/scripts/bootstrap-host.sh",
+        "mode": "100644",
+        "sha256": "49240b6cdb6cdd06a7e90dfe0697c443a80f862e64b53c4d23e3c0e90c84838e"
+      },
+      {
+        "path": "digitalocean/scripts/provision-ollama.sh",
+        "mode": "100755",
+        "sha256": "008aadc428f3ebfa4da5896a21a276f0cd87158fd81084250662d516d92f73e8"
+      },
+      {
+        "path": "digitalocean/scripts/test-bootstrap-docker-readiness.sh",
+        "mode": "100755",
+        "sha256": "365ad862367cdf0d47185d4f385cf97a66dabf4a14f664df37fd1714e901aa1e"
+      },
+      {
+        "path": "digitalocean/scripts/test-caddy-dev-auth-fallback.sh",
+        "mode": "100755",
+        "sha256": "aabfd680797e8c0c069750185f4cf6d6e30271b446e3777c1247aed3b30b7370"
+      },
+      {
+        "path": "digitalocean/scripts/test-provision-ollama.sh",
+        "mode": "100755",
+        "sha256": "1184dbf01e3fc870eab2f128ff19ea76f50416dd2193a76e8fb8acc2c63c4da4"
+      },
+      {
+        "path": "digitalocean/scripts/test-verify-dev-ingress-firewall.sh",
+        "mode": "100755",
+        "sha256": "cad7021e02944e3ea01c871cc8f5291e60c1bf6b68b264140f0e707a020480ea"
+      },
+      {
+        "path": "digitalocean/scripts/verify-dev-ingress-firewall.sh",
+        "mode": "100755",
+        "sha256": "0a85d9acde9f4abfd362707c1633684e41c69a5d23af23e88a23b38674faa1f5"
+      },
+      {
+        "path": "digitalocean/scripts/verify-host.sh",
+        "mode": "100644",
+        "sha256": "b39e3dffb3c0c04bd229251bd5ed21d9602dc08e9c1d6d58a1cae55b3b7da5bf"
+      },
+      {
+        "path": "digitalocean/services/caddy/Caddyfile",
+        "mode": "100644",
+        "sha256": "09ddf5c573ffee9f460cb1abd1efe1907daa342703bb29734647ebe8d6115501"
+      },
+      {
+        "path": "digitalocean/services/caddy/compose.yaml",
+        "mode": "100644",
+        "sha256": "92b331b8c27dabfe078bb449c197364a72d80ff2337177335be7a08d2e685374"
+      },
+      {
+        "path": "digitalocean/services/caddy/env.template",
+        "mode": "100644",
+        "sha256": "c366fff34c87b7458569b8d81f6828b6dc36b97a006d43faa3d577cc35c2aa37"
+      },
+      {
+        "path": "digitalocean/services/caddy/managed/website-staging.caddy",
+        "mode": "100644",
+        "sha256": "e76137503ee7761754d00ead62f7e91a59026e6666bb403fa8e5c784def23c44"
+      },
+      {
+        "path": "digitalocean/services/caddy/verify.sh",
+        "mode": "100755",
+        "sha256": "74c15f85f24728334401d3459c2d75d7b2c4c7d6b1e5e93f201bcb4913452918"
+      },
+      {
+        "path": "digitalocean/services/knoxx/Dockerfile.backend-sdk",
+        "mode": "100644",
+        "sha256": "6a0d7e6695a8fb694aa9f9a5c29ba88542d7e31a9add406170e6efa37b4e5f0b"
+      },
+      {
+        "path": "digitalocean/services/knoxx/Dockerfile.devtools",
+        "mode": "100644",
+        "sha256": "53e8cfefdd609c7d24b2d4e6c28a5d069c86dc6813920332d9f7ce63bbfec0f3"
+      },
+      {
+        "path": "digitalocean/services/knoxx/compose.yaml",
+        "mode": "100644",
+        "sha256": "0639e1c67de963eb36abf3b76bedb85977144f245068b521b8af8138439f3a0b"
+      },
+      {
+        "path": "digitalocean/services/knoxx/disabled-profile-services",
+        "mode": "100644",
+        "sha256": "f88d7f6a22a340566cba4b8ea4c7ce4fb883622050a6c0b399683e942aefa166"
+      },
+      {
+        "path": "digitalocean/services/knoxx/document-anchor-inventory.cljc",
+        "mode": "100644",
+        "sha256": "0b35b0a6aba44a0fb9410d96b7aa003062abafd64f0426d2a851d781c446eec6"
+      },
+      {
+        "path": "digitalocean/services/knoxx/embedding-contract-receipt.sh",
+        "mode": "100755",
+        "sha256": "e375f40642db597619a824425201ae9cc3d9fbeebe12047af186c77d8b1c3ee1"
+      },
+      {
+        "path": "digitalocean/services/knoxx/env.template",
+        "mode": "100644",
+        "sha256": "a540e90f91bf010d798cf3687c7feaa7beb10654e33a80cff9deb20b5edc4e3f"
+      },
+      {
+        "path": "digitalocean/services/knoxx/event-agent-limits.sh",
+        "mode": "100644",
+        "sha256": "73acd240d411824dace127e51011030b2f125b99ad4e3f7ca9da2ab3f71039a3"
+      },
+      {
+        "path": "digitalocean/services/knoxx/mcp-verification-policy.sh",
+        "mode": "100755",
+        "sha256": "909138b1fff161ccfe6dac3e94fc13c3c19671c512fbd43c81801ee31312ee18"
+      },
+      {
+        "path": "digitalocean/services/knoxx/mongodb-database-identity.sh",
+        "mode": "100644",
+        "sha256": "4ce0e1c942b9bd53dbcaa69b7f1baa110b6d9a40dde6a8097767aa83a49275eb"
+      },
+      {
+        "path": "digitalocean/services/knoxx/post-deploy.sh",
+        "mode": "100755",
+        "sha256": "56e55e3a376f37553f6d36ed8f3f36aa929c6a6f5fd9d43f865bbe8e355c2ea8"
+      },
+      {
+        "path": "digitalocean/services/knoxx/probe-embedding-migration.js",
+        "mode": "100644",
+        "sha256": "0e8c54432315832833e3a7b72dddcbed2d73470693e84ea52519fe1dd369ce18"
+      },
+      {
+        "path": "digitalocean/services/knoxx/probe-mcp.js",
+        "mode": "100644",
+        "sha256": "a962fe8462d37735d4547037ce74718783bb279370166987ebfa7a0d125556b5"
+      },
+      {
+        "path": "digitalocean/services/knoxx/probe-ollama.js",
+        "mode": "100644",
+        "sha256": "7be447a938d3b9aee885b6b77f97aba2239745b55ac39531516f7b87bf50dd46"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/alpha.md",
+        "mode": "100644",
+        "sha256": "ffeea747e02496db334c4d0bcc8b440ca3cd1e9ec32d9f03745a21e1be47952c"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/bitch-tracker.md",
+        "mode": "100644",
+        "sha256": "5d886a0efcfc36804d00e6cdc316bdea7a6f7d7700234868c61b9875c140dbbb"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/calliope.md",
+        "mode": "100644",
+        "sha256": "23bf2b7ba2dfc2326182b901ab3d13fc0938ee7cf70fa82e87769cb718f08b50"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/constellation.md",
+        "mode": "100644",
+        "sha256": "c789a069eb08e4a707e6c3ebc97f7b10c4923e6f82e19ea0d84986c0918db3b0"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/contracts-and-gardens.md",
+        "mode": "100644",
+        "sha256": "5465a65a2154914c735ed5d46354e763f183dbe2580dc8628cb5a637ab04bf07"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/epiphany.md",
+        "mode": "100644",
+        "sha256": "af8952273dc1a57567468a5bc0c3eb087cb1e2b984b90faddcd596053b769177"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/eta-mu.md",
+        "mode": "100644",
+        "sha256": "98f767ca6617e9dbe736f07618e6d597bc4155b27b0cc3e29a61846beac2348a"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/foresight.md",
+        "mode": "100644",
+        "sha256": "0fe71446b44edef32278a6e96dc84b226be4c1df63c69cd1ba6710647ff3a659"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/gates-of-truth.md",
+        "mode": "100644",
+        "sha256": "6c69819a6cb073861f37493575f44e35ba1ace5458ac5f09bdec7934ed345de8"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/how-this-page-got-here.md",
+        "mode": "100644",
+        "sha256": "8877a3443747e841852f61bea27a3acf7d485fe29f01605c27aea71f4ce91afc"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/katamorph.md",
+        "mode": "100644",
+        "sha256": "fa9edde53d2ae38e620bc1d532126b5c6a9eed1bc9da651c80dbfd69b89aef59"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/knoxx.md",
+        "mode": "100644",
+        "sha256": "ec7238876ad28bb87603c47a9bd9df5d9847a14597f39374568f6afc733d3b3f"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/muse.md",
+        "mode": "100644",
+        "sha256": "4da5f20cdc45cc18d40a083c9dc4b757d09ded17b75e88e6e154d5e3c42b6f2f"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/open-hax-promethean.de.md",
+        "mode": "100644",
+        "sha256": "8e836cf04abf306a97e4d520807f1cbee9c32dfae5973a5c8556c8649bdb1b65"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/open-hax-promethean.es.md",
+        "mode": "100644",
+        "sha256": "2566c49424daeff71efbe1c858f2ad3104e128413e19508b51b9bd35a4573cd9"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/open-hax-promethean.fr.md",
+        "mode": "100644",
+        "sha256": "f07a9453e40bc232cdfe8e7e37c8b5e81eae22e83b41329a7b98f70e0a9adabb"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/open-hax-promethean.ja.md",
+        "mode": "100644",
+        "sha256": "60cbde19e1cc534484fb3791ffdc2a810f7ec9fb29017fe2c6446245457b78fe"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/open-hax-promethean.md",
+        "mode": "100644",
+        "sha256": "79b6204f6ac303b5e94025e7f4d0ac07e9bc45b7641d413cf9ba30c0631056e0"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/proxx.md",
+        "mode": "100644",
+        "sha256": "bb4f98763b016d2d14587bd433be1730ccc2a12d7652c20b03775d8731677ed4"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/services.md",
+        "mode": "100644",
+        "sha256": "17c7e18f31edd4c58e784c27a76cf4306358b6c6a2289ec31f359dfc17ea391b"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/start-here.md",
+        "mode": "100644",
+        "sha256": "13e296fb8222a670a7fcbdb99db03518540fcf8f6f623c3bfb898949a290dc73"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/uxx.md",
+        "mode": "100644",
+        "sha256": "5660452e19d3d108574dc9b66fabef14139a11f584938f4e0d283d3aa105eaed"
+      },
+      {
+        "path": "digitalocean/services/knoxx/publication-source/website.md",
+        "mode": "100644",
+        "sha256": "03f202af262fe7d50e6a96fa307ba7cc5ad9f7e08511065441f2f2adeae4f21b"
+      },
+      {
+        "path": "digitalocean/services/knoxx/repl.cljs",
+        "mode": "100644",
+        "sha256": "81f07dc466811d60d3379190cdb233d4adcd9e26e0705c195e704f7e664c355a"
+      },
+      {
+        "path": "digitalocean/services/knoxx/sandbox/Dockerfile",
+        "mode": "100644",
+        "sha256": "6743cd03a76e8397b0c813c933a87b91b01a47fa3d76ffd0f841b10f35b6d99d"
+      },
+      {
+        "path": "digitalocean/services/knoxx/sandbox/doctor.sh",
+        "mode": "100644",
+        "sha256": "8007cdf49f1d72ea9d1f49af790a961efd3e7e4394acc03d3d22b798a7854327"
+      },
+      {
+        "path": "digitalocean/services/knoxx/session-secret-policy.sh",
+        "mode": "100644",
+        "sha256": "9356afc6f06416a56cf0810f0818ce977676ef874881dcfe4c4144e4728bd4f4"
+      },
+      {
+        "path": "digitalocean/services/knoxx/shadow-cljs.devtools.edn",
+        "mode": "100644",
+        "sha256": "0a1b6596641f8a3f0d8e6e048871ba6780469088d2e5919c7775dcf0c4c8b450"
+      },
+      {
+        "path": "digitalocean/services/knoxx/start-devtools.sh",
+        "mode": "100644",
+        "sha256": "a69a96e07611287286928491b4ca525788ba67bcbaf165c3fbac65633dee265a"
+      },
+      {
+        "path": "digitalocean/services/knoxx/test-embedding-contract-receipt.sh",
+        "mode": "100755",
+        "sha256": "764d9d9b9b5c401acb7445134db51991d1ec21c2294b219c6a6602ba9d4fccaf"
+      },
+      {
+        "path": "digitalocean/services/knoxx/test-event-agent-limits.sh",
+        "mode": "100644",
+        "sha256": "68ead12b943dbdb19945e69c18242deed339811c98865182483d2dcfe85daf17"
+      },
+      {
+        "path": "digitalocean/services/knoxx/test-mcp-verification-policy.sh",
+        "mode": "100755",
+        "sha256": "b78b9f56bb52cd9473083797dab169dc9847c37bb63030ed1bfa162e2fa2fcbf"
+      },
+      {
+        "path": "digitalocean/services/knoxx/test-mongodb-database-identity.sh",
+        "mode": "100644",
+        "sha256": "f1cd79c86385c6b6512d69bfb31f5e7dd8ce1cf4f73fa38a184651a8a767fb9a"
+      },
+      {
+        "path": "digitalocean/services/knoxx/test-post-deploy.sh",
+        "mode": "100755",
+        "sha256": "a0f47e5c3b9f7c5773937a8e287775fcd91ab0a2ce9139f5c9b7a2ed1669b0e8"
+      },
+      {
+        "path": "digitalocean/services/knoxx/verify.sh",
+        "mode": "100755",
+        "sha256": "9360e9ac324b96e8e674226c3feee9245fc0524272672c18eb775d18de460d6f"
+      },
+      {
+        "path": "digitalocean/services/proxx/compose.yaml",
+        "mode": "100644",
+        "sha256": "23cb4a06e5db8f434e794692a1a931a2b13c5ac7fd6d173377371ed1810e9caa"
+      },
+      {
+        "path": "digitalocean/services/proxx/env.template",
+        "mode": "100644",
+        "sha256": "46eba8a5db2ebe13c4eb6413370c9d03c6c79c396ee64a3b4127e8da74948857"
+      },
+      {
+        "path": "digitalocean/services/proxx/verify.sh",
+        "mode": "100755",
+        "sha256": "1f181a3dfd75e03d0e8c5aab7b1f8acca29615a6076954636efe50cfd39fe4d7"
+      },
+      {
+        "path": "digitalocean/services/smoke/compose.yaml",
+        "mode": "100644",
+        "sha256": "c93d1fa27cac3896228a67a97fd264993763ba839b896850abc44274d0e07eca"
+      },
+      {
+        "path": "digitalocean/services/smoke/env.template",
+        "mode": "100644",
+        "sha256": "23ea91b172779e01740f4046d776900eabb271102f78f3f003f09ccc8a313b47"
+      },
+      {
+        "path": "digitalocean/services/smoke/verify.sh",
+        "mode": "100755",
+        "sha256": "ae9be8733a27d7507466df99c5e4c402991497c551cfe1b39b94e255b97eb95d"
+      },
+      {
+        "path": "digitalocean/services/website/Dockerfile.site",
+        "mode": "100644",
+        "sha256": "bac8b46f906453de6137ab72a410ead1a612ede399cb9e1d730da95d2b1945de"
+      },
+      {
+        "path": "digitalocean/services/website/compose.staging.yaml",
+        "mode": "100644",
+        "sha256": "c4cdb9d638652ef7055d49b54006fd9e7386dd37bb1093661803309a2ccb2b52"
+      },
+      {
+        "path": "digitalocean/services/website/compose.yaml",
+        "mode": "100644",
+        "sha256": "62400f1883a9ca9cde3554dd7bb57f22b3a435c3d752ca86a918b5058644ee7b"
+      },
+      {
+        "path": "digitalocean/services/website/env.template",
+        "mode": "100644",
+        "sha256": "b27d074f15bd3e15a404866a9156e2c0f8d1571a5fced1f7448aceecb55f0111"
+      },
+      {
+        "path": "digitalocean/services/website/nginx.conf",
+        "mode": "100644",
+        "sha256": "f603c3b0d3cf3f8534294b1b28c57de73f2d7dc4cf5160bd7a1c7de99b13b3e5"
+      },
+      {
+        "path": "digitalocean/services/website/service.yaml",
+        "mode": "100644",
+        "sha256": "4093f543927a02f3b5b40aa8c6ac606d9e24a4bb31faa4ab0745df7eecbb6315"
+      },
+      {
+        "path": "digitalocean/services/website/verify.sh",
+        "mode": "100755",
+        "sha256": "6a6d204031df3d9bb1457d97498e2d46d6cb2bd867528798699eb4dc04f488a1"
+      },
+      {
+        "path": "scripts/check-deploy-chain.py",
+        "mode": "100644",
+        "sha256": "a17a7f9c72e93d84288dc35de831c88869758b6ea78e8a21db783484f2d5d3bd"
+      },
+      {
+        "path": "scripts/check-deploy-source-pins.py",
+        "mode": "100755",
+        "sha256": "0c9fa1ae2eb70ccc2e230096fdf9afdce18b0e2305b6019ef9eb05adfc970a78"
+      },
+      {
+        "path": "scripts/check-deployment-boundary.py",
+        "mode": "100755",
+        "sha256": "75188dee3b229699d1193159bf7649fc3d9504cc6f98ab5014d1dddbb8da2c53"
+      },
+      {
+        "path": "scripts/check-disabled-profile-services.py",
+        "mode": "100644",
+        "sha256": "81e8e9fa079e189a497ffb0f7a7b08e84ad4509f141fa68f588ab6cb3b5151a8"
+      },
+      {
+        "path": "scripts/check-edn-contracts.clj",
+        "mode": "100644",
+        "sha256": "546dfa4bafef89fd4a1ef765c0f98f34914bec945b84e5a36236d857c15c7a98"
+      },
+      {
+        "path": "scripts/check-env-contracts.py",
+        "mode": "100755",
+        "sha256": "dca9efef081aff0af799af3e72873337516893785e3fc5849f475df213c93386"
+      },
+      {
+        "path": "scripts/dispatch-knoxx-git-event.sh",
+        "mode": "100755",
+        "sha256": "5796ca7792a05ba23359635ffe3fc2889ce820c5fb532f78c17d7ec7861d19b8"
+      },
+      {
+        "path": "scripts/test-dispatch-knoxx-git-event.sh",
+        "mode": "100755",
+        "sha256": "05887be7a24a550adfa493650a937fe99c39c64144e527bb19e41136b4482eec"
+      },
+      {
+        "path": "scripts/test-knoxx-publication-layout.mjs",
+        "mode": "100644",
+        "sha256": "4413999bc059d76d8ed23dcd5a6b5290caf6eccdf5171114e90f63b6721a81d5"
+      },
+      {
+        "path": "scripts/test-knoxx-publication-mounts.py",
+        "mode": "100644",
+        "sha256": "e35fb24bb1229981e9730cff3ab61d3359e99e0d989dfe0e3edc1ec16ce6bd31"
+      },
+      {
+        "path": "scripts/test-knoxx-session-secret.py",
+        "mode": "100644",
+        "sha256": "5562d71a1830186bc0436e6f918f98373b75cde9bb5804fc2412b72b70108aa4"
+      },
+      {
+        "path": "scripts/test-website-owner-decision.py",
+        "mode": "100644",
+        "sha256": "58c433c3090a5251a281f1166a7ed3dbb6e26a82d004872a48f0a9aa92342ac7"
+      },
+      {
+        "path": "scripts/test-website-serving-boundary.py",
+        "mode": "100644",
+        "sha256": "6ef98a2afc890528fdab531bc34027bcabae442b9ef20b62a299eba5e3e9eff1"
+      },
+      {
+        "path": "scripts/test_website_deployment.py",
+        "mode": "100644",
+        "sha256": "9cd3b277925a6429a33e58352620ec629b86d996d278fbbce4b973dd70e991c5"
+      },
+      {
+        "path": "scripts/website-owner-decision.py",
+        "mode": "100644",
+        "sha256": "65c4160ed5ec7b96ea71f1f1053faa72169c3db8412420424ea6bed1931330e5"
+      }
+    ],
+    "sha256": "93565f503c3553d3d1f8a15755f7e02f13e3a4f809dd699c84929e39a096969c"
+  }
+}

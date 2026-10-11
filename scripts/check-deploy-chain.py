@@ -64,8 +64,12 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     website = jobs["deploy-website"]
     if website.get("uses") != "./.github/workflows/deploy-website-phases.yml":
         errors.append("website deployment must enter the reviewed phase body")
-    if website["with"].get("image") != "${{ needs.build-website.outputs.image }}@${{ needs.build-website.outputs.digest }}":
-        errors.append("website phases must consume the built digest")
+    if website["with"].get("image") != "${{ needs.select-website.outputs.image }}" or website["with"].get("source_sha") != "${{ needs.select-website.outputs.source_sha }}":
+        errors.append("website phases must consume the admitted immutable candidate")
+    selection = jobs.get("select-website", {})
+    selector = next((s for s in selection.get("steps", []) if s.get("id") == "candidate"), {})
+    if selection.get("needs") != "build-website" or 'scripts/website-owner-decision.py select' not in selector.get("run", "") or '[ "$GITHUB_REF" = refs/heads/main ] ||' not in selector.get("run", ""):
+        errors.append("existing website images require the trusted exact-candidate controller")
     if set(phases.get("on", {})) != {"workflow_call"} or phases.get("concurrency") is not None:
         errors.append("website phases must have no independent entrypoint or lock")
     lock = phases["on"]["workflow_call"]["inputs"].get("caller_holds_production_host_lock", {})
@@ -99,8 +103,17 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     if proof_step.get("env", {}).get("STAGE_RECEIPT") != "${{ needs.stage.outputs.receipt }}" or any(p not in proof_step.get("run", "") for p in required_proof):
         errors.append("stage proof must bind observed health, source, digest and serving config")
     qualification = phase_jobs["production-qualification"]
-    if qualification.get("needs") != "stage-proof" or qualification.get("continue-on-error") == "true" or not any("exit 2" in s.get("run", "") and "unsupported" in s.get("run", "") for s in qualification.get("steps", [])):
-        errors.append("unsupported website production qualification must fail closed after proof")
+    qualifier = next((s for s in qualification.get("steps", []) if "STAGE_RECEIPT" in s.get("env", {})), {})
+    required_qualification = {"STAGE_RECEIPT": "${{ needs.stage-proof.outputs.receipt }}",
+                              "SOURCE_SHA": "${{ inputs.source_sha }}", "IMAGE": "${{ inputs.image }}",
+                              "SERVICES_SHA": "${{ github.sha }}", "CONTROLLER_REF": "${{ github.ref }}"}
+    if qualification.get("needs") != "stage-proof" or qualification.get("continue-on-error") == "true" or qualifier.get("env") != required_qualification or 'scripts/website-owner-decision.py qualify' not in qualifier.get("run", "") or 'test "$CONTROLLER_REF" = refs/heads/main' not in qualifier.get("run", ""):
+        errors.append("website owner-decision admission must fail closed after fresh stage proof")
+    if proof.get("outputs", {}).get("receipt") != "${{ steps.proof.outputs.receipt }}":
+        errors.append("qualification must consume the verified current stage receipt")
+    production_proof = phase_jobs.get("production-proof", {})
+    if production_proof.get("needs") != "production":
+        errors.append("production proof must follow the actual production deployment")
     return errors
 
 

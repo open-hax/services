@@ -84,7 +84,7 @@ class WebsiteDeploymentTests(unittest.TestCase):
                 output = Path(temporary) / "outputs"
                 result = subprocess.run(["bash", "-c", decide["run"]], cwd=ROOT,
                     env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": scope,
-                         "INCLUDE_WEBSITE": include, "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
+                         "INCLUDE_WEBSITE": include, "WEBSITE_IMAGE": "", "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
                 self.assertEqual(status, result.returncode, result.stdout + result.stderr)
                 if status:
                     self.assertFalse(output.exists(), "rejected opt-in must emit no deploy authorization")
@@ -304,14 +304,168 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
                 candidate = {**receipt, **({key: "wrong"} if key else {})}
                 result = subprocess.run(["bash", "-c", proof["run"]], cwd=directory,
                     env={**os.environ, "STAGE_RECEIPT": json.dumps(candidate), "IMAGE": image,
-                         "SOURCE_SHA": source, "SERVICES_SHA": services}, text=True, capture_output=True)
+                         "SOURCE_SHA": source, "SERVICES_SHA": services,
+                         "GITHUB_OUTPUT": str(directory / "outputs")}, text=True, capture_output=True)
                 self.assertEqual(key is None, result.returncode == 0, key)
 
     def test_missing_production_qualification_is_an_actual_failure(self):
-        command = self.phases["jobs"]["production-qualification"]["steps"][0]["run"]
-        result = subprocess.run(["bash", "-c", command], text=True, capture_output=True)
-        self.assertEqual(2, result.returncode)
-        self.assertIn("unsupported", result.stdout)
+        """The actual controller refuses an unrecorded candidate after stage proof."""
+        command = next(s["run"] for s in self.phases["jobs"]["production-qualification"]["steps"]
+                       if "STAGE_RECEIPT" in s.get("env", {}))
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "scripts").mkdir()
+            shutil.copy(ROOT / "scripts/website-owner-decision.py", directory / "scripts")
+            result = subprocess.run(["bash", "-c", command], cwd=directory,
+                env={**os.environ, "STAGE_RECEIPT": "{}", "IMAGE": "ghcr.io/open-hax/website:" + "a" * 40 + "@sha256:" + "b" * 64,
+                     "SOURCE_SHA": "a" * 40, "SERVICES_SHA": "c" * 40,
+                     "CONTROLLER_REF": "refs/heads/main"}, text=True, capture_output=True)
+            self.assertEqual(2, result.returncode)
+            self.assertIn("production remains closed", result.stderr)
+            self.assertEqual(b"", (directory / "website-production-qualification.json").read_bytes())
+
+    def test_actual_qualification_step_emits_only_complete_exact_candidate_proof(self):
+        """A disposable synthetic owner record exercises Bash, CLI and JSON output."""
+        import hashlib
+        command = next(s["run"] for s in self.phases["jobs"]["production-qualification"]["steps"]
+                       if "STAGE_RECEIPT" in s.get("env", {}))
+        source = "6" * 40
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            prefixes = (".github/", "scripts/", "digitalocean/hosts/", "digitalocean/known_hosts/",
+                        "digitalocean/lib/", "digitalocean/scripts/", "digitalocean/services/")
+            paths = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
+            for path in filter(lambda p: p.startswith(prefixes), paths):
+                target = directory / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / path, target)
+            nginx = directory / "digitalocean/services/website/nginx.conf"
+            nginx.write_text("synthetic serving configuration\n")
+            nginx_sha = hashlib.sha256(nginx.read_bytes()).hexdigest()
+            record = json.loads((ROOT / "test/fixtures/website-decisions" / (source + ".json")).read_text())
+            record["nginxSha"] = nginx_sha
+            subprocess.run(["git", "init", "-q", str(directory)], check=True)
+            subprocess.run(["git", "add", "."], cwd=directory, check=True)
+            record["deploymentInputs"] = json.loads(subprocess.check_output([
+                "python3", "-c", "import json,runpy; m=runpy.run_path('scripts/website-owner-decision.py'); print(json.dumps(m['deployment_inputs']()))"],
+                cwd=directory))
+            record_path = directory / "digitalocean/qualifications/website" / (source + ".json")
+            record_path.parent.mkdir(parents=True)
+            receipt = {"service": "website", "phase": "staging", "health": "success", "sourceSha": source,
+                       "image": record["image"], "servicesSha": "7" * 40, "nginxSha": nginx_sha,
+                       "composeProject": "website-staging", "publicHost": "staging.website.promethean.rest"}
+            drift_paths = {"changed-compose": "digitalocean/services/website/compose.yaml",
+                           "changed-staging-compose": "digitalocean/services/website/compose.staging.yaml",
+                           "changed-env": "digitalocean/services/website/env.template",
+                           "changed-verify": "digitalocean/services/website/verify.sh",
+                           "changed-workflow": ".github/workflows/deploy-digitalocean.yml",
+                           "changed-helper": "digitalocean/lib/host-contract.sh"}
+            for mode in ("complete", "pending", "missing-answer", "stale-receipt", "non-main",
+                         "missing-owner-source", "missing-owner-image", "malformed-owner-source",
+                         "malformed-owner-image", "copied-source", "copied-digest",
+                         *drift_paths, "added-helper", "removed-helper"):
+                with self.subTest(mode=mode):
+                    attempt = copy.deepcopy(record)
+                    observed = dict(receipt)
+                    if mode == "pending":
+                        attempt["ownerDecision"]["status"] = "pending"
+                    if mode == "missing-answer":
+                        del attempt["ownerDecision"]["answer"]
+                    if mode == "stale-receipt":
+                        observed["servicesSha"] = "9" * 40
+                    if mode == "missing-owner-source":
+                        del attempt["ownerDecision"]["sourceSha"]
+                    if mode == "missing-owner-image":
+                        del attempt["ownerDecision"]["image"]
+                    if mode == "malformed-owner-source":
+                        attempt["ownerDecision"]["sourceSha"] = {"sha": source}
+                    if mode == "malformed-owner-image":
+                        attempt["ownerDecision"]["image"] = [record["image"]]
+                    if mode in ("copied-source", "copied-digest"):
+                        selected_source = "9" * 40 if mode == "copied-source" else source
+                        selected_image = "ghcr.io/open-hax/website:" + selected_source + "@sha256:" + "b" * 64
+                        attempt.update(sourceSha=selected_source, image=selected_image)
+                        observed.update(sourceSha=selected_source, image=selected_image)
+                        self.assertEqual(record["ownerDecision"], attempt["ownerDecision"])
+                    record_path.with_name(attempt["sourceSha"] + ".json").write_text(json.dumps(attempt))
+                    if mode in drift_paths:
+                        changed = directory / drift_paths[mode]
+                        original = changed.read_bytes()
+                        changed.write_bytes(original + b"\n# changed deployment input\n")
+                    if mode == "added-helper":
+                        added = directory / "scripts/new-deployment-helper.py"
+                        added.write_text("# newly tracked authored helper\n")
+                        subprocess.run(["git", "add", str(added)], cwd=directory, check=True)
+                    if mode == "removed-helper":
+                        subprocess.run(["git", "update-index", "--force-remove", "digitalocean/lib/host-contract.sh"], cwd=directory, check=True)
+                    output = directory / "website-production-qualification.json"
+                    output.unlink(missing_ok=True)
+                    result = subprocess.run(["bash", "-c", command], cwd=directory,
+                        env={**os.environ, "CONTROLLER_REF": "refs/heads/codex/proposal" if mode == "non-main" else "refs/heads/main", "SOURCE_SHA": attempt["sourceSha"],
+                             "IMAGE": attempt["image"], "SERVICES_SHA": "7" * 40,
+                             "STAGE_RECEIPT": json.dumps(observed)}, text=True, capture_output=True)
+                    if mode in drift_paths:
+                        changed.write_bytes(original)
+                    if mode == "added-helper":
+                        subprocess.run(["git", "update-index", "--force-remove", "scripts/new-deployment-helper.py"], cwd=directory, check=True)
+                        added.unlink()
+                    if mode == "removed-helper":
+                        subprocess.run(["git", "add", "digitalocean/lib/host-contract.sh"], cwd=directory, check=True)
+                    self.assertEqual(0 if mode == "complete" else 1 if mode == "non-main" else 2,
+                                     result.returncode, result.stderr)
+                    if mode == "complete":
+                        proof = json.loads(output.read_text())
+                        self.assertEqual("owner-decision", proof["qualification"])
+                        self.assertFalse(proof["mutationCampaignPassed"])
+                        self.assertEqual(record["ownerDecision"], proof["ownerDecision"])
+                        self.assertEqual(receipt, proof["stageReceipt"])
+                        self.assertEqual(record["deploymentInputs"], proof["deploymentInputs"])
+                        self.assertEqual(record["deploymentInputs"]["sha256"], proof["deploymentInputsSha256"])
+                    elif mode == "non-main":
+                        self.assertFalse(output.exists())
+                    else:
+                        self.assertEqual(b"", output.read_bytes())
+
+    def test_existing_image_cannot_enter_stack_scope(self):
+        """Image reuse cannot widen the isolated candidate scope."""
+        command = self.entry["jobs"]["authorize"]["steps"][0]["run"]
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "outputs"
+            result = subprocess.run(["bash", "-c", command], cwd=ROOT,
+                env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": "stack",
+                     "INCLUDE_WEBSITE": "false", "WEBSITE_IMAGE": "nonempty", "GITHUB_OUTPUT": str(output)},
+                text=True, capture_output=True)
+            self.assertEqual(2, result.returncode)
+            self.assertFalse(output.exists())
+
+    def test_selection_keeps_built_digest_and_refuses_unapproved_existing_image(self):
+        """Execute the actual selector; a pending record emits no coordinates."""
+        command = next(s["run"] for s in self.chain["jobs"]["select-website"]["steps"] if s.get("id") == "candidate")
+        image = "ghcr.io/open-hax/website:" + "a" * 40 + "@sha256:" + "b" * 64
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "outputs"
+            result = subprocess.run(["bash", "-c", command], cwd=ROOT,
+                env={**os.environ, "EXISTING_IMAGE": "", "EXISTING_SOURCE": "",
+                     "BUILT_IMAGE": image, "BUILT_SOURCE": "a" * 40, "GITHUB_OUTPUT": str(output)},
+                text=True, capture_output=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(["image=" + image, "source_sha=" + "a" * 40], output.read_text().splitlines())
+            output.unlink()
+            source = "a" * 40
+            result = subprocess.run(["bash", "-c", command], cwd=ROOT,
+                env={**os.environ, "EXISTING_IMAGE": image, "EXISTING_SOURCE": source,
+                     "BUILT_IMAGE": "@", "BUILT_SOURCE": "", "GITHUB_OUTPUT": str(output), "GITHUB_REF": "refs/heads/main"},
+                text=True, capture_output=True)
+            self.assertEqual(2, result.returncode, result.stderr)
+            self.assertFalse(output.exists())
+
+            result = subprocess.run(["bash", "-c", command], cwd=ROOT,
+                env={**os.environ, "EXISTING_IMAGE": image, "EXISTING_SOURCE": source,
+                     "BUILT_IMAGE": "@", "BUILT_SOURCE": "", "GITHUB_OUTPUT": str(output),
+                     "GITHUB_REF": "refs/heads/codex/proposal"}, text=True, capture_output=True)
+            self.assertEqual(1, result.returncode, result.stderr)
+            self.assertIn("Existing Website images require the trusted main controller ref.", result.stderr)
+            self.assertFalse(output.exists())
 
     def test_staging_ingress_preserves_other_routes_and_rolls_back_failures(self):
         ingress = step("Install website staging ingress")

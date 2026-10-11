@@ -45,6 +45,11 @@ on:
         required: false
         default: main
         type: string
+      website_image:
+        description: Existing immutable Website image; accepted only by the reviewed candidate controller
+        required: false
+        default: ''
+        type: string
       include_ingress:
         description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
         required: false
@@ -177,14 +182,52 @@ jobs:
 
   # Builds alongside the rest of the chain; deploys last.
   build-website:
-    if: inputs.include_website || inputs.scope == 'website'
+    if: inputs.website_image == '' && (inputs.include_website || inputs.scope == 'website')
     uses: ./.github/workflows/build-images.yml
     with:
       service: website
       source_ref: ${{ inputs.website_ref }}
 
+  select-website:
+    needs: build-website
+    if: >-
+      always() && (inputs.include_website || inputs.scope == 'website')
+      && ((inputs.website_image == '' && needs.build-website.result == 'success')
+        || (inputs.scope == 'website' && inputs.website_image != '' && needs.build-website.result == 'skipped'))
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.candidate.outputs.image }}
+      source_sha: ${{ steps.candidate.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Select the built image or exact owner-approved candidate
+        id: candidate
+        env:
+          EXISTING_IMAGE: ${{ inputs.website_image }}
+          EXISTING_SOURCE: ${{ inputs.website_ref }}
+          BUILT_IMAGE: ${{ needs.build-website.outputs.image }}@${{ needs.build-website.outputs.digest }}
+          BUILT_SOURCE: ${{ needs.build-website.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$EXISTING_IMAGE" ]; then
+            [ "$GITHUB_REF" = refs/heads/main ] || { echo '::error::Existing Website images require the trusted main controller ref.' >&2; exit 1; }
+            candidate=$(python3 scripts/website-owner-decision.py select \
+              --source "$EXISTING_SOURCE" --image "$EXISTING_IMAGE")
+            image=$(jq -r '.image' <<<"$candidate")
+            source=$(jq -r '.sourceSha' <<<"$candidate")
+          else
+            image=$BUILT_IMAGE
+            source=$BUILT_SOURCE
+          fi
+          [[ "$source" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$image" =~ ^ghcr\.io/open-hax/website:${source}@sha256:[0-9a-f]{64}$ ]]
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source" >> "$GITHUB_OUTPUT"
+
   deploy-website:
-    needs: [build-website, deploy-caddy]
+    needs: [select-website, deploy-caddy]
     # deploy-caddy is conditional, and a skipped ingress must not silently skip
     # the website with it: the website's gate classifies an absent ingress as a
     # WARN owned by caddy and still proves the site serves on loopback. When
@@ -193,7 +236,7 @@ jobs:
     if: >-
       always()
       && (inputs.include_website || inputs.scope == 'website')
-      && needs.build-website.result == 'success'
+      && needs.select-website.result == 'success'
       && (
         (inputs.scope == 'website' && needs.deploy-caddy.result == 'skipped')
         || (inputs.scope == 'stack' && (
@@ -203,7 +246,7 @@ jobs:
       )
     uses: ./.github/workflows/deploy-website-phases.yml
     with:
-      image: ${{ needs.build-website.outputs.image }}@${{ needs.build-website.outputs.digest }}
-      source_sha: ${{ needs.build-website.outputs.source_sha }}
+      image: ${{ needs.select-website.outputs.image }}
+      source_sha: ${{ needs.select-website.outputs.source_sha }}
       caller_holds_production_host_lock: true
     secrets: inherit
