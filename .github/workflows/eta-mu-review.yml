@@ -15,7 +15,7 @@ jobs:
     with:
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       opencode_version: '1.18.31'
-      muse_revision: ba7f47dc6db26096a2a821d7a3c7ef62cb00c879
+      muse_revision: e733f5b417a870a6c8480ae433d643ee1598af27
       setup_eta_mu_toolchain: false
       evidence_gates_script: |
         run_gate deployment_boundary python3 scripts/check-deployment-boundary.py

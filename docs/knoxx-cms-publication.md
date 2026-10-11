@@ -575,47 +575,68 @@ remote stage or production rollout is established by this recorded local phase.
 ## Published review-runner dependency
 
 The Services review caller pins Muse to
-`ba7f47dc6db26096a2a821d7a3c7ef62cb00c879`, the actual merged revision from
-[Muse PR 22](https://github.com/octave-commons/muse/pull/22). The reusable
-eta-mu workflow remains pinned to
-`d98ab446d56ddfd24542df49b102b851f2a767fa`, with OpenCode `1.18.31` and the
-existing deterministic deployment checks. The explicit Muse input selects the
-published review plugin, agent instructions and verifier from the same source.
+`e733f5b417a870a6c8480ae433d643ee1598af27`, the actual protected merge from
+[Muse PR 24](https://github.com/octave-commons/muse/pull/24). Its merged tree
+is exactly the reviewed head `5e62d644d2cbaa704f9d34d2f56e4334be678306`.
+The completed native MiMo review approved that head after reading all four
+pages; all six same-head hosted checks passed. The reusable eta-mu workflow
+remains pinned to `d98ab446d56ddfd24542df49b102b851f2a767fa`, with OpenCode
+`1.18.31` and the existing deterministic deployment checks.
+
+The prior published Muse baseline was
+`ba7f47dc6db26096a2a821d7a3c7ef62cb00c879`, from
+[Muse PR 22](https://github.com/octave-commons/muse/pull/22). The new revision
+changes three reviewed tool descriptions: pair every page read with assessment
+of the same page ID and finish all reads and assessments before the first stage
+note; advance to `adversarial-validate` before classifying candidates, while
+preserving classification at `publish`; stop the invocation after any failed
+review call. These descriptions clarify the existing protocol. Tool names,
+schemas, handlers, execution, exposure, state transitions and admission law
+remain unchanged.
 
 The published guard requires every diff page to be both read and assessed
-before the first stage note, and refuses reassessment after stages begin. Its
-existing review-input controls passed locally with eight tools and 204 pages;
-the compiled verifier also passed its string, Buffer and Uint8Array inputs.
-An independent source assessment checked the complete 14-path change range,
-tool identities, schemas and the workflow's prepare/verify boundary. These
-results qualify the dependency candidate; fresh Services CI and native review
-still have to complete on the resulting commit.
+before the first stage note, and refuses reassessment after stages begin. The
+actual corrected-help projection compiled 80 files, 30 compiled, with zero
+warnings. Its eight-tool metadata differs from the baseline only in the three
+descriptions. The two existing classification controls passed all six
+assertions, including classification at `publish`. The existing review-input
+controls passed with eight tools and 204 pages. The compiled invocation
+verifier remains byte-identical, SHA-256
+`980ddda6953c0a55c9cf98697fe2069e1ac40e9c50823d1ca4d884d40a2c4056`,
+and passed its string, Buffer and Uint8Array inputs with fourteen assertions
+each. The separate cold whole-bundle reversal experiment failed and remains
+failed evidence; no whole-bundle byte equivalence is claimed. An independent
+source assessment checked the corrected source, unchanged card and append-only
+ledgers. These results establish the published dependency and its verified
+protocol boundary; fresh Services CI and native review must complete on the
+resulting caller commit. They do not guarantee model compliance.
 
 The two failed reviews of Services commit
 `8c1f0a231c3bc20fddc19d09fb2f01539ee0e14d` remain failed evidence. Their traces
 delivered all 49 pages but assessed only two and 48 pages respectively. The
 second trace attempted classification before the required stage and did not
-submit a review. Updating this published dependency does not accept either
-trace or establish a Services program defect. The unchanged eta-mu workflow
-does not call Muse's separate length-ended-review classifier, so this pin does
-not enable that recovery route. The proposed new tool-help wording remains a
-separate, unmerged change. Deployment readiness continues to require actual
-review settlement, required checks, protected merge and trusted-main staging.
-
-| Record in evidence set `openhax-cms-20261010` | SHA-256 |
-| --- | --- |
-| `review-state/muse-review-tool-guidance-qualification-v1/merged-main-baseline-qualification-v1.json` | `ff8dcd24ad2e1ad20930c1de179a2a6257c02143d0bc947de11a46242eb218be` |
-| `review-state/muse-ba7-services-d98-source-compatibility-independent-assessment-v1.json` | `cb57e65ce29da7b9517d4ca1988121c2fd9d3978021a0787954db82af744acc7` |
-| `review-state/services8c1-mimo-failed-retry-diagnosis-v1/diagnosis-v1.json` | `8214a29a94bdc0513df181b8057a38b0512c33de6d0d21c5207978455bf72c43` |
-
-The later Services review of commit
+submit a review. The later review of commit
 `1254e3c3658733d4d9d376919bd45ef049d45f6e` also remains failed. It eventually
 assessed all fifty pages and produced a local submission, but requested the
 first stage with the final page unassessed, omitted a required candidate ID and
 classified before the legal stage. Canonical trace verification refused it;
 the submission supplies no native approval or completed-round credit. The
-separate tool-help correction clarifies the existing protocol and changes no
-admission law.
+complete trace and independent assessment preserve all three failed calls.
+
+Updating the published help accepts none of those traces and establishes no
+Services program defect. The unchanged eta-mu workflow does not call Muse's
+separate length-ended-review classifier, so this pin enables no such recovery
+route. Deployment readiness still requires actual review settlement, required
+checks, protected merge and trusted-main staging.
+
+| Record in evidence set `openhax-cms-20261010` | SHA-256 |
+| --- | --- |
+| `review-state/muse-review-tool-guidance-qualification-v1/publication-sourceflow-v2/merged-e733-publication-handoff-v1.json` | `25a05d2d3a0e3487430634bd5ce197b33aaab2aa2f57640eb0dfe5e7e81705e4` |
+| `review-state/muse-e733-services-d98-metadata-compatibility-v1/metadata-protocol-compatibility-assessment-v2.json` | `a4d50d88ec23e2b0aec1a51424af577c484eb7e751a32b5f61e90e93d89c60f7` |
+| `review-state/muse-review-tool-guidance-qualification-v1/publish-stage-guidance-correction-v2/qualification-results-v2.json` | `e0e7abc9d1ecafce653b705670b3760693c2be33583588919f51768b317a0f30` |
+| `review-state/muse-review-tool-guidance-qualification-v1/publish-stage-guidance-correction-v2/independent-source-card-ledger-assessment-v2.json` | `55e8fb78f83c5cb81651803bbfcc781cb18d6dfff4bc787ae100bd19c02c3e3c` |
+| `review-state/services-knoxx-stack-scope-guard-v1/complete-1254-failed-review-diagnosis-v2.json` | `973477a16a85feaf3d561b904b658741c0cda804341a67889f6eb335ef12df13` |
+| `review-state/services-knoxx-stack-scope-guard-v1/independent-complete-1254-failed-review-assessment-v1.json` | `c49702114ee08762ad4d2499b770565fb4acd94f37cd210b020156cc2f39de9a` |
 
 ## Explicit website-only qualification boundary
 
