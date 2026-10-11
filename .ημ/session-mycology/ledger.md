@@ -63,3 +63,12 @@
 
 - 2026-10-11T04:05:46.845Z — codex/cms_media_path; efficiency=0.89, friction=0.38, skill-candidate=0.41. Exercise real workflow defaults through their authored guard and bind them to the release SDK pin. Treat jq streams as multiple JSON documents: reject invalid or non-object overlays before fallback and render effects, while preserving valid base and overlaid keys. Retain RED outputs and normal owned-process cleanup; local source qualification supplies no successor approval or deployment credit. Seven deployment checks, 16 deployment tests and 12 session-secret tests passed. Receipt River event dce8cf01-e814-4bb8-80b3-fed77ad4257a. No new spore or promotion.
 - 2026-10-11T05:05:50.526821+00:00 — codex/cms_media_path; efficiency=0.92, friction=0.28, skill-candidate=0.33. Recover publication prerequisites by locale: source-locale routes need source and intent, while translated routes also need exact approved output. Exercise the authored checker diagnostic independently of an overlapping required-text guard; preserve the old overall rejection and test missing, valid and late alias inputs. Inspect explicit loader constructors before accepting generic unsafe-loader accusations. All seven Services checks and sixteen deployment tests passed with complete owned cleanup. Receipt River event c676b822-3619-466f-afad-d5d09f74b62c. Source qualification is local; no successor approval or deployment credit. No new spore or promotion.
+- ts: 2026-10-11T05:58:34.694074602Z
+  session: /home/err/.local/share/openhax-codex/20261010/services
+  task: website-staging-volume-expansion-repair
+  p-efficiency: 0.86
+  p-friction: 0.72
+  p-skill-candidate: 0.35
+  spore: none
+  receipt-refs: 64303bb8-e77f-4c52-a7f1-f8d7799b1e0a,sha256:9d5814689ee6db4217753cc58c8d7033298bb79c9a00ac278336d24608faf888
+  note: Test the actual workflow Bash against full Compose files: an alternative may fall back into interpolation syntax when a nonmount alias has an internal colon. The narrow leading-dollar guard preserves complete mounts and prevents the reproduced EOF. Actual18-test and seven-gate local qualification is separate from fresh PR review and a later real staging retry; partial prior Caddy changes and image build do not grant deployment success.

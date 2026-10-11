@@ -717,7 +717,10 @@ jobs:
           # stripped. Splitting on the first colon instead yielded a truncated
           # `${VAR` whose eval failed and left mkdir with an empty argument,
           # aborting the deploy before compose ever ran.
-          sed -nE 's/^[[:space:]]+- (\$\{[^}]*\}[^:"[:space:]]*|[^:"[:space:]]+):.*/\1/p' compose.yaml \
+          # A non-mount alias such as ${VAR:-name} has no colon after its
+          # closing brace. Exclude a leading $ from the plain-source fallback
+          # so it cannot capture a partial interpolation at its internal colon.
+          sed -nE 's/^[[:space:]]+- (\$\{[^}]*\}[^:"[:space:]]*|[^$:"[:space:]][^:"[:space:]]*):.*/\1/p' compose.yaml \
             | while IFS= read -r src; do
                 case "$src" in
                   /*|\$\{*) mkdir -p "$(eval echo "$src")" ;;

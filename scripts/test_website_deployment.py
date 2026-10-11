@@ -164,6 +164,66 @@ class WebsiteDeploymentTests(unittest.TestCase):
         self.assertEqual("true", stage["website_require_tls"])
         self.assertEqual("/srv/open-hax/state/caddy/managed", stage["ingress_state"])
 
+    def prepare_volume_sources(self, compose, environment):
+        """Run the authored volume loop with a recording mkdir stub and return its sources."""
+        # Execute the authored Bash loop, rather than a test-side volume parser.
+        command = re.search(r"(?m)^sed -nE .* compose\.yaml \\\n(?:.*\n)*?    done\n",
+                            step("Deploy")["run"])
+        self.assertIsNotNone(command, "deployment volume-preparation loop is missing")
+        # Record mkdir arguments without creating host directories. An empty
+        # source fails just as real mkdir does after an unterminated eval.
+        recorder = '''mkdir() {
+  printf 'mkdir'; printf '\\t%s' "$@"; printf '\\n';
+  [ -n "${!#}" ] || { echo 'empty bind source' >&2; return 1; }
+}
+'''
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "compose.yaml").write_text(compose)
+            result = subprocess.run(["bash", "-euo", "pipefail", "-c", recorder + command.group(0)],
+                cwd=directory, env={"PATH": os.environ["PATH"], **environment},
+                text=True, capture_output=True, timeout=10)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("", result.stderr)
+        return [line.split("\t")[2] for line in result.stdout.splitlines()
+                if line.startswith("mkdir\t-p\t")]
+
+    def test_authored_website_volume_preparation_skips_network_aliases(self):
+        """Verify both Website Compose files prepare only their content and music roots."""
+        environment = {"WEBSITE_CONTENT_ROOT": "/fixture/published", "WEBSITE_MUSIC_ROOT": "/fixture/music"}
+        for filename in ("compose.staging.yaml", "compose.yaml"):
+            with self.subTest(compose=filename):
+                compose = (ROOT / "digitalocean/services/website" / filename).read_text()
+                self.assertEqual(["/fixture/published", "/fixture/music"],
+                                 self.prepare_volume_sources(compose, environment))
+
+    def test_volume_preparation_preserves_mounts_and_skips_nonmount_scalars(self):
+        """Preserve supported bind forms while skipping relative, named and non-mount scalars."""
+        compose = '''services:
+  fixture:
+    volumes:
+      - ${CONTENT_ROOT:?content must be set}:/published:ro
+      - ${OPTIONAL_ROOT:-/fixture/fallback}:/optional:ro
+      - ${CONTENT_ROOT}/nested:/nested:ro
+      - /fixture/absolute:/absolute:ro
+      - ./relative.conf:/relative:ro
+      - durable-data:/named
+    ports:
+      - "127.0.0.1:${PORT:-8082}:8080"
+    environment:
+      - ${ENVIRONMENT_ONLY:-example}
+      - HTTP_ORIGIN=http://example.com
+    healthcheck:
+      test: ["CMD", "true"]
+    networks:
+      default:
+        aliases:
+          - ${NETWORK_ALIAS:-fixture}
+          - ${REQUIRED_ALIAS:?alias must be set}
+'''
+        self.assertEqual(["/fixture/content", "/fixture/fallback", "/fixture/content/nested", "/fixture/absolute"],
+                         self.prepare_volume_sources(compose, {"CONTENT_ROOT": "/fixture/content"}))
+
     def test_compose_service_names_and_explicit_aliases_are_disjoint_between_phases(self):
         # Compose registers the service key as well as explicit aliases. A
         # project name alone cannot isolate DNS on the shared external network.
