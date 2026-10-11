@@ -68,7 +68,7 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
         errors.append("website phases must consume the admitted immutable candidate")
     selection = jobs.get("select-website", {})
     selector = next((s for s in selection.get("steps", []) if s.get("id") == "candidate"), {})
-    if selection.get("needs") != "build-website" or 'scripts/website-owner-decision.py select' not in selector.get("run", "") or 'test "$GITHUB_REF" = refs/heads/main' not in selector.get("run", ""):
+    if selection.get("needs") != "build-website" or 'scripts/website-owner-decision.py select' not in selector.get("run", "") or '[ "$GITHUB_REF" = refs/heads/main ] ||' not in selector.get("run", ""):
         errors.append("existing website images require the trusted exact-candidate controller")
     if set(phases.get("on", {})) != {"workflow_call"} or phases.get("concurrency") is not None:
         errors.append("website phases must have no independent entrypoint or lock")

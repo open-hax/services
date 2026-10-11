@@ -212,7 +212,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$EXISTING_IMAGE" ]; then
-            test "$GITHUB_REF" = refs/heads/main
+            [ "$GITHUB_REF" = refs/heads/main ] || { echo '::error::Existing Website images require the trusted main controller ref.' >&2; exit 1; }
             candidate=$(python3 scripts/website-owner-decision.py select \
               --source "$EXISTING_SOURCE" --image "$EXISTING_IMAGE")
             image=$(jq -r '.image' <<<"$candidate")

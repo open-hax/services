@@ -407,6 +407,14 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
             self.assertEqual(2, result.returncode, result.stderr)
             self.assertFalse(output.exists())
 
+            result = subprocess.run(["bash", "-c", command], cwd=ROOT,
+                env={**os.environ, "EXISTING_IMAGE": image, "EXISTING_SOURCE": source,
+                     "BUILT_IMAGE": "@", "BUILT_SOURCE": "", "GITHUB_OUTPUT": str(output),
+                     "GITHUB_REF": "refs/heads/codex/proposal"}, text=True, capture_output=True)
+            self.assertEqual(1, result.returncode, result.stderr)
+            self.assertIn("Existing Website images require the trusted main controller ref.", result.stderr)
+            self.assertFalse(output.exists())
+
     def test_staging_ingress_preserves_other_routes_and_rolls_back_failures(self):
         ingress = step("Install website staging ingress")
         self.assertEqual("inputs.service == 'website' && inputs.environment == 'staging'", ingress["if"])
