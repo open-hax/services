@@ -332,20 +332,36 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
         source = "6" * 40
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
-            (directory / "scripts").mkdir()
-            shutil.copy(ROOT / "scripts/website-owner-decision.py", directory / "scripts")
+            prefixes = (".github/", "scripts/", "digitalocean/hosts/", "digitalocean/known_hosts/",
+                        "digitalocean/lib/", "digitalocean/scripts/", "digitalocean/services/")
+            paths = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
+            for path in filter(lambda p: p.startswith(prefixes), paths):
+                target = directory / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / path, target)
             nginx = directory / "digitalocean/services/website/nginx.conf"
-            nginx.parent.mkdir(parents=True)
             nginx.write_text("synthetic serving configuration\n")
             nginx_sha = hashlib.sha256(nginx.read_bytes()).hexdigest()
             record = json.loads((ROOT / "test/fixtures/website-decisions" / (source + ".json")).read_text())
             record["nginxSha"] = nginx_sha
+            subprocess.run(["git", "init", "-q", str(directory)], check=True)
+            subprocess.run(["git", "add", "."], cwd=directory, check=True)
+            record["deploymentInputs"] = json.loads(subprocess.check_output([
+                "python3", "-c", "import json,runpy; m=runpy.run_path('scripts/website-owner-decision.py'); print(json.dumps(m['deployment_inputs']()))"],
+                cwd=directory))
             record_path = directory / "digitalocean/qualifications/website" / (source + ".json")
             record_path.parent.mkdir(parents=True)
             receipt = {"service": "website", "phase": "staging", "health": "success", "sourceSha": source,
                        "image": record["image"], "servicesSha": "7" * 40, "nginxSha": nginx_sha,
                        "composeProject": "website-staging", "publicHost": "staging.website.promethean.rest"}
-            for mode in ("complete", "pending", "missing-answer", "stale-receipt", "non-main"):
+            drift_paths = {"changed-compose": "digitalocean/services/website/compose.yaml",
+                           "changed-staging-compose": "digitalocean/services/website/compose.staging.yaml",
+                           "changed-env": "digitalocean/services/website/env.template",
+                           "changed-verify": "digitalocean/services/website/verify.sh",
+                           "changed-workflow": ".github/workflows/deploy-digitalocean.yml",
+                           "changed-helper": "digitalocean/lib/host-contract.sh"}
+            for mode in ("complete", "pending", "missing-answer", "stale-receipt", "non-main",
+                         *drift_paths, "added-helper", "removed-helper"):
                 with self.subTest(mode=mode):
                     attempt = copy.deepcopy(record)
                     observed = dict(receipt)
@@ -356,12 +372,29 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
                     if mode == "stale-receipt":
                         observed["servicesSha"] = "9" * 40
                     record_path.write_text(json.dumps(attempt))
+                    if mode in drift_paths:
+                        changed = directory / drift_paths[mode]
+                        original = changed.read_bytes()
+                        changed.write_bytes(original + b"\n# changed deployment input\n")
+                    if mode == "added-helper":
+                        added = directory / "scripts/new-deployment-helper.py"
+                        added.write_text("# newly tracked authored helper\n")
+                        subprocess.run(["git", "add", str(added)], cwd=directory, check=True)
+                    if mode == "removed-helper":
+                        subprocess.run(["git", "update-index", "--force-remove", "digitalocean/lib/host-contract.sh"], cwd=directory, check=True)
                     output = directory / "website-production-qualification.json"
                     output.unlink(missing_ok=True)
                     result = subprocess.run(["bash", "-c", command], cwd=directory,
                         env={**os.environ, "CONTROLLER_REF": "refs/heads/codex/proposal" if mode == "non-main" else "refs/heads/main", "SOURCE_SHA": source,
                              "IMAGE": record["image"], "SERVICES_SHA": "7" * 40,
                              "STAGE_RECEIPT": json.dumps(observed)}, text=True, capture_output=True)
+                    if mode in drift_paths:
+                        changed.write_bytes(original)
+                    if mode == "added-helper":
+                        subprocess.run(["git", "update-index", "--force-remove", "scripts/new-deployment-helper.py"], cwd=directory, check=True)
+                        added.unlink()
+                    if mode == "removed-helper":
+                        subprocess.run(["git", "add", "digitalocean/lib/host-contract.sh"], cwd=directory, check=True)
                     self.assertEqual(0 if mode == "complete" else 1 if mode == "non-main" else 2,
                                      result.returncode, result.stderr)
                     if mode == "complete":
@@ -369,6 +402,8 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
                         self.assertEqual("owner-decision", proof["qualification"])
                         self.assertFalse(proof["mutationCampaignPassed"])
                         self.assertEqual(receipt, proof["stageReceipt"])
+                        self.assertEqual(record["deploymentInputs"], proof["deploymentInputs"])
+                        self.assertEqual(record["deploymentInputs"]["sha256"], proof["deploymentInputsSha256"])
                     elif mode == "non-main":
                         self.assertFalse(output.exists())
                     else:
