@@ -1,0 +1,23 @@
+version: 1
+provider: digitalocean
+environment: staging
+
+# Website staging shares the reviewed host and SSH trust, while its runtime,
+# state and reports remain distinct. This is not a second host bootstrap lane.
+host:
+  name: open-hax-services-production
+  publicAddress: 157.245.125.134
+  privateAddress: 10.108.0.2
+  sshUser: deploy
+  bootstrapUser: root
+  hostKeyFingerprint: SHA256:HKUMqjMeeJsIlZRqO++z5xx0pBqtLi8GOBFKZ6GomQY
+
+runtime:
+  root: /srv/open-hax
+  servicesRoot: /srv/open-hax/services/staging
+  stateRoot: /srv/open-hax/state/staging
+  configRoot: /srv/open-hax/config/staging
+  reportsRoot: /srv/open-hax/reports/staging
+
+roles:
+  - website

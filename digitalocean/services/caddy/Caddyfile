@@ -201,3 +201,6 @@
 		header_up -x-open-hax-bridge-auth
 	}
 }
+
+# Durable separately managed environment routes survive normal ingress deploys.
+import /etc/caddy/managed/*.caddy

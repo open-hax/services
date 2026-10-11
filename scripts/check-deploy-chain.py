@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -28,6 +29,79 @@ STACK_WORKFLOW = (
     / "workflows"
     / "deploy-stack.yml"
 )
+WEBSITE_PHASE_WORKFLOW = STACK_WORKFLOW.parent / "deploy-website-phases.yml"
+
+
+def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
+    """Keep the isolated phase graph fail closed without authorizing new callers."""
+    errors = []
+    scope = entry["on"]["workflow_dispatch"]["inputs"].get("scope", {})
+    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website"]:
+        errors.append("manual scope must retain stack as default and offer website")
+    jobs = chain["jobs"]
+    for name in ("provision-host", "resolve-knoxx", "knoxx-preflight", "build-proxx"):
+        if jobs[name].get("if") != "inputs.scope == 'stack'":
+            errors.append(f"website scope must skip {name}")
+    if jobs["knoxx-preflight"].get("needs") != "resolve-knoxx" or jobs["knoxx-preflight"]["with"].get("source_ref") != "${{ needs.resolve-knoxx.outputs.source_sha }}":
+        errors.append("Knoxx qualification must consume the resolved immutable source")
+    if jobs["build-knoxx-backend"]["with"].get("openplanner_ref") != "${{ inputs.openplanner_ref }}":
+        errors.append("Knoxx backend and devtools must share the pinned OpenPlanner input")
+    knoxx = jobs["deploy-knoxx"]["with"]
+    if knoxx.get("image") != "${{ needs.build-knoxx-backend.outputs.image }}@${{ needs.build-knoxx-backend.outputs.digest }}":
+        errors.append("Knoxx backend deployment must consume the built digest")
+    try:
+        extra_images = json.loads(knoxx.get("extra_env", ""))
+    except (ValueError, TypeError):
+        extra_images = {}
+    if not isinstance(extra_images, dict):
+        extra_images = {}
+    for service, key in (("frontend", "KNOXX_FRONTEND_IMAGE"), ("devtools", "KNOXX_DEVTOOLS_IMAGE")):
+        expected = "${{ needs.build-knoxx-" + service + ".outputs.image }}@${{ needs.build-knoxx-" + service + ".outputs.digest }}"
+        if extra_images.get(key) != expected:
+            errors.append(f"Knoxx {service} deployment must consume the built digest")
+    if jobs["deploy-caddy"].get("if") != "inputs.scope == 'stack' && inputs.include_ingress":
+        errors.append("website scope must skip the main Caddy deployment")
+    website = jobs["deploy-website"]
+    if website.get("uses") != "./.github/workflows/deploy-website-phases.yml":
+        errors.append("website deployment must enter the reviewed phase body")
+    if website["with"].get("image") != "${{ needs.build-website.outputs.image }}@${{ needs.build-website.outputs.digest }}":
+        errors.append("website phases must consume the built digest")
+    if set(phases.get("on", {})) != {"workflow_call"} or phases.get("concurrency") is not None:
+        errors.append("website phases must have no independent entrypoint or lock")
+    lock = phases["on"]["workflow_call"]["inputs"].get("caller_holds_production_host_lock", {})
+    if lock.get("required") != "true" or "default" in lock:
+        errors.append("website phase caller must attest the enclosing host lock")
+    phase_jobs = phases["jobs"]
+    validate = phase_jobs["validate"]["steps"][0]
+    if validate.get("env", {}).get("HOST_LOCK") != "${{ inputs.caller_holds_production_host_lock }}" or 'test "$HOST_LOCK" = true' not in validate.get("run", ""):
+        errors.append("website phases must reject a false host lock before mutation")
+    for name, environment, prerequisite in (
+        ("stage", "staging", "validate"),
+        ("production", "production", "production-qualification"),
+    ):
+        job = phase_jobs[name]
+        if job.get("uses") != "./.github/workflows/deploy-digitalocean.yml" or job.get("needs") != prerequisite:
+            errors.append(f"{name} must use the trusted helper after {prerequisite}")
+        required = {"service": "website", "environment": environment,
+                    "image": "${{ inputs.image }}", "source_sha": "${{ inputs.source_sha }}",
+                    "caller_holds_production_host_lock": "true"}
+        if job.get("with") != required or job.get("continue-on-error") == "true":
+            errors.append(f"{name} must retain exact candidate, phase and host lock")
+    proof = phase_jobs["stage-proof"]
+    if proof.get("needs") != "stage":
+        errors.append("stage proof must follow the actual stage deployment")
+    proof_step = next((s for s in proof["steps"] if "STAGE_RECEIPT" in s.get("env", {})), {})
+    required_proof = ('jq -e', '.health == "success"', '.image == $image',
+                      '.sourceSha == $source', '.servicesSha == $services',
+                      '.nginxSha == $nginx', '.phase == "staging"',
+                      '.composeProject == "website-staging"',
+                      '.publicHost == "staging.website.promethean.rest"')
+    if proof_step.get("env", {}).get("STAGE_RECEIPT") != "${{ needs.stage.outputs.receipt }}" or any(p not in proof_step.get("run", "") for p in required_proof):
+        errors.append("stage proof must bind observed health, source, digest and serving config")
+    qualification = phase_jobs["production-qualification"]
+    if qualification.get("needs") != "stage-proof" or qualification.get("continue-on-error") == "true" or not any("exit 2" in s.get("run", "") and "unsupported" in s.get("run", "") for s in qualification.get("steps", [])):
+        errors.append("unsupported website production qualification must fail closed after proof")
+    return errors
 
 
 def main() -> int:
@@ -104,6 +178,7 @@ def main() -> int:
     host_callers = []
     chain_callers = []
     service_deploy_callers = []
+    website_phase_callers = []
     workflow_paths = sorted(
         set(HOST_WORKFLOW.parent.glob("*.yml"))
         | set(HOST_WORKFLOW.parent.glob("*.yaml"))
@@ -133,7 +208,17 @@ def main() -> int:
                         ),
                     )
                 )
+            if job.get("uses") == "./.github/workflows/deploy-website-phases.yml":
+                website_phase_callers.append((workflow_path.name, job_name,
+                    job.get("with", {}).get("caller_holds_production_host_lock")))
     stack_workflow = yaml.load(STACK_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    phases = yaml.load(WEBSITE_PHASE_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    phase_errors = website_path_errors(stack_workflow, document, phases)
+    if website_phase_callers != [("deploy-stack-chain.yml", "deploy-website", "true")]:
+        phase_errors.append("website phase body has a caller outside the locked chain")
+    if phase_errors:
+        print("\n".join("deploy chain error: " + error for error in phase_errors), file=sys.stderr)
+        return 1
     stack_concurrency = (
         stack_workflow.get("jobs", {}).get("deploy", {}).get("concurrency", {})
     )
@@ -208,10 +293,11 @@ def main() -> int:
     service_events = service_deploy.get("on", {})
     service_call = service_events.get("workflow_call", {})
     expected_service_callers = [
-        ("deploy-stack-chain.yml", "deploy-proxx", "true"),
         ("deploy-stack-chain.yml", "deploy-knoxx", "true"),
         ("deploy-stack-chain.yml", "deploy-caddy", "true"),
-        ("deploy-stack-chain.yml", "deploy-website", "true"),
+        ("deploy-stack-chain.yml", "deploy-proxx", "true"),
+        ("deploy-website-phases.yml", "stage", "true"),
+        ("deploy-website-phases.yml", "production", "true"),
     ]
     contract_step = next(
         (
@@ -232,7 +318,7 @@ def main() -> int:
         .get("default")
         is not None
         or service_deploy.get("concurrency") is not None
-        or service_deploy_callers != expected_service_callers
+        or sorted(service_deploy_callers) != sorted(expected_service_callers)
         or contract_step.get("env", {}).get(
             "CALLER_HOLDS_PRODUCTION_HOST_LOCK"
         )

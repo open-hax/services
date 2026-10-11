@@ -49,6 +49,15 @@ jobs:
       - name: Enforce deploy-chain failure propagation
         run: python scripts/check-deploy-chain.py
 
+      - name: Test website phase isolation and serving gates
+        run: python scripts/test_website_deployment.py
+
+      - name: Exercise website publication boundary with Nginx
+        run: |
+          docker pull nginxinc/nginx-unprivileged:1.27
+          python scripts/test-website-serving-boundary.py
+          python scripts/test-knoxx-publication-mounts.py
+
       - name: Enforce service environment contracts
         run: python scripts/check-env-contracts.py
 
@@ -68,6 +77,9 @@ jobs:
 
       - name: Self-test the Knoxx MCP fail-closed policy
         run: digitalocean/services/knoxx/test-mcp-verification-policy.sh
+
+      - name: Self-test the Knoxx session-secret admission boundaries
+        run: python scripts/test-knoxx-session-secret.py
 
       - name: Self-test the Knoxx content admission hook
         run: digitalocean/services/knoxx/test-post-deploy.sh

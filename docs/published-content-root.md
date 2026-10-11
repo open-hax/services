@@ -74,7 +74,7 @@ depends on — would have been unavailable.
 ```text
 /srv/open-hax/state/website-content/       the content root
 ├── manifest.edn                           the published fact
-└── artifacts/<document>/<locale>/<revision>.<ext>
+└── artifacts/<namespace>/<document>/<locale>/<file-identity>.<ext>
 ```
 
 `/srv/open-hax/state` is the host contract's `runtime.stateRoot`. Published
@@ -90,6 +90,12 @@ either service's own `<stateRoot>/<service>` directory:
 It is a peer of both services' state directories because it is shared between
 them, and it survives a redeploy of either.
 
+Source-only filenames retain the source revision. Translated filenames use a
+bounded SHA-256 identity incorporating publication, source and effective output
+revisions. The manifest carries those revisions separately and owns the artifact
+path. Follow it rather than constructing a filename; see the
+[native CMS recipe](knoxx-cms-publication.md) for correction and replay evidence.
+
 ## 3. Exactly one writer
 
 | | writer | reader |
@@ -99,6 +105,16 @@ them, and it survives a redeploy of either.
 | mount mode | read-write | **read-only** (`:ro`) |
 | process uid | 1000 (the backend image's `USER 1000`) | 101 (`nginx` in `nginxinc/nginx-unprivileged`) |
 | env name | `KNOXX_PUBLICATION_CONTENT_ROOT` | served at `/published/` |
+
+The backend image preserves `/srv/website-content` as a guarded symlink to
+`/app/workspace/.knoxx/website-content`, where Compose mounts the same host
+directory. Generated CMS contracts stay at `/app/workspace/.knoxx/contracts`.
+This makes native source realpaths belong to the generated contract root's
+provenance boundary while retaining stored absolute CMS references. The deploy
+user creates and verifies the UID 1000 writable/traversable generated-contract
+directories before Compose; incompatible existing ownership fails without a
+chown. See [the native CMS recipe](knoxx-cms-publication.md) for the projection
+reload requirement and the compiled compatibility regression.
 
 Host-side ownership and modes:
 
@@ -111,12 +127,14 @@ Host-side ownership and modes:
 Three facts make that work, and each is load-bearing:
 
 1. **The deploy user pre-creates it.** `deploy-digitalocean.yml`'s Deploy step
-   walks every absolute or `${VAR}`-rooted volume source in `compose.yaml` and
-   `mkdir -p`s it as the deploy user, because docker otherwise creates a missing
+   first creates an absent shared publication root with mode `0755` as UID
+   1000, or refuses an existing root that is a symlink, has incompatible
+   ownership, lacks writer access, or lacks reader `o+rx`. It then walks every absolute or
+   `${VAR}`-rooted volume source in `compose.yaml` and `mkdir -p`s it as the deploy user, because docker otherwise creates a missing
    bind-mount source as root and an unprivileged container then EACCESes on its
    own state directory (proxx `/app/data`, 2026-08-01). Both services declare
-   the same source, so whichever deploys first creates it and the other is a
-   no-op.
+   the same source, so whichever deploys first creates it and the other
+   verifies that incumbent. No recursive chmod or ownership change occurs.
 2. **The deploy user's uid is the backend container's uid.** This is already the
    standing arrangement for `state/knoxx/backend` and `state/knoxx-workspace`,
    which the running deployment writes to. If that ever stops being true, the
@@ -125,10 +143,13 @@ Three facts make that work, and each is load-bearing:
    reader runs as uid 101 and is not in the writer's group. Parent-directory
    modes are irrelevant — `state/` is `0750`, but the container resolves the
    bind mount inside its own mount namespace, so only the modes of the mounted
-   directory and its contents matter. A `0750` content root would 403 every
+   directory and its contents matter. A `0750` content root would deny every
    published artifact while the site kept serving its own copy: an invisible
    outage, not a failure. `digitalocean/services/website/verify.sh` asserts the
-   mode rather than trusting it.
+   mode rather than trusting it. The native image-backed walkthrough
+   reproduced HTTP 404 for an owned `0700` root with readable files; a
+   root-only `0755` repair restored byte-identical HTTP 200 responses. This
+   does not authorize recursively changing private content permissions.
 
 Law 7 ("published content has exactly one writer") is enforced by the mount, not
 by convention, and asserted by the gate: `verify.sh` reads the running
@@ -139,13 +160,25 @@ publishes `0640` files satisfies every law above and still serves nothing.
 
 ## 4. The URL surface the reader depends on
 
-The website serves the content root at a fixed prefix and **never falls back to
-the app shell there**:
+The website exposes an allowlist from the writer root at a fixed prefix and
+**never falls back to the app shell there**:
 
 ```text
-GET /published/manifest.edn                          -> 200 application/edn, or 404
-GET /published/artifacts/<doc>/<locale>/<rev>.<ext>  -> 200 with the declared media type
+GET /published/manifest.edn                                                        -> 200 application/edn, or 404
+GET /published/artifacts/<namespace>/<document>/<locale>/<file-identity>.<ext>     -> 200 with the declared media type
+GET /published/<anything-else>                                                   -> 404
 ```
+
+The writer root also holds private data: CMS document history and revision
+snapshots under `.ημ/cms/`, submitted translation candidates under `.translations/`,
+publication reservations/receipts under `.idempotency/`, and legacy CMS source and
+metadata under `cms/`. The reader's read-only bind mount prevents writes; it does
+not authorize serving those files. Nginx serves only the exact `manifest.edn`
+path and the `artifacts/` subtree. Hidden path segments within `artifacts/` are
+also denied, and symlinks are disabled so an artifact path cannot expose private
+siblings or files outside the content root. The writer emits regular artifact
+files. Nginx rejects raw and encoded `..` path segments before normalization can
+send a publication request to the app shell.
 
 The prefix is **the reader's**, not this repository's. `open-hax/website`
 declares it in `src/cljc/open_hax/website/domain/published.cljc`:
@@ -174,8 +207,26 @@ Two serving rules are contract, not taste:
   is required to fail loudly on a malformed manifest — would turn the ordinary
   first-deploy state into a hard failure. `verify.sh` treats a 404 here as a
   PASS and a 200 carrying the app shell as a FAIL. The site's own
-  `shadow-cljs.edn` excludes the same prefix from its `:push-state/index`, so
-  dev and production agree rather than diverging at the one place that matters.
+  `shadow-cljs.edn` excludes the same prefix from its `:push-state/index`. This
+  Services Nginx configuration additionally enforces the private-state
+  allowlist; a development static server must enforce its own equivalent
+  boundary before exposing a writer root.
+
+The Docker integration regression exercises the committed configuration against
+actual unprivileged Nginx with synthetic public and private fixtures:
+
+```bash
+docker pull nginxinc/nginx-unprivileged:1.27
+python scripts/test-website-serving-boundary.py
+```
+
+It binds an ephemeral port on `127.0.0.1`, uses uid 101 with read-only mounts,
+removes its container and fixture directory on exit, and requires public EDN,
+HTML/CSS, locale shell fallbacks, private-path denial, symlink denial, traversal
+denial, and genuine 404s for missing publications. No application build or real
+publication data is needed. Code Quality runs this regression. To reproduce the
+failure against a saved older configuration, pass `--config /absolute/nginx.conf`;
+the same assertions must fail when private synthetic files are exposed.
 
 ## 5. Disk bound
 
@@ -208,23 +259,31 @@ artifact write fails  ->  manifest is not updated  ->  nothing new becomes publi
 There is no state in which a published route points at a truncated artifact. The
 writer's own receipts record the failure; the reader is unaffected.
 
-## 6. Recovery posture: not backed up, and reproducible
+## 6. Recovery posture: retain authority before regenerating projections
 
-Published content is **not backed up as application data**, deliberately.
+The content root now contains both public projections and private authoritative
+CMS history. Retain accepted Clio ledgers and schemas together under
+`.ημ/cms/<organization>/`, generated resource manifests and publication intent,
+and persisted translation/review evidence. Preserve stable seed and operation
+lock inodes. CMS snapshots are disposable projections; accepted ledgers are
+not. Never replace the whole root with an empty directory as a publication
+repair. No application-level backup of these CMS ledgers is established by this
+document; verify a backup before treating them as recoverable elsewhere.
 
-It is reproducible by re-running reconciliation: desired state — which documents
-are published, in which locales — lives in Knoxx (Mongo Atlas, which is backed
-up), and the renderer is deterministic above the effect boundary. Restoring an
-empty content root means running the reconciler; the site serves correctly from
-an empty root in the meantime (epic law 6), so the outage is degraded content,
-not a down site.
+Public artifacts and `manifest.edn` can be regenerated by reconciliation when
+their immutable source revisions and publication intent remain available.
+Translated publications also require approved effective translation output.
+The reader supports an absent public
+manifest as a degraded content state. That behavior does not recover lost CMS
+authority or translation review history.
 
 Two honest limits:
 
-- Reconciliation reproduces **the current desired state**, not the exact prior
-  bytes. A route whose source revision no longer exists cannot be re-materialized
-  at that revision; the manifest's `:route/revision` records what *was* published,
-  which is the evidence that the two differ.
+- Reconciliation requires the exact source admitted by its gate and, for
+  translated publications, approved effective translation output. A route whose
+  required source or approved output is unavailable
+  cannot be re-materialized merely from a filename. Keep source revision and
+  output revision distinct in recovery evidence.
 - The droplet has `backups: true` in the host contract, so the directory is
   incidentally inside DigitalOcean's droplet snapshots. That is a coarse
   whole-machine safety net with snapshot-granularity recency. It is not the
@@ -232,10 +291,10 @@ Two honest limits:
 
 ## 7. What this file does not decide
 
-- **Whether the website needs a staging slot.** No service on this lane has one;
-  `docs/deployment-model.md` §3 argues production needs a staging record to
-  promote from. The website is declared production-only, consistent with every
-  other service here, and the question stays open.
+- **Staging deployment policy.** The website has an isolated staging reader at
+  `/srv/open-hax/state/staging/website-content`; production retains the content
+  root described above. Its phase path and explicit unsupported production
+  qualification gate are recorded in `docs/website-staging-deployment.md`.
 - **Nothing about DNS.** The record already points here (§1), so
   `verify.sh`'s public-TLS probe is a hard requirement from the first deploy
   rather than a WARN. The WARN branch remains for the case it describes: a

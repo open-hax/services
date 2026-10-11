@@ -4,8 +4,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
-# Reusable workflow calls run with `none` unless the caller grants scopes;
-# the called jobs request contents:read and pull-requests:read.
 permissions:
   contents: read
   pull-requests: read
@@ -13,14 +11,20 @@ permissions:
 jobs:
   review:
     name: Evidence-first review (eta-mu)
-    uses: open-hax/eta-mu/.github/workflows/opencode-code-review.yml@b5b28237c45323cdc1914317260192163d957735
+    uses: open-hax/eta-mu/.github/workflows/opencode-code-review.yml@d98ab446d56ddfd24542df49b102b851f2a767fa
     with:
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
+      opencode_version: '1.18.31'
+      muse_revision: e733f5b417a870a6c8480ae433d643ee1598af27
       setup_eta_mu_toolchain: false
       evidence_gates_script: |
-        run_gate diff_stat git diff --stat "${PR_BASE_SHA}...HEAD"
-    # Least privilege: forward only the secrets the review job consumes.
+        run_gate deployment_boundary python3 scripts/check-deployment-boundary.py
+        run_gate source_pins python3 scripts/check-deploy-source-pins.py
+        run_gate deployment_dependencies python3 scripts/check-deploy-chain.py
+        run_gate service_environment_contracts python3 scripts/check-env-contracts.py
+        run_gate disabled_profiles python3 scripts/check-disabled-profile-services.py
+        run_gate website_phase_tests python3 scripts/test_website_deployment.py
+        run_gate source_whitespace git diff --check "${PR_BASE_SHA}...HEAD"
     secrets:
       ETA_MU_APP_ID: ${{ secrets.ETA_MU_APP_ID }}
       ETA_MU_APP_PRIVATE_KEY: ${{ secrets.ETA_MU_APP_PRIVATE_KEY }}
-      DISCORD_REVIEW_WEBHOOK_URL: ${{ secrets.DISCORD_REVIEW_WEBHOOK_URL }}
