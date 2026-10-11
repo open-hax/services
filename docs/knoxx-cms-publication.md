@@ -350,8 +350,26 @@ installation and the startup repair, the native backend entrypoints are
 `pnpm -C "$KNOXX_CHECKOUT/backend" build` and
 `pnpm -C "$KNOXX_CHECKOUT/backend" start`; those commands inherit the explicit
 environment above. The SDK dependency must be present at the checkout's linked
-OpenPlanner package location. The frontend's native `build`/`preview` scripts
-use `VITE_KNOXX_BACKEND_URL` for the API proxy; keep the preview listener local.
+OpenPlanner package location. Build the native frontend, then stage its committed
+HTML shell before previewing it. The build emits the bridge, compiled application,
+and CSS assets but does not emit `dist/index.html`; Services performs the same
+copy in its frontend image build.
+
+```sh
+pnpm -C "$KNOXX_CHECKOUT/frontend" build
+cp "$KNOXX_CHECKOUT/frontend/public/index.html" "$KNOXX_CHECKOUT/frontend/dist/index.html"
+test -f "$KNOXX_CHECKOUT/frontend/dist/index.html"
+test -f "$KNOXX_CHECKOUT/frontend/dist/app.css"
+test -f "$KNOXX_CHECKOUT/frontend/dist/cljs/app.js"
+test -f "$KNOXX_CHECKOUT/frontend/dist/bridge/style.css"
+VITE_KNOXX_BACKEND_URL="http://127.0.0.1:$PORT" \
+  pnpm -C "$KNOXX_CHECKOUT/frontend" preview --host 127.0.0.1
+```
+
+The native preview script reads `VITE_KNOXX_BACKEND_URL` for the API proxy. This
+command uses the workstation backend's explicit port above and overrides Vite's
+all-interface listener default. Choose a free local preview port if its configured
+port is occupied.
 
 Source contracts: [CMS persistence layout](https://github.com/open-hax/knoxx/blob/main/backend/src/cljs/knoxx/backend/extern/cms_store.cljs),
 [source provenance](https://github.com/open-hax/knoxx/blob/main/backend/src/cljs/knoxx/backend/infra/publication_source_revision.cljs),
