@@ -361,6 +361,8 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
                            "changed-workflow": ".github/workflows/deploy-digitalocean.yml",
                            "changed-helper": "digitalocean/lib/host-contract.sh"}
             for mode in ("complete", "pending", "missing-answer", "stale-receipt", "non-main",
+                         "missing-owner-source", "missing-owner-image", "malformed-owner-source",
+                         "malformed-owner-image", "copied-source", "copied-digest",
                          *drift_paths, "added-helper", "removed-helper"):
                 with self.subTest(mode=mode):
                     attempt = copy.deepcopy(record)
@@ -371,7 +373,21 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
                         del attempt["ownerDecision"]["answer"]
                     if mode == "stale-receipt":
                         observed["servicesSha"] = "9" * 40
-                    record_path.write_text(json.dumps(attempt))
+                    if mode == "missing-owner-source":
+                        del attempt["ownerDecision"]["sourceSha"]
+                    if mode == "missing-owner-image":
+                        del attempt["ownerDecision"]["image"]
+                    if mode == "malformed-owner-source":
+                        attempt["ownerDecision"]["sourceSha"] = {"sha": source}
+                    if mode == "malformed-owner-image":
+                        attempt["ownerDecision"]["image"] = [record["image"]]
+                    if mode in ("copied-source", "copied-digest"):
+                        selected_source = "9" * 40 if mode == "copied-source" else source
+                        selected_image = "ghcr.io/open-hax/website:" + selected_source + "@sha256:" + "b" * 64
+                        attempt.update(sourceSha=selected_source, image=selected_image)
+                        observed.update(sourceSha=selected_source, image=selected_image)
+                        self.assertEqual(record["ownerDecision"], attempt["ownerDecision"])
+                    record_path.with_name(attempt["sourceSha"] + ".json").write_text(json.dumps(attempt))
                     if mode in drift_paths:
                         changed = directory / drift_paths[mode]
                         original = changed.read_bytes()
@@ -385,8 +401,8 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
                     output = directory / "website-production-qualification.json"
                     output.unlink(missing_ok=True)
                     result = subprocess.run(["bash", "-c", command], cwd=directory,
-                        env={**os.environ, "CONTROLLER_REF": "refs/heads/codex/proposal" if mode == "non-main" else "refs/heads/main", "SOURCE_SHA": source,
-                             "IMAGE": record["image"], "SERVICES_SHA": "7" * 40,
+                        env={**os.environ, "CONTROLLER_REF": "refs/heads/codex/proposal" if mode == "non-main" else "refs/heads/main", "SOURCE_SHA": attempt["sourceSha"],
+                             "IMAGE": attempt["image"], "SERVICES_SHA": "7" * 40,
                              "STAGE_RECEIPT": json.dumps(observed)}, text=True, capture_output=True)
                     if mode in drift_paths:
                         changed.write_bytes(original)
@@ -401,6 +417,7 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
                         proof = json.loads(output.read_text())
                         self.assertEqual("owner-decision", proof["qualification"])
                         self.assertFalse(proof["mutationCampaignPassed"])
+                        self.assertEqual(record["ownerDecision"], proof["ownerDecision"])
                         self.assertEqual(receipt, proof["stageReceipt"])
                         self.assertEqual(record["deploymentInputs"], proof["deploymentInputs"])
                         self.assertEqual(record["deploymentInputs"]["sha256"], proof["deploymentInputsSha256"])

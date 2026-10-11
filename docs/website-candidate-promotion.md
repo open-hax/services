@@ -4,7 +4,7 @@ The user explicitly approved this exact Website candidate on 2026-10-11,
 observed at `20:24:00.292774Z`. The actual question and answer are retained in
 [`digitalocean/qualifications/website/6fd48ac5df9a16e414efbbf2b6abe98ad331be78.json`](../digitalocean/qualifications/website/6fd48ac5df9a16e414efbbf2b6abe98ad331be78.json).
 The record is `approved` and binds 107 public operational inputs with aggregate
-SHA-256 `697a2e154eca80c026e745e38d24a8e0464e82b551860826ce62c017e76e8204`.
+SHA-256 `93565f503c3553d3d1f8a15755f7e02f13e3a4f809dd699c84929e39a096969c`.
 This source proposal has not yet been merged or deployed. Activation still
 requires independent source review, the required hosted checks and a verified
 merge to trusted `main`, followed by fresh locked staging and live verification.
@@ -45,6 +45,13 @@ production and production proof. `website_image` selects an existing image only
 in isolated `website` scope, on trusted `main`, and only when the reviewed
 record explicitly approves its exact source and digest. It never rebuilds that
 candidate. A changed digest requires a new owner decision and source review.
+The structured `ownerDecision.sourceSha` and `ownerDecision.image` name the
+source and immutable image the owner approved. Selection and qualification
+require those coordinates to match the selected candidate exactly, alongside
+the retained question, answer, scope and approval time. Missing or malformed
+coordinates refuse admission. Copying an old decision and changing only the
+record's top-level candidate cannot authorize a different source or digest,
+even with a fresh matching stage receipt and unchanged public configuration.
 The decision also binds the exact public operational inputs in its
 `deploymentInputs` manifest. Each entry records a sorted, unique tracked path,
 regular Git file mode and SHA-256 of the actual file bytes; the aggregate hashes

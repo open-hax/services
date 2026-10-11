@@ -100,13 +100,19 @@ def verify_deployment_inputs(record):
 def select(record, source, image):
     require(record.get("schemaVersion") == 1 and record.get("service") == "website",
             "Unsupported candidate decision record")
-    require(bool(re.fullmatch(r"ghcr\.io/open-hax/website:" + re.escape(source) + r"@sha256:[0-9a-f]{64}", image)),
+    require(isinstance(source, str) and bool(re.fullmatch(r"[0-9a-f]{40}", source)),
+            "Full immutable Website source required")
+    require(isinstance(image, str) and bool(re.fullmatch(
+        r"ghcr\.io/open-hax/website:" + re.escape(source) + r"@sha256:[0-9a-f]{64}", image)),
             "Source-bound immutable Website image required")
     require(source == record.get("sourceSha") and image == record.get("image"),
             "Source or digest differs from the reviewed candidate")
     decision = record.get("ownerDecision", {})
-    require(decision.get("status") == "approved" and decision.get("owner") == "riatzukiza",
+    require(isinstance(decision, dict) and decision.get("status") == "approved" and
+            decision.get("owner") == "riatzukiza",
             "Explicit repository-owner decision is pending or absent")
+    require(decision.get("sourceSha") == source and decision.get("image") == image,
+            "Owner decision does not approve this exact source and image")
     require(all(isinstance(decision.get(k), str) and decision[k].strip()
                 for k in ("approvedAt", "question", "answer", "scope")), "Owner decision evidence is incomplete")
     datetime.datetime.fromisoformat(decision["approvedAt"].replace("Z", "+00:00"))

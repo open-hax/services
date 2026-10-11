@@ -7,6 +7,8 @@
   "ownerDecision": {
     "status": "approved",
     "owner": "riatzukiza",
+    "sourceSha": "6666666666666666666666666666666666666666",
+    "image": "ghcr.io/open-hax/website:6666666666666666666666666666666666666666@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "approvedAt": "2026-10-11T19:00:00Z",
     "question": "Synthetic unit-test decision; no deployed candidate.",
     "answer": "Synthetic fixture only.",

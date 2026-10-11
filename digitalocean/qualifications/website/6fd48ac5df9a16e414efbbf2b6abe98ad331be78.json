@@ -10,7 +10,9 @@
     "approvedAt": "2026-10-11T20:24:00.292774+00:00",
     "question": "Approve a one-candidate production exception for the Website image already verified on staging? The reviewable proposal is /home/err/.local/share/openhax-codex/20261010/services-production-candidate/docs/website-candidate-promotion.md. It binds Website source 6fd48ac5df9a16e414efbbf2b6abe98ad331be78, registry digest sha256:ef3f2daa46b212cfcd82c2a72492946b0c44c23f1fab9b0fffde35d7199c836f, and the unchanged serving configuration. Approval would accept its verified build, staging health/receipt, public HTTP checks and browser rendering in place of the incomplete canonical integration/e2e plus four batches of 250 mutation tests. Reviewed trusted-main Services admission, a fresh locked staging check, preservation of existing publications and live verification still apply. It does not approve a Knoxx rollout or change the default for other candidates.",
     "answer": "Approve this exact Website candidate (Recommended)",
-    "scope": "Only this Website source, image digest and exact public operational configuration bound by deploymentInputs: accept its verified image build, observed staging health/receipt, public HTTP artifact checks and rendered browser checks in place of the incomplete canonical integration/e2e plus four-by-250 mutation qualification. Preserve reviewed trusted-main Services admission, the host lock, fresh staging proof, existing production publications and live verification. Other candidates retain canonical production qualification. This does not approve a Knoxx rollout."
+    "scope": "Only this Website source, image digest and exact public operational configuration bound by deploymentInputs: accept its verified image build, observed staging health/receipt, public HTTP artifact checks and rendered browser checks in place of the incomplete canonical integration/e2e plus four-by-250 mutation qualification. Preserve reviewed trusted-main Services admission, the host lock, fresh staging proof, existing production publications and live verification. Other candidates retain canonical production qualification. This does not approve a Knoxx rollout.",
+    "sourceSha": "6fd48ac5df9a16e414efbbf2b6abe98ad331be78",
+    "image": "ghcr.io/open-hax/website:6fd48ac5df9a16e414efbbf2b6abe98ad331be78@sha256:ef3f2daa46b212cfcd82c2a72492946b0c44c23f1fab9b0fffde35d7199c836f"
   },
   "previousStageProof": {
     "servicesSha": "e87c2cdf530c2edd7f98ba45642fa222349e4ef2",
@@ -541,7 +543,7 @@
       {
         "path": "scripts/test-website-owner-decision.py",
         "mode": "100644",
-        "sha256": "dcdf775c286ea61b8722d590293bc64cf6f8d7eb01668738d34774abad626b5c"
+        "sha256": "58c433c3090a5251a281f1166a7ed3dbb6e26a82d004872a48f0a9aa92342ac7"
       },
       {
         "path": "scripts/test-website-serving-boundary.py",
@@ -551,14 +553,14 @@
       {
         "path": "scripts/test_website_deployment.py",
         "mode": "100644",
-        "sha256": "32c8abd6637faba135af7dff61721c26457ee5cb7ab155fbe24a31c55a3d14c9"
+        "sha256": "9cd3b277925a6429a33e58352620ec629b86d996d278fbbce4b973dd70e991c5"
       },
       {
         "path": "scripts/website-owner-decision.py",
         "mode": "100644",
-        "sha256": "7eba34e9925398df352d53189b0bbb021ddff8368a4b1a388c2b5af231679c9d"
+        "sha256": "65c4160ed5ec7b96ea71f1f1053faa72169c3db8412420424ea6bed1931330e5"
       }
     ],
-    "sha256": "697a2e154eca80c026e745e38d24a8e0464e82b551860826ce62c017e76e8204"
+    "sha256": "93565f503c3553d3d1f8a15755f7e02f13e3a4f809dd699c84929e39a096969c"
   }
 }

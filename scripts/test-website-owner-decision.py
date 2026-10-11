@@ -20,7 +20,7 @@ SPEC.loader.exec_module(candidate)
 
 
 class CandidateDecisionTests(unittest.TestCase):
-    """Synthetic approvals test admission; the committed record stays pending."""
+    """Synthetic approvals test admission without changing the actual owner record."""
 
     def setUp(self):
         self.record = candidate.read_record("6" * 40, directory=ROOT / "test/fixtures/website-decisions")
@@ -36,6 +36,7 @@ class CandidateDecisionTests(unittest.TestCase):
         self.assertEqual("owner-decision", result["qualification"])
         self.assertFalse(result["mutationCampaignPassed"])
         self.assertEqual(self.record["deploymentInputs"], result["deploymentInputs"])
+        self.assertEqual(self.record["ownerDecision"], result["ownerDecision"])
 
     def test_pending_or_missing_owner_decision_is_denied(self):
         for state in ("pending", "rejected", "", None):
@@ -66,6 +67,64 @@ class CandidateDecisionTests(unittest.TestCase):
                               ("6" * 40, self.record["image"].replace("a" * 64, "b" * 64))):
             with self.subTest(source=source, image=image), self.assertRaises(ValueError):
                 candidate.select(self.record, source, image)
+
+    def test_copied_approval_cannot_authorize_another_candidate(self):
+        """A fresh valid receipt and manifest cannot extend an unchanged approval."""
+        self.assertEqual(self.record["image"], candidate.qualify(
+            self.record, "6" * 40, self.record["image"], "7" * 40, "8" * 64, self.receipt)["image"])
+        for source, image in (("9" * 40, "ghcr.io/open-hax/website:" + "9" * 40 + "@sha256:" + "b" * 64),
+                              ("6" * 40, self.record["image"].replace("a" * 64, "b" * 64))):
+            copied = copy.deepcopy(self.record)
+            copied.update(sourceSha=source, image=image)
+            receipt = {**self.receipt, "sourceSha": source, "image": image}
+            self.assertEqual(self.record["ownerDecision"], copied["ownerDecision"])
+            self.assertEqual(candidate.deployment_inputs(), copied["deploymentInputs"])
+            for operation in ("select", "qualify"):
+                with self.subTest(source=source, image=image, operation=operation):
+                    with self.assertRaisesRegex(ValueError, "Owner decision.*exact source and image"):
+                        if operation == "select":
+                            candidate.select(copied, source, image)
+                        else:
+                            candidate.qualify(copied, source, image, "7" * 40, "8" * 64, receipt)
+
+    def test_missing_or_malformed_owner_candidate_coordinates_are_denied(self):
+        for field in ("sourceSha", "image"):
+            for mode, value in (("missing", None), ("null", None), ("empty", ""),
+                                ("number", 6), ("object", {}), ("mutable", "main")):
+                record = copy.deepcopy(self.record)
+                if mode == "missing":
+                    del record["ownerDecision"][field]
+                else:
+                    record["ownerDecision"][field] = value
+                for operation in ("select", "qualify"):
+                    with self.subTest(field=field, mode=mode, operation=operation):
+                        with self.assertRaisesRegex(ValueError, "Owner decision.*exact source and image"):
+                            if operation == "select":
+                                candidate.select(record, "6" * 40, record["image"])
+                            else:
+                                candidate.qualify(record, "6" * 40, record["image"], "7" * 40,
+                                                  "8" * 64, self.receipt)
+        for decision in (None, [], "approved", 1):
+            record = copy.deepcopy(self.record)
+            record["ownerDecision"] = decision
+            with self.subTest(decision=decision), self.assertRaisesRegex(ValueError, "owner decision"):
+                candidate.select(record, "6" * 40, record["image"])
+
+    def test_matching_coordinates_still_require_immutable_source_and_image(self):
+        for source in ("main", "6" * 39, "6" * 41, "A" * 40, None, 6):
+            record = copy.deepcopy(self.record)
+            image = "ghcr.io/open-hax/website:" + str(source) + "@sha256:" + "a" * 64
+            record.update(sourceSha=source, image=image)
+            record["ownerDecision"].update(sourceSha=source, image=image)
+            with self.subTest(source=source), self.assertRaisesRegex(ValueError, "immutable Website source"):
+                candidate.select(record, source, image)
+        for image in ("ghcr.io/open-hax/website:main", "ghcr.io/open-hax/website:" + "6" * 40,
+                      self.record["image"].replace("a" * 64, "A" * 64), None, 6):
+            record = copy.deepcopy(self.record)
+            record["image"] = image
+            record["ownerDecision"]["image"] = image
+            with self.subTest(image=image), self.assertRaisesRegex(ValueError, "immutable Website image"):
+                candidate.select(record, "6" * 40, image)
 
     def test_committed_real_candidate_preserves_exact_scope_and_decision_evidence(self):
         record = candidate.read_record("6fd48ac5df9a16e414efbbf2b6abe98ad331be78")
@@ -105,7 +164,8 @@ class CandidateDecisionTests(unittest.TestCase):
             record = copy.deepcopy(candidate.read_record("6fd48ac5df9a16e414efbbf2b6abe98ad331be78"))
             record["deploymentInputs"] = binding
             record["ownerDecision"].update(status="approved", approvedAt="2026-10-11T19:00:00Z",
-                question="Synthetic repair test; no actual approval.", answer="Synthetic fixture only.")
+                question="Synthetic repair test; no actual approval.", answer="Synthetic fixture only.",
+                sourceSha=record["sourceSha"], image=record["image"])
             source, image, nginx = record["sourceSha"], record["image"], record["nginxSha"]
             receipt = {**self.receipt, "sourceSha": source, "image": image, "nginxSha": nginx}
             previous_root = candidate.ROOT
