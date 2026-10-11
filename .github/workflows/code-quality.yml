@@ -52,6 +52,9 @@ jobs:
       - name: Test website phase isolation and serving gates
         run: python scripts/test_website_deployment.py
 
+      - name: Test exact Website owner-decision admission
+        run: python scripts/test-website-owner-decision.py
+
       - name: Exercise website publication boundary with Nginx
         run: |
           docker pull nginxinc/nginx-unprivileged:1.27

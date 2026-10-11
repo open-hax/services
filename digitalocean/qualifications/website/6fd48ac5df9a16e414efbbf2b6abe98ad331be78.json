@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "service": "website",
+  "sourceSha": "6fd48ac5df9a16e414efbbf2b6abe98ad331be78",
+  "image": "ghcr.io/open-hax/website:6fd48ac5df9a16e414efbbf2b6abe98ad331be78@sha256:ef3f2daa46b212cfcd82c2a72492946b0c44c23f1fab9b0fffde35d7199c836f",
+  "nginxSha": "f603c3b0d3cf3f8534294b1b28c57de73f2d7dc4cf5160bd7a1c7de99b13b3e5",
+  "ownerDecision": {
+    "status": "pending",
+    "owner": "riatzukiza",
+    "approvedAt": null,
+    "question": null,
+    "answer": null,
+    "scope": "Only this Website source, image digest and serving configuration: accept its verified image build, observed staging health/receipt, public HTTP artifact checks and rendered browser checks in place of the incomplete canonical integration/e2e plus four-by-250 mutation qualification. Preserve reviewed trusted-main Services admission, the host lock, fresh staging proof, existing production publications and live verification. Other candidates retain canonical production qualification. This does not approve a Knoxx rollout."
+  },
+  "previousStageProof": {
+    "servicesSha": "e87c2cdf530c2edd7f98ba45642fa222349e4ef2",
+    "runId": 38118171223,
+    "attempt": 1,
+    "artifactId": 11694277850,
+    "receiptSha256": "0012013bf110f17dbeec6800375c30eafbcb59f23c4f7f5a9a4a7600fdabb8dc"
+  },
+  "qualificationGap": "A Website qualification-harness successor discovers 79 eligible mutations under its initial operators and its measured pilot kills three. That evidence does not qualify this staged 6fd48ac5 source. Canonical immutable integration/e2e plus four disjoint batches of 250 kills have not been demonstrated for this candidate. This record is not mutation qualification."
+}
