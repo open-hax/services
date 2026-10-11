@@ -61,7 +61,7 @@ class SessionSecretDeploymentTests(unittest.TestCase):
             'KNOXX_API_KEY': 'synthetic-api-key',
         }
 
-    def run_render(self, base, overlay=None, service='knoxx'):
+    def run_render(self, base, overlay=None, service='knoxx', raw_overlay=None):
         document = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
         step = next(step for step in document['jobs']['deploy']['steps']
                     if step.get('name') == 'Render runtime environment')
@@ -70,7 +70,7 @@ class SessionSecretDeploymentTests(unittest.TestCase):
         env.update({key: 'synthetic-nonsecret-value'
                     for key in re.findall(r'\$\{([A-Z][A-Z0-9_]*)\}', template.read_text())})
         env.update({'SERVICE': service, 'SERVICE_DIR': str(template.parent),
-                    'EXTRA_ENV': json.dumps(overlay or {}),
+                    'EXTRA_ENV': raw_overlay if raw_overlay is not None else json.dumps(overlay or {}),
                     'KNOXX_MCP_LOOPBACK_TOKEN': 'synthetic-mcp-token'})
         if base is None:
             env.pop('KNOXX_SESSION_SECRET', None)
@@ -145,6 +145,28 @@ class SessionSecretDeploymentTests(unittest.TestCase):
                 self.assert_refused_without_effect(
                     self.run_render('b' * 64, {'KNOXX_SESSION_SECRET': value}),
                     'render-called.json', value if isinstance(value, str) else None)
+
+    def test_raw_overlay_requires_one_json_object_before_rendering(self):
+        for label, raw in [('malformed', '{'), ('array', '[]'), ('string', '"text"'),
+                           ('number', '42'), ('boolean', 'true'), ('null', 'null'),
+                           ('whitespace only', ' \n'), ('array then object', '[] {}'),
+                           ('two objects', '{} {}')]:
+            with self.subTest(label=label):
+                self.reset_markers()
+                result = self.run_render('a' * 64, raw_overlay=raw)
+                self.assertEqual(2, result.returncode, 'invalid overlay reached rendering')
+                self.assertIn('extra_env must be a valid JSON object', result.stderr)
+                self.assertFalse((self.fixture / 'render-called.json').exists())
+                self.assertFalse((self.fixture / 'docker-called.json').exists())
+                self.assertFalse((self.fixture / 'rendered.env').exists())
+                self.assertNotIn('a' * 64, result.stdout + result.stderr)
+        for raw in ('{}', ' \n{}\n ', '{"SYNTHETIC_OTHER":"value"}'):
+            with self.subTest(valid_object=raw):
+                self.reset_markers()
+                result = self.run_render('a' * 64, raw_overlay=raw)
+                self.assertEqual(0, result.returncode, result.stderr)
+                captured = json.loads((self.fixture / 'render-called.json').read_text())
+                self.assertEqual('a' * 64, captured['session'], 'absent overlay key changed the base')
 
     def test_original_service_context_cannot_be_shadowed(self):
         for label, base, overlay in [

@@ -19,6 +19,12 @@ require_knoxx_session_secret_overlay() {
   local overlay_json=${1:-'{}'}
   local KNOXX_SESSION_SECRET=${KNOXX_SESSION_SECRET:-}
 
+  # jq accepts JSON streams; the overlay contract requires one object.
+  if ! jq -e -s 'length == 1 and (.[0] | type == "object")' <<<"$overlay_json" >/dev/null 2>&1; then
+    printf '%s\n' 'knoxx: extra_env must be a valid JSON object' >&2
+    return 2
+  fi
+
   if jq -e 'has("KNOXX_SESSION_SECRET")' <<<"$overlay_json" >/dev/null 2>&1; then
     KNOXX_SESSION_SECRET=''
     if jq -e '.KNOXX_SESSION_SECRET | if type == "string" then contains("\u0000") | not else false end' \

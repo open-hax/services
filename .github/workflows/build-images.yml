@@ -23,7 +23,7 @@ on:
       openplanner_ref:
         description: Immutable SDK source required for Knoxx backend images
         required: false
-        default: ""
+        default: "07085d6557b75834ce6f50e6c54b8ca47e1c7c08"
         type: string
     outputs:
       image:
@@ -50,7 +50,7 @@ on:
       openplanner_ref:
         description: Immutable SDK source required for Knoxx backend images
         required: false
-        default: ""
+        default: "07085d6557b75834ce6f50e6c54b8ca47e1c7c08"
         type: string
 
 permissions:

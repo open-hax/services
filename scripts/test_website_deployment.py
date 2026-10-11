@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -46,6 +47,34 @@ class WebsiteDeploymentTests(unittest.TestCase):
         self.assertEqual("${{ github.event_name == 'workflow_dispatch' && inputs.include_website }}",
                          self.entry["jobs"]["deploy"]["with"]["include_website"])
         self.assertEqual("needs.authorize.outputs.should_deploy == 'true'", self.entry["jobs"]["deploy"]["if"])
+
+    def test_backend_builder_defaults_pass_the_immutable_sdk_guard(self):
+        builder = workflow("build-images.yml")
+        resolve = next(s for s in builder["jobs"]["build"]["steps"]
+                       if s.get("name") == "Resolve service definition")
+        production_pin = re.search(r"'([0-9a-f]{40})'",
+                                   self.entry["jobs"]["deploy"]["with"]["openplanner_ref"]).group(1)
+        self.assertEqual("${{ inputs.openplanner_ref }}", resolve["env"]["OPENPLANNER_REF"])
+        for trigger in ("workflow_call", "workflow_dispatch"):
+            default = builder["on"][trigger]["inputs"]["openplanner_ref"]["default"]
+            for label, reference, expected in (("default", default, 0),
+                                               ("immutable override", "1" * 40, 0),
+                                               ("moving branch", "main", 2),
+                                               ("empty override", "", 2)):
+                with self.subTest(trigger=trigger, reference=label), tempfile.TemporaryDirectory() as temporary:
+                    output = Path(temporary) / "outputs"
+                    result = subprocess.run(["bash", "-c", resolve["run"]], cwd=ROOT,
+                        env={**os.environ, "SERVICE": "knoxx-backend", "OPENPLANNER_REF": reference,
+                             "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
+                    self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
+                    if expected:
+                        self.assertFalse(output.exists(), "invalid SDK reference emitted build coordinates")
+                        self.assertIn("requires an immutable openplanner_ref", result.stderr)
+                    else:
+                        self.assertIn("repo=open-hax/knoxx", output.read_text())
+                        self.assertIn("context=source/backend", output.read_text())
+            with self.subTest(trigger=trigger, pin="release default"):
+                self.assertEqual(production_pin, default, "manual SDK default drifted from the release pin")
 
     def test_authorize_rejects_stack_website_optin_before_deployment(self):
         decide = self.entry["jobs"]["authorize"]["steps"][0]
