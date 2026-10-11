@@ -165,6 +165,7 @@ class WebsiteDeploymentTests(unittest.TestCase):
         self.assertEqual("/srv/open-hax/state/caddy/managed", stage["ingress_state"])
 
     def prepare_volume_sources(self, compose, environment):
+        """Run the authored volume loop with a recording mkdir stub and return its sources."""
         # Execute the authored Bash loop, rather than a test-side volume parser.
         command = re.search(r"(?m)^sed -nE .* compose\.yaml \\\n(?:.*\n)*?    done\n",
                             step("Deploy")["run"])
@@ -188,6 +189,7 @@ class WebsiteDeploymentTests(unittest.TestCase):
                 if line.startswith("mkdir\t-p\t")]
 
     def test_authored_website_volume_preparation_skips_network_aliases(self):
+        """Verify both Website Compose files prepare only their content and music roots."""
         environment = {"WEBSITE_CONTENT_ROOT": "/fixture/published", "WEBSITE_MUSIC_ROOT": "/fixture/music"}
         for filename in ("compose.staging.yaml", "compose.yaml"):
             with self.subTest(compose=filename):
@@ -196,6 +198,7 @@ class WebsiteDeploymentTests(unittest.TestCase):
                                  self.prepare_volume_sources(compose, environment))
 
     def test_volume_preparation_preserves_mounts_and_skips_nonmount_scalars(self):
+        """Preserve supported bind forms while skipping relative, named and non-mount scalars."""
         compose = '''services:
   fixture:
     volumes:
