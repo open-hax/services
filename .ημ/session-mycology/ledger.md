@@ -72,3 +72,12 @@
   spore: none
   receipt-refs: 64303bb8-e77f-4c52-a7f1-f8d7799b1e0a,sha256:9d5814689ee6db4217753cc58c8d7033298bb79c9a00ac278336d24608faf888
   note: Test the actual workflow Bash against full Compose files: an alternative may fall back into interpolation syntax when a nonmount alias has an internal colon. The narrow leading-dollar guard preserves complete mounts and prevents the reproduced EOF. Actual18-test and seven-gate local qualification is separate from fresh PR review and a later real staging retry; partial prior Caddy changes and image build do not grant deployment success.
+- ts: 2026-10-14T01:07:48.575418012Z
+  session: 01a12257-fc69-7720-888c-dd2595ff7dc7
+  task: Persist the actual Website and native CMS deployment procedure in Services
+  p-efficiency: 0.87
+  p-friction: 0.35
+  p-skill-candidate: 0.0
+  spore: none
+  receipt-refs: 6bd8adbe98817b6aa402860418832e10570b8dda202338d1e56fec82761eeb72
+  note: Guide records the actual approved Website delivery, distinct C/S/G ownership, application-owned qualification and attestation, effective hosted translation and review evidence, public browser proof, preservation and rollback. Prepared contract permalink is attributed as preparation. Five unfinished code paths and old controller pin remain intact. Only documentation and provenance change; the new CMS deployment remains pending. No new spore.
