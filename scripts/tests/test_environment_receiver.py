@@ -28,17 +28,30 @@ import hashlib,json,os,sys,tarfile
 from pathlib import Path
 p=Path(os.environ['RECEIVER_TEST_DOCKER_STATE']);s=json.loads(p.read_text());a=sys.argv[1:]
 s['calls'].append(a)
+s['known_ids']=sorted(set(s.get('known_ids',[]))|set(s['images'].values()))
 def finish(code=0,text=''):
  p.write_text(json.dumps(s));print(text,end='');sys.exit(code)
 if a[:1]==['load']:
+ s['load_count']=s.get('load_count',0)+1
+ s.setdefault('load_markers',[]).append((p.parent/'receiver-intake.json').exists())
  with tarfile.open(a[a.index('--input')+1]) as t:
   for row in json.load(t.extractfile('manifest.json')):
-   for tag in row['RepoTags']:s['images'][tag]=s.get('load_ids',{}).get(tag,'sha256:'+hashlib.sha256(tag.encode()).hexdigest())
- finish()
+   for tag in row['RepoTags']:
+    s['images'][tag]=s.get('load_ids',{}).get(tag,'sha256:'+hashlib.sha256(tag.encode()).hexdigest())
+    s['known_ids']=sorted(set(s['known_ids'])|{s['images'][tag]})
+    if s.get('partial_load'):finish(1)
+ finish(s.get('load_exit',0))
 if a[:2]==['image','inspect']:
  tag=a[-1]
+ if tag.startswith('sha256:'):
+  finish(0 if tag in s['known_ids'] and tag not in s.get('missing_ids',[]) else 1,text=tag+'\n')
+ if s.get('inspect_fail_after_load') and s.get('load_count',0)>=s['inspect_fail_after_load'] and tag in s.get('load_ids',{}):finish(1)
  if tag not in s['images']:finish(1)
  finish(text=s['images'][tag]+'\n')
+if a[:2]==['image','tag']:
+ old,tag=a[-2:];s.setdefault('restore_attempts',[]).append({'tag':tag,'image_id':old})
+ if old not in s['known_ids'] or tag in s.get('fail_restore',[]):finish(1)
+ s['images'][tag]=s.get('restore_ids',{}).get(tag,old);finish()
 if a[:2]==['image','ls']:
  if s.get('inventory')=='unavailable-images':finish(1)
  if s.get('inventory')=='malformed-images':finish(text='not-json\n')
@@ -88,7 +101,7 @@ class ReceiverHarness:
  def tag(self,letter,service='axxium'):return 'promethean-'+service+':'+letter*40
  def image_id(self,tag):return 'sha256:'+hashlib.sha256(tag.encode()).hexdigest()
  def selection(self,path):return dict(line.split('=',1) for line in path.read_text().splitlines())
- def receive(self,letter,env='testing',service='axxium',barrier_fault=None,release_fault=False):
+ def receive(self,letter,env='testing',service='axxium',barrier_fault=None,release_fault=False,operation_fault=None,intake_fault=None):
   tags=receiver.expected_tags(service,letter*40);stream=io.BytesIO()
   with tarfile.open(fileobj=stream,mode='w') as out:
    payload=json.dumps([{'RepoTags':[t],'Config':'config.json','Layers':[]} for t in sorted(tags)]).encode()
@@ -98,24 +111,39 @@ from pathlib import Path
 s=importlib.util.spec_from_file_location('receiver',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);m.ROOT=Path(sys.argv[2])
 fault=os.environ.get('RECEIVER_TEST_BARRIER_FAULT')
 release_fault=os.environ.get('RECEIVER_TEST_RELEASE_DIR_FAULT')
-if fault or release_fault:
+intake_fault=os.environ.get('RECEIVER_TEST_INTAKE_FAULT')
+if fault or release_fault or intake_fault:
  original=m.atomic_write
  def injected(path,text):
   release=release_fault and path.name=='release.env'
-  if not release and (not fault or path.name!='receiver-images.json' or 'Removal in progress or uncertain' not in text):return original(path,text)
+  intake=intake_fault and path.name=='receiver-intake.json'
+  if intake and intake_fault=='crash-after-marker':
+   original(path,text);raise KeyboardInterrupt('simulated crash after durable intake marker')
+  if not release and not intake and (not fault or path.name!='receiver-images.json' or 'Removal in progress or uncertain' not in text):return original(path,text)
   fsync=m.os.fsync;calls=[]
   def failing_fsync(fd):
    calls.append(fd);(m.ROOT/('release-fault.json' if release else 'barrier-fault.json')).write_text(json.dumps({'fault':'directory' if release else fault,'fsync_calls':len(calls)}))
-   if len(calls)==(1 if not release and fault=='file' else 2):raise OSError('injected durable state failure')
+   if len(calls)==(1 if (intake and intake_fault=='file') or (not release and fault=='file') else 2):raise OSError('injected durable state failure')
    return fsync(fd)
   m.os.fsync=failing_fsync
   try:return original(path,text)
   finally:m.os.fsync=fsync
  m.atomic_write=injected
+operation_fault=os.environ.get('RECEIVER_TEST_OPERATION_FAULT')
+if operation_fault:
+ original_run=m.subprocess.run
+ def injected_run(args,*a,**kw):
+  result=original_run(args,*a,**kw)
+  if args[:2]==['docker','load']:
+   if operation_fault=='load-timeout':raise m.subprocess.TimeoutExpired(args,kw.get('timeout',1))
+   if operation_fault=='crash-after-load':raise KeyboardInterrupt('simulated crash after load')
+  if args[:3]==['docker','image','tag'] and operation_fault=='crash-after-restore':raise KeyboardInterrupt('simulated crash after restoration')
+  return result
+ m.subprocess.run=injected_run
 sys.argv=['receiver',sys.argv[3],sys.argv[4]];raise SystemExit(m.main())
 """
   source=Path(receiver.__file__).resolve()
-  return subprocess.run([sys.executable,'-c',script,str(source),str(self.root),env,service],input=stream.getvalue(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15,env={'PATH':str(self.bin)+os.pathsep+os.environ['PATH'],'RECEIVER_TEST_DOCKER_STATE':str(self.state),'SSH_ORIGINAL_COMMAND':f'receive {env} {service} '+letter*40,**({'RECEIVER_TEST_BARRIER_FAULT':barrier_fault} if barrier_fault else {}),**({'RECEIVER_TEST_RELEASE_DIR_FAULT':'1'} if release_fault else {})})
+  return subprocess.run([sys.executable,'-B','-c',script,str(source),str(self.root),env,service],input=stream.getvalue(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15,env={'PATH':str(self.bin)+os.pathsep+os.environ['PATH'],'RECEIVER_TEST_DOCKER_STATE':str(self.state),'SSH_ORIGINAL_COMMAND':f'receive {env} {service} '+letter*40,**({'RECEIVER_TEST_BARRIER_FAULT':barrier_fault} if barrier_fault else {}),**({'RECEIVER_TEST_RELEASE_DIR_FAULT':'1'} if release_fault else {}),**({'RECEIVER_TEST_OPERATION_FAULT':operation_fault} if operation_fault else {}),**({'RECEIVER_TEST_INTAKE_FAULT':intake_fault} if intake_fault else {})})
  def receipt(self,env='testing',service='axxium'):return json.loads((self.slot(env,service)/'deployment.json').read_text())
 
 
@@ -124,6 +152,73 @@ class ReceiverLifecycleTests(unittest.TestCase):
  def healthy(self,h,letter,**kwargs):
   result=h.receive(letter,**kwargs);self.assertEqual(0,result.returncode,result.stderr.decode());return h.receipt(**kwargs)
  def generations(self,h):self.healthy(h,'a');self.healthy(h,'b')
+ def protected_bytes(self,h,service='axxium'):
+  paths=[h.slot(service=service)/name for name in ('release.env','rollback.env','deployment.json')]+[h.root/'receiver-images.json']
+  return {str(path.relative_to(h.root)):path.read_bytes() if path.exists() else None for path in paths}
+ def assert_intake_refused(self,h,before,result,service='axxium'):
+  self.assertNotEqual(0,result.returncode,result.stdout.decode())
+  self.assertEqual(before,self.protected_bytes(h,service))
+  self.assertEqual([],h.data()['removal_attempts'])
+  marker=h.root/'receiver-intake.json';self.assertTrue(marker.exists())
+  data=json.loads(marker.read_text());self.assertEqual('promethean.receiver-intake/v1',data['schema']);self.assertTrue(data['first_failure'])
+  retained=marker.read_bytes();calls=h.data()['calls'];self.assertNotEqual(0,h.receive('c',service=service).returncode)
+  self.assertEqual(calls,h.data()['calls']);self.assertEqual(retained,marker.read_bytes())
+ def test_same_source_different_image_refuses_before_release_and_restores_old_tag(self):
+  h=self.harness();self.generations(h);before=self.protected_bytes(h);old=h.data()['images'][h.tag('b')]
+  d=h.data();d['load_ids']={h.tag('b'):'sha256:'+'e'*64};h.save(d);health=len(d['health'])
+  result=h.receive('b');self.assert_intake_refused(h,before,result)
+  self.assertEqual(old,h.data()['images'][h.tag('b')]);self.assertEqual(health,len(h.data()['health']))
+  self.assertEqual([{'tag':h.tag('b'),'image_id':old}],h.data()['restore_attempts'])
+ def test_paired_knoxx_rebuild_restores_complete_old_expected_map(self):
+  for changed_roles in [('knoxx-backend',),('knoxx-backend','knoxx-frontend')]:
+   with self.subTest(changed_roles=changed_roles):
+    h=self.harness();self.healthy(h,'a',service='knoxx');self.healthy(h,'b',service='knoxx');before=self.protected_bytes(h,'knoxx')
+    old={tag:h.data()['images'][tag] for tag in receiver.expected_tags('knoxx','b'*40)};d=h.data()
+    d['load_ids']={h.tag('b',role):'sha256:'+str(index+6)*64 for index,role in enumerate(changed_roles)};h.save(d)
+    result=h.receive('b',service='knoxx');self.assert_intake_refused(h,before,result,'knoxx')
+    self.assertEqual(old,{tag:h.data()['images'][tag] for tag in old})
+    self.assertEqual(set(d['load_ids']),{row['tag'] for row in h.data()['restore_attempts']})
+ def test_partial_failed_load_and_postload_inspect_failure_restore_without_start(self):
+  for changes,operation in [({'partial_load':True},None),({'load_exit':1},None),({},'load-timeout'),({'inspect_fail_after_load':3},None)]:
+   with self.subTest(changes=changes,operation=operation):
+    h=self.harness();self.generations(h);before=self.protected_bytes(h);old=h.data()['images'][h.tag('b')]
+    d=h.data();d.update(changes);d['load_ids']={h.tag('b'):'sha256:'+'e'*64};h.save(d);health=len(d['health'])
+    result=h.receive('b',operation_fault=operation);self.assert_intake_refused(h,before,result)
+    self.assertEqual(old,h.data()['images'][h.tag('b')]);self.assertEqual(health,len(h.data()['health']))
+    self.assertEqual(1,len(h.data()['restore_attempts']))
+ def test_restoration_failure_or_wrong_readback_preserves_first_failure_and_custody(self):
+  for changes in ({'fail_restore':True},{'wrong_restore':True}):
+   with self.subTest(changes=changes):
+    h=self.harness();self.generations(h);before=self.protected_bytes(h);d=h.data();d['load_ids']={h.tag('b'):'sha256:'+'e'*64}
+    if changes.get('fail_restore'):d['fail_restore']=[h.tag('b')]
+    else:d['restore_ids']={h.tag('b'):'sha256:'+'f'*64}
+    h.save(d);result=h.receive('b');self.assert_intake_refused(h,before,result)
+    marker=json.loads((h.root/'receiver-intake.json').read_text());self.assertIn('changed image ID',marker['first_failure'])
+    self.assertEqual(1,len(h.data()['restore_attempts']));self.assertTrue(marker['recovery_errors'])
+ def test_marker_durability_and_crash_windows_never_automatically_retry(self):
+  for fault in ('file','directory','crash-after-marker'):
+   with self.subTest(fault=fault):
+    h=self.harness();before=self.protected_bytes(h);result=h.receive('a',intake_fault=fault)
+    self.assertNotEqual(0,result.returncode);self.assertEqual([],h.data()['calls']);self.assertEqual(before,self.protected_bytes(h))
+  for operation in ('crash-after-load','crash-after-restore'):
+   with self.subTest(operation=operation):
+    h=self.harness();self.generations(h);before=self.protected_bytes(h);d=h.data();d['load_ids']={h.tag('b'):'sha256:'+'e'*64};h.save(d)
+    self.assertNotEqual(0,h.receive('b',operation_fault=operation).returncode)
+    marker=h.root/'receiver-intake.json';self.assertTrue(marker.exists());retained=marker.read_bytes();calls=h.data()['calls']
+    self.assertNotEqual(0,h.receive('c').returncode);self.assertEqual(calls,h.data()['calls']);self.assertEqual(retained,marker.read_bytes());self.assertEqual(before,self.protected_bytes(h))
+ def test_normal_load_has_durable_marker_and_success_clears_only_current_marker(self):
+  h=self.harness();self.healthy(h,'a');self.assertEqual([True],h.data()['load_markers']);self.assertFalse((h.root/'receiver-intake.json').exists())
+ def test_owned_tag_and_old_id_preflight_refuses_before_load(self):
+  for mode in ('rebound','missing-id','partial-knoxx-catalog'):
+   with self.subTest(mode=mode):
+    h=self.harness();service='knoxx' if mode=='partial-knoxx-catalog' else 'axxium';self.healthy(h,'a',service=service)
+    d=h.data();tag=sorted(receiver.expected_tags(service,'a'*40))[0]
+    if mode=='rebound':d['images'][tag]='sha256:'+'e'*64
+    elif mode=='missing-id':d['missing_ids']=[d['images'][tag]]
+    else:
+     p=h.root/'receiver-images.json';catalog=json.loads(p.read_text());del catalog['owned_tags'][tag];p.write_text(json.dumps(catalog))
+    h.save(d);before=self.protected_bytes(h,service);loads=d['load_count'];result=h.receive('a',service=service)
+    self.assertNotEqual(0,result.returncode);self.assertEqual(loads,h.data()['load_count']);self.assertEqual(before,self.protected_bytes(h,service));self.assertEqual([],h.data()['removal_attempts'])
  def test_three_healthy_generations_keep_active_and_one_rollback(self):
   h=self.harness();self.generations(h);self.healthy(h,'c');d=h.data();receipt=h.receipt()
   self.assertEqual([h.tag('a')],d['removed'])
@@ -234,8 +329,8 @@ class ReceiverLifecycleTests(unittest.TestCase):
   h=self.harness();self.generations(h);slot=h.slot('staging','knoxx');(slot/'.env').unlink();(slot/'compose.yaml').unlink();slot.rmdir()
   self.assertEqual(3,h.receive('c').returncode);self.assertEqual([],h.data()['removal_attempts'])
  def test_malformed_ownership_catalog_does_not_turn_into_legacy_sweep(self):
-  h=self.harness();self.generations(h);(h.root/'receiver-images.json').write_text('{broken')
-  self.assertEqual(3,h.receive('c').returncode);self.assertEqual('healthy',h.receipt()['status']);self.assertEqual('blocked',h.receipt()['image_cleanup']['status']);self.assertEqual([],h.data()['removal_attempts'])
+  h=self.harness();self.generations(h);(h.root/'receiver-images.json').write_text('{broken');before=self.protected_bytes(h);calls=h.data()['calls']
+  self.assertNotEqual(0,h.receive('c').returncode);self.assertEqual(before,self.protected_bytes(h));self.assertEqual(calls,h.data()['calls']);self.assertEqual([],h.data()['removal_attempts'])
  def test_failed_removal_is_reported_without_health_rollback_or_automatic_retry(self):
   h=self.harness();self.generations(h);d=h.data();d['fail_remove']=True;h.save(d)
   self.assertEqual(3,h.receive('c').returncode);r=h.receipt();self.assertEqual('healthy',r['status']);self.assertEqual('failed',r['image_cleanup']['status']);self.assertEqual([],r['image_cleanup']['removed']);self.assertTrue(r['image_cleanup']['refused'])

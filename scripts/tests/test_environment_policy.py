@@ -10,7 +10,8 @@ SHA = "a" * 40
 
 def candidate(**overrides):
     return dict(dict(number=1, state="open", base="main", testing_label=True,
-                     labeler_is_code_owner=True, head_sha=SHA, labeled_at=NOW.isoformat()), **overrides)
+                     labeler_is_code_owner=True, head_sha=SHA, authorization_sha=SHA,
+                     labeled_at=NOW.isoformat()), **overrides)
 
 def batches():
     return [dict(source_sha=SHA, status="passed", baseline="passed", batch_index=b,
@@ -25,6 +26,11 @@ class EnvironmentPolicyTest(unittest.TestCase):
         for changes in [dict(labeler_is_code_owner=False), dict(base="staging"), dict(state="closed"),
                         dict(testing_label=False), dict(head_sha="main")]:
             self.assertFalse(p.testing_admission(candidate(**changes), [], now=NOW)["admitted"])
+
+    def test_immutable_owner_authorization_is_required_for_current_head(self):
+        for authorization in (None, "", "main", "b"*40):
+            self.assertFalse(p.testing_admission(candidate(authorization_sha=authorization), [], now=NOW)["admitted"])
+        self.assertFalse(p.testing_admission(candidate(head_sha="b"*40), [], now=NOW)["admitted"])
     def test_two_hours_exactly_is_still_held(self):
         other = candidate(number=2, labeled_at=(NOW-timedelta(hours=2)).isoformat())
         self.assertFalse(p.testing_admission(candidate(), [other], now=NOW)["admitted"])

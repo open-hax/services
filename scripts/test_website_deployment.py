@@ -138,6 +138,9 @@ class WebsiteDeploymentTests(unittest.TestCase):
         missing_knoxx = copy.deepcopy(self.chain)
         missing_knoxx["jobs"]["deploy-website"]["needs"].remove("deploy-knoxx")
         cases.append(("WORKFLOW", missing_knoxx, "optional ingress can bypass production qualification"))
+        substring_knoxx = copy.deepcopy(self.chain)
+        substring_knoxx["jobs"]["deploy-website"]["needs"] = "deploy-knoxx-extra"
+        cases.append(("WORKFLOW", substring_knoxx, "optional ingress can bypass production qualification"))
         bypass_knoxx = copy.deepcopy(self.chain)
         bypass_knoxx["jobs"]["deploy-website"]["if"] = bypass_knoxx["jobs"]["deploy-website"]["if"].replace(
             "&& (inputs.scope == 'website' || needs.deploy-knoxx.result == 'success')", "")
