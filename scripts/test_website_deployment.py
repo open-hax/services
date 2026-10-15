@@ -145,6 +145,11 @@ class WebsiteDeploymentTests(unittest.TestCase):
         bypass_knoxx["jobs"]["deploy-website"]["if"] = bypass_knoxx["jobs"]["deploy-website"]["if"].replace(
             "&& (inputs.scope == 'website' || needs.deploy-knoxx.result == 'success')", "")
         cases.append(("WORKFLOW", bypass_knoxx, "optional ingress can bypass production qualification"))
+        extra_or = copy.deepcopy(self.chain)
+        extra_or["jobs"]["deploy-website"]["if"] += (
+            " || (inputs.scope == 'stack' && needs.deploy-knoxx.result == 'failure')"
+        )
+        cases.append(("WORKFLOW", extra_or, "optional ingress can bypass production qualification"))
         for name, marker, replacement in (("Health gate", "attempts=5", "attempts=1"),
                                            ("Admit Knoxx publication content", "./post-deploy.sh", "true")):
             altered = workflow("deploy-digitalocean.yml")
