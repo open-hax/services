@@ -27,11 +27,17 @@ two hours or less blocks admission. Reapplying the label resets its timestamp;
 expired labels do not block a new claim. After a push, submit a new commit-bound
 authorization and reapply the label: the old label cannot authorize the new head.
 The existing labeled event triggers the workflow, so submit the review first.
-Admission rereads the head before returning, and repeats inside the serialized
-deployment slot after the image build. A changed head, removed label or changed
-competing claim invalidates the artifact. A denied request requires a fresh label
-event after the blocker expires. Author dates and inferred timeline commit order
-are never used to bind authorization.
+Admission collects two complete, PR-number-sorted snapshots of all other open
+testing claims before returning. Each snapshot retains the selected native label
+event ID and timestamp, so a relabel is a change even within the same second.
+It also rereads the candidate head, base, state, current label presence and
+selected label event/actor identity. Observed drift or missing, malformed or
+unavailable evidence refuses admission. The same admission runs again inside
+the serialized deployment slot after the image build. These API observations
+do not atomically lock GitHub labels: changes after the final response cannot
+be ruled out. A denied request requires a fresh label event after the blocker
+expires. Author dates and inferred timeline commit order are never used to bind
+authorization.
 
 CODEOWNERS comes from main, never the candidate PR. The labeler must own every
 changed path. The initial CODEOWNERS files name the three existing repository admins.
