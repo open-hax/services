@@ -153,3 +153,12 @@
   spore: none
   receipt-refs: receipts.edn#ffc4d298-52d9-4268-a3ee-238d96241221
   note: A substring can preserve a guard while adding a bypass branch. Test the actual owning checker on a mutated workflow before comparing the whole permitted condition. Preserve actual RED and qualified sources; inspect every guard before dependent mutation. Keep historical native passes distinct from a newly changed source and keep source publication separate from deployment. Candidate0/no spore; reviewed source a61bf8bfccbcb318573fca2d2069e080e3ebb5ed.
+- ts: 2026-10-15T16:07:23.100011501Z
+  session: codex:/root/pr354_terminal_rerun_verify
+  task: Two new Services P2 source/claim snapshot repairs and preserved limits
+  p-efficiency: 0.7
+  p-friction: 0.6
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#3038d56b-7ec8-4da6-82f5-646f61507e2d
+  note: Native event identity makes same-second relabels observable; final snapshots remain non-atomic. Verify real Caddy adapter output for both existing sites. Preserve each causal failure and use exact checked guards before dependent effects. Private qualification is separate from native approval, trusted publisher capability and deployment. Candidate0; no native SM event claimed; source 132777ca366c85dbc7d51571caf965cec1bb08d3.
