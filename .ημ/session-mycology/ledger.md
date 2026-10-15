@@ -25,3 +25,12 @@
   spore: none
   receipt-refs: receipts.edn#a48cd7da-36d2-415d-8f61-5494a3728934
   note: Bind browser option sampling to a completed exact-project page request and current DOM loading state. Distinguish unassigned diagnostic variables from sampled empty inventories. An exact wrapping label includes descendant option text; scope its visible label span and require one combobox. Normal UI login/auth context and native Spanish split-detail read are now observed, while actual All-only locale choices keep the tour and release failed. Preserve original failures, ancillary 502/console limits and source/runtime identity. Source repair belongs to existing UI owner and must use unfiltered resource locale inventory, not target-filtered documents or legacy statistics. No product source change or model/content/review/publication effects; candidate zero, no spore.
+- ts: 2026-10-15T10:20:50.797778571Z
+  session: codex:01a12257-fc69-7720-888c-dd2595ff7dc7/cms_native_journey_binding
+  task: Services83 compiled-runtime JavaScript packaging P1 causal RED and GREEN
+  p-efficiency: 0.9
+  p-friction: 0.2
+  p-skill-candidate: 0.1
+  spore: none
+  receipt-refs: receipts.edn#5cc9afa8-3f21-47ba-a1e8-1d15065f1faa,receipts.edn#04248fb3-5828-47bd-94fa-1256a54884d6,receipts.edn#e587829f-00cd-4b7a-945d-8f388422753d
+  note: A directory-existence fixture reproduced the same false positive as its packaging guard. Commit three actual invalid-output RED cases first, then require one regular .js file; source-map-only and symlink-only trees retain refusal. Keep tool-double orchestration proof separate from real compiler/image/runtime qualification. Exact guards read-only accepted genuine retained19f output with549 regular JavaScript files. Only two source paths changed; original failures, unaffected controls and append-only ledgers preserved. Existing owner already covers PR83 review fixes; no card/status or runtime/model/image/push/PR effect. Candidate0.1, no spore.
