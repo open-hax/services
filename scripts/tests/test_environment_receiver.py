@@ -229,6 +229,11 @@ class ReceiverLifecycleTests(unittest.TestCase):
   d=h.data();d['fail_remove']=False;h.save(d)
   self.assertEqual(3,h.receive('d').returncode);self.assertEqual([h.tag('a')],h.data()['removal_attempts'])
   self.assertEqual(original_reason,json.loads((h.root/'receiver-images.json').read_text())['refused_tags'][h.tag('a')])
+ def test_existing_uncertain_barrier_keeps_its_original_cause(self):
+  h=self.harness();self.generations(h);path=h.root/'receiver-images.json';catalog=json.loads(path.read_text());cause=receiver.REMOVAL_BARRIER
+  catalog['refused_tags'][h.tag('a')]=cause;path.write_text(json.dumps(catalog))
+  self.assertEqual(3,h.receive('c').returncode);self.assertEqual([],h.data()['removal_attempts'])
+  self.assertEqual(cause,json.loads(path.read_text())['refused_tags'][h.tag('a')])
  def test_knoxx_generations_retire_only_both_old_recorded_tags(self):
   h=self.harness()
   for letter in 'abc':self.healthy(h,letter,service='knoxx')
