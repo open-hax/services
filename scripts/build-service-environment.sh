@@ -19,11 +19,12 @@ else
   pnpm -C "$source_root/frontend" install --frozen-lockfile
   pnpm -C "$source_root/backend" typecheck
   pnpm -C "$source_root/backend" test
-  # The backend image copies dist; typecheck/test do not build the server.
-  # Match build-images.yml: this :optimizations :none target uses compile.
+  # Require the server output explicitly before packaging backend dist.
+  # This compile emits an ESM entry importing generated cljs-runtime modules.
   pnpm -C "$source_root/backend" exec shadow-cljs compile server
   test -f "$source_root/backend/dist/server.js"
   test -d "$source_root/backend/dist/cljs-runtime"
+  test -n "$(find "$source_root/backend/dist/cljs-runtime" -type f -name '*.js' -print -quit)"
   pnpm -C "$source_root/frontend" typecheck
   pnpm -C "$source_root/frontend" build
   # Stage the application shell used by the production builder, not public/.
