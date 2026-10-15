@@ -50,7 +50,19 @@ elif tool == "pnpm":
         if os.environ.get("OMIT_BACKEND") != "server.js":
             put(root / "dist/server.js")
         if os.environ.get("OMIT_BACKEND") != "cljs-runtime":
-            (root / "dist/cljs-runtime").mkdir(parents=True, exist_ok=True)
+            runtime = root / "dist/cljs-runtime"
+            runtime.mkdir(parents=True, exist_ok=True)
+            kind = os.environ.get("RUNTIME_KIND", "javascript")
+            if kind == "javascript":
+                put(runtime / "runtime.js", "export const compiledFixture = true;\n")
+            elif kind == "non-javascript":
+                put(runtime / "runtime.js.map", "{}\n")
+            elif kind == "symlink":
+                target = root / "generated/runtime.js"
+                put(target, "export const compiledFixture = true;\n")
+                (runtime / "runtime.js").symlink_to(target)
+            elif kind != "empty":
+                raise SystemExit("unexpected runtime fixture: " + kind)
     elif root.name == "frontend" and command in (["build"], ["run", "build"]):
         for name in ("app.css", "cljs/app.js", "bridge/style.css"):
             if name != os.environ.get("OMIT_FRONTEND"):
@@ -138,6 +150,9 @@ class EnvironmentBuildTest(unittest.TestCase):
         self.assertLess(compile_index, first_docker)
         self.assertTrue((self.source / "backend/dist/server.js").is_file())
         self.assertTrue((self.source / "backend/dist/cljs-runtime").is_dir())
+        runtime = self.source / "backend/dist/cljs-runtime/runtime.js"
+        self.assertTrue(runtime.is_file())
+        self.assertFalse(runtime.is_symlink())
         self.assertEqual((self.source / "frontend/dist/index.html").read_text(), SHELL)
         digest = hashlib.sha256((self.artifact / "images.tar").read_bytes()).hexdigest()
         self.assertEqual((self.artifact / "images.sha256").read_text().strip(), digest)
@@ -166,6 +181,15 @@ class EnvironmentBuildTest(unittest.TestCase):
 
     def test_missing_runtime_tree_is_refused(self):
         self.assert_missing_output_refused(OMIT_BACKEND="cljs-runtime")
+
+    def test_empty_runtime_tree_is_refused(self):
+        self.assert_missing_output_refused(RUNTIME_KIND="empty")
+
+    def test_non_javascript_runtime_tree_is_refused(self):
+        self.assert_missing_output_refused(RUNTIME_KIND="non-javascript")
+
+    def test_symlink_only_runtime_tree_is_refused(self):
+        self.assert_missing_output_refused(RUNTIME_KIND="symlink")
 
     def test_missing_application_css_is_refused(self):
         self.assert_missing_output_refused(OMIT_FRONTEND="app.css")
