@@ -43,3 +43,12 @@
   spore: none
   receipt-refs: receipts.edn#1a9d4469-f2bd-4c2a-a365-b840fa891f2d,receipts.edn#c5694e44-34c6-4086-ad2d-9e0be4d13b90,receipts.edn#423d99ff-61ff-4043-a9b3-e9482e85484b
   note: Use the product official adapter for configuration semantics, not a second Caddy parser or assumed JSON. Verify the published checksum algorithm before deriving the pinned archiveSHA256; retain the failed assumption before execution. Declare the actual workflow shell when checking an extracted run block. Keep the genuine two missing-route RED failures separate from setup diagnostics. Official adapter controls and local setup pass while live HTTP/auth/MCP remain outstanding; no listener/container/model or production effect. Existing discovery and owner reused, prior packaging P1 unchanged. Candidate0.1, no spore.
+- ts: 2026-10-15T11:35:04.957350260Z
+  session: codex:/root/pr354_terminal_rerun_verify
+  task: Services83 receiver healthy rollback and safe owned-image retention
+  p-efficiency: 0.65
+  p-friction: 0.65
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#f6385286-bec6-45d1-8297-a86cfc307b82,receipts.edn#ab7a4f77-0cc0-45d9-826c-1ff9dedd0447,receipts.edn#23d1ca41-0182-4830-83ec-3746c35dc3b4
+  note: Codex agent /root/pr354_terminal_rerun_verify. Qualify the actual receiver with cold orchestration tests and real disposable Docker objects. A replaced release is not healthy admission; compare full keyed last-healthy evidence and preserve distinct rollback on repeat. Durably flush/fsync the refusal barrier and directory before destructive effects, retaining first cause. Real Docker digest-only rows exposed a stub gap: complete --digests and literal native rows must preserve foreign aliases while rejecting unknowns. Keep failed/partial native qualification and independent old-object disposal distinct; stop on uncertainty and never retry a tag removal. Final52 tests and freshnative3cases/fullfixturecleanup pass; separate olddisposal removedA then newline-readback predicate stopped with B/C held. Source-qualified only, no public push/install/deploy. Candidate0, no spore.
