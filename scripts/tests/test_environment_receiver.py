@@ -2,6 +2,9 @@ import hashlib,importlib.util,io,json,os,subprocess,sys,tarfile,tempfile,unittes
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('receiver',Path(__file__).parents[1]/'receive-service-environment.py')
 receiver=importlib.util.module_from_spec(spec);spec.loader.exec_module(receiver)
+# Literal Docker29.9.0 `image ls --all --digests --no-trunc --format '{{json .}}'`
+# row retained from the first native retention qualification, 2026-10-15.
+NAMED_UNTAGGED_DIGEST_ROW=json.loads(r'''{"Containers":"1","CreatedAt":"2026-07-27 13:47:31 -0500 CDT","CreatedSince":"2 months ago","Digest":"sha256:98c19ced6600f2924e80b92d701cd867d8f7ef0c4dde516c619484e31e47f103","ID":"sha256:dacbdaa86a43fb9ed58174a53d15627780829ba4c34badb15263d4104c0a37ec","Repository":"ollama/ollama","SharedSize":"N/A","Size":"4.76GB","Tag":"<none>","UniqueSize":"N/A"}''')
 class ReceiverTests(unittest.TestCase):
  def archive(self,tags,extra=None):
   tmp=tempfile.NamedTemporaryFile();self.addCleanup(tmp.close)
@@ -39,7 +42,8 @@ if a[:2]==['image','inspect']:
 if a[:2]==['image','ls']:
  if s.get('inventory')=='unavailable-images':finish(1)
  if s.get('inventory')=='malformed-images':finish(text='not-json\n')
- rows=[json.dumps({'ID':i,'Repository':t.rsplit(':',1)[0],'Tag':t.rsplit(':',1)[1]}) for t,i in s['images'].items()]
+ rows=[json.dumps({'ID':i,'Repository':t.rsplit(':',1)[0],'Tag':t.rsplit(':',1)[1],'Digest':'<none>'}) for t,i in s['images'].items()]
+ rows.extend(json.dumps(row) for row in s.get('extra_image_rows',[]))
  finish(text='\n'.join(rows)+('\n' if rows else ''))
 if a[:2]==['container','ls']:
  if '--all' not in a:finish(2)
@@ -203,6 +207,17 @@ class ReceiverLifecycleTests(unittest.TestCase):
  def test_nonreceiver_alias_conserves_entire_image(self):
   h=self.harness();self.generations(h);d=h.data();d['images']['production/untouched:latest']=h.image_id(h.tag('a'));h.save(d)
   self.healthy(h,'c');self.assertEqual([],h.data()['removed'])
+ def test_literal_native_named_untagged_digest_row_allows_other_retirement(self):
+  h=self.harness();self.generations(h);d=h.data();d['extra_image_rows']=[NAMED_UNTAGGED_DIGEST_ROW];h.save(d)
+  self.healthy(h,'c');self.assertEqual([h.tag('a')],h.data()['removed'])
+  self.assertTrue(any(c[:2]==['image','ls'] and '--digests' in c for c in h.data()['calls']))
+ def test_nonreceiver_digest_alias_conserves_owned_image(self):
+  h=self.harness();self.generations(h);d=h.data();d['extra_image_rows']=[{**NAMED_UNTAGGED_DIGEST_ROW,'ID':h.image_id(h.tag('a'))}];h.save(d)
+  self.healthy(h,'c');self.assertEqual([],h.data()['removed'])
+  self.assertTrue(any(row['tag']==h.tag('a') and row['reason']=='nonreceiver_alias' for row in h.receipt()['image_cleanup']['retained']))
+ def test_malformed_named_untagged_digest_row_refuses_cleanup(self):
+  h=self.harness();self.generations(h);d=h.data();d['extra_image_rows']=[{**NAMED_UNTAGGED_DIGEST_ROW,'Digest':'unknown-digest'}];h.save(d)
+  self.assertEqual(3,h.receive('c').returncode);self.assertEqual([],h.data()['removal_attempts']);self.assertEqual('blocked',h.receipt()['image_cleanup']['status'])
  def test_unrecorded_source_sha_tags_are_never_swept(self):
   h=self.harness();d=h.data();legacy=h.tag('d');d['images'][legacy]=h.image_id(legacy);h.save(d)
   self.generations(h);self.healthy(h,'c');self.assertEqual([h.tag('a')],h.data()['removed']);self.assertIn(legacy,h.data()['images'])
