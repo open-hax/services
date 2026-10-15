@@ -95,5 +95,79 @@ class EnvironmentCaddyTest(unittest.TestCase):
         self.assertEqual(self.server["listen"], [":8080"])
 
 
+class ManagedAxxiumCaddyTest(unittest.TestCase):
+    """Adapt actual managed source sections without host imports or listeners."""
+
+    @classmethod
+    def setUpClass(cls):
+        binary = Path(os.environ["CADDY_TEST_BINARY"]).resolve(strict=True)
+        temporary = tempfile.TemporaryDirectory(prefix="managed axxium caddy ")
+        cls.addClassCleanup(temporary.cleanup)
+        environment = {"HOME": temporary.name, "PATH": os.defpath}
+        version = subprocess.run([str(binary), "version"], env=environment,
+                                 capture_output=True, text=True, timeout=10, check=True)
+        if version.stdout.split()[0] != "v2.8.4":
+            raise RuntimeError("Managed ingress controls require pinned Caddy 2.8.4")
+        source = (CONFIG.parents[1] / "services/caddy/Caddyfile").read_text()
+        markers = ("(common) {", "(knoxx_mcp_backend) {",
+                   "# BEGIN managed Axxium host environments", "# END managed Axxium host environments")
+        if any(source.count(marker) != 1 for marker in markers):
+            raise RuntimeError("Actual ingress sections must have unique source delimiters")
+        common = source[source.index(markers[0]):source.index(markers[1])]
+        sites = source[source.index(markers[2]):source.index(markers[3])]
+        config = Path(temporary.name) / "Caddyfile"
+        config.write_text(common + sites)
+        adapted = subprocess.run([str(binary), "adapt", "--config", str(config), "--adapter", "caddyfile"],
+                                 env=environment, capture_output=True, text=True, timeout=10, check=True)
+        cls.adapted = json.loads(adapted.stdout)
+
+    @staticmethod
+    def objects(value):
+        if isinstance(value, dict):
+            yield value
+            for child in value.values():
+                yield from ManagedAxxiumCaddyTest.objects(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from ManagedAxxiumCaddyTest.objects(child)
+
+    def site(self, host):
+        routes = [value for value in self.objects(self.adapted)
+                  if value.get("match") == [{"host": [host]}]]
+        self.assertEqual(1, len(routes), host)
+        return list(self.objects(routes[0]))
+
+    def test_both_managed_axxium_upstreams_and_acme_issuers_remain(self):
+        for name, port in (("stealth", 19077), ("yoga", 19078)):
+            host = f"{name}.axxium.promethean.rest"
+            with self.subTest(host=host):
+                proxies = [value for value in self.site(host) if value.get("handler") == "reverse_proxy"]
+                self.assertEqual(1, len(proxies))
+                self.assertEqual([{"dial": f"172.31.255.1:{port}"}], proxies[0]["upstreams"])
+                policies = self.adapted["apps"]["tls"]["automation"]["policies"]
+                self.assertTrue(any(host in policy["subjects"] and policy["issuers"] == [{"module": "acme"}]
+                                    for policy in policies))
+
+    def test_both_managed_axxium_sites_strip_bridge_header(self):
+        for name in ("stealth", "yoga"):
+            with self.subTest(host=name):
+                proxy = next(value for value in self.site(f"{name}.axxium.promethean.rest")
+                             if value.get("handler") == "reverse_proxy")
+                deleted = proxy.get("headers", {}).get("request", {}).get("delete", [])
+                self.assertIn("x-open-hax-bridge-auth", [header.lower() for header in deleted])
+
+    def test_both_managed_axxium_sites_keep_common_security_headers(self):
+        expected = {"Strict-Transport-Security": ["max-age=31536000; includeSubDomains"],
+                    "X-Content-Type-Options": ["nosniff"], "X-Frame-Options": ["SAMEORIGIN"],
+                    "Referrer-Policy": ["strict-origin-when-cross-origin"]}
+        for name in ("stealth", "yoga"):
+            with self.subTest(host=name):
+                responses = [value["response"] for value in self.site(f"{name}.axxium.promethean.rest")
+                             if value.get("handler") == "headers" and "response" in value]
+                self.assertEqual(1, len(responses))
+                self.assertEqual(expected, responses[0]["set"])
+                self.assertIn("server", [header.lower() for header in responses[0]["delete"]])
+
+
 if __name__ == "__main__":
     unittest.main()

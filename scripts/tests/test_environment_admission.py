@@ -39,6 +39,15 @@ class NativeFixture:
         self.pr_reads = 0
         self.fail_reviews = False
         self.calls = []
+        self.label_after = None
+        self.label_reads = 0
+        self.others = []
+        self.others_after = None
+        self.other_labels = {}
+        self.other_labels_after = {}
+        self.claim_reads = 0
+        self.fail_final_claims = False
+        self.fail_final_timeline = False
 
     def api(self, path):
         self.calls.append(path)
@@ -53,11 +62,26 @@ class NativeFixture:
                 raise RuntimeError("review evidence unavailable")
             return [copy.deepcopy(self.review)]
         if path.startswith("repos/open-hax/knoxx/issues/1/timeline?"):
-            return [copy.deepcopy(self.label)]
+            self.label_reads += 1
+            if self.fail_final_timeline and self.label_reads > 1:
+                raise RuntimeError("final timeline unavailable")
+            label = self.label_after if self.label_reads > 1 and self.label_after is not None else self.label
+            return [copy.deepcopy(label)]
+        if path.startswith("repos/open-hax/knoxx/issues/") and "/timeline?" in path:
+            number = int(path.split("/")[4])
+            if self.fail_final_timeline and self.claim_reads > 1:
+                raise RuntimeError("final timeline unavailable")
+            label = (self.other_labels_after.get(number, self.other_labels[number])
+                     if self.claim_reads > 1 else self.other_labels[number])
+            return [copy.deepcopy(label)]
         if path.startswith("repos/open-hax/knoxx/pulls/1/files?"):
             return copy.deepcopy(self.files)
         if path.startswith("repos/open-hax/knoxx/pulls?state=open"):
-            return []
+            self.claim_reads += 1
+            if self.fail_final_claims and self.claim_reads > 1:
+                raise RuntimeError("final competing claims unavailable")
+            rows = self.others_after if self.claim_reads > 1 and self.others_after is not None else self.others
+            return copy.deepcopy(rows)
         if path.startswith("repos/open-hax/knoxx/contents/.github/CODEOWNERS?ref="):
             return {"content": base64.b64encode(self.rules.encode()).decode()}
         raise AssertionError(f"Unexpected native request: {path}")
@@ -126,6 +150,73 @@ class NativeTestingAdmissionTests(unittest.TestCase):
         fixture.fail_reviews = True
         with self.assertRaises(RuntimeError):
             fixture.admit()
+
+    def competitor(self, fixture, number=2, age=7201):
+        row = {"number": number, "state": "open", "labels": [{"name": "testing"}]}
+        label = {**copy.deepcopy(fixture.label), "id": 200 + number,
+                 "created_at": (NOW - timedelta(seconds=age)).isoformat()}
+        fixture.other_labels[number] = label
+        return row
+
+    def test_new_competing_claim_during_collection_refuses(self):
+        fixture = NativeFixture()
+        fixture.others_after = [self.competitor(fixture, age=1)]
+        self.assertFalse(fixture.admit()["admitted"])
+
+    def test_competing_relabel_or_same_second_replacement_refuses(self):
+        for same_second in (False, True):
+            with self.subTest(same_second=same_second):
+                fixture = NativeFixture()
+                fixture.others = [self.competitor(fixture)]
+                fixture.other_labels_after[2] = {**fixture.other_labels[2], "id": 902}
+                if not same_second:
+                    fixture.other_labels_after[2]["created_at"] = NOW.isoformat()
+                self.assertFalse(fixture.admit()["admitted"])
+
+    def test_candidate_selected_label_or_actor_drift_refuses(self):
+        for changes in ({"id": 901}, {"created_at": NOW.isoformat()},
+                        {"actor": {**OWNER, "id": 102, "login": "other"}}):
+            with self.subTest(changes=changes):
+                fixture = NativeFixture()
+                fixture.label_after = {**copy.deepcopy(fixture.label), **changes}
+                self.assertFalse(fixture.admit()["admitted"])
+
+    def test_unchanged_expired_claims_and_reordered_rows_stay_admitted(self):
+        fixture = NativeFixture()
+        fixture.others = [self.competitor(fixture, number=2), self.competitor(fixture, number=3)]
+        fixture.others_after = list(reversed(fixture.others))
+        self.assertTrue(fixture.admit()["admitted"])
+
+    def test_initial_fresh_competitor_keeps_its_existing_refusal(self):
+        fixture = NativeFixture()
+        fixture.others = [self.competitor(fixture, age=1)]
+        result = fixture.admit()
+        self.assertFalse(result["admitted"])
+        self.assertEqual([2], result["blocking_prs"])
+
+    def test_unavailable_final_listing_or_timeline_never_admits(self):
+        for failure in ("claims", "competitor-timeline", "candidate-timeline"):
+            with self.subTest(failure=failure):
+                fixture = NativeFixture()
+                if failure != "candidate-timeline":
+                    fixture.others = [self.competitor(fixture)]
+                fixture.fail_final_claims = failure == "claims"
+                fixture.fail_final_timeline = failure != "claims"
+                with self.assertRaises(RuntimeError):
+                    fixture.admit()
+
+    def test_missing_or_malformed_selected_event_evidence_refuses(self):
+        for candidate in (False, True):
+            for changes in ({"id": None}, {"id": True}, {"id": "201"},
+                            {"created_at": None}, {"created_at": "bad"}):
+                with self.subTest(candidate=candidate, changes=changes):
+                    fixture = NativeFixture()
+                    if candidate:
+                        fixture.label.update(changes)
+                    else:
+                        fixture.others = [self.competitor(fixture)]
+                        fixture.other_labels[2].update(changes)
+                    self.assertFalse(fixture.admit()["admitted"])
 
 
 class NativeCodeownersTests(unittest.TestCase):
