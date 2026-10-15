@@ -135,3 +135,12 @@
   spore: none
   receipt-refs: receipts.edn#b5f8a62c-125e-413d-9bc7-7e25802dd188
   note: Distinguish direct-tree absence from intentional PR deletion, then integrate the actual accepted main through an ordinary two-parent merge. Preserve accepted Website phase/approval/content/session-secret safeguards and complete controller source/RED ancestry. Retain current-head refusal of historical Website approval after public input drift. Qualify all combined owning gates, record extra baseline lint/Caddy diagnostics without waivers, preserve actual hosted publisher credential failure and immutable caller pins. Source merge fc7281e1 tree711adbff; no deployment or board closure. Candidate0, no spore.
+- ts: 2026-10-15T13:37:59.995006001Z
+  session: codex:/root/pr354_terminal_rerun_verify
+  task: Services six-review repair with exact-head testing and durable intake refusal
+  p-efficiency: 0.72
+  p-friction: 0.6
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#2ada31d6-05b8-4bee-89d0-41daffc1d4e1
+  note: Verify real immutable authorization rather than label/commit chronology guesses. Exercise two distinct image IDs behind one source-SHA tag, failed load/inspection and uncertain paired restoration before release. Preserve first cause and failed-stage artifacts; require a checked guard before every dependent mutation. Native inert load/restoration is image custody, not application deployment. Document marker completion storage limits without claiming impossible durability or adding automatic retry. Reviewed source af17196f118e32ae9594ea1821db41df8408d169; candidate0/no spore; public publication held.
