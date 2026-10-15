@@ -20,6 +20,11 @@ on:
         required: false
         default: main
         type: string
+      openplanner_ref:
+        description: Immutable SDK source required for Knoxx backend images
+        required: false
+        default: "07085d6557b75834ce6f50e6c54b8ca47e1c7c08"
+        type: string
     outputs:
       image:
         description: Fully qualified image reference including tag
@@ -42,6 +47,11 @@ on:
         required: false
         default: main
         type: string
+      openplanner_ref:
+        description: Immutable SDK source required for Knoxx backend images
+        required: false
+        default: "07085d6557b75834ce6f50e6c54b8ca47e1c7c08"
+        type: string
 
 permissions:
   contents: read
@@ -63,8 +73,15 @@ jobs:
         id: service
         env:
           SERVICE: ${{ inputs.service }}
+          OPENPLANNER_REF: ${{ inputs.openplanner_ref }}
         run: |
           set -euo pipefail
+          if [ "$SERVICE" = knoxx-backend ]; then
+            [[ "$OPENPLANNER_REF" =~ ^[0-9a-f]{40}$ ]] || {
+              echo "Knoxx backend requires an immutable openplanner_ref" >&2
+              exit 2
+            }
+          fi
           case "$SERVICE" in
             proxx)          repo=open-hax/proxx;       context=source;          dockerfile=source/Dockerfile ;;
             openplanner)    repo=open-hax/openplanner; context=source;          dockerfile=source/Dockerfile ;;
@@ -126,7 +143,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: open-hax/openplanner
-          ref: main
+          ref: ${{ inputs.openplanner_ref }}
           path: openplanner
           persist-credentials: false
           submodules: false
@@ -154,13 +171,13 @@ jobs:
         if: startsWith(inputs.service, 'knoxx-') || inputs.service == 'website'
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
-          version: 10.14.0
+          version: ${{ startsWith(inputs.service, 'knoxx-') && '10.20.0' || '10.14.0' }}
 
       - name: Setup Node.js
         if: startsWith(inputs.service, 'knoxx-') || inputs.service == 'website'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: ${{ startsWith(inputs.service, 'knoxx-') && '24' || '22' }}
 
       # knoxx-backend ONLY, and the distinction is in the shadow-cljs config
       # rather than in the service name. `backend/shadow-cljs.edn` is
@@ -180,7 +197,7 @@ jobs:
       # same reason — a build that passes there and fails here is a toolchain
       # difference, not a code difference.
       - name: Setup Clojure CLI
-        if: inputs.service == 'knoxx-backend'
+        if: startsWith(inputs.service, 'knoxx-')
         uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # v13.6.1
         with:
           # Pinned, not `latest`. This workflow builds the image that ships to
@@ -269,7 +286,7 @@ jobs:
           # shadow-cljs dev-http serves :roots ["." "dist"]. Stage the same
           # shell the dev server uses; its /app.css, /bridge/style.css and
           # /cljs/app.js references already match the build output.
-          cp frontend/index.html frontend/dist/index.html
+          cp frontend/public/index.html frontend/dist/index.html
 
           test -f frontend/dist/index.html
           test -f frontend/dist/app.css
@@ -388,6 +405,8 @@ jobs:
       - name: Summarize
         env:
           IMAGE: ${{ steps.source.outputs.image }}
+          SDK_SOURCE: ${{ inputs.openplanner_ref }}
+          SERVICE: ${{ inputs.service }}
         run: |
           set -euo pipefail
           {
@@ -398,4 +417,7 @@ jobs:
             echo "| source | \`${{ steps.service.outputs.repo }}@${{ steps.source.outputs.sha }}\` |"
             echo "| image | \`$IMAGE\` |"
             echo "| digest | \`${{ steps.push.outputs.digest }}\` |"
+            if [ "$SERVICE" = knoxx-backend ]; then
+              echo "| OpenPlanner SDK source | \`open-hax/openplanner@$SDK_SOURCE\` |"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

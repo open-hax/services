@@ -26,8 +26,8 @@ Production is declared under [`digitalocean/`](digitalocean/README.md):
 - `.github/workflows/deploy-stack.yml` is the only callable stack deployment
   entry point.
 - `.github/workflows/deploy-stack-chain.yml` provisions and verifies the host,
-  builds Proxx, both Knoxx images, Knoxx devtools, and the website, then deploys
-  the dependency-ordered stack through `.github/workflows/deploy-digitalocean.yml`.
+  builds Proxx, both Knoxx images and Knoxx devtools, then deploys the
+  dependency-ordered application stack through `.github/workflows/deploy-digitalocean.yml`.
 - GitHub's protected `production` environment supplies deployment credentials
   and runtime secrets.
 
@@ -35,6 +35,15 @@ A merged Services pull request deploys only when it carries the exact `deploy`
 label at merge time. The workflow builds application `main`, never PR code, and
 derives authorization from the immutable merge event. Operators can also use
 the explicit manual dispatch with chosen refs.
+
+Manual dispatch also accepts `scope: website` for the isolated staging and
+production handoff in [the website runbook](docs/website-staging-deployment.md).
+Stack and labelled merge deploys leave the website unchanged. Manual stack
+website opt-in is rejected before host mutation; website staging uses its
+explicit scope.
+Its receipt binds application source, image digest and serving configuration.
+Production stops at an explicit unsupported website mutation-qualification
+gate; a healthy stage does not satisfy that policy.
 
 The former Promethean VPS implementation is retired. Its non-secret evidence is
 preserved in [`docs/history/promethean-vps.md`](docs/history/promethean-vps.md)
@@ -46,11 +55,14 @@ and `docs/reports/`; it is not an alternative runtime.
   servers and the rule that live development questions use a dev instance
 - [`docs/published-content-root.md`](docs/published-content-root.md) — the
   shared published-content directory, its single writer, and read-only reader
+- [`docs/knoxx-cms-publication.md`](docs/knoxx-cms-publication.md) — the native
+  CMS save, provider translation, persisted review and publication path, plus
+  workspace containment, isolated verification, and evidence limits
 - [`docs/knoxx-git-event-bridge.md`](docs/knoxx-git-event-bridge.md) — the
   metadata-only GitHub-to-Knoxx event path and the explicit Git-driver boundary
 - [`docs/knoxx-ollama-embeddings.md`](docs/knoxx-ollama-embeddings.md) — direct
-  host-Ollama embedding routing, its live 768-vector gate, and the mandatory
-  1024-to-768 Mongo migration warning
+  host-Ollama routing through `qwen3-embedding:8b` at 1024 dimensions and the
+  fail-closed Mongo migration gate for incompatible populated stores
 
 ## Deployment model
 

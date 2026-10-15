@@ -17,6 +17,10 @@ name: Deploy to DigitalOcean
 
 on:
   workflow_call:
+    outputs:
+      receipt:
+        description: Observed service deployment and health receipt
+        value: ${{ jobs.deploy.outputs.receipt }}
     inputs:
       service:
         description: Service to deploy
@@ -78,6 +82,8 @@ jobs:
     permissions:
       contents: read
       packages: read
+    outputs:
+      receipt: ${{ steps.report.outputs.receipt }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -96,8 +102,26 @@ jobs:
             exit 2
           fi
           . digitalocean/lib/host-contract.sh
+          case "$DEPLOY_ENVIRONMENT:$SERVICE" in
+            production:*) ;;
+            staging:website) ;;
+            *) echo "unsupported service phase: $DEPLOY_ENVIRONMENT:$SERVICE" >&2; exit 2 ;;
+          esac
           load_host_contract "$DEPLOY_ENVIRONMENT"
           assert_pinned_host_key
+
+          runtime_service=$SERVICE
+          compose_file=compose.yaml
+          website_port=8081
+          website_host=open-hax.promethean.rest
+          website_require_tls=false
+          if [ "$DEPLOY_ENVIRONMENT" = staging ]; then
+            runtime_service=website-staging
+            compose_file=compose.staging.yaml
+            website_port=8082
+            website_host=staging.website.promethean.rest
+            website_require_tls=true
+          fi
 
           dir="digitalocean/services/${SERVICE}"
           for required in compose.yaml env.template verify.sh; do
@@ -106,6 +130,7 @@ jobs:
               exit 2
             }
           done
+          test -f "${dir}/${compose_file}"
           if [ "$SERVICE" = knoxx ]; then
             test -f "${dir}/post-deploy.sh" || {
               echo "service knoxx is missing ${dir}/post-deploy.sh" >&2
@@ -123,10 +148,18 @@ jobs:
             echo "host=${OPEN_HAX_HOST}"
             echo "ssh_user=${OPEN_HAX_SSH_USER}"
             echo "service_dir=${dir}"
-            echo "runtime_path=$(service_runtime_path "$SERVICE")"
-            echo "state_path=$(service_state_path "$SERVICE")"
+            echo "service_compose=${dir}/${compose_file}"
+            echo "compose_service=${runtime_service}"
+            echo "runtime_path=$(service_runtime_path "$runtime_service")"
+            echo "state_path=$(service_state_path "$runtime_service")"
             echo "state_root=${OPEN_HAX_STATE_ROOT}"
             echo "reports_root=${OPEN_HAX_REPORTS_ROOT}"
+            echo "compose_project=${runtime_service}"
+            echo "website_port=${website_port}"
+            echo "website_host=${website_host}"
+            echo "website_require_tls=${website_require_tls}"
+            echo "ingress_runtime=$(_host_contract_scalar digitalocean/hosts/production.yaml runtime servicesRoot)/caddy"
+            echo "ingress_state=$(_host_contract_scalar digitalocean/hosts/production.yaml runtime stateRoot)/caddy/managed"
           } >> "$GITHUB_OUTPUT"
 
       - name: Configure pinned SSH trust
@@ -172,6 +205,12 @@ jobs:
           # Non-secret runtime facts.
           OPEN_HAX_SERVICE_IMAGE: ${{ inputs.image }}
           OPEN_HAX_SOURCE_SHA: ${{ inputs.source_sha }}
+          OPEN_HAX_WEBSITE_PHASE: ${{ inputs.environment }}
+          OPEN_HAX_WEBSITE_PROJECT: ${{ steps.contract.outputs.compose_project }}
+          OPEN_HAX_WEBSITE_SERVICE_NAME: ${{ steps.contract.outputs.compose_service }}
+          OPEN_HAX_WEBSITE_PORT: ${{ steps.contract.outputs.website_port }}
+          OPEN_HAX_WEBSITE_HOST: ${{ steps.contract.outputs.website_host }}
+          OPEN_HAX_WEBSITE_REQUIRE_TLS: ${{ steps.contract.outputs.website_require_tls }}
           OPEN_HAX_STATE_PATH: ${{ steps.contract.outputs.state_path }}
           # stateRoot itself, for the one kind of path a per-service state path
           # cannot express: a directory SHARED between two services, where one
@@ -230,6 +269,13 @@ jobs:
             . "${SERVICE_DIR}/mcp-verification-policy.sh"
             require_knoxx_mcp_verification_token
           fi
+          # Keep this admission tied to the selected service even if an
+          # extra_env entry shadows SERVICE in the generic export below.
+          readonly render_session_secret_service=$SERVICE
+          if [ "$render_session_secret_service" = knoxx ]; then
+            . "${SERVICE_DIR}/session-secret-policy.sh"
+            require_knoxx_session_secret_overlay "${EXTRA_ENV:-\{\}}"
+          fi
           # Process substitution keeps the loop in this shell so the exports
           # survive into envsubst. The MCP token is refused rather than
           # exported: it comes only from the protected environment secret, and
@@ -244,6 +290,12 @@ jobs:
             esac
             export "$key=$value"
           done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"${EXTRA_ENV:-\{\}}")
+
+          # Validate the final overlaid value before rendering or copying it.
+          # Knoxx decodes this key as hex; nonempty opaque text is insufficient.
+          if [ "$render_session_secret_service" = knoxx ]; then
+            require_knoxx_session_secret
+          fi
 
           # Substitute only the names the template declares, so nginx/caddy
           # style $variables in adjacent config survive untouched. grep already
@@ -447,9 +499,23 @@ jobs:
           RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
           STATE_PATH: ${{ steps.contract.outputs.state_path }}
           SERVICE_DIR: ${{ steps.contract.outputs.service_dir }}
+          SERVICE_COMPOSE: ${{ steps.contract.outputs.service_compose }}
           SERVICE: ${{ inputs.service }}
         run: |
           set -euo pipefail
+          # Select the trusted phase topology before transferring anything.
+          # Staging's service key must not publish the production DNS alias.
+          definition_dir=$SERVICE_DIR
+          definition_rsync=()
+          if [ "$SERVICE_COMPOSE" != "$SERVICE_DIR/compose.yaml" ]; then
+            definition_dir=$(mktemp -d)
+            trap 'rm -rf "$definition_dir"' EXIT
+            cp -a "$SERVICE_DIR/." "$definition_dir/"
+            cp -p "$SERVICE_COMPOSE" "$definition_dir/compose.yaml"
+            rm "$definition_dir/compose.staging.yaml"
+            # A new checkout's mtimes must not recreate unchanged staging.
+            definition_rsync=(--checksum)
+          fi
           ssh open-hax-target "mkdir -p '${RUNTIME_PATH}' '${STATE_PATH}'"
 
           # Did an --itemize-changes log move anything? Transfers are itemized
@@ -467,8 +533,8 @@ jobs:
           # definition actually moved. compose hashes the image and the
           # environment, never the contents of a bind mount, so without this a
           # changed config file leaves the old container running untouched.
-          rsync -az --delete --itemize-changes --exclude '.env' --exclude 'contracts' -e ssh \
-            "${SERVICE_DIR}/" "open-hax-target:${RUNTIME_PATH}/" | tee rsync.out
+          rsync -az "${definition_rsync[@]}" --delete --itemize-changes --exclude '.env' --exclude 'contracts' -e ssh \
+            "${definition_dir}/" "open-hax-target:${RUNTIME_PATH}/" | tee rsync.out
           # Accumulated, then written once at the end of this step. Two writes
           # to the same GITHUB_OUTPUT key would resolve by last-write-wins,
           # which happens to be correct here but hides the dependency.
@@ -510,6 +576,57 @@ jobs:
           fi
 
           echo "definition_changed=${definition_changed}" >> "$GITHUB_OUTPUT"
+
+      - name: Install website staging ingress
+        if: inputs.service == 'website' && inputs.environment == 'staging'
+        env:
+          RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
+          INGRESS_RUNTIME: ${{ steps.contract.outputs.ingress_runtime }}
+          INGRESS_STATE: ${{ steps.contract.outputs.ingress_state }}
+        run: |
+          set -euo pipefail
+          snippet=digitalocean/services/caddy/managed/website-staging.caddy
+          snippet_sha=$(sha256sum "$snippet" | awk '{print $1}')
+          scp "$snippet" "open-hax-target:${RUNTIME_PATH}/website-staging.caddy.candidate"
+          ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$INGRESS_RUNTIME' '$INGRESS_STATE' '$snippet_sha'" <<'REMOTE'
+          {
+          runtime=$1; ingress_runtime=$2; managed=$3; expected_sha=$4
+          candidate="$runtime/website-staging.caddy.candidate"
+          test "$(sha256sum "$candidate" | awk '{print $1}')" = "$expected_sha"
+          container=$(docker compose --project-name caddy --env-file "$ingress_runtime/.env" \
+            -f "$ingress_runtime/compose.yaml" ps -q caddy </dev/null)
+          test -n "$container"
+          docker inspect --format '{{json .Mounts}}' "$container" | jq -e \
+            --arg source "$managed" 'any(.[]; .Source == $source and .Destination == "/etc/caddy/managed" and .RW == false)' >/dev/null
+          docker exec "$container" cat /etc/caddy/Caddyfile \
+            | grep -Eq '^import /etc/caddy/managed/\*\.caddy[[:space:]]*$'
+          test -d "$managed" && test -w "$managed"
+          target="$managed/website-staging.caddy"
+          backup=$(mktemp "$managed/.website-staging.rollback.XXXXXXXX")
+          trap 'rm -f "$backup" "$candidate"' EXIT
+          existed=false; committed=false
+          if [ -f "$target" ]; then cp "$target" "$backup"; existed=true; fi
+          rollback() {
+            status=$?
+            trap - EXIT
+            if [ "$committed" != true ]; then
+              if [ "$existed" = true ]; then mv -f "$backup" "$target"; else rm -f "$target"; fi
+              if ! timeout 30s docker exec "$container" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile \
+                || ! timeout 30s docker exec "$container" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile; then
+                echo 'staging ingress rollback could not reload the previous configuration' >&2
+                status=1
+              fi
+            fi
+            rm -f "$backup" "$candidate"
+            exit "$status"
+          }
+          trap rollback EXIT
+          install -m 644 "$candidate" "$target"
+          timeout 30s docker exec "$container" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          timeout 30s docker exec "$container" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+          committed=true
+          } </dev/null
+          REMOTE
 
       - name: Deploy
         env:
@@ -557,18 +674,92 @@ jobs:
           # (./Caddyfile) already exist post-rsync; named volumes are
           # docker-managed; both are skipped.
           set -a; . ./.env; set +a
+          project=$service
+          if [ "$service" = website ]; then project=${WEBSITE_PROJECT:-website}; fi
+          # BEGIN PUBLICATION SHARED ROOT
+          # The backend writes as UID 1000; the reader binds this root directly
+          # as UID 101 and requires o+rx. Check it before generic volume mkdir
+          # can accept a private-mode incumbent or create one under the umask.
+          # Existing state requires an operator repair; never chmod or chown it.
+          case "$service" in
+            knoxx|website)
+              if [ "$(id -u)" != 1000 ]; then
+                echo "Shared publication root requires deploy UID 1000" >&2
+                exit 1
+              fi
+              : "${WEBSITE_CONTENT_ROOT:?shared publication content root must be set}"
+              if [ ! -e "$WEBSITE_CONTENT_ROOT" ] && [ ! -L "$WEBSITE_CONTENT_ROOT" ]; then
+                # New ancestors use the deploy umask; only the final directory
+                # receives 0755. Existing ancestors and content stay untouched.
+                mkdir -p -m 0755 -- "$WEBSITE_CONTENT_ROOT"
+              fi
+              if [ ! -d "$WEBSITE_CONTENT_ROOT" ] || [ -L "$WEBSITE_CONTENT_ROOT" ] \
+                || [ "$(stat -c %u "$WEBSITE_CONTENT_ROOT")" != 1000 ] \
+                || [ ! -r "$WEBSITE_CONTENT_ROOT" ] || [ ! -w "$WEBSITE_CONTENT_ROOT" ] \
+                || [ ! -x "$WEBSITE_CONTENT_ROOT" ]; then
+                echo "Shared publication root must be a non-symlink directory owned by UID 1000, readable, writable and traversable: $WEBSITE_CONTENT_ROOT" >&2
+                exit 1
+              fi
+              publication_mode=$(stat -c %a "$WEBSITE_CONTENT_ROOT")
+              case "$publication_mode" in
+                *[57]) ;;
+                *)
+                  echo "Shared publication root must be world-readable and traversable (o+rx), got mode $publication_mode: $WEBSITE_CONTENT_ROOT" >&2
+                  exit 1
+                  ;;
+              esac
+              ;;
+          esac
+          # END PUBLICATION SHARED ROOT
           # The source may itself contain colons through required- or
           # default-value interpolation (${VAR:?msg}, ${VAR:-fallback}), so the
           # ${...} form is matched as a unit before the container path is
           # stripped. Splitting on the first colon instead yielded a truncated
           # `${VAR` whose eval failed and left mkdir with an empty argument,
           # aborting the deploy before compose ever ran.
-          sed -nE 's/^[[:space:]]+- (\$\{[^}]*\}[^:"[:space:]]*|[^:"[:space:]]+):.*/\1/p' compose.yaml \
+          # A non-mount alias such as ${VAR:-name} has no colon after its
+          # closing brace. Exclude a leading $ from the plain-source fallback
+          # so it cannot capture a partial interpolation at its internal colon.
+          sed -nE 's/^[[:space:]]+- (\$\{[^}]*\}[^:"[:space:]]*|[^$:"[:space:]][^:"[:space:]]*):.*/\1/p' compose.yaml \
             | while IFS= read -r src; do
                 case "$src" in
                   /*|\$\{*) mkdir -p "$(eval echo "$src")" ;;
                 esac
               done
+
+          # BEGIN KNOXX PUBLICATION WORKSPACE
+          # Nested bind mounts do not create their writable siblings for the
+          # unprivileged backend. Create generated contracts as the deploy user
+          # before Compose can create a root-owned .knoxx parent. Existing state
+          # with incompatible ownership requires an operator repair; do not chown.
+          if [ "$service" = knoxx ]; then
+            if [ "$(id -u)" != 1000 ]; then
+              echo "Knoxx publication workspace requires deploy UID 1000" >&2
+              exit 1
+            fi
+            # Check incumbents before mkdir, including dangling symlinks, so
+            # refusal never creates a child through an incompatible parent.
+            for publication_dir in "$KNOXX_WORKSPACE_PATH/.knoxx" "$KNOXX_WORKSPACE_PATH/.knoxx/contracts"; do
+              if [ -e "$publication_dir" ] || [ -L "$publication_dir" ]; then
+                if [ ! -d "$publication_dir" ] || [ -L "$publication_dir" ] \
+                  || [ "$(stat -c %u "$publication_dir")" != 1000 ] \
+                  || [ ! -w "$publication_dir" ] || [ ! -x "$publication_dir" ]; then
+                  echo "Knoxx publication directory must be UID 1000, writable and traversable: $publication_dir" >&2
+                  exit 1
+                fi
+              fi
+            done
+            mkdir -p "$KNOXX_WORKSPACE_PATH/.knoxx/contracts"
+            for publication_dir in "$KNOXX_WORKSPACE_PATH/.knoxx" "$KNOXX_WORKSPACE_PATH/.knoxx/contracts"; do
+              if [ ! -d "$publication_dir" ] || [ -L "$publication_dir" ] \
+                || [ "$(stat -c %u "$publication_dir")" != 1000 ] \
+                || [ ! -w "$publication_dir" ] || [ ! -x "$publication_dir" ]; then
+                echo "Knoxx publication directory must be UID 1000, writable and traversable: $publication_dir" >&2
+                exit 1
+              fi
+            done
+          fi
+          # END KNOXX PUBLICATION WORKSPACE
 
           # Every service shares one user-defined network so Knoxx can reach
           # Proxx by name across compose projects. Creation is idempotent.
@@ -588,7 +779,7 @@ jobs:
             fi
             sudo -n /usr/local/sbin/open-hax-provision-ollama --readiness
           fi
-          docker compose --project-name "$service" --env-file .env pull
+          docker compose --project-name "$project" --env-file .env pull
 
           # compose decides whether to recreate a container from the image and
           # the environment; the contents of a bind mount are invisible to it.
@@ -604,7 +795,7 @@ jobs:
             recreate="--force-recreate"
             echo "definition changed; recreating containers"
           fi
-          docker compose --project-name "$service" --env-file .env up -d --remove-orphans $recreate
+          docker compose --project-name "$project" --env-file .env up -d --remove-orphans $recreate
 
           # A service moved behind a disabled Compose profile is still part of
           # the configuration model, so --remove-orphans deliberately leaves an
@@ -615,7 +806,7 @@ jobs:
           if [ -f disabled-profile-services ]; then
             while IFS= read -r profile_service; do
               [ -n "$profile_service" ] || continue
-              profile_count=$(docker compose --project-name "$service" --env-file .env \
+              profile_count=$(docker compose --project-name "$project" --env-file .env \
                 --profile '*' config --format json \
                 | jq -r --arg service "$profile_service" \
                     '.services[$service].profiles // [] | length')
@@ -624,7 +815,7 @@ jobs:
                 exit 2
               fi
               echo "retiring disabled profile service $profile_service"
-              docker compose --project-name "$service" --env-file .env \
+              docker compose --project-name "$project" --env-file .env \
                 --profile '*' rm -sf "$profile_service"
             done < <(sed -E 's/[[:space:]]*#.*$//; /^[[:space:]]*$/d; s/^[[:space:]]+//; s/[[:space:]]+$//' \
                        disabled-profile-services)
@@ -652,6 +843,8 @@ jobs:
           # verify.sh reads the service's own credentials to make an
           # authenticated probe; nothing is echoed.
           set -a; . ./.env; set +a
+          project=$service
+          if [ "$service" = website ]; then project=${WEBSITE_PROJECT:-website}; fi
           attempts=30
           health_budget_seconds=0
           kill_grace_seconds=5
@@ -692,8 +885,8 @@ jobs:
             echo "--- $service health gate exhausted its ${health_budget_seconds}s wall-clock budget ---" >&2
           fi
           echo "--- $service did not become healthy; container state ---" >&2
-          docker compose --project-name "$service" --env-file .env ps >&2
-          docker compose --project-name "$service" --env-file .env logs --tail 120 --no-color >&2
+          docker compose --project-name "$project" --env-file .env ps >&2
+          docker compose --project-name "$project" --env-file .env logs --tail 120 --no-color >&2
           exit 1
           } </dev/null
           REMOTE
@@ -722,6 +915,7 @@ jobs:
           REMOTE
 
       - name: Collect deployment report
+        id: report
         if: always()
         env:
           RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
@@ -729,6 +923,10 @@ jobs:
           SERVICE: ${{ inputs.service }}
           IMAGE: ${{ inputs.image }}
           SOURCE_SHA: ${{ inputs.source_sha }}
+          PHASE: ${{ inputs.environment }}
+          COMPOSE_PROJECT: ${{ steps.contract.outputs.compose_project }}
+          SERVICES_SHA: ${{ github.sha }}
+          PUBLIC_HOST: ${{ steps.contract.outputs.website_host }}
           EMBEDDING_MIGRATION_RESULT: ${{ steps.embedding_migration.outcome }}
           HEALTH_RESULT: ${{ steps.health.outcome }}
           POST_DEPLOY_RESULT: ${{ steps.post_deploy.outcome }}
@@ -736,18 +934,27 @@ jobs:
         run: |
           set -euo pipefail
           ssh open-hax-target \
-            "bash -euo pipefail -s -- '$SERVICE' '$RUNTIME_PATH' '$IMAGE' '$SOURCE_SHA' '$EMBEDDING_MIGRATION_RESULT' '$HEALTH_RESULT' '$POST_DEPLOY_RESULT' '$RUN_URL'" \
+            "bash -euo pipefail -s -- '$SERVICE' '$RUNTIME_PATH' '$IMAGE' '$SOURCE_SHA' '$EMBEDDING_MIGRATION_RESULT' '$HEALTH_RESULT' '$POST_DEPLOY_RESULT' '$RUN_URL' '$PHASE' '$COMPOSE_PROJECT' '$SERVICES_SHA' '$PUBLIC_HOST'" \
             <<'REMOTE' > report.json
           {
           service=$1; runtime_path=$2; image=$3; source_sha=$4; embedding_migration=$5; health=$6; post_deploy=$7; run_url=$8
+          phase=$9; project=${10}; services_sha=${11}; public_host=${12}
           cd "$runtime_path"
-          containers=$(docker compose --project-name "$service" ps --format json 2>/dev/null | jq -sc '.' || echo '[]')
+          containers=$(docker compose --project-name "$project" --env-file .env ps --format json 2>/dev/null | jq -sc '.' || echo '[]')
+          nginx_sha=""
+          if [ "$service" = website ]; then nginx_sha=$(sha256sum nginx.conf | awk '{print $1}'); fi
           listening=$(ss -ltnH 2>/dev/null | awk '{print $4}' | sort -u \
             | jq -Rsc 'split("\n") | map(select(length > 0))' || echo '[]')
           jq -n \
             --arg service "$service" \
             --arg image "$image" \
             --arg sourceSha "$source_sha" \
+            --arg phase "$phase" \
+            --arg composeProject "$project" \
+            --arg servicesSha "$services_sha" \
+            --arg nginxSha "$nginx_sha" \
+            --arg publicHost "$public_host" \
+            --arg runtimePath "$runtime_path" \
             --arg embeddingMigration "$embedding_migration" \
             --arg health "$health" \
             --arg postDeploy "$post_deploy" \
@@ -757,6 +964,8 @@ jobs:
             --argjson containers "$containers" \
             --argjson listening "$listening" \
             '{service: $service, image: $image, sourceSha: $sourceSha,
+              phase: $phase, composeProject: $composeProject, servicesSha: $servicesSha,
+              nginxSha: $nginxSha, publicHost: $publicHost, runtimePath: $runtimePath,
               embeddingMigration: $embeddingMigration,
               health: $health, postDeploy: $postDeploy, runUrl: $runUrl, host: $host,
               deployedAt: $deployedAt, containers: $containers,
@@ -764,6 +973,7 @@ jobs:
           } </dev/null
           REMOTE
           jq . report.json
+          echo "receipt=$(jq -c . report.json)" >> "$GITHUB_OUTPUT"
           ssh open-hax-target "mkdir -p '$REPORTS_ROOT'"
           scp report.json "open-hax-target:${REPORTS_ROOT}/${SERVICE}-$(date -u +%Y%m%dT%H%M%SZ).json"
 
@@ -777,6 +987,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: digitalocean-deployment-${{ inputs.service }}
+          name: digitalocean-deployment-${{ inputs.environment }}-${{ inputs.service }}-${{ github.run_attempt }}
           path: report.json
           if-no-files-found: error

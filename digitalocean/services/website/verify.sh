@@ -36,6 +36,12 @@ set -euo pipefail
 : "${WEBSITE_PUBLIC_HOST:?WEBSITE_PUBLIC_HOST missing from the rendered environment}"
 : "${WEBSITE_HOST_ADDRESS:?WEBSITE_HOST_ADDRESS missing from the rendered environment}"
 
+WEBSITE_PROJECT=${WEBSITE_PROJECT:-website}
+WEBSITE_SERVICE_NAME=${WEBSITE_SERVICE_NAME:-website}
+WEBSITE_PHASE=${WEBSITE_PHASE:-production}
+WEBSITE_REQUIRE_PUBLIC_TLS=${WEBSITE_REQUIRE_PUBLIC_TLS:-false}
+WEBSITE_NETWORK_ALIAS=${WEBSITE_NETWORK_ALIAS:-website}
+
 ORIGIN="http://127.0.0.1:${WEBSITE_LOOPBACK_PORT}"
 CONTENT_PREFIX="/${WEBSITE_CONTENT_URL_PREFIX#/}"
 CONTENT_PREFIX="${CONTENT_PREFIX%/}"
@@ -91,7 +97,7 @@ body_of() { curl -s --max-time "$PROBE_TIMEOUT" "$1"; }
 
 echo "website: verifying ${WEBSITE_IMAGE}"
 
-container=$(docker compose --project-name website --env-file .env ps -q website </dev/null)
+container=$(docker compose --project-name "$WEBSITE_PROJECT" --env-file .env ps -q "$WEBSITE_SERVICE_NAME" </dev/null)
 [ -n "$container" ] || fail "no website container is running"
 
 running_image=$(docker inspect --format '{{.Config.Image}}' "$container")
@@ -99,6 +105,26 @@ running_image=$(docker inspect --format '{{.Config.Image}}' "$container")
 # revision is not enough; the running one has to be the deployed one.
 [ "$running_image" = "$WEBSITE_IMAGE" ] \
   || fail "the running container is ${running_image}, not the deployed ${WEBSITE_IMAGE}"
+
+if [ "$WEBSITE_PHASE" = staging ]; then
+  [ "$WEBSITE_PROJECT" = website-staging ] || fail "staging has a production Compose project"
+  [ "$WEBSITE_SERVICE_NAME" = website-staging ] || fail "staging has a production Compose service key"
+  [ "$WEBSITE_LOOPBACK_PORT" = 8082 ] || fail "staging has a production loopback port"
+  [ "$WEBSITE_PUBLIC_HOST" = staging.website.promethean.rest ] || fail "staging has a production hostname"
+  [ "$WEBSITE_NETWORK_ALIAS" = website-staging ] || fail "staging has a production network alias"
+  [ "$WEBSITE_REQUIRE_PUBLIC_TLS" = true ] || fail "staging must require public TLS"
+  [[ "$WEBSITE_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]] || fail "staging image is not pinned by digest"
+  [[ "${WEBSITE_SOURCE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || fail "staging source revision is not immutable"
+fi
+
+network_aliases=$(docker inspect --format '{{json .NetworkSettings.Networks}}' "$container")
+jq -e --arg alias "$WEBSITE_NETWORK_ALIAS" 'any(.[]; (.Aliases // []) | index($alias))' \
+  <<<"$network_aliases" >/dev/null || fail "the container has no ${WEBSITE_NETWORK_ALIAS} network alias"
+if [ "$WEBSITE_PHASE" = staging ]; then
+  jq -e '((.["open-hax"].Aliases // []) | index("website-staging") != null) and
+    all(.[]; (.Aliases // []) | index("website") == null)' \
+    <<<"$network_aliases" >/dev/null || fail "staging must expose website-staging on open-hax and never the production website alias"
+fi
 
 # --- 2. The content root ---------------------------------------------------
 
@@ -187,7 +213,8 @@ done <<<"$assets"
 # A locale-routed site needs /es/ and every client-routed path under it to
 # resolve to the Spanish shell, not merely any shell. The shell's lang attribute
 # proves that nginx retained the locale prefix rather than falling back to en.
-for path in /es/ /es/notes/hello; do
+for locale in es fr de ja; do
+for path in "/${locale}/" "/${locale}/notes/hello"; do
   read -r rc code <<<"$(probe "${ORIGIN}${path}")"
   [ "$rc" = 0 ] || fail "locale path ${path} did not answer (curl exit ${rc})"
   [ "$code" = 200 ] || fail "locale path ${path} returned ${code}, expected the app shell"
@@ -197,12 +224,17 @@ for path in /es/ /es/notes/hello; do
     *) fail "locale path ${path} returned 200 without the app shell" ;;
   esac
   case "$locale_shell" in
-    *'<html lang="es"'*) ;;
-    *) fail "locale path ${path} returned a shell whose document language is not es" ;;
+    *"<html lang=\"${locale}\""*) ;;
+    *) fail "locale path ${path} returned a shell whose document language is not ${locale}" ;;
   esac
+done
 done
 
 # --- 6. The published manifest ---------------------------------------------
+
+read -r rc code <<<"$(probe "${ORIGIN}${CONTENT_PREFIX}/.missing-serving-proof.html")"
+[ "$rc" = 0 ] && [ "$code" = 404 ] \
+  || fail "a missing published artifact must return 404 without the app shell"
 
 manifest_url="${ORIGIN}${CONTENT_PREFIX}/manifest.edn"
 read -r rc code <<<"$(probe "$manifest_url")"
@@ -340,8 +372,10 @@ while IFS= read -r address; do
 done <<<"$resolved"
 
 if [ -z "$resolved" ]; then
+  [ "$WEBSITE_REQUIRE_PUBLIC_TLS" != true ] || fail "${WEBSITE_PUBLIC_HOST} has no DNS answer; public TLS is required"
   warn "${WEBSITE_PUBLIC_HOST} does not resolve at all; TLS was not asserted. Owner: whoever owns this hostname's DNS record (docs/published-content-root.md §1)"
 elif [ "$points_here" != yes ]; then
+  [ "$WEBSITE_REQUIRE_PUBLIC_TLS" != true ] || fail "${WEBSITE_PUBLIC_HOST} does not resolve to this host; public TLS is required"
   resolved_list=$(printf '%s' "$resolved" | tr '\n' ' ')
   warn "${WEBSITE_PUBLIC_HOST} resolves to ${resolved_list% } instead of ${WEBSITE_HOST_ADDRESS}; TLS was not asserted because it would be testing another host. Owner: whoever owns this hostname's DNS record (docs/published-content-root.md §1)"
 else

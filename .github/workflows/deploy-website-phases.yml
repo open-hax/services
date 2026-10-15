@@ -1,0 +1,152 @@
+name: Stage and Promote Website
+
+# This body is callable only by the Deploy Stack chain. Its caller holds the
+# same host lock through staging, proof inspection, and production.
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: The single built website image pinned by digest
+        required: true
+        type: string
+      source_sha:
+        description: Exact website source commit in that image
+        required: true
+        type: string
+      caller_holds_production_host_lock:
+        description: Caller owns the host lock through both phases
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate the locked immutable candidate
+        env:
+          HOST_LOCK: ${{ inputs.caller_holds_production_host_lock }}
+          IMAGE: ${{ inputs.image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$HOST_LOCK" = true
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$IMAGE" =~ ^ghcr\.io/open-hax/website:${SOURCE_SHA}@sha256:[0-9a-f]{64}$ ]]
+
+  stage:
+    needs: validate
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: website
+      environment: staging
+      image: ${{ inputs.image }}
+      source_sha: ${{ inputs.source_sha }}
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
+  stage-proof:
+    needs: stage
+    runs-on: ubuntu-latest
+    outputs:
+      receipt: ${{ steps.proof.outputs.receipt }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Compare the observed stage receipt with this candidate
+        id: proof
+        env:
+          STAGE_RECEIPT: ${{ needs.stage.outputs.receipt }}
+          IMAGE: ${{ inputs.image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          SERVICES_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          nginx_sha=$(sha256sum digitalocean/services/website/nginx.conf | awk '{print $1}')
+          jq -e --arg image "$IMAGE" --arg source "$SOURCE_SHA" \
+            --arg services "$SERVICES_SHA" --arg nginx "$nginx_sha" '
+            .service == "website" and .phase == "staging" and
+            .health == "success" and .image == $image and
+            .sourceSha == $source and .servicesSha == $services and
+            .nginxSha == $nginx and .composeProject == "website-staging" and
+            .publicHost == "staging.website.promethean.rest"
+          ' <<<"$STAGE_RECEIPT"
+          printf '%s\n' "$STAGE_RECEIPT" > website-stage-proof.json
+          echo "receipt=$(jq -c . <<<"$STAGE_RECEIPT")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: website-stage-proof-${{ github.run_attempt }}
+          path: website-stage-proof.json
+          if-no-files-found: error
+
+  production-qualification:
+    needs: stage-proof
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Require the explicit exact-candidate owner decision and fresh stage proof
+        env:
+          STAGE_RECEIPT: ${{ needs.stage-proof.outputs.receipt }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE: ${{ inputs.image }}
+          SERVICES_SHA: ${{ github.sha }}
+          CONTROLLER_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          test "$CONTROLLER_REF" = refs/heads/main
+          python3 scripts/website-owner-decision.py qualify \
+            --source "$SOURCE_SHA" --image "$IMAGE" --services "$SERVICES_SHA" \
+            <<<"$STAGE_RECEIPT" > website-production-qualification.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: website-production-qualification-${{ github.run_attempt }}
+          path: website-production-qualification.json
+          if-no-files-found: error
+
+  production:
+    needs: production-qualification
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: website
+      environment: production
+      image: ${{ inputs.image }}
+      source_sha: ${{ inputs.source_sha }}
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
+  production-proof:
+    needs: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Verify the observed production candidate
+        env:
+          PRODUCTION_RECEIPT: ${{ needs.production.outputs.receipt }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE: ${{ inputs.image }}
+          SERVICES_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          nginx_sha=$(sha256sum digitalocean/services/website/nginx.conf | awk '{print $1}')
+          jq -e --arg image "$IMAGE" --arg source "$SOURCE_SHA" \
+            --arg services "$SERVICES_SHA" --arg nginx "$nginx_sha" '
+            .service == "website" and .phase == "production" and
+            .health == "success" and .image == $image and
+            .sourceSha == $source and .servicesSha == $services and
+            .nginxSha == $nginx and .composeProject == "website" and
+            .publicHost == "open-hax.promethean.rest"
+          ' <<<"$PRODUCTION_RECEIPT"
+          printf '%s\n' "$PRODUCTION_RECEIPT" > website-production-proof.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: website-production-proof-${{ github.run_attempt }}
+          path: website-production-proof.json
+          if-no-files-found: error

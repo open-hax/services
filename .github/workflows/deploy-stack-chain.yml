@@ -1,14 +1,14 @@
 name: Deploy Stack Chain
 
 # Reusable body of deploy-stack.yml: provisions the host, then deploys proxx,
-# knoxx, caddy and the website in dependency order. Image builds may run while
+# knoxx and caddy in dependency order. Website scope uses its isolated phases.
+# Image builds may run while
 # host provisioning completes.
 #
-#   proxx ──> knoxx ──> caddy ──> website
+#   stack: proxx ──> knoxx ──> caddy; website: stage ──> proof ──> qualification
 #
-# The website comes last because its gate asserts TLS on its public hostname,
-# which means reaching through Caddy; putting it before Caddy would instead make
-# the ingress gate depend on an upstream that does not exist yet.
+# Website scope requires the existing Caddy ingress and does not deploy the
+# application stack. Its production qualification currently fails closed.
 #
 # Ordering is enforced here rather than with depends_on, because these are
 # separate compose projects. It is load-bearing: the Knoxx backend's /health
@@ -22,6 +22,11 @@ name: Deploy Stack Chain
 on:
   workflow_call:
     inputs:
+      scope:
+        description: stack or website; website does not mutate application services
+        required: false
+        default: stack
+        type: string
       proxx_ref:
         description: Immutable open-hax/proxx ref to deploy
         required: true
@@ -39,6 +44,11 @@ on:
         required: false
         default: main
         type: string
+      website_image:
+        description: Existing immutable Website image; accepted only by the reviewed candidate controller
+        required: false
+        default: ''
+        type: string
       include_ingress:
         description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
         required: false
@@ -46,9 +56,9 @@ on:
         type: boolean
       include_website:
         description: >-
-          Build and deploy open-hax/website. No DNS is changed either way.
+          Reserved stack opt-in; the canonical entrypoint rejects it until qualification exists.
         required: false
-        default: true
+        default: false
         type: boolean
 
 # packages: write is required here, not just in build-images.yml: a reusable
@@ -66,6 +76,7 @@ jobs:
   # bootstrap is running inside that single production mutation queue.
   provision-host:
     needs: knoxx-preflight
+    if: inputs.scope == 'stack'
     uses: ./.github/workflows/digitalocean-host.yml
     with:
       operation: bootstrap
@@ -74,13 +85,34 @@ jobs:
 
   # The deployment consumes the immutable SHA emitted by Knoxx's own release
   # gate. This keeps application validation in Knoxx while making it an actual
-  # prerequisite of every manually dispatched production deployment.
+  # prerequisite of every stack production deployment before host changes.
+  resolve-knoxx:
+    if: inputs.scope == 'stack'
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: open-hax/knoxx
+          ref: ${{ inputs.knoxx_ref }}
+          persist-credentials: false
+      - id: source
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
   knoxx-preflight:
-    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@baa875d695d63c19cbb815432ecd57db90fd2d86
+    needs: resolve-knoxx
+    if: inputs.scope == 'stack'
+    uses: open-hax/knoxx/.github/workflows/deploy-production.yml@662a1f8f9f522c7fc601aea6f857e36378bdecc2
     with:
-      source_ref: ${{ inputs.knoxx_ref }}
+      source_ref: ${{ needs.resolve-knoxx.outputs.source_sha }}
 
   build-proxx:
+    if: inputs.scope == 'stack'
     uses: ./.github/workflows/build-images.yml
     with:
       service: proxx
@@ -103,6 +135,7 @@ jobs:
     with:
       service: knoxx-backend
       source_ref: ${{ needs.knoxx-preflight.outputs.source_sha }}
+      openplanner_ref: ${{ inputs.openplanner_ref }}
 
   build-knoxx-frontend:
     needs: knoxx-preflight
@@ -123,7 +156,7 @@ jobs:
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: knoxx
-      image: ${{ needs.build-knoxx-backend.outputs.image }}
+      image: ${{ needs.build-knoxx-backend.outputs.image }}@${{ needs.build-knoxx-backend.outputs.digest }}
       source_sha: ${{ needs.build-knoxx-backend.outputs.source_sha }}
       # OpenPlanner REST is intentionally absent from this stack. Garden,
       # publication and translation-review surfaces resolve from Knoxx's own
@@ -134,13 +167,13 @@ jobs:
       # from the protected production environment. The called deploy workflow
       # fails closed before rendering if the secret is absent or too short.
       extra_env: >-
-        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}@${{ needs.build-knoxx-devtools.outputs.digest }}"}
+        {"KNOXX_FRONTEND_IMAGE": "${{ needs.build-knoxx-frontend.outputs.image }}@${{ needs.build-knoxx-frontend.outputs.digest }}", "KNOXX_DEVTOOLS_IMAGE": "${{ needs.build-knoxx-devtools.outputs.image }}@${{ needs.build-knoxx-devtools.outputs.digest }}"}
       caller_holds_production_host_lock: true
     secrets: inherit
 
   deploy-caddy:
     needs: deploy-knoxx
-    if: inputs.include_ingress
+    if: inputs.scope == 'stack' && inputs.include_ingress
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: caddy
@@ -149,14 +182,52 @@ jobs:
 
   # Builds alongside the rest of the chain; deploys last.
   build-website:
-    if: inputs.include_website
+    if: inputs.website_image == '' && (inputs.include_website || inputs.scope == 'website')
     uses: ./.github/workflows/build-images.yml
     with:
       service: website
       source_ref: ${{ inputs.website_ref }}
 
+  select-website:
+    needs: build-website
+    if: >-
+      always() && (inputs.include_website || inputs.scope == 'website')
+      && ((inputs.website_image == '' && needs.build-website.result == 'success')
+        || (inputs.scope == 'website' && inputs.website_image != '' && needs.build-website.result == 'skipped'))
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.candidate.outputs.image }}
+      source_sha: ${{ steps.candidate.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Select the built image or exact owner-approved candidate
+        id: candidate
+        env:
+          EXISTING_IMAGE: ${{ inputs.website_image }}
+          EXISTING_SOURCE: ${{ inputs.website_ref }}
+          BUILT_IMAGE: ${{ needs.build-website.outputs.image }}@${{ needs.build-website.outputs.digest }}
+          BUILT_SOURCE: ${{ needs.build-website.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$EXISTING_IMAGE" ]; then
+            [ "$GITHUB_REF" = refs/heads/main ] || { echo '::error::Existing Website images require the trusted main controller ref.' >&2; exit 1; }
+            candidate=$(python3 scripts/website-owner-decision.py select \
+              --source "$EXISTING_SOURCE" --image "$EXISTING_IMAGE")
+            image=$(jq -r '.image' <<<"$candidate")
+            source=$(jq -r '.sourceSha' <<<"$candidate")
+          else
+            image=$BUILT_IMAGE
+            source=$BUILT_SOURCE
+          fi
+          [[ "$source" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$image" =~ ^ghcr\.io/open-hax/website:${source}@sha256:[0-9a-f]{64}$ ]]
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source" >> "$GITHUB_OUTPUT"
+
   deploy-website:
-    needs: [build-website, deploy-caddy, deploy-knoxx]
+    needs: [select-website, deploy-caddy, deploy-knoxx]
     # deploy-caddy is conditional, and a skipped ingress must not silently skip
     # the website with it: the website's gate classifies an absent ingress as a
     # WARN owned by caddy and still proves the site serves on loopback. When
@@ -164,17 +235,19 @@ jobs:
     # dependency failed; never advance the website through that broken chain.
     if: >-
       always()
-      && inputs.include_website
-      && needs.build-website.result == 'success'
-      && needs.deploy-knoxx.result == 'success'
+      && (inputs.include_website || inputs.scope == 'website')
+      && needs.select-website.result == 'success'
+      && (inputs.scope == 'website' || needs.deploy-knoxx.result == 'success')
       && (
-        (!inputs.include_ingress && needs.deploy-caddy.result == 'skipped')
-        || (inputs.include_ingress && needs.deploy-caddy.result == 'success')
+        (inputs.scope == 'website' && needs.deploy-caddy.result == 'skipped')
+        || (inputs.scope == 'stack' && (
+          (!inputs.include_ingress && needs.deploy-caddy.result == 'skipped')
+          || (inputs.include_ingress && needs.deploy-caddy.result == 'success')
+        ))
       )
-    uses: ./.github/workflows/deploy-digitalocean.yml
+    uses: ./.github/workflows/deploy-website-phases.yml
     with:
-      service: website
-      image: ${{ needs.build-website.outputs.image }}
-      source_sha: ${{ needs.build-website.outputs.source_sha }}
+      image: ${{ needs.select-website.outputs.image }}
+      source_sha: ${{ needs.select-website.outputs.source_sha }}
       caller_holds_production_host_lock: true
     secrets: inherit

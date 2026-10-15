@@ -190,7 +190,9 @@ services:
       # It is a peer of this service's state directory rather than a child of
       # it, because the reader is another service: state/website-content, not
       # state/knoxx/website-content.
-      - ${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/srv/website-content
+      # The writer still uses /srv/website-content through its image-owned
+      # alias. Its real path must lie inside the workspace provenance boundary.
+      - ${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/app/workspace/.knoxx/website-content
       - ${KNOXX_SANDBOX_ROOT_PATH:?KNOXX_SANDBOX_ROOT_PATH must be set}:/sandboxes
     # No /var/run/docker.sock. The agent sandbox needs it, but it is a
     # root-equivalent grant and this host is about to be public.
@@ -255,6 +257,17 @@ services:
 
   knoxx-frontend:
     image: ${KNOXX_FRONTEND_IMAGE:?KNOXX_FRONTEND_IMAGE must be set}
+    # The application image inherits nginx's root default. Keep its static
+    # config and assets read-only; only cache and PID state need writable space.
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=755
+      - /var/run:rw,noexec,nosuid,nodev,size=16m,uid=1000,gid=1000,mode=755
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"
     restart: unless-stopped
     depends_on:
       knoxx-backend:

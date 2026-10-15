@@ -17,6 +17,69 @@ EXPORT = re.compile(r"\bexport\s+([A-Z][A-Z0-9_]*)=")
 EXTRA_KEY = re.compile(r'"([A-Z][A-Z0-9_]*)"\s*:')
 
 
+# A bounded contract for these two authored prefixes, not a shell parser or a
+# general reachability proof. Require the existing source/call statements in
+# their known control flow, through rendering and before verifier probe setup.
+# Structural rewrites require reviewing this contract alongside the shell.
+SESSION_SECRET_RENDER_PREFIX = r'''
+set -euo pipefail
+. digitalocean/lib/caddy-dev-auth.sh
+resolve_caddy_dev_auth "$SERVICE" "$SERVICE_DIR"
+if [ "$SERVICE" = caddy ]; then
+echo "::add-mask::${DEV_BASIC_AUTH_HASH}"
+fi
+if [ "$SERVICE" = knoxx ]; then
+. "${SERVICE_DIR}/mcp-verification-policy.sh"
+require_knoxx_mcp_verification_token
+fi
+readonly render_session_secret_service=$SERVICE
+if [ "$render_session_secret_service" = knoxx ]; then
+. "${SERVICE_DIR}/session-secret-policy.sh"
+require_knoxx_session_secret_overlay "${EXTRA_ENV:-\{\}}"
+fi
+while IFS='=' read -r key value; do
+[ -n "$key" ] || continue
+case "$key" in
+KNOXX_MCP_LOOPBACK_TOKEN)
+echo "::error::extra_env may not set ${key}; it is supplied only by the protected environment secret" >&2
+exit 2
+;;
+esac
+export "$key=$value"
+done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"${EXTRA_ENV:-\{\}}")
+if [ "$render_session_secret_service" = knoxx ]; then
+require_knoxx_session_secret
+fi
+mapfile -t declared < <(grep -oE '\$\{[A-Z0-9_]+\}' "${SERVICE_DIR}/env.template" | sort -u)
+envsubst "${declared[*]}" < "${SERVICE_DIR}/env.template" > rendered.env
+'''.strip().splitlines()
+SESSION_SECRET_VERIFY_PREFIX = r'''
+set -euo pipefail
+: "${KNOXX_API_KEY:?KNOXX_API_KEY missing from the rendered environment}"
+verify_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+. "$verify_dir/event-agent-limits.sh"
+. "$verify_dir/session-secret-policy.sh"
+require_knoxx_session_secret
+FRONTEND=http://127.0.0.1:8080
+'''.strip().splitlines()
+
+
+def session_secret_wiring_failures(render_run: str, verify: str) -> list[str]:
+    failures = []
+    for label, text, expected in (
+        ("render", render_run, SESSION_SECRET_RENDER_PREFIX),
+        ("verification", verify, SESSION_SECRET_VERIFY_PREFIX),
+    ):
+        active_lines = [line.strip() for line in text.splitlines()
+                        if line.strip() and not line.lstrip().startswith("#")]
+        if active_lines[:len(expected)] != expected:
+            failures.append(
+                f"Knoxx {label} does not enforce the shared session-secret policy "
+                "in its authored pre-effect statement sequence"
+            )
+    return failures
+
+
 def main() -> int:
     deploy_path = WORKFLOWS / "deploy-digitalocean.yml"
     deploy_text = deploy_path.read_text()
@@ -76,6 +139,20 @@ def main() -> int:
     knoxx_template = (
         ROOT / "digitalocean" / "services" / "knoxx" / "env.template"
     ).read_text()
+    failures.extend(session_secret_wiring_failures(render_run, knoxx_verify))
+    if "python scripts/test-knoxx-session-secret.py" not in code_quality_text:
+        failures.append("Knoxx session-secret boundary regressions are not wired into CI")
+    knoxx_sdk_dockerfile = (
+        ROOT / "digitalocean" / "services" / "knoxx" / "Dockerfile.backend-sdk"
+    ).read_text()
+    knoxx_volumes = yaml.load(knoxx_compose, Loader=yaml.BaseLoader)["services"]["knoxx-backend"]["volumes"]
+    publication_mounts = [mount for mount in knoxx_volumes if mount.startswith("${WEBSITE_CONTENT_ROOT:")]
+    expected_publication_mount = "${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/app/workspace/.knoxx/website-content"
+    if publication_mounts != [expected_publication_mount]:
+        failures.append("Knoxx publication content must have exactly one contained workspace mount")
+    alias_position = knoxx_sdk_dockerfile.find("ln -s /app/workspace/.knoxx/website-content")
+    if alias_position < 0 or knoxx_sdk_dockerfile.rfind("USER 1000") < alias_position:
+        failures.append("Knoxx publication alias must be installed before dropping to UID 1000")
     knoxx_operator_docs = (
         ROOT / "docs" / "knoxx-ollama-embeddings.md"
     ).read_text()
@@ -449,9 +526,49 @@ def main() -> int:
             knoxx_template,
             "KNOXX_GENERATED_CONTRACTS_DIR='/app/workspace/.knoxx/contracts'",
         ),
+        "generated workspace is durable service state": (
+            knoxx_template,
+            "KNOXX_WORKSPACE_PATH='${OPEN_HAX_STATE_PATH}/knoxx-workspace'",
+        ),
         "generated contract root container binding": (
             knoxx_compose,
             "KNOXX_GENERATED_CONTRACTS_DIR:",
+        ),
+        "publication content nested workspace mount": (
+            knoxx_compose,
+            "${WEBSITE_CONTENT_ROOT:?WEBSITE_CONTENT_ROOT must be set}:/app/workspace/.knoxx/website-content",
+        ),
+        "publication content legacy absolute writer path": (
+            knoxx_compose,
+            "KNOXX_PUBLICATION_CONTENT_ROOT: /srv/website-content",
+        ),
+        "publication content alias refuses existing paths": (
+            knoxx_sdk_dockerfile,
+            "RUN test ! -e /srv/website-content",
+        ),
+        "publication content alias refuses dangling symlinks": (
+            knoxx_sdk_dockerfile,
+            "&& test ! -L /srv/website-content",
+        ),
+        "publication content contained legacy alias": (
+            knoxx_sdk_dockerfile,
+            "&& ln -s /app/workspace/.knoxx/website-content /srv/website-content",
+        ),
+        "generated contract directory preparation": (
+            deploy_text,
+            'mkdir -p "$KNOXX_WORKSPACE_PATH/.knoxx/contracts"',
+        ),
+        "publication workspace ownership precondition": (
+            deploy_text,
+            '[ "$(stat -c %u "$publication_dir")" != 1000 ]',
+        ),
+        "publication workspace write and traversal precondition": (
+            deploy_text,
+            '[ ! -w "$publication_dir" ] || [ ! -x "$publication_dir" ]',
+        ),
+        "publication mount UID regression CI wiring": (
+            code_quality_text,
+            "python scripts/test-knoxx-publication-mounts.py",
         ),
         "Ollama dedicated network mapping": (
             knoxx_compose,

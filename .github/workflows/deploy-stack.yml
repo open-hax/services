@@ -1,17 +1,26 @@
 name: Deploy Stack
 
-# Manual production promotion; the chain requires immutable Knoxx qualification.
+# Manual production promotion. Stack scope requires an immutable Knoxx candidate
+# and completed qualification before any host mutation. Website scope remains
+# isolated behind its exact-candidate selector, staging proof and qualification.
+# One production-host lock covers either complete scope.
 
 on:
   workflow_dispatch:
     inputs:
+      scope:
+        description: Stack deployment or isolated website staging and promotion
+        required: false
+        default: stack
+        type: choice
+        options: [stack, website]
       proxx_ref:
         description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
         type: string
       knoxx_ref:
-        description: Immutable merged Knoxx commit to qualify and deploy
-        required: true
+        description: Immutable merged Knoxx commit required for stack scope
+        required: false
         type: string
       openplanner_ref:
         description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
@@ -22,6 +31,10 @@ on:
         required: false
         default: main
         type: string
+      website_image:
+        description: Exact previously staged image admitted by a reviewed candidate decision; website scope only
+        required: false
+        type: string
       include_ingress:
         description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
         required: false
@@ -29,9 +42,9 @@ on:
         type: boolean
       include_website:
         description: >-
-          Build and deploy open-hax/website. No DNS is changed either way.
+          Unsupported with stack scope; use scope=website for isolated staging.
         required: false
-        default: true
+        default: false
         type: boolean
 
 # packages: write is required here, not just in build-images.yml: a reusable
@@ -48,18 +61,45 @@ jobs:
     outputs:
       should_deploy: ${{ steps.decide.outputs.should_deploy }}
     steps:
-      - name: Require an immutable production candidate
+      # Scope and immutable source are admitted before the locked deploy job.
+      - name: Admit the manual scope and immutable stack candidate
         id: decide
         env:
           KNOXX_SHA: ${{ inputs.knoxx_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEPLOY_SCOPE: ${{ inputs.scope || 'stack' }}
+          INCLUDE_WEBSITE: ${{ inputs.include_website }}
+          WEBSITE_IMAGE: ${{ inputs.website_image }}
         run: |
           set -euo pipefail
-          [[ "$KNOXX_SHA" =~ ^[0-9a-f]{40}$ ]]
-          echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            case "$DEPLOY_SCOPE" in
+              stack|website) ;;
+              *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
+            esac
+            if [ -n "$WEBSITE_IMAGE" ] && [ "$DEPLOY_SCOPE" != website ]; then
+              echo '::error::An existing Website image requires isolated website scope.' >&2
+              exit 2
+            fi
+            if [ "$DEPLOY_SCOPE" = stack ] && [ "$INCLUDE_WEBSITE" = true ]; then
+              echo '::error::Stack deployment cannot include the website while its production qualification is unsupported. Use scope=website to stage a candidate; production remains gated.' >&2
+              exit 2
+            fi
+            if [ "$DEPLOY_SCOPE" = stack ] && ! [[ "${KNOXX_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo '::error::Stack deployment requires an immutable Knoxx candidate.' >&2
+              exit 2
+            fi
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch; deploying the requested refs."
+            exit 0
+          fi
+          echo '::error::Production deployment requires manual dispatch.' >&2
+          exit 2
 
   # Keep the production host lock throughout qualification and deployment.
   deploy:
-    name: Deploy proxx, knoxx, caddy, website
+    name: Deploy the selected scope
     needs: authorize
     if: needs.authorize.outputs.should_deploy == 'true'
     concurrency:
@@ -71,14 +111,19 @@ jobs:
       cancel-in-progress: false
     uses: ./.github/workflows/deploy-stack-chain.yml
     with:
+      scope: ${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'stack' }}
       # Pin the release source at the production entry point. A manual
-      # dispatch may deliberately override this reviewed default.
+      # dispatch may deliberately override this reviewed immutable default.
       proxx_ref: ${{ inputs.proxx_ref || '88471efd7f8cd27f64fc733a1c31369f00a6d432' }}
       knoxx_ref: ${{ inputs.knoxx_ref }}
       # Keep the production default in one place. Nested reusable workflows
       # require this input instead of carrying independent, drift-prone pins.
       openplanner_ref: ${{ inputs.openplanner_ref || '07085d6557b75834ce6f50e6c54b8ca47e1c7c08' }}
-      website_ref: ${{ inputs.website_ref }}
-      include_ingress: ${{ inputs.include_ingress }}
-      include_website: ${{ inputs.include_website }}
+      website_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.website_ref || 'main' }}
+      website_image: ${{ github.event_name == 'workflow_dispatch' && inputs.website_image || '' }}
+      # The manual caller can leave existing ingress unchanged.
+      include_ingress: ${{ github.event_name != 'workflow_dispatch' || inputs.include_ingress }}
+      # Stack opt-in is rejected in authorize;
+      # explicit website scope enters its staging/qualification body.
+      include_website: ${{ github.event_name == 'workflow_dispatch' && inputs.include_website }}
     secrets: inherit
