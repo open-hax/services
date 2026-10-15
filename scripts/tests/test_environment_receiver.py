@@ -30,7 +30,7 @@ def finish(code=0,text=''):
 if a[:1]==['load']:
  with tarfile.open(a[a.index('--input')+1]) as t:
   for row in json.load(t.extractfile('manifest.json')):
-   for tag in row['RepoTags']:s['images'][tag]='sha256:'+hashlib.sha256(tag.encode()).hexdigest()
+   for tag in row['RepoTags']:s['images'][tag]=s.get('load_ids',{}).get(tag,'sha256:'+hashlib.sha256(tag.encode()).hexdigest())
  finish()
 if a[:2]==['image','inspect']:
  tag=a[-1]
@@ -84,14 +84,32 @@ class ReceiverHarness:
  def tag(self,letter,service='axxium'):return 'promethean-'+service+':'+letter*40
  def image_id(self,tag):return 'sha256:'+hashlib.sha256(tag.encode()).hexdigest()
  def selection(self,path):return dict(line.split('=',1) for line in path.read_text().splitlines())
- def receive(self,letter,env='testing',service='axxium'):
+ def receive(self,letter,env='testing',service='axxium',barrier_fault=None):
   tags=receiver.expected_tags(service,letter*40);stream=io.BytesIO()
   with tarfile.open(fileobj=stream,mode='w') as out:
    payload=json.dumps([{'RepoTags':[t],'Config':'config.json','Layers':[]} for t in sorted(tags)]).encode()
    entry=tarfile.TarInfo('manifest.json');entry.size=len(payload);out.addfile(entry,io.BytesIO(payload))
-  script="import importlib.util,sys;from pathlib import Path;s=importlib.util.spec_from_file_location('receiver',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);m.ROOT=Path(sys.argv[2]);sys.argv=['receiver',sys.argv[3],sys.argv[4]];raise SystemExit(m.main())"
+  script="""import importlib.util,sys,json,os
+from pathlib import Path
+s=importlib.util.spec_from_file_location('receiver',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);m.ROOT=Path(sys.argv[2])
+fault=os.environ.get('RECEIVER_TEST_BARRIER_FAULT')
+if fault:
+ original=m.atomic_write
+ def injected(path,text):
+  if path.name!='receiver-images.json' or 'Removal in progress or uncertain' not in text:return original(path,text)
+  fsync=m.os.fsync;calls=[]
+  def failing_fsync(fd):
+   calls.append(fd);(m.ROOT/'barrier-fault.json').write_text(json.dumps({'fault':fault,'fsync_calls':len(calls)}))
+   if len(calls)==(1 if fault=='file' else 2):raise OSError('injected durable barrier failure')
+   return fsync(fd)
+  m.os.fsync=failing_fsync
+  try:return original(path,text)
+  finally:m.os.fsync=fsync
+ m.atomic_write=injected
+sys.argv=['receiver',sys.argv[3],sys.argv[4]];raise SystemExit(m.main())
+"""
   source=Path(receiver.__file__).resolve()
-  return subprocess.run([sys.executable,'-c',script,str(source),str(self.root),env,service],input=stream.getvalue(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15,env={'PATH':str(self.bin)+os.pathsep+os.environ['PATH'],'RECEIVER_TEST_DOCKER_STATE':str(self.state),'SSH_ORIGINAL_COMMAND':f'receive {env} {service} '+letter*40})
+  return subprocess.run([sys.executable,'-c',script,str(source),str(self.root),env,service],input=stream.getvalue(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15,env={'PATH':str(self.bin)+os.pathsep+os.environ['PATH'],'RECEIVER_TEST_DOCKER_STATE':str(self.state),'SSH_ORIGINAL_COMMAND':f'receive {env} {service} '+letter*40,**({'RECEIVER_TEST_BARRIER_FAULT':barrier_fault} if barrier_fault else {})})
  def receipt(self,env='testing',service='axxium'):return json.loads((self.slot(env,service)/'deployment.json').read_text())
 
 
@@ -123,6 +141,33 @@ class ReceiverLifecycleTests(unittest.TestCase):
   self.assertNotEqual(0,h.receive('a').returncode);self.assertEqual([],h.data()['removal_attempts'])
   self.assertFalse((h.slot()/'deployment.json').exists())
   self.assertTrue(any('stop' in c for c in h.data()['calls']))
+ def test_failed_first_then_healthy_does_not_adopt_failed_generation_as_rollback(self):
+  h=self.harness();d=h.data();d['fail_tags']=[h.tag('a')];h.save(d)
+  self.assertNotEqual(0,h.receive('a').returncode)
+  self.assertFalse((h.slot()/'release.env').exists())
+  self.healthy(h,'b');self.assertFalse((h.slot()/'rollback.env').exists())
+  self.assertEqual({'AXXIUM_IMAGE':h.image_id(h.tag('b'))},h.selection(h.slot()/'release.env'))
+  self.assertEqual([],h.data()['removal_attempts'])
+ def test_repeat_same_healthy_selection_preserves_distinct_rollback(self):
+  h=self.harness();self.generations(h);self.healthy(h,'b')
+  self.assertEqual({'AXXIUM_IMAGE':h.image_id(h.tag('a'))},h.selection(h.slot()/'rollback.env'))
+  self.assertEqual([],h.data()['removed'])
+  self.healthy(h,'c');self.assertEqual([h.tag('a')],h.data()['removed'])
+  self.assertEqual({'AXXIUM_IMAGE':h.image_id(h.tag('b'))},h.selection(h.slot()/'rollback.env'))
+ def test_swapped_knoxx_roles_are_a_distinct_keyed_selection(self):
+  h=self.harness();self.healthy(h,'a',service='knoxx');previous=h.selection(h.slot(service='knoxx')/'release.env')
+  d=h.data();d['load_ids']={h.tag('b','knoxx-backend'):previous['KNOXX_FRONTEND_IMAGE'],h.tag('b','knoxx-frontend'):previous['KNOXX_BACKEND_IMAGE']};h.save(d)
+  self.healthy(h,'b',service='knoxx')
+  self.assertEqual(previous,h.selection(h.slot(service='knoxx')/'rollback.env'))
+  current=h.selection(h.slot(service='knoxx')/'release.env');self.assertEqual(set(previous.values()),set(current.values()));self.assertNotEqual(previous,current)
+ def test_removal_never_starts_without_durable_file_and_directory_barrier(self):
+  for fault,count in [('file',1),('directory',2)]:
+   with self.subTest(fault=fault):
+    h=self.harness();self.generations(h)
+    self.assertEqual(3,h.receive('c',barrier_fault=fault).returncode)
+    self.assertEqual([],h.data()['removal_attempts'])
+    self.assertEqual({'fault':fault,'fsync_calls':count},json.loads((h.root/'barrier-fault.json').read_text()))
+    self.assertEqual('healthy',h.receipt()['status']);self.assertEqual('failed',h.receipt()['image_cleanup']['status']);self.assertTrue(h.receipt()['image_cleanup']['refused'])
  def test_every_other_slots_active_and_rollback_ids_are_conserved(self):
   for env,service in [('testing','knoxx'),('staging','knoxx'),('staging','axxium')]:
    for filename in ('release.env','rollback.env'):
