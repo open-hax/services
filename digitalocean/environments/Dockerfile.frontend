@@ -1,4 +1,5 @@
 FROM caddy:2.8-alpine
+RUN setcap -r /usr/bin/caddy
 COPY dist /srv
 COPY Environment.Caddyfile /etc/caddy/Caddyfile
 USER 1000:1000
