@@ -45,6 +45,49 @@ and restores the previous image selection after a failed upgrade. Databases and
 secrets remain in the slot. Fixed compose templates cap memory, CPU, process
 counts and logs; application containers have no Docker socket or production mounts.
 
+After successful health, `rollback.env` records the previous distinct healthy
+keyed image selection. Re-admitting the same selection preserves its existing
+rollback; swapping image roles is a different selection even if the ID set is
+unchanged. A failed first start restores the absence of an active selection,
+so it cannot become a later deployment's rollback.
+A subsequent deployment requires `release.env` to match the complete keyed
+`images` selection in the slot's last `status: healthy` deployment receipt.
+Missing, malformed or mismatched admission evidence refuses before image load,
+startup or cleanup. A release replaced before a crash or failed durability step
+is therefore operator recovery state, rather than an implicitly healthy rollback.
+Existing healthy receipts with the original image-selection fields remain valid.
+A failed upgrade leaves the active selection, existing rollback selection and
+last healthy receipt unchanged. Image retention runs only after successful
+health, while holding the same global receiver lock. The receiver records only
+tags it admitted successfully in `receiver-images.json`; it never adopts old
+tags by scanning for a matching name. Initial installation therefore preserves
+unrecorded historical images for separate operator review.
+
+Retention removes only superseded, recorded source-SHA tags. It conserves image
+IDs selected by every testing/staging active or rollback file, all Docker
+containers including stopped production containers, and images carrying an
+alias outside receiver ownership. Missing or malformed slot, ownership or Docker
+inventories refuse cleanup. Image inventory includes Docker's complete digest
+field: a named image pulled by digest may legitimately have no tag, and its
+registry digest name remains a nonreceiver alias that conserves the image ID.
+Unknown or malformed digest rows still refuse cleanup.
+Removal uses an exact tag without force; image-ID
+deletion, global pruning and volume removal are never used. Docker actors outside
+the receiver must not retag receiver-owned names concurrently; the receiver lock
+serializes receiver operations, not the whole Docker daemon.
+
+`deployment.json` records application `status: healthy` separately from
+`image_cleanup`, including retained, removed and refused tag evidence. Blocked
+or failed cleanup exits 3 without rolling back a healthy application. Before a
+removal, the receiver flushes and fsyncs a refusal barrier file, atomically
+replaces the catalog, then fsyncs its parent directory. Removal cannot begin
+unless those steps succeed. A crash, uncertain result or
+failed removal leaves it for operator review. Later deployments do not retry
+refused cleanup automatically, and later blocked observations preserve the
+original recorded per-tag cause. Resolve the recorded cause and qualify any
+operator correction separately; a healthy application receipt alone does not
+make that deployment job successful.
+
 The GitHub `testing` and `staging` environments contain those restricted keys and
 verified SSH host-key variables. Callers become active when their reviewed
 workflow commits reach main. Until an admitted build reaches a slot, its HTTPS
