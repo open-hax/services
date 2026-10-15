@@ -126,3 +126,12 @@
   spore: none
   receipt-refs: receipts.edn#f6385286-bec6-45d1-8297-a86cfc307b82,receipts.edn#ab7a4f77-0cc0-45d9-826c-1ff9dedd0447,receipts.edn#23d1ca41-0182-4830-83ec-3746c35dc3b4
   note: Codex agent /root/pr354_terminal_rerun_verify. Qualify the actual receiver with cold orchestration tests and real disposable Docker objects. A replaced release is not healthy admission; compare full keyed last-healthy evidence and preserve distinct rollback on repeat. Durably flush/fsync the refusal barrier and directory before destructive effects, retaining first cause. Real Docker digest-only rows exposed a stub gap: complete --digests and literal native rows must preserve foreign aliases while rejecting unknowns. Keep failed/partial native qualification and independent old-object disposal distinct; stop on uncertainty and never retry a tag removal. Final52 tests and freshnative3cases/fullfixturecleanup pass; separate olddisposal removedA then newline-readback predicate stopped with B/C held. Source-qualified only, no public push/install/deploy. Candidate0, no spore.
+- ts: 2026-10-15T12:16:52.935426813Z
+  session: codex:/root/pr354_terminal_rerun_verify
+  task: Services accepted-main and qualified controller integration before personal review
+  p-efficiency: 0.74
+  p-friction: 0.62
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#b5f8a62c-125e-413d-9bc7-7e25802dd188
+  note: Distinguish direct-tree absence from intentional PR deletion, then integrate the actual accepted main through an ordinary two-parent merge. Preserve accepted Website phase/approval/content/session-secret safeguards and complete controller source/RED ancestry. Retain current-head refusal of historical Website approval after public input drift. Qualify all combined owning gates, record extra baseline lint/Caddy diagnostics without waivers, preserve actual hosted publisher credential failure and immutable caller pins. Source merge fc7281e1 tree711adbff; no deployment or board closure. Candidate0, no spore.
