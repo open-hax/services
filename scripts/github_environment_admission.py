@@ -5,7 +5,7 @@ from datetime import datetime,timezone
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError
 from urllib.parse import quote
-from environment_policy import testing_admission,staging_admission
+from environment_policy import testing_admission,staging_admission,testing_authorization
 
 def api(path):
  req=Request('https://api.github.com/'+path,headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
@@ -43,13 +43,15 @@ def owns_files(repo,login,files):
   pattern=pattern.strip('/')
   parts=pattern.split('/')
   pieces=[]
-  for part in parts:
-   if part=='**':pieces.append('(?:[^/]+/)*')
+  for index,part in enumerate(parts):
+   last=index==len(parts)-1
+   if part=='**':pieces.append('.*' if last else '(?:[^/]+/)*')
    else:
-    pieces.append(''.join('[^/]*' if c=='*' else '[^/]' if c=='?' else re.escape(c) for c in part)+'/')
-  expression=''.join(pieces).removesuffix('/')
+    pieces.append(''.join('[^/]*' if c=='*' else '[^/]' if c=='?' else re.escape(c) for c in part)+('' if last else '/'))
+  expression=''.join(pieces)
   prefix='^' if anchored else '(?:^|/)'
-  suffix='/' if directory else '(?:/|$)'
+  wildcard_leaf=any(c in parts[-1] for c in '*?') and parts[-1]!='**'
+  suffix='/' if directory else '$' if wildcard_leaf or parts[-1]=='**' else '(?:/|$)'
   return re.search(prefix+expression+suffix,path) is not None
  def owner_matches(owner):
   if owner.lower()=='@'+login.lower():return True
@@ -78,7 +80,10 @@ def admit(repo,number,environment):
  for f in pages(f'repos/{repo}/pulls/{number}/files'):
   paths.append(f['filename'])
   if f.get('previous_filename'):paths.append(f['previous_filename'])
+ now=datetime.now(timezone.utc)
+ authorization=testing_authorization(pages(f'repos/{repo}/pulls/{number}/reviews'),label,pr['head']['sha'],now=now)
  candidate={'number':number,'state':pr['state'],'base':pr['base']['ref'],'head_sha':pr['head']['sha'],
+  'authorization_sha':authorization['head_sha'] if authorization else None,
   'testing_label':any(l['name']=='testing' for l in pr['labels']),
   'labeled_at':label.get('created_at'),'labeler_is_code_owner':bool(label.get('actor')) and owns_files(repo,label['actor']['login'],paths)}
  others=[]
@@ -86,7 +91,14 @@ def admit(repo,number,environment):
   if other['number']!=number and any(l['name']=='testing' for l in other['labels']):
    event=label_evidence(repo,other['number'])
    others.append({'number':other['number'],'state':'open','testing_label':True,'labeled_at':event.get('created_at')})
- return testing_admission(candidate,others,now=datetime.now(timezone.utc))
+ result=testing_admission(candidate,others,now=now)
+ if not result['admitted']:return result
+ current=api(f'repos/{repo}/pulls/{number}')
+ if (current['head']['sha']!=pr['head']['sha'] or current['base']!=pr['base'] or current['state']!=pr['state']
+     or not any(value['name']=='testing' for value in current['labels'])):
+  return {'admitted':False,'reason':'pull request changed while collecting testing authorization'}
+ result['testing_authorization']=authorization
+ return result
 if __name__=='__main__':
  repo,number,environment=sys.argv[1:]
  if repo not in {'open-hax/knoxx','open-hax/axxium'}:raise SystemExit('Service repository not enabled')

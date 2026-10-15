@@ -151,7 +151,10 @@ def main() -> int:
         print("deploy chain error: production host can change before qualification", file=sys.stderr)
         return 1
     website = jobs.get("deploy-website", {})
-    if ("deploy-knoxx" not in website.get("needs", [])
+    website_needs = website.get("needs", [])
+    if isinstance(website_needs, str):
+        website_needs = [website_needs]
+    if ("deploy-knoxx" not in website_needs
             or "(inputs.scope == 'website' || needs.deploy-knoxx.result == 'success')" not in website.get("if", "")):
         print("deploy chain error: optional ingress can bypass production qualification", file=sys.stderr)
         return 1

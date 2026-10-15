@@ -5,14 +5,33 @@ are `knoxx` and `axxium`; environments are `stealth`, `yoga`, `testing`, `stagin
 and `production`. Stealth is 192.168.12.128; Yoga is 192.168.12.68. Public DNS points
 to Knoxx ingress, which forwards only the named application ports.
 
-Testing is an exclusive, two-hour PR lease. A code owner applies `testing` to an
-open PR targeting main. The controller reads the most recent label event, its
-actor and timestamp, the immutable current head, and all other open testing
-labels. Any other claim aged two hours or less blocks admission. Reapplying the
-label resets its timestamp. Expired labels do not block a new claim. Admission
-is repeated inside the serialized deployment slot after the image build; a
-changed head, removed label or changed competing claim invalidates the artifact.
-A denied request requires a fresh label event after the blocker expires.
+Testing is an exclusive, two-hour PR lease for an open PR targeting main. Before
+applying `testing`, the code owner submits a native **COMMENT** review explicitly
+targeting the full current commit (`commit_id`) with exactly this body:
+
+```text
+Authorize testing deployment of <40-hex-head>.
+```
+
+Replace the placeholder with the actual full commit. The same native User must
+then apply the label and own every changed path. The controller requires the
+review's native `COMMENTED` state, immutable commit, exact body, User ID/login
+and submitted timestamp at or before the selected label event. Pending, dismissed,
+quoted, wrong-user or old-head reviews do not authorize testing. This deliberate
+COMMENT supports an owner-authored PR without self-approval; it grants testing
+permission only, never formal review approval or merge credit.
+
+The controller reads the most recent label event, its actor and timestamp,
+current immutable head and all other open testing labels. Any other claim aged
+two hours or less blocks admission. Reapplying the label resets its timestamp;
+expired labels do not block a new claim. After a push, submit a new commit-bound
+authorization and reapply the label: the old label cannot authorize the new head.
+The existing labeled event triggers the workflow, so submit the review first.
+Admission rereads the head before returning, and repeats inside the serialized
+deployment slot after the image build. A changed head, removed label or changed
+competing claim invalidates the artifact. A denied request requires a fresh label
+event after the blocker expires. Author dates and inferred timeline commit order
+are never used to bind authorization.
 
 CODEOWNERS comes from main, never the candidate PR. The labeler must own every
 changed path. The initial CODEOWNERS files name the three existing repository admins.
@@ -44,6 +63,52 @@ It checks OCI archive tags, pins image IDs, serializes changes, waits for health
 and restores the previous image selection after a failed upgrade. Databases and
 secrets remain in the slot. Fixed compose templates cap memory, CPU, process
 counts and logs; application containers have no Docker socket or production mounts.
+
+Before loading an archive, the same global lock protects the complete expected
+receiver-owned tag/ID map and verifies that every saved full old ID still exists.
+A partially owned pair, rebound tag or unknown inventory refuses before load.
+One bounded load must leave every already-owned source-SHA tag on its original
+image ID. A rebuild of the same SHA can produce a different image ID; it is not
+silently admitted under an existing owned name. Partial/nonzero load and failed
+post-load inspection can also move tags. These paths preserve the original first
+cause, attempt each necessary exact-tag restoration once from the saved IDs,
+then verify the complete prior map. An uncertain restoration stops further
+effects. No refused intake writes `release.env`, runs Compose or performs image
+cleanup; active/rollback selections, last healthy receipt and ownership catalog
+stay unchanged. Loaded unowned image objects are retained for operator review,
+never deleted as compensation.
+
+`/srv/open-hax/environments/receiver-intake.json` is a durable global refusal
+barrier, written with file/directory fsync before the load and before each
+restoration. Schema `promethean.receiver-intake/v1` records environment, service,
+source SHA, `prior_tags`, ordered `operations` with pending/succeeded/failed/
+uncertain outcomes, immutable `first_failure`, and separate `recovery_errors`.
+It may also record the inspected `loaded_tags`. Only a completely verified
+successful intake removes its own marker before selecting a release. Every
+refused intake retains the marker, even when restoration succeeds. A process
+crash after load/tag but before recording its outcome leaves a pending operation.
+Any existing marker, including malformed or symlinked state, blocks every slot's
+next import before Docker work; a later observation does not rewrite its cause.
+
+The diagnostic names the marker and original cause. Operator recovery is a
+separately reviewed action: preserve the original journal, establish actual
+outcomes of pending operations, verify every recorded full ID/tag and all slot
+active/rollback/last-healthy selections, and account for retained new objects.
+Only then can an exact owned correction be proposed. This controller provides
+no clear/retry command and never treats a healthy application or immediate
+readback as authority to repeat an uncertain native operation. Do not remove a
+marker merely to unblock a deployment. This intake barrier does not establish
+application publication or deployment-receipt durability.
+
+There is a storage-failure limit at successful marker completion: unlink can
+succeed before its directory fsync fails. The receiver attempts to recreate a
+refused marker and exits unsuccessfully. If that recovery write also fails,
+neither a durable hold nor persisted first-cause history can be guaranteed.
+The diagnostic still requires an operator stop; absence of a marker must not be
+treated as proof the failed job succeeded or permission to retry it. All native
+load/tag bindings were already verified before this completion boundary, and
+the release has not been selected. This limitation does not weaken an existing
+refused or pending marker, which is never cleared on re-entry.
 
 After successful health, `rollback.env` records the previous distinct healthy
 keyed image selection. Re-admitting the same selection preserves its existing

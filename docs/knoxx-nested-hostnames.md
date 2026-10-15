@@ -30,10 +30,14 @@ dev-auth routes retain their configuration.
    On Knoxx, `--env-file ~/.secrets/.env` loads the existing zone credential
    without executing or displaying dotenv contents. Put this option before
    `ensure`.
-2. Add the full hostname to the placeholder site in
-   `digitalocean/services/caddy/Caddyfile`, or create an explicit site with the
-   intended application upstream. Remove a name from the shared placeholder
-   block before giving it its own site.
+2. Add an explicit site for the full hostname in
+   `digitalocean/services/caddy/Caddyfile`, following the existing per-host sites:
+   import `common`, preserve the intended TLS issuer, proxy to the selected
+   application/slot upstream and strip `x-open-hax-bridge-auth`. For an
+   unconfigured testing/staging slot, include its own `handle_errors` block
+   returning `Service not configured or unavailable.` with status 503 and
+   `Cache-Control: no-store`. Update that hostname's existing site when assigning
+   its upstream; do not create a second site for the same name.
 3. For a dev process, use the auth and firewall procedure in
    [dev-instances.md](dev-instances.md). DNS/TLS readiness does not authorize
    exposing an unauthenticated dev server or agent.
@@ -66,7 +70,9 @@ The initial live change was validated in `caddy-caddy-1` and reloaded without
 restarting the stack. The previous Caddyfile is retained on Knoxx at
 `/srv/open-hax/services/caddy/Caddyfile.before-nested-20260912T063753Z`
 (mode 0600). Preserve any subsequent edits when rolling back; remove only the
-managed placeholder block, validate, and reload. The host has a single-file
+selected hostname's explicit site, validate, and reload. Preserve other sites,
+the separately managed `/etc/caddy/managed/*.caddy` import and its fragments.
+The host has a single-file
 bind mount: preserve its inode during a live edit or deliberately recreate
 through Compose. Keep ACME data; deleting it triggers unnecessary reissuance.
 

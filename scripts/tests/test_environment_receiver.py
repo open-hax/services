@@ -101,7 +101,7 @@ class ReceiverHarness:
  def tag(self,letter,service='axxium'):return 'promethean-'+service+':'+letter*40
  def image_id(self,tag):return 'sha256:'+hashlib.sha256(tag.encode()).hexdigest()
  def selection(self,path):return dict(line.split('=',1) for line in path.read_text().splitlines())
- def receive(self,letter,env='testing',service='axxium',barrier_fault=None,release_fault=False,operation_fault=None,intake_fault=None):
+ def receive(self,letter,env='testing',service='axxium',barrier_fault=None,release_fault=False,operation_fault=None,intake_fault=None,finish_fault=None):
   tags=receiver.expected_tags(service,letter*40);stream=io.BytesIO()
   with tarfile.open(fileobj=stream,mode='w') as out:
    payload=json.dumps([{'RepoTags':[t],'Config':'config.json','Layers':[]} for t in sorted(tags)]).encode()
@@ -137,13 +137,27 @@ if operation_fault:
   if args[:2]==['docker','load']:
    if operation_fault=='load-timeout':raise m.subprocess.TimeoutExpired(args,kw.get('timeout',1))
    if operation_fault=='crash-after-load':raise KeyboardInterrupt('simulated crash after load')
-  if args[:3]==['docker','image','tag'] and operation_fault=='crash-after-restore':raise KeyboardInterrupt('simulated crash after restoration')
+  if args[:3]==['docker','image','tag']:
+   if operation_fault=='crash-after-restore':raise KeyboardInterrupt('simulated crash after restoration')
+   if operation_fault=='restore-timeout':raise m.subprocess.TimeoutExpired(args,kw.get('timeout',1))
+   if operation_fault=='restore-oserror':raise OSError('injected uncertain restoration')
   return result
  m.subprocess.run=injected_run
+finish_fault=os.environ.get('RECEIVER_TEST_FINISH_FAULT')
+if finish_fault:
+ original_sync=m.sync_directory;original_write=m.atomic_write;failed=[]
+ def finish_sync(path):
+  if path==m.ROOT and not (path/'receiver-intake.json').exists() and not failed:
+   failed.append(True);raise OSError('injected intake marker removal directory fsync failure')
+  return original_sync(path)
+ def recovery_write(path,text):
+  if failed and path.name=='receiver-intake.json' and finish_fault=='recovery-write-fails':raise OSError('injected unavailable recovery marker write')
+  return original_write(path,text)
+ m.sync_directory=finish_sync;m.atomic_write=recovery_write
 sys.argv=['receiver',sys.argv[3],sys.argv[4]];raise SystemExit(m.main())
 """
   source=Path(receiver.__file__).resolve()
-  return subprocess.run([sys.executable,'-B','-c',script,str(source),str(self.root),env,service],input=stream.getvalue(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15,env={'PATH':str(self.bin)+os.pathsep+os.environ['PATH'],'RECEIVER_TEST_DOCKER_STATE':str(self.state),'SSH_ORIGINAL_COMMAND':f'receive {env} {service} '+letter*40,**({'RECEIVER_TEST_BARRIER_FAULT':barrier_fault} if barrier_fault else {}),**({'RECEIVER_TEST_RELEASE_DIR_FAULT':'1'} if release_fault else {}),**({'RECEIVER_TEST_OPERATION_FAULT':operation_fault} if operation_fault else {}),**({'RECEIVER_TEST_INTAKE_FAULT':intake_fault} if intake_fault else {})})
+  return subprocess.run([sys.executable,'-B','-c',script,str(source),str(self.root),env,service],input=stream.getvalue(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15,env={'PATH':str(self.bin)+os.pathsep+os.environ['PATH'],'RECEIVER_TEST_DOCKER_STATE':str(self.state),'SSH_ORIGINAL_COMMAND':f'receive {env} {service} '+letter*40,**({'RECEIVER_TEST_BARRIER_FAULT':barrier_fault} if barrier_fault else {}),**({'RECEIVER_TEST_RELEASE_DIR_FAULT':'1'} if release_fault else {}),**({'RECEIVER_TEST_OPERATION_FAULT':operation_fault} if operation_fault else {}),**({'RECEIVER_TEST_INTAKE_FAULT':intake_fault} if intake_fault else {}),**({'RECEIVER_TEST_FINISH_FAULT':finish_fault} if finish_fault else {})})
  def receipt(self,env='testing',service='axxium'):return json.loads((self.slot(env,service)/'deployment.json').read_text())
 
 
@@ -195,6 +209,28 @@ class ReceiverLifecycleTests(unittest.TestCase):
     h.save(d);result=h.receive('b');self.assert_intake_refused(h,before,result)
     marker=json.loads((h.root/'receiver-intake.json').read_text());self.assertIn('changed image ID',marker['first_failure'])
     self.assertEqual(1,len(h.data()['restore_attempts']));self.assertTrue(marker['recovery_errors'])
+ def test_uncertain_first_knoxx_restoration_never_attempts_second_role(self):
+  for fault in ('restore-timeout','restore-oserror'):
+   with self.subTest(fault=fault):
+    h=self.harness();self.healthy(h,'a',service='knoxx');self.healthy(h,'b',service='knoxx');before=self.protected_bytes(h,'knoxx')
+    d=h.data();backend=h.tag('b','knoxx-backend');frontend=h.tag('b','knoxx-frontend');old={tag:d['images'][tag] for tag in (backend,frontend)}
+    d['load_ids']={backend:'sha256:'+'6'*64,frontend:'sha256:'+'7'*64};h.save(d)
+    result=h.receive('b',service='knoxx',operation_fault=fault);self.assert_intake_refused(h,before,result,'knoxx')
+    self.assertEqual([{'tag':backend,'image_id':old[backend]}],h.data()['restore_attempts'])
+    self.assertEqual(old[backend],h.data()['images'][backend]);self.assertEqual(d['load_ids'][frontend],h.data()['images'][frontend])
+    marker=json.loads((h.root/'receiver-intake.json').read_text());restores=[row for row in marker['operations'] if row['kind']=='restore']
+    self.assertEqual(1,len(restores));self.assertEqual('uncertain',restores[0]['status']);self.assertIn('changed image ID',marker['first_failure'])
+    self.assertTrue(any(row['tag']==frontend for row in marker['recovery_errors']))
+ def test_final_marker_removal_sync_failure_recreates_a_refusal_when_storage_allows(self):
+  h=self.harness();before=self.protected_bytes(h);result=h.receive('a',finish_fault='recreate')
+  self.assert_intake_refused(h,before,result)
+  marker=json.loads((h.root/'receiver-intake.json').read_text());self.assertEqual('refused',marker['status'])
+  self.assertIn('state persistence failed',marker['first_failure']);self.assertEqual([],h.data()['health'])
+ def test_unlink_plus_unavailable_recovery_write_reports_storage_limit_without_start(self):
+  h=self.harness();before=self.protected_bytes(h);result=h.receive('a',finish_fault='recovery-write-fails')
+  self.assertNotEqual(0,result.returncode);self.assertEqual(before,self.protected_bytes(h));self.assertEqual([],h.data()['health']);self.assertEqual([],h.data()['removal_attempts'])
+  self.assertFalse((h.root/'receiver-intake.json').exists(), 'absence after failed storage recovery is an explicit operational limitation')
+  self.assertIn('Image intake state persistence failed',result.stderr.decode());self.assertIn('operator review required',result.stderr.decode())
  def test_marker_durability_and_crash_windows_never_automatically_retry(self):
   for fault in ('file','directory','crash-after-marker'):
    with self.subTest(fault=fault):

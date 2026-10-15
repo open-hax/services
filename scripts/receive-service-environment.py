@@ -204,6 +204,87 @@ def validate_archive(path,service,sha):
   tags=[tag for row in rows for tag in row.get('RepoTags',[])]
   if set(tags)!=expected_tags(service,sha) or len(tags)!=len(set(tags)) or len(rows)!=len(tags):
    raise ValueError('Archive must contain only the admitted image tags')
+
+def load_images(path,environment,service,sha):
+ """Import once; a rebuilt owned name never changes an admitted selection.
+
+ The durable marker is a refusal barrier, not permission to replay a command.
+ All refused/uncertain imports keep their original evidence for operator review.
+ """
+ marker=ROOT/'receiver-intake.json'
+ if marker.exists() or marker.is_symlink():raise RetentionBlocked('Prior image intake requires operator review: '+str(marker))
+ tags=sorted(expected_tags(service,sha));catalog=read_ownership()
+ prior={tag:catalog['owned_tags'][tag] for tag in tags if tag in catalog['owned_tags']}
+ if prior and set(prior)!=set(tags):raise RetentionBlocked('Incomplete owned image set; refusing image intake')
+ for tag,image in prior.items():
+  if docker_output(['image','inspect','--format','{{.Id}}',tag]).strip()!=image:
+   raise RetentionBlocked('Owned tag is missing or rebound before image intake')
+  if docker_output(['image','inspect','--format','{{.Id}}',image]).strip()!=image:
+   raise RetentionBlocked('Prior owned image ID unavailable before image intake')
+ journal={'schema':'promethean.receiver-intake/v1','status':'in_progress',
+          'environment':environment,'service':service,'source_sha':sha,'prior_tags':prior,
+          'operations':[],'first_failure':None,'recovery_errors':[]}
+ def save():atomic_write(marker,json.dumps(journal,indent=2)+'\n')
+ def failure(reason):
+  if journal['first_failure'] is None:journal['first_failure']=reason
+ def effect(kind,args,timeout,tag=None,image=None):
+  operation={'kind':kind,'status':'pending'}
+  if tag is not None:operation.update(tag=tag,image_id=image)
+  journal['operations'].append(operation);save()
+  try:
+   subprocess.run(['docker']+args,check=True,timeout=timeout,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  except (subprocess.SubprocessError,OSError) as error:
+   uncertain=isinstance(error,(subprocess.TimeoutExpired,OSError))
+   operation['status']='uncertain' if uncertain else 'failed'
+   if isinstance(error,subprocess.CalledProcessError):operation['exit_code']=error.returncode
+   reason=f'Image {kind} '+('outcome uncertain' if uncertain else 'failed')+': '+type(error).__name__
+   failure(reason);save();return reason,uncertain
+  operation['status']='succeeded';save();return None,False
+ try:
+  reason,_=effect('load',['load','--input',str(path)],120)
+  loaded={}
+  if reason is None:
+   try:
+    for tag in tags:
+     image=docker_output(['image','inspect','--format','{{.Id}}',tag]).strip()
+     if not IMAGE_ID.fullmatch(image):raise RetentionBlocked('Malformed loaded image ID')
+     loaded[tag]=image
+    journal['loaded_tags']=loaded
+    if any(loaded[tag]!=image for tag,image in prior.items()):
+     failure('Recorded source-SHA tag changed image ID during image intake')
+   except RetentionBlocked as error:failure('Post-load inspection failed: '+str(error))
+  if journal['first_failure'] is not None:
+   # Restore only changed/missing/unknown bindings, each at most once. A native
+   # uncertainty stops subsequent effects; readback cannot authorize a retry.
+   for tag,image in prior.items():
+    try:
+     if docker_output(['image','inspect','--format','{{.Id}}',tag]).strip()==image:continue
+    except RetentionBlocked:pass
+    error,uncertain=effect('restore',['image','tag',image,tag],30,tag,image)
+    if error:journal['recovery_errors'].append({'tag':tag,'reason':error})
+    if uncertain:break
+   for tag,image in prior.items():
+    try:
+     if docker_output(['image','inspect','--format','{{.Id}}',tag]).strip()!=image:
+      raise RetentionBlocked('Prior image binding was not restored')
+    except RetentionBlocked as error:journal['recovery_errors'].append({'tag':tag,'reason':str(error)})
+   journal['status']='refused';save()
+   raise RetentionBlocked(journal['first_failure']+'; intake held for operator review: '+str(marker))
+  journal['status']='verified';save()
+  marker.unlink();sync_directory(ROOT)
+  ordered=[f'promethean-axxium:{sha}'] if service=='axxium' else [f'promethean-knoxx-backend:{sha}',f'promethean-knoxx-frontend:{sha}']
+  return {key:loaded[tag] for key,tag in zip(image_names(service),ordered)}
+ except OSError as error:
+  failure('Image intake state persistence failed: '+type(error).__name__)
+  journal['status']='refused'
+  # Preserve the first cause even when a later persistence operation also fails.
+  # A failed completion unlink may already have removed the marker. Recreate
+  # it where storage allows; if this also fails, durable refusal is unavailable
+  # and the failed job requires an operator stop (never infer success from absence).
+  try:save()
+  except OSError:pass
+  raise RetentionBlocked(journal['first_failure']+'; operator review required: '+str(marker)) from error
+
 def main():
  environment,service=sys.argv[1:]
  if environment not in {'testing','staging'} or service not in {'knoxx','axxium'}:raise ValueError('Unsupported slot')
@@ -214,6 +295,8 @@ def main():
  # Keep image loads and runtime changes serialized even across different keys.
  with (ROOT/'.receiver.lock').open('a') as lock:
   fcntl.flock(lock,fcntl.LOCK_EX)
+  intake=ROOT/'receiver-intake.json'
+  if intake.exists() or intake.is_symlink():raise RetentionBlocked('Prior image intake requires operator review: '+str(intake))
   # Refuse unknown/crash residue before loading images, changing a selection,
   # attempting health or considering cleanup. Recovery is an operator decision.
   previous=admitted_selection(slot,environment,service)
@@ -225,11 +308,9 @@ def main():
      if total>MAX_ARCHIVE:raise ValueError('Image archive exceeds 4 GiB budget')
      output.write(chunk)
    validate_archive(image_file,service,sha)
-   subprocess.run(['docker','load','--input',str(image_file)],check=True)
-   names=image_names(service)
+   values=load_images(image_file,environment,service,sha)
    images=[f'promethean-axxium:{sha}'] if service=='axxium' else [f'promethean-knoxx-backend:{sha}',f'promethean-knoxx-frontend:{sha}']
-   # Pin the loaded image IDs: tags cannot change what compose starts later.
-   values={key:subprocess.check_output(['docker','image','inspect','--format','{{.Id}}',tag],text=True).strip() for key,tag in zip(names,images)}
+   # Pin verified IDs only after the complete import transaction succeeds.
    release=slot/'release.env'
    atomic_write(release,''.join(f'{key}={value}\n' for key,value in values.items()))
    compose=['docker','compose','--project-name',f'{service}-{environment}','--env-file',str(slot/'.env'),'--env-file',str(release),'-f',str(slot/'compose.yaml')]

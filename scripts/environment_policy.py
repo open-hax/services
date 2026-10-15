@@ -12,6 +12,8 @@ SERVICE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def timestamp(value: str) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError("Timestamps must be strings")
     result = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if result.tzinfo is None:
         raise ValueError("Lease timestamps must include a timezone")
@@ -38,6 +40,8 @@ def testing_admission(candidate: dict, others: list[dict], *, now: datetime) -> 
         return {"admitted": False, "reason": "a current code-owner testing label is required"}
     if not SHA.fullmatch(candidate.get("head_sha", "")):
         return {"admitted": False, "reason": "candidate needs an immutable head SHA"}
+    if candidate.get("authorization_sha") != candidate["head_sha"]:
+        return {"admitted": False, "reason": "a submitted code-owner testing authorization for this exact head is required"}
     try:
         claimed = timestamp(candidate["labeled_at"])
         if claimed > now:
@@ -57,6 +61,42 @@ def testing_admission(candidate: dict, others: list[dict], *, now: datetime) -> 
         return {"admitted": False, "reason": "another testing claim has not expired", "blocking_prs": sorted(blockers)}
     return {"admitted": True, "source_sha": candidate["head_sha"], "pr": candidate["number"],
             "labeled_at": claimed.isoformat(), "environment": "testing"}
+
+
+def testing_authorization(reviews: list[dict], label: dict, head_sha: str, *, now: datetime) -> dict | None:
+    """A deliberate native COMMENT grants testing only for its immutable commit.
+
+    It is operational authorization, never a merge approval or reviewer vote.
+    The collector separately establishes current CODEOWNERS coverage.
+    """
+    actor = label.get("actor", {})
+    if (actor.get("type") != "User" or type(actor.get("id")) is not int or actor["id"] <= 0
+            or not isinstance(actor.get("login"), str) or not SHA.fullmatch(head_sha)):
+        return None
+    try:
+        labeled_at = timestamp(label["created_at"])
+        if labeled_at > now:
+            return None
+    except (KeyError, TypeError, ValueError):
+        return None
+    for review in reversed(reviews):
+        user = review.get("user", {})
+        if (review.get("state") != "COMMENTED" or review.get("commit_id") != head_sha
+                or review.get("body") != f"Authorize testing deployment of {head_sha}."
+                or type(review.get("id")) is not int or review["id"] <= 0
+                or user.get("type") != "User" or user.get("id") != actor["id"]
+                or str(user.get("login", "")).lower() != actor["login"].lower()):
+            continue
+        try:
+            submitted_at = timestamp(review["submitted_at"])
+            if submitted_at > labeled_at:
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        return {"review_id": review["id"], "head_sha": head_sha, "user_id": actor["id"],
+                "login": actor["login"], "submitted_at": submitted_at.isoformat(),
+                "label_id": label.get("id"), "labeled_at": labeled_at.isoformat()}
+    return None
 
 
 def staging_admission(pr: dict) -> dict:
