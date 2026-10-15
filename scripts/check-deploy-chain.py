@@ -154,8 +154,23 @@ def main() -> int:
     website_needs = website.get("needs", [])
     if isinstance(website_needs, str):
         website_needs = [website_needs]
+    required_website_if = " ".join("""
+        always()
+        && (inputs.include_website || inputs.scope == 'website')
+        && needs.select-website.result == 'success'
+        && (inputs.scope == 'website' || needs.deploy-knoxx.result == 'success')
+        && (
+          (inputs.scope == 'website' && needs.deploy-caddy.result == 'skipped')
+          || (inputs.scope == 'stack' && (
+            (!inputs.include_ingress && needs.deploy-caddy.result == 'skipped')
+            || (inputs.include_ingress && needs.deploy-caddy.result == 'success')
+          ))
+        )
+    """.split())
+    website_if = website.get("if", "")
     if ("deploy-knoxx" not in website_needs
-            or "(inputs.scope == 'website' || needs.deploy-knoxx.result == 'success')" not in website.get("if", "")):
+            or not isinstance(website_if, str)
+            or " ".join(website_if.split()) != required_website_if):
         print("deploy chain error: optional ingress can bypass production qualification", file=sys.stderr)
         return 1
 
