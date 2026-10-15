@@ -34,3 +34,12 @@
   spore: none
   receipt-refs: receipts.edn#5cc9afa8-3f21-47ba-a1e8-1d15065f1faa,receipts.edn#04248fb3-5828-47bd-94fa-1256a54884d6,receipts.edn#e587829f-00cd-4b7a-945d-8f388422753d
   note: A directory-existence fixture reproduced the same false positive as its packaging guard. Commit three actual invalid-output RED cases first, then require one regular .js file; source-map-only and symlink-only trees retain refusal. Keep tool-double orchestration proof separate from real compiler/image/runtime qualification. Exact guards read-only accepted genuine retained19f output with549 regular JavaScript files. Only two source paths changed; original failures, unaffected controls and append-only ledgers preserved. Existing owner already covers PR83 review fixes; no card/status or runtime/model/image/push/PR effect. Candidate0.1, no spore.
+- ts: 2026-10-15T10:35:19.861141890Z
+  session: codex:01a12257-fc69-7720-888c-dd2595ff7dc7/cms_native_journey_binding
+  task: Services83 root MCP routing official-Caddy-adapter causal RED and GREEN
+  p-efficiency: 0.85
+  p-friction: 0.25
+  p-skill-candidate: 0.1
+  spore: none
+  receipt-refs: receipts.edn#1a9d4469-f2bd-4c2a-a365-b840fa891f2d,receipts.edn#c5694e44-34c6-4086-ad2d-9e0be4d13b90,receipts.edn#423d99ff-61ff-4043-a9b3-e9482e85484b
+  note: Use the product official adapter for configuration semantics, not a second Caddy parser or assumed JSON. Verify the published checksum algorithm before deriving the pinned archiveSHA256; retain the failed assumption before execution. Declare the actual workflow shell when checking an extracted run block. Keep the genuine two missing-route RED failures separate from setup diagnostics. Official adapter controls and local setup pass while live HTTP/auth/MCP remain outstanding; no listener/container/model or production effect. Existing discovery and owner reused, prior packaging P1 unchanged. Candidate0.1, no spore.
