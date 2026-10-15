@@ -144,3 +144,12 @@
   spore: none
   receipt-refs: receipts.edn#2ada31d6-05b8-4bee-89d0-41daffc1d4e1
   note: Verify real immutable authorization rather than label/commit chronology guesses. Exercise two distinct image IDs behind one source-SHA tag, failed load/inspection and uncertain paired restoration before release. Preserve first cause and failed-stage artifacts; require a checked guard before every dependent mutation. Native inert load/restoration is image custody, not application deployment. Document marker completion storage limits without claiming impossible durability or adding automatic retry. Reviewed source af17196f118e32ae9594ea1821db41df8408d169; candidate0/no spore; public publication held.
+- ts: 2026-10-15T14:14:59.307374630Z
+  session: codex:/root/pr354_terminal_rerun_verify
+  task: Seventh Services P1 exact complete Website deployment condition
+  p-efficiency: 0.72
+  p-friction: 0.6
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#ffc4d298-52d9-4268-a3ee-238d96241221
+  note: A substring can preserve a guard while adding a bypass branch. Test the actual owning checker on a mutated workflow before comparing the whole permitted condition. Preserve actual RED and qualified sources; inspect every guard before dependent mutation. Keep historical native passes distinct from a newly changed source and keep source publication separate from deployment. Candidate0/no spore; reviewed source a61bf8bfccbcb318573fca2d2069e080e3ebb5ed.
