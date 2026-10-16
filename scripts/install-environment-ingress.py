@@ -9,6 +9,8 @@ Description=Caddy-only ingress for {name}
 ListenStream=172.31.255.1:{listen}
 FreeBind=true
 NoDelay=true
+IPAddressDeny=any
+IPAddressAllow=172.31.255.2/32
 [Install]
 WantedBy=sockets.target
 ''')
@@ -24,7 +26,6 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 IPAddressDeny=any
-IPAddressAllow=172.31.255.2/32
 IPAddressAllow=127.0.0.1/32
 ''')
 subprocess.run(['systemctl','daemon-reload'],check=True)
