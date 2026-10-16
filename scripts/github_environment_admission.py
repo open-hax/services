@@ -2,13 +2,14 @@
 """Read GitHub's current PR/timeline/owner evidence; emit an immutable deployment admission."""
 import base64,fnmatch,json,os,sys,re
 from datetime import datetime,timezone
+from functools import cache
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError
 from urllib.parse import quote
 from environment_policy import testing_admission,staging_admission,testing_authorization,timestamp
 
-def api(path):
- req=Request('https://api.github.com/'+path,headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
+def api(path,*,accept='application/vnd.github+json'):
+ req=Request('https://api.github.com/'+path,headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'Accept':accept,'X-GitHub-Api-Version':'2022-11-28'})
  with urlopen(req,timeout=30) as response:return json.load(response)
 def pages(path):
  result=[]
@@ -69,11 +70,17 @@ def owns_files(repo,login,files):
   wildcard_leaf=any(c in parts[-1] for c in '*?') and parts[-1]!='**'
   suffix='/' if directory else '$' if wildcard_leaf or parts[-1]=='**' else '(?:/|$)'
   return re.search(prefix+expression+suffix,path) is not None
+ @cache
  def owner_matches(owner):
-  if owner.lower()=='@'+login.lower():return True
-  if '/' not in owner:return False
-  org,team=owner[1:].split('/',1)
-  try:return api(f'orgs/{quote(org)}/teams/{quote(team)}/memberships/{quote(login)}').get('state')=='active'
+  try:
+   if owner.lower()=='@'+login.lower():
+    return api(f'repos/{repo}/collaborators/{quote(login)}/permission').get('permission') in {'write','admin'}
+   if '/' not in owner:return False
+   org,team=owner[1:].split('/',1)
+   if api(f'orgs/{quote(org)}/teams/{quote(team)}/memberships/{quote(login)}').get('state')!='active':return False
+   result=api(f'orgs/{quote(org)}/teams/{quote(team)}/repos/{repo}',accept='application/vnd.github.v3.repository+json')
+   permissions=result.get('permissions')
+   return isinstance(permissions,dict) and permissions.get('push') is True
   except HTTPError as error:
    if error.code==404:return False
    raise
@@ -95,8 +102,14 @@ def admit(repo,number,environment):
  try:label_binding=label_identity(label)
  except (TypeError,ValueError):
   return {'admitted':False,'reason':'missing or invalid native testing label evidence'}
+ files=pages(f'repos/{repo}/pulls/{number}/files')
+ count=pr.get('changed_files')
+ if (type(count) is not int or count<=0 or len(files)!=count
+     or any(not isinstance(f.get('filename'),str) or not f['filename'] for f in files)
+     or len({f['filename'] for f in files})!=count):
+  return {'admitted':False,'reason':'missing or incomplete native changed-file evidence'}
  paths=[]
- for f in pages(f'repos/{repo}/pulls/{number}/files'):
+ for f in files:
   paths.append(f['filename'])
   if f.get('previous_filename'):paths.append(f['previous_filename'])
  now=datetime.now(timezone.utc)
@@ -123,6 +136,8 @@ def admit(repo,number,environment):
   return {'admitted':False,'reason':'competing testing claims changed while collecting authorization'}
  if current_label!=label_binding:
   return {'admitted':False,'reason':'selected testing label changed while collecting authorization'}
+ result=testing_admission(candidate,current_others,now=datetime.now(timezone.utc))
+ if not result['admitted']:return result
  result['testing_authorization']=authorization
  return result
 if __name__=='__main__':

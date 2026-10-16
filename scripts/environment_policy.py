@@ -46,6 +46,8 @@ def testing_admission(candidate: dict, others: list[dict], *, now: datetime) -> 
         claimed = timestamp(candidate["labeled_at"])
         if claimed > now:
             raise ValueError("future label")
+        if (now - claimed).total_seconds() > LEASE_SECONDS:
+            return {"admitted": False, "reason": "candidate testing claim has expired"}
         blockers = []
         for pr in others:
             if pr.get("number") == candidate.get("number") or pr.get("state") != "open" or not pr.get("testing_label"):
