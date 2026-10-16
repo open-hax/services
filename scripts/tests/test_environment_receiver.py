@@ -134,6 +134,9 @@ if operation_fault:
  original_run=m.subprocess.run
  def injected_run(args,*a,**kw):
   result=original_run(args,*a,**kw)
+  if args[:2]==['docker','compose'] and 'stop' in args and operation_fault=='stop-timeout':
+   (m.ROOT/'stop-timeout.json').write_text(json.dumps({'command':args,'cwd':str(kw.get('cwd')),'check':kw.get('check'),'timeout':kw.get('timeout')}))
+   raise m.subprocess.TimeoutExpired(args,kw.get('timeout'))
   if args[:2]==['docker','load']:
    if operation_fault=='load-timeout':raise m.subprocess.TimeoutExpired(args,kw.get('timeout',1))
    if operation_fault=='crash-after-load':raise KeyboardInterrupt('simulated crash after load')
@@ -278,6 +281,21 @@ class ReceiverLifecycleTests(unittest.TestCase):
   self.assertNotEqual(0,h.receive('a').returncode);self.assertEqual([],h.data()['removal_attempts'])
   self.assertFalse((h.slot()/'deployment.json').exists())
   self.assertTrue(any('stop' in c for c in h.data()['calls']))
+ def test_first_start_stop_timeout_releases_global_lock_for_other_slot(self):
+  for service in ('axxium','knoxx'):
+   with self.subTest(service=service):
+    h=self.harness();d=h.data();d['fail_tags']=sorted(receiver.expected_tags(service,'a'*40));h.save(d)
+    result=h.receive('a',service=service,operation_fault='stop-timeout')
+    self.assertNotEqual(0,result.returncode);self.assertIn('TimeoutExpired',result.stderr.decode())
+    for name in ('release.env','rollback.env','deployment.json'):
+     self.assertFalse((h.slot(service=service)/name).exists(),name)
+    self.assertEqual([],h.data()['removal_attempts'])
+    stop=json.loads((h.root/'stop-timeout.json').read_text())
+    roles=['axxium'] if service=='axxium' else ['backend','frontend']
+    self.assertEqual(['stop']+roles,stop['command'][-len(roles)-1:])
+    self.assertEqual(str(h.slot(service=service)),stop['cwd']);self.assertIs(True,stop['check'])
+    self.healthy(h,'b',env='staging',service=service)
+    self.assertEqual(120,stop['timeout'],'first-failure cleanup must release the shared receiver within its bounded wait')
  def test_failed_first_then_healthy_does_not_adopt_failed_generation_as_rollback(self):
   h=self.harness();d=h.data();d['fail_tags']=[h.tag('a')];h.save(d)
   self.assertNotEqual(0,h.receive('a').returncode)
