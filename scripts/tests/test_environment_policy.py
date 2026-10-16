@@ -58,6 +58,38 @@ class EnvironmentPolicyTest(unittest.TestCase):
         for time in ["", "not-a-date", (NOW+timedelta(seconds=1)).isoformat()]:
             self.assertFalse(p.testing_admission(candidate(labeled_at=time), [], now=NOW)["admitted"])
         self.assertFalse(p.testing_admission(candidate(), [candidate(number=2, labeled_at="")], now=NOW)["admitted"])
+    def test_later_claim_does_not_revoke_the_unexpired_lease_on_recheck(self):
+        original = candidate(labeled_at=(NOW-timedelta(minutes=20)).isoformat())
+        later = candidate(number=2, labeled_at=(NOW-timedelta(minutes=10)).isoformat())
+        self.assertTrue(p.testing_admission(original, [], now=NOW-timedelta(minutes=20))["admitted"])
+        self.assertTrue(p.testing_admission(original, [later], now=NOW)["admitted"])
+        self.assertEqual(p.testing_admission(later, [original], now=NOW)["blocking_prs"], [1])
+
+    def test_relabeling_moves_a_claim_behind_the_existing_lease(self):
+        original = candidate(labeled_at=(NOW-timedelta(minutes=20)).isoformat())
+        other = candidate(number=2, labeled_at=(NOW-timedelta(minutes=10)).isoformat())
+        relabeled = {**original, "labeled_at": NOW.isoformat()}
+        self.assertTrue(p.testing_admission(other, [relabeled], now=NOW)["admitted"])
+        self.assertEqual(p.testing_admission(relabeled, [other], now=NOW)["blocking_prs"], [2])
+
+    def test_earlier_lease_never_skips_invalid_or_future_competing_evidence(self):
+        original = candidate(labeled_at=(NOW-timedelta(minutes=20)).isoformat())
+        values = [None, 0, "", "not-a-date", "2026-09-13T00:50:00",
+                  (NOW+timedelta(microseconds=1)).isoformat(),
+                  (NOW+timedelta(hours=3)).isoformat()]
+        for value in values:
+            with self.subTest(value=value):
+                other = candidate(number=2, labeled_at=value)
+                self.assertFalse(p.testing_admission(original, [other], now=NOW)["admitted"])
+        other = candidate(number=2)
+        del other["labeled_at"]
+        self.assertFalse(p.testing_admission(original, [other], now=NOW)["admitted"])
+
+    def test_simultaneous_claims_refuse_both_candidates(self):
+        first = candidate(labeled_at=(NOW-timedelta(minutes=20)).isoformat())
+        second = {**first, "number": 2}
+        self.assertEqual(p.testing_admission(first, [second], now=NOW)["blocking_prs"], [2])
+        self.assertEqual(p.testing_admission(second, [first], now=NOW)["blocking_prs"], [1])
     def test_main_merge_targets_staging_only(self):
         self.assertEqual(p.staging_admission(dict(merged=True, base="main", merge_sha=SHA))["environment"],"staging")
         self.assertFalse(p.staging_admission(dict(merged=False, base="main", merge_sha=SHA))["admitted"])
@@ -73,5 +105,28 @@ class EnvironmentPolicyTest(unittest.TestCase):
                        lambda x:x[1].update(batch_index=0)]:
             value=batches();mutate(value)
             self.assertFalse(p.production_admission(SHA,evidence,evidence,value)["admitted"])
+
+    def test_production_accepts_explicit_clean_optional_markers_at_every_level(self):
+        evidence=dict(source_sha=SHA,status="passed",assertions=1,timed_out=False,warnings=[])
+        values=batches()
+        for batch in values:
+            batch.update(timed_out=False,warnings=[])
+            for mutant in batch["mutants"]:
+                mutant.update(timed_out=False,warnings=[])
+        self.assertTrue(p.production_admission(SHA,evidence,evidence,values)["admitted"])
+
+    def test_production_rejects_timeout_warning_and_malformed_markers_at_every_level(self):
+        invalid = [("timed_out", value) for value in (True, 0, 1, None, "false", "", [], {})]
+        invalid += [("warnings", value) for value in (["compiler warning"], 0, 1, None, "", False, {})]
+        for level in ("integration", "e2e", "batch", "mutant"):
+            for field, value in invalid:
+                with self.subTest(level=level, field=field, value=value):
+                    integration=dict(source_sha=SHA,status="passed",assertions=1)
+                    e2e=dict(integration)
+                    values=batches()
+                    receipt={"integration": integration, "e2e": e2e,
+                             "batch": values[0], "mutant": values[0]["mutants"][0]}[level]
+                    receipt[field]=value
+                    self.assertFalse(p.production_admission(SHA,integration,e2e,values)["admitted"])
 
 if __name__ == "__main__": unittest.main()
