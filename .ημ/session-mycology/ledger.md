@@ -243,3 +243,12 @@
   spore: none
   receipt-refs: receipts.edn#4d1b1f0a-6e6c-4821-9fd4-a0bbed697826
   note: Use process doubles to prove both HTTPS and HTTP failures identify the selected hostname without exposing response bodies. Exercise the actual graph checker with all6required orderings and missing/extra/duplicate/scalar needs. Preserve genuine test-only RED15assertions then fullenvironment130PASS/Website24PASS and contracts. TLS flags/budgets, redirect law and root-owned relay method unchanged. No hosted approval, runtime, model or deployment credit. Candidate0; no spore.
+- ts: 2026-10-16T08:23:50.133896320Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-socket-managed-ingress-over367-v1
+  task: Qualify combined Services ingress and diagnostic follow-up
+  p-efficiency: 0.85
+  p-friction: 0.3
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#4a765865-279c-498f-a216-274900901fa2
+  note: Verify review premises against actual systemd socket/service semantics and real pinned Caddy adaptation. Preserve meaningful RED separately from a missing-key fixture error; combine disjoint source fixes through ordinary history and run full133environment/24Website/5contracts before publication. Exact Website dependency set and hostname diagnostics close real gaps. Prior367approval does not transfer to the changed source; retain provider quota/cooldown and all deployment obligations. Portable candidate0/no spore.
