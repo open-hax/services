@@ -342,6 +342,7 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
       body: JSON.stringify({
         model: configuredEmbeddingModel,
         input: ['knoxx deployment embedding probe'],
+        dimensions: expectedDimensions,
       }),
       signal: AbortSignal.timeout(timeoutMs),
     });
