@@ -270,3 +270,12 @@
   spore: none
   receipt-refs: receipts.edn#46ff30e0-d4ae-4971-a286-da5c071babc7
   note: At the actual HTTP boundary send the configured width, not merely assert returned vector length. Existing exact fake-fetch request assertion gives genuine missingdimensionsRED; one dimensions field restoresGREEN without model calls. Preserve pinned model/runtime, finite-width refusals and old9d9source. Keep sourcecompatibility separate from dual-model startup/residency/preactivation and stagingreadiness. Privateguard type and bytecount mistakes stopped before dependent effects; no successfultest/effect replay. Candidate0/noSpore.
+- ts: 2026-10-16T14:36:10.164646207Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-knoxx-probe-dimensions-over9d9-v1
+  task: Retain accepted Services5 review and fix embedding request documentation
+  p-efficiency: 0.75
+  p-friction: 0.25
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: sha256:49f2bc7c264c81b72b5e8d46da0184444a1392cd3f45c182abecb7248f3fb3e6
+  note: Current native complete-input approval5549033967 is real; source8c77 docs correct dimensions request description, so old-head approval is retained historically and not transferred. Preserve two failed attempts and original live target-provider/readiness obligation. Actual REST and GraphQL login spellings differ but immutable Bot IDs/node IDs agree; no guessed identity alias or policy change. No spore/promotion.
