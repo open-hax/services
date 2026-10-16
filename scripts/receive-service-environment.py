@@ -322,7 +322,7 @@ def main():
      subprocess.run(compose+['up','-d','--wait','--wait-timeout','180','--pull','never'],cwd=slot,check=True,timeout=240)
     else:
      # Preserve database volumes and its state on a first failed application start.
-     try:subprocess.run(compose+['stop']+(['axxium'] if service=='axxium' else ['backend','frontend']),cwd=slot,check=True)
+     try:subprocess.run(compose+['stop']+(['axxium'] if service=='axxium' else ['backend','frontend']),cwd=slot,check=True,timeout=120)
      finally:
       # No healthy generation existed before this attempt. Do not let the
       # failed selection become a later deployment's purported rollback.
