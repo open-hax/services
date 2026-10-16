@@ -37,7 +37,7 @@ jobs:
           [[ "$SERVICE" =~ ^(knoxx|axxium)$ ]]
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
           test "$SOURCE_REPOSITORY" = "open-hax/$SERVICE"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: open-hax/services
           ref: ${{ inputs.controller_sha }}
@@ -56,35 +56,35 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: open-hax/services
           ref: ${{ inputs.controller_sha }}
           path: controller
           persist-credentials: false
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ needs.admit.outputs.source_sha }}
           path: source
           persist-credentials: false
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         if: inputs.service == 'knoxx'
         with:
           repository: open-hax/openplanner
           ref: 07085d6557b75834ce6f50e6c54b8ca47e1c7c08
           path: openplanner
           persist-credentials: false
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: '21'
-      - uses: DeLaGuardo/setup-clojure@13
+      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # v13.6.1
         with:
-          cli: latest
-      - uses: pnpm/action-setup@v4
+          cli: 1.12.5.1664
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: 10.20.0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
       - name: Build isolated application artifacts
@@ -92,7 +92,7 @@ jobs:
           SERVICE: ${{ inputs.service }}
           SOURCE_SHA: ${{ needs.admit.outputs.source_sha }}
         run: bash controller/scripts/build-service-environment.sh "$SERVICE" "$SOURCE_SHA" "$GITHUB_WORKSPACE/source" "$GITHUB_WORKSPACE/artifact"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: service-environment-images
           path: |
@@ -108,12 +108,12 @@ jobs:
       group: promethean-${{ inputs.service }}-${{ inputs.environment }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: open-hax/services
           ref: ${{ inputs.controller_sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: service-environment-images
           path: artifact
@@ -154,5 +154,5 @@ jobs:
           SERVICE: ${{ inputs.service }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
-          curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 \
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 --retry 8 --retry-all-errors --retry-delay 5 \
             "https://$ENVIRONMENT.$SERVICE.promethean.rest/api/auth/config"

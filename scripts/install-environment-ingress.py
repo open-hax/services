@@ -7,6 +7,7 @@ for name,listen,target in [('testing-axxium',19071,18871),('staging-axxium',1907
 Description=Caddy-only ingress for {name}
 [Socket]
 ListenStream=172.31.255.1:{listen}
+FreeBind=true
 NoDelay=true
 [Install]
 WantedBy=sockets.target
