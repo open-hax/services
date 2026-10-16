@@ -232,6 +232,11 @@ function agentToolCallSummary(payload, requiredModel) {
   };
 }
 
+/**
+ * Check shared Ollama routing, required model presence, translation and draft-tool
+ * response contracts, and a finite embedding at the configured width.
+ * Returns structured readiness or refusal details; fetch is injectable for tests.
+ */
 async function probe(env = process.env, fetchImpl = globalThis.fetch) {
   const embedBaseUrl = normalizedBaseUrl(env.EMBED_PROVIDER_BASE_URL);
   const ollamaBaseUrl = normalizedBaseUrl(env.OLLAMA_BASE_URL);
@@ -399,6 +404,11 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
   }
 }
 
+/**
+ * Verify probe request shapes and readiness/refusal cases using inert fetch doubles.
+ * Exercises translation, required draft-tool calls and embedding width without
+ * contacting a provider.
+ */
 async function selfTest() {
   const assert = require('node:assert/strict');
   const baseEnv = {
