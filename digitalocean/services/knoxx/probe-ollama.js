@@ -47,10 +47,12 @@ const TOOL_CALL_PROMPT = [
   'Supply a nonblank title and complete nonblank Markdown content.',
 ].join(' ');
 
+/** Return the trimmed string value without trailing slashes; falsy inputs become empty. */
 function normalizedBaseUrl(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
 
+/** Extract nonblank names from the models array, preferring each entry's name over model. */
 function installedModelNames(payload) {
   if (!payload || !Array.isArray(payload.models)) return [];
   return payload.models
@@ -58,6 +60,7 @@ function installedModelNames(payload) {
     .filter(Boolean);
 }
 
+/** Match an installed name exactly, allowing implicit :latest only for an untagged request. */
 function modelIsInstalled(available, required) {
   if (available.includes(required)) return true;
   // Ollama reports an implicit default tag as `:latest`, while clients may
@@ -65,6 +68,10 @@ function modelIsInstalled(available, required) {
   return !required.includes(':') && available.includes(`${required}:latest`);
 }
 
+/**
+ * Extract the first array vector, preferring an OpenAI data array over Ollama embeddings.
+ * Return an empty array for missing vectors; width and finite-value checks belong to probe.
+ */
 function firstEmbedding(payload) {
   if (payload && Array.isArray(payload.data)) {
     const row = payload.data[0];
@@ -76,6 +83,7 @@ function firstEmbedding(payload) {
   return [];
 }
 
+/** Parse the response JSON, returning null when its JSON reader rejects or throws. */
 async function jsonBody(response) {
   try {
     return await response.json();
@@ -84,6 +92,12 @@ async function jsonBody(response) {
   }
 }
 
+/**
+ * Summarize a required-model native chat response containing translated_text JSON.
+ * Mark it well formed only for a completed assistant stop with positive integer eval_count,
+ * exact nonblank translated_text shape, blank or absent thinking, and no own error field.
+ * Return contract flags and text length without judging translation meaning or language.
+ */
 function translationSummary(payload, requiredModel) {
   const objectPayload = Boolean(payload && typeof payload === 'object' && !Array.isArray(payload));
   const model = objectPayload && typeof payload.model === 'string' ? payload.model : '';
