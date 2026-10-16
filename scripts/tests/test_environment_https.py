@@ -107,6 +107,10 @@ class EnvironmentIngressSocketTests(unittest.TestCase):
                     config = configparser.ConfigParser()
                     config.read(root / f"promethean-{name}.socket")
                     self.assertEqual(f"172.31.255.1:{listen}", config["Socket"]["ListenStream"])
+                    self.assertEqual("any", config.get("Socket", "IPAddressDeny", fallback=""),
+                                     "the listener's own unit must deny unlisted inbound sources")
+                    self.assertEqual("172.31.255.2/32",
+                                     config.get("Socket", "IPAddressAllow", fallback=""))
                     free_bind = config.getboolean("Socket", "FreeBind", fallback=False)
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as actual:
                         if free_bind:
@@ -120,7 +124,11 @@ class EnvironmentIngressSocketTests(unittest.TestCase):
                     service.read(root / f"promethean-{name}.service")
                     self.assertEqual(f"/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:{target}",
                                      service["Service"]["ExecStart"])
-                    self.assertIn("IPAddressDeny=any", (root / f"promethean-{name}.service").read_text())
+                    self.assertEqual("any", service["Service"]["IPAddressDeny"])
+                    allows = [line for line in (root / f"promethean-{name}.service").read_text().splitlines()
+                              if line.startswith("IPAddressAllow=")]
+                    self.assertEqual(["IPAddressAllow=127.0.0.1/32"], allows,
+                                     "the relay may only open its loopback upstream")
             calls = [call.args[0] for call in commands.call_args_list]
             self.assertEqual(["systemctl", "daemon-reload"], calls[0])
             self.assertEqual(["systemctl", "enable", "--now"] +

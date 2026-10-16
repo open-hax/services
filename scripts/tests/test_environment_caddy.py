@@ -115,8 +115,13 @@ class ManagedAxxiumCaddyTest(unittest.TestCase):
             raise RuntimeError("Actual ingress sections must have unique source delimiters")
         common = source[source.index(markers[0]):source.index(markers[1])]
         sites = source[source.index(markers[2]):source.index(markers[3])]
+        # Include the current Knoxx sites even before managed markers are added,
+        # so missing markers are an assertion failure rather than a setup error.
+        knoxx_sites = source[source.index("stealth.knoxx.promethean.rest {"):
+                             source.index("# Durable separately managed environment routes")]
+        cls.ingress_source = source
         config = Path(temporary.name) / "Caddyfile"
-        config.write_text(common + sites)
+        config.write_text(common + sites + knoxx_sites)
         adapted = subprocess.run([str(binary), "adapt", "--config", str(config), "--adapter", "caddyfile"],
                                  env=environment, capture_output=True, text=True, timeout=10, check=True)
         cls.adapted = json.loads(adapted.stdout)
@@ -132,7 +137,8 @@ class ManagedAxxiumCaddyTest(unittest.TestCase):
                 yield from ManagedAxxiumCaddyTest.objects(child)
 
     def site(self, host):
-        routes = [value for value in self.objects(self.adapted)
+        routes = [value for server in self.adapted["apps"]["http"]["servers"].values()
+                  for value in self.objects(server.get("routes", []))
                   if value.get("match") == [{"host": [host]}]]
         self.assertEqual(1, len(routes), host)
         return list(self.objects(routes[0]))
@@ -167,6 +173,49 @@ class ManagedAxxiumCaddyTest(unittest.TestCase):
                 self.assertEqual(1, len(responses))
                 self.assertEqual(expected, responses[0]["set"])
                 self.assertIn("server", [header.lower() for header in responses[0]["delete"]])
+
+    def test_knoxx_hosts_have_unique_managed_section_ownership(self):
+        begin = "# BEGIN managed Knoxx host environments"
+        end = "# END managed Knoxx host environments"
+        self.assertEqual(1, self.ingress_source.count(begin))
+        self.assertEqual(1, self.ingress_source.count(end))
+        start, stop = self.ingress_source.index(begin), self.ingress_source.index(end)
+        self.assertLess(start, stop)
+        for name in ("stealth", "yoga"):
+            site = f"{name}.knoxx.promethean.rest {{"
+            with self.subTest(host=name):
+                self.assertEqual(1, self.ingress_source.count(site))
+                self.assertLess(start, self.ingress_source.index(site))
+                self.assertLess(self.ingress_source.index(site), stop)
+
+    def test_all_managed_host_sites_select_acme(self):
+        policies = self.adapted["apps"]["tls"]["automation"]["policies"]
+        for service in ("axxium", "knoxx"):
+            for name in ("stealth", "yoga"):
+                host = f"{name}.{service}.promethean.rest"
+                with self.subTest(host=host):
+                    self.assertTrue(any(host in policy["subjects"]
+                                        and policy.get("issuers") == [{"module": "acme"}]
+                                        for policy in policies), host)
+
+    def test_all_managed_host_sites_return_uncached_503_for_upstream_errors(self):
+        for service in ("axxium", "knoxx"):
+            for name in ("stealth", "yoga"):
+                host = f"{name}.{service}.promethean.rest"
+                with self.subTest(host=host):
+                    errors = [route for server in self.adapted["apps"]["http"]["servers"].values()
+                              for route in server.get("errors", {}).get("routes", [])
+                              if route.get("match") == [{"host": [host]}]]
+                    self.assertEqual(1, len(errors), host)
+                    handlers = list(self.objects(errors[0]))
+                    responses = [value for value in handlers
+                                 if value.get("handler") == "static_response"]
+                    self.assertEqual(1, len(responses))
+                    self.assertEqual(503, responses[0]["status_code"])
+                    self.assertEqual("Service not configured or unavailable.", responses[0]["body"])
+                    headers = [value["response"]["set"] for value in handlers
+                               if value.get("handler") == "headers"]
+                    self.assertEqual([{"Cache-Control": ["no-store"]}], headers)
 
 
 if __name__ == "__main__":
