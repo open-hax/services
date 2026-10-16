@@ -297,3 +297,12 @@
   spore: none
   receipt-refs: receipts.edn#5f8550ea-6e61-41dc-975d-b5409c3f1915
   note: One precise helper JSDoc only; actual syntax, existing inert selftest and diff check PASS with unchanged executable bytes. ExpectedPASS/no syntheticRED. Native aggregate66.67pct denominator remains unconfirmed; no prediction, approval transfer or runtime claim. Existing official Services5 scope and foreign source preserved. Historical runtime before-effect HOLD separate. Candidate0/noSpore; no nativeSM retry.
+- ts: 2026-10-16T17:39:17.667161396Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-knoxx-probe-dimensions-over9d9-v1
+  task: Document every remaining named helper in the existing Ollama probe
+  p-efficiency: 0.9
+  p-friction: 0.16
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#f310a63a-fe9a-4ca0-bcdd-c73d636a801b
+  note: Native current86f warning75pct still lacks named denominator. Six coherent helper docs complete9named functions; stripped JSDoc preserves executable bytes, syntax/inert selftest/diff PASS. Comments-only expectedPASS/no syntheticRED; no claimed new analyzer metric or approval transfer. Same existing official owner; no lifecycle/estimate change. Preserve failed MiMo protocol traces separately from anonymous OpenCode provider health. Candidate0/noSpore; no nativeSM retry.
