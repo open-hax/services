@@ -60,6 +60,18 @@ class EnvironmentWorkflowTest(unittest.TestCase):
             with self.subTest(action=line):
                 self.assertRegex(line, r"^(?:-\s*)?uses: [\w.-]+/[\w.-]+@[0-9a-f]{40} # v\d+(?:\.\d+)*$")
 
+    def test_only_consumed_receiver_secret_is_declared_and_required(self):
+        consumed = set(re.findall(r"\$\{\{\s*secrets\.([A-Z][A-Z0-9_]*)\s*\}\}", self.source))
+        self.assertEqual({"PROMETHEAN_ENVIRONMENT_SSH_KEY"}, consumed)
+        declared = self.workflow["on"]["workflow_call"].get("secrets", {})
+        self.assertEqual(consumed, set(declared), "Every consumed receiver secret needs an explicit call contract")
+        for name in consumed:
+            self.assertEqual("true", declared[name].get("required"))
+        for name, job in self.workflow["jobs"].items():
+            with self.subTest(job=name):
+                uses = set(re.findall(r"\$\{\{\s*secrets\.([A-Z][A-Z0-9_]*)\s*\}\}", json.dumps(job)))
+                self.assertEqual(consumed if name == "deploy" else set(), uses)
+
     def test_clojure_cli_is_a_concrete_version(self):
         steps = self.workflow["jobs"]["build"]["steps"]
         setup = next(step for step in steps
@@ -139,7 +151,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                 self.assertNotEqual(0, result.returncode)
                 self.assertEqual("preserved=value\n", output)
 
-    def run_deployment(self, service, environment, exit_code):
+    def run_deployment(self, service, environment, exit_code, key="synthetic private key"):
         step = next(s for s in self.workflow["jobs"]["deploy"]["steps"]
                     if s.get("name") == "Deploy through the restricted environment receiver")
         with tempfile.TemporaryDirectory(prefix="environment ssh ") as directory:
@@ -156,13 +168,26 @@ class EnvironmentWorkflowTest(unittest.TestCase):
             result = subprocess.run(["bash", "-euo", "pipefail", "-c", step["run"]],
                 cwd=root, env={"HOME": str(root), "PATH": str(binary)+os.pathsep+os.defpath,
                     "SERVICE": service, "ENVIRONMENT": environment, "SOURCE_SHA": "c"*40,
-                    "DEPLOY_SSH_KEY": "synthetic private key", "DEPLOY_KNOWN_HOSTS": "synthetic known hosts",
+                    "DEPLOY_SSH_KEY": key, "DEPLOY_KNOWN_HOSTS": "synthetic known hosts",
                     "DEPLOY_TARGET": "synthetic@invalid", "SSH_CALLS": str(calls), "SSH_EXIT": str(exit_code)},
                 capture_output=True, text=True, timeout=10, check=False)
-            record = json.loads(calls.read_text())
+            record = json.loads(calls.read_text()) if calls.exists() else {}
+            record["ssh_called"] = calls.exists()
+            record["ssh_directory_created"] = (root/".ssh").exists()
             record["key_removed"] = not (root/".ssh/environment_key").exists()
             record["archive_sha256"] = hashlib.sha256(archive).hexdigest()
             return result, record
+
+    def test_empty_forwarded_key_refuses_before_ssh_or_key_materialization(self):
+        for service in ("knoxx", "axxium"):
+            for environment in ("testing", "staging"):
+                with self.subTest(service=service, environment=environment):
+                    result, record = self.run_deployment(service, environment, 0, key="")
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertFalse(record["ssh_called"])
+                    self.assertFalse(record["ssh_directory_created"])
+                    self.assertTrue(record["key_removed"])
+                    self.assertEqual("", result.stdout + result.stderr)
 
     def test_actual_ssh_transfer_has_liveness_bounds_and_retains_receiver_input(self):
         for service in ("knoxx", "axxium"):
