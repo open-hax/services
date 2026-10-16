@@ -22,10 +22,13 @@ COMMENT supports an owner-authored PR without self-approval; it grants testing
 permission only, never formal review approval or merge credit.
 
 The controller reads the most recent label event, its actor and timestamp,
-current immutable head and all other open testing labels. Any other claim aged
-two hours or less blocks admission. Reapplying the label resets its timestamp;
-expired labels do not block a new claim. After a push, submit a new commit-bound
-authorization and reapply the label: the old label cannot authorize the new head.
+current immutable head and all other open testing labels. An earlier or equal
+claim aged two hours or less blocks admission; a later claim cannot revoke the
+existing holder's lease. Equal timestamps block both candidates, and missing,
+malformed or future timestamps refuse admission. Reapplying the label resets
+its timestamp; expired labels do not block a new claim. After a push, submit a
+new commit-bound authorization and reapply the label: the old label cannot
+authorize the new head.
 The existing labeled event triggers the workflow, so submit the review first.
 Admission collects two complete, PR-number-sorted snapshots of all other open
 testing claims before returning. Each snapshot retains the selected native label
