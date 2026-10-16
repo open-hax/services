@@ -528,6 +528,7 @@ async function selfTest() {
   assert.deepEqual(JSON.parse(calls[3].options.body), {
     model: 'qwen3-embedding:8b',
     input: ['knoxx deployment embedding probe'],
+    dimensions: 1024,
   });
   assert.equal(calls[3].options.headers.Authorization, undefined);
 
