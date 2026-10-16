@@ -151,7 +151,8 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                 self.assertNotEqual(0, result.returncode)
                 self.assertEqual("preserved=value\n", output)
 
-    def run_deployment(self, service, environment, exit_code, key="synthetic private key"):
+    def run_deployment(self, service, environment, exit_code, key="synthetic private key",
+                       known_hosts="synthetic known hosts", target="synthetic@invalid"):
         step = next(s for s in self.workflow["jobs"]["deploy"]["steps"]
                     if s.get("name") == "Deploy through the restricted environment receiver")
         with tempfile.TemporaryDirectory(prefix="environment ssh ") as directory:
@@ -168,8 +169,8 @@ class EnvironmentWorkflowTest(unittest.TestCase):
             result = subprocess.run(["bash", "-euo", "pipefail", "-c", step["run"]],
                 cwd=root, env={"HOME": str(root), "PATH": str(binary)+os.pathsep+os.defpath,
                     "SERVICE": service, "ENVIRONMENT": environment, "SOURCE_SHA": "c"*40,
-                    "DEPLOY_SSH_KEY": key, "DEPLOY_KNOWN_HOSTS": "synthetic known hosts",
-                    "DEPLOY_TARGET": "synthetic@invalid", "SSH_CALLS": str(calls), "SSH_EXIT": str(exit_code)},
+                    "DEPLOY_SSH_KEY": key, "DEPLOY_KNOWN_HOSTS": known_hosts,
+                    "DEPLOY_TARGET": target, "SSH_CALLS": str(calls), "SSH_EXIT": str(exit_code)},
                 capture_output=True, text=True, timeout=10, check=False)
             record = json.loads(calls.read_text()) if calls.exists() else {}
             record["ssh_called"] = calls.exists()
@@ -183,6 +184,28 @@ class EnvironmentWorkflowTest(unittest.TestCase):
             for environment in ("testing", "staging"):
                 with self.subTest(service=service, environment=environment):
                     result, record = self.run_deployment(service, environment, 0, key="")
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertFalse(record["ssh_called"])
+                    self.assertFalse(record["ssh_directory_created"])
+                    self.assertTrue(record["key_removed"])
+                    self.assertEqual("", result.stdout + result.stderr)
+
+    def test_empty_known_hosts_refuses_before_ssh_or_key_materialization(self):
+        for service in ("knoxx", "axxium"):
+            for environment in ("testing", "staging"):
+                with self.subTest(service=service, environment=environment):
+                    result, record = self.run_deployment(service, environment, 0, known_hosts="")
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertFalse(record["ssh_called"])
+                    self.assertFalse(record["ssh_directory_created"])
+                    self.assertTrue(record["key_removed"])
+                    self.assertEqual("", result.stdout + result.stderr)
+
+    def test_empty_target_refuses_before_ssh_or_key_materialization(self):
+        for service in ("knoxx", "axxium"):
+            for environment in ("testing", "staging"):
+                with self.subTest(service=service, environment=environment):
+                    result, record = self.run_deployment(service, environment, 0, target="")
                     self.assertNotEqual(0, result.returncode)
                     self.assertFalse(record["ssh_called"])
                     self.assertFalse(record["ssh_directory_created"])
