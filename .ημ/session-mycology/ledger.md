@@ -216,3 +216,12 @@
   spore: none
   receipt-refs: receipts.edn#78b259c7-fa35-46e5-8a1a-793dbdf29a3a
   note: Retain earliest valid unexpired claim; equal timestamps fail closed. Reject future competing timestamps before ordering and preserve the closed7200 boundary. Reject negative or malformed optional timeout/warning markers at all four evidence levels. Actual test-only RED16/62failures retained; initial full118/1 legacy expectation retained; corrected admitted collector fixture and final registered119 PASS plus contracts. Synthetic inputs, no public or deployment effects. No spore.
+- ts: 2026-10-16T07:12:59.587372758Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-catalog-slot-env-over-9be-isolated-v1
+  task: Validate the full catalog before intake and effective public slot settings
+  p-efficiency: 0.9
+  p-friction: 0.15
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#0881435c-38f9-479a-aaa2-329aa1f7a4ea
+  note: Inspect every saved tag/ID before effects, including unrelated source generations. Delegate dotenv semantics to bounded Compose config with a public-only model and stripped environment; preserve secret bytes and redact parser failure. Retain genuine121-test/31-assertion RED and own121-test GREEN. Local process/config qualification supplies no deployment or hosted review credit. Candidate0, no spore.

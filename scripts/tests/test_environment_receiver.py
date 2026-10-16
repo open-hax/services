@@ -43,6 +43,7 @@ if a[:1]==['load']:
  finish(s.get('load_exit',0))
 if a[:2]==['image','inspect']:
  tag=a[-1]
+ if tag in s.get('inspect_output',{}):finish(text=s['inspect_output'][tag]+'\n')
  if tag.startswith('sha256:'):
   finish(0 if tag in s['known_ids'] and tag not in s.get('missing_ids',[]) else 1,text=tag+'\n')
  if s.get('inspect_fail_after_load') and s.get('load_count',0)>=s['inspect_fail_after_load'] and tag in s.get('load_ids',{}):finish(1)
@@ -269,6 +270,27 @@ class ReceiverLifecycleTests(unittest.TestCase):
   for call in d['calls']:
    self.assertNotIn('--force',call);self.assertNotIn('prune',call)
    if call[:2]==['image','rm']:self.assertEqual(3,len(call));self.assertFalse(call[-1].startswith('sha256:'))
+ def test_every_nonincoming_owned_tag_and_saved_id_must_pass_before_any_effect(self):
+  for prior_service in ('axxium','knoxx'):
+   for fault in ('missing-tag','rebound','missing-id','malformed-inspect'):
+    with self.subTest(prior_service=prior_service,fault=fault):
+     h=self.harness();self.healthy(h,'a',service=prior_service)
+     tag=sorted(receiver.expected_tags(prior_service,'a'*40))[0];d=h.data();saved=d['images'][tag]
+     if fault=='missing-tag':del d['images'][tag]
+     elif fault=='rebound':d['images'][tag]='sha256:'+'e'*64
+     elif fault=='missing-id':d['missing_ids']=[saved]
+     else:d['inspect_output']={tag:'invalid-image-id'}
+     h.save(d)
+     paths=[h.slot(env,service)/name for env in ('testing','staging') for service in ('knoxx','axxium') for name in ('release.env','rollback.env','deployment.json')]+[h.root/'receiver-images.json']
+     before={str(p):p.read_bytes() if p.exists() else None for p in paths};calls=len(d['calls'])
+     result=h.receive('b',service='axxium');after=h.data()
+     self.assertNotEqual(0,result.returncode)
+     self.assertEqual(d['load_count'],after['load_count'],'unrelated catalog corruption must refuse before loading the next SHA')
+     self.assertEqual(before,{str(p):p.read_bytes() if p.exists() else None for p in paths})
+     self.assertEqual(d['images'],after['images']);self.assertEqual(d['health'],after['health'])
+     self.assertFalse((h.root/'receiver-intake.json').exists())
+     self.assertTrue(all(call[:2]==['image','inspect'] for call in after['calls'][calls:]))
+     self.assertEqual([],after['removal_attempts']);self.assertEqual([],after.get('restore_attempts',[]))
  def test_failed_upgrade_preserves_active_rollback_and_receipt(self):
   h=self.harness();self.generations(h)
   before={p.name:p.read_bytes() for p in (h.slot()/'release.env',h.slot()/'rollback.env',h.slot()/'deployment.json')}

@@ -216,7 +216,9 @@ def load_images(path,environment,service,sha):
  tags=sorted(expected_tags(service,sha));catalog=read_ownership()
  prior={tag:catalog['owned_tags'][tag] for tag in tags if tag in catalog['owned_tags']}
  if prior and set(prior)!=set(tags):raise RetentionBlocked('Incomplete owned image set; refusing image intake')
- for tag,image in prior.items():
+ # The catalog is global across slots and source SHAs. Validate its complete
+ # saved map before any intake effect, not only tags in this incoming archive.
+ for tag,image in sorted(catalog['owned_tags'].items()):
   if docker_output(['image','inspect','--format','{{.Id}}',tag]).strip()!=image:
    raise RetentionBlocked('Owned tag is missing or rebound before image intake')
   if docker_output(['image','inspect','--format','{{.Id}}',image]).strip()!=image:
