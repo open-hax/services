@@ -207,3 +207,12 @@
   spore: none
   receipt-refs: receipts.edn#662968a1-0be5-462e-ba76-d527c6fec21f
   note: Serialize the native job with supported toJSON and strictly validate the callee repository, path, immutable SHA and ref before emitting one output for all controller checkouts; never substitute caller workflow identity. Preserve unchanged actionlint and use actual shell tests for SSH options, input, failure and key cleanup. Retain the 12-test 34-assertion RED and 112-test registered GREEN. Deploy has a 30-minute cap and SSH connect/liveness bounds. Native contexts and transport are synthetic; hosted identity, real SSH, review and deployment remain separate. No spore.
+- ts: 2026-10-16T07:03:11.755853062Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-policy-lease-evidence-over-9be-isolated-v1
+  task: Preserve earlier testing leases and reject negative promotion evidence
+  p-efficiency: 0.88
+  p-friction: 0.16
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#78b259c7-fa35-46e5-8a1a-793dbdf29a3a
+  note: Retain earliest valid unexpired claim; equal timestamps fail closed. Reject future competing timestamps before ordering and preserve the closed7200 boundary. Reject negative or malformed optional timeout/warning markers at all four evidence levels. Actual test-only RED16/62failures retained; initial full118/1 legacy expectation retained; corrected admitted collector fixture and final registered119 PASS plus contracts. Synthetic inputs, no public or deployment effects. No spore.
