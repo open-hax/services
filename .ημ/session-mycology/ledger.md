@@ -288,3 +288,12 @@
   spore: none
   receipt-refs: receipts.edn#3ced3306-de42-4b17-816d-e2b5dbca4485
   note: Verified first-round aggregate docstring note against actual touched functions; add only accurate JSDoc, not a coverage waiver. Whole current diff and accepted invocation/native body qualify old eb498 approval; do not transfer it to new docs source. Keep provider and external SDK dimensions questions as deployment obligations. Context artifact differs only in generated actor symbols and checksum; quantify static delta, preserve failed exact-byte premise, reuse immutable machinery rather than repeat leaf census. Explicit partial surrounding-source reads are distinct from complete changed-diff delivery. Anonymous current-catalog OpenCode MiMo remains credential-free; slug is dated. Candidate0/noSpore.
+- ts: 2026-10-16T16:45:56.744693002Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-knoxx-probe-dimensions-over9d9-v1
+  task: Document the existing Ollama draft-tool response predicates
+  p-efficiency: 0.88
+  p-friction: 0.12
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#5f8550ea-6e61-41dc-975d-b5409c3f1915
+  note: One precise helper JSDoc only; actual syntax, existing inert selftest and diff check PASS with unchanged executable bytes. ExpectedPASS/no syntheticRED. Native aggregate66.67pct denominator remains unconfirmed; no prediction, approval transfer or runtime claim. Existing official Services5 scope and foreign source preserved. Historical runtime before-effect HOLD separate. Candidate0/noSpore; no nativeSM retry.
