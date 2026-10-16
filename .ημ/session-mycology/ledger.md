@@ -189,3 +189,12 @@
   spore: none
   receipt-refs: receipts.edn#0b0345e5-bdb9-4d5e-b917-6eed0860b85f
   note: The first-failure application stop now has a deadline of 120 seconds. The original source failed the missing-deadline assertion for both Axxium and Knoxx; the repaired full environment suite passed 93 tests. The lifecycle test also preserves failed-selection cleanup and proves another slot can acquire the real shared lock after an injected timeout. Readability clarifications for immutable qualification entries: the entry at 2026-10-15T09:07:51.189014195Z records that normal UI login returned 200 and the CMS shell screenshot passed, while the Spanish row tour failed; the entry at 2026-10-15T10:20:50.797778571Z records retained compiler output containing 549 regular JavaScript files; the entry at 2026-10-15T11:35:04.957350260Z records a final suite of 52 tests and three fresh native cases with complete fixture cleanup, while the separate older-object disposal failure and B/C hold remain recorded; the entry at 2026-10-16T05:03:42.511803921Z records 92 environment tests, 23 Website tests and 14 owner-decision tests passing on that entry's source, with hosted review and deployment still separate. These statements clarify those dated entries without rewriting their bytes, hashes or intentional identifiers, and supply no new execution credit. Current follow-up source remains local; upstream PR98 and its existing review invocation are separate. Portable reflection with candidate zero, no spore.
+- ts: 2026-10-16T06:17:30.122102164Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-admission-safety-over-ace96-isolated-v1
+  task: Repair three reviewed Services testing-admission gaps with native-shaped synthetic controls
+  p-efficiency: 0.88
+  p-friction: 0.16
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#a62860d3-2cd2-4375-b6bd-b929011dcf97
+  note: Bind admission to a still-active candidate lease using the same closed two-hour threshold as competitors; recheck expiry after collection. Compare complete unique file rows with native changed_files before ownership, retain renamed-path coverage, and verify direct-user or named-team repository write access. Preserve both causal RED captures and the new 104-test registered GREEN; earlier root 93 applies only to ace. Synthetic API responses supply no public admission, review or deployment credit. No spore.
