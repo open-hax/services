@@ -168,7 +168,7 @@ def main() -> int:
         )
     """.split())
     website_if = website.get("if", "")
-    if ("deploy-knoxx" not in website_needs
+    if (sorted(website_needs) != ["deploy-caddy", "deploy-knoxx", "select-website"]
             or not isinstance(website_if, str)
             or " ".join(website_if.split()) != required_website_if):
         print("deploy chain error: optional ingress can bypass production qualification", file=sys.stderr)
