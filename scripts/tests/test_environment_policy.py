@@ -36,6 +36,19 @@ class EnvironmentPolicyTest(unittest.TestCase):
         self.assertFalse(p.testing_admission(candidate(), [other], now=NOW)["admitted"])
         other["labeled_at"]=(NOW-timedelta(hours=2, seconds=1)).isoformat()
         self.assertTrue(p.testing_admission(candidate(), [other], now=NOW)["admitted"])
+    def test_candidate_and_competitor_share_the_closed_two_hour_boundary(self):
+        for seconds, active in ((7199.999999, True), (7200, True), (7200.000001, False)):
+            with self.subTest(seconds=seconds):
+                claim = candidate(labeled_at=(NOW-timedelta(seconds=seconds)).isoformat())
+                self.assertEqual(active, p.testing_admission(claim, [], now=NOW)["admitted"])
+                self.assertEqual(not active, p.testing_admission(candidate(),
+                    [{**claim, "number": 2}], now=NOW)["admitted"])
+    def test_expired_candidate_cannot_reclaim_an_empty_or_expired_slot(self):
+        old = candidate(labeled_at=(NOW-timedelta(hours=2, seconds=1)).isoformat())
+        for others in ([], [{**old, "number": 2}]):
+            with self.subTest(others=others):
+                self.assertFalse(p.testing_admission(old, others, now=NOW)["admitted"])
+        self.assertTrue(p.testing_admission(candidate(), [{**old, "number": 2}], now=NOW)["admitted"])
     def test_any_open_testing_claim_blocks_and_relabel_resets(self):
         other=candidate(number=2, base="other", labeled_at=NOW.isoformat())
         self.assertEqual(p.testing_admission(candidate(), [other], now=NOW)["blocking_prs"], [2])

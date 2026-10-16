@@ -7,6 +7,8 @@ from pathlib import Path
 import sys
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
@@ -27,7 +29,8 @@ class Clock(datetime):
 class NativeFixture:
     def __init__(self):
         self.pr = {"number": 1, "state": "open", "base": {"ref": "main", "sha": "b" * 40},
-                   "head": {"sha": HEAD}, "user": OWNER, "labels": [{"name": "testing"}]}
+                   "head": {"sha": HEAD}, "user": OWNER, "labels": [{"name": "testing"}],
+                   "changed_files": 1}
         self.label = {"id": 201, "event": "labeled", "actor": OWNER,
                       "label": {"name": "testing"}, "created_at": (NOW - timedelta(seconds=5)).isoformat()}
         self.review = {"id": 301, "user": OWNER, "state": "COMMENTED", "commit_id": HEAD,
@@ -48,9 +51,15 @@ class NativeFixture:
         self.claim_reads = 0
         self.fail_final_claims = False
         self.fail_final_timeline = False
+        self.user_permission = "write"
+        self.team_membership = {"state": "active"}
+        self.team_permissions = {"permissions": {"push": True}}
+        self.permission_failure = None
+        self.accepts = []
 
-    def api(self, path):
+    def api(self, path, *, accept="application/vnd.github+json"):
         self.calls.append(path)
+        self.accepts.append((path, accept))
         if path == "repos/open-hax/knoxx/pulls/1":
             self.pr_reads += 1
             result = copy.deepcopy(self.pr)
@@ -75,7 +84,9 @@ class NativeFixture:
                      if self.claim_reads > 1 else self.other_labels[number])
             return [copy.deepcopy(label)]
         if path.startswith("repos/open-hax/knoxx/pulls/1/files?"):
-            return copy.deepcopy(self.files)
+            query = parse_qs(urlsplit(path).query)
+            start = (int(query["page"][0])-1)*int(query["per_page"][0])
+            return copy.deepcopy(self.files[start:start+int(query["per_page"][0])])
         if path.startswith("repos/open-hax/knoxx/pulls?state=open"):
             self.claim_reads += 1
             if self.fail_final_claims and self.claim_reads > 1:
@@ -84,6 +95,16 @@ class NativeFixture:
             return copy.deepcopy(rows)
         if path.startswith("repos/open-hax/knoxx/contents/.github/CODEOWNERS?ref="):
             return {"content": base64.b64encode(self.rules.encode()).decode()}
+        if path.startswith("repos/open-hax/knoxx/collaborators/") and path.endswith("/permission"):
+            if self.permission_failure:
+                raise self.permission_failure
+            return {"permission": self.user_permission}
+        if path == "orgs/example/teams/writers/memberships/owner":
+            return copy.deepcopy(self.team_membership)
+        if path == "orgs/example/teams/writers/repos/open-hax/knoxx":
+            if self.permission_failure:
+                raise self.permission_failure
+            return copy.deepcopy(self.team_permissions)
         raise AssertionError(f"Unexpected native request: {path}")
 
     def admit(self):
@@ -217,6 +238,97 @@ class NativeTestingAdmissionTests(unittest.TestCase):
                         fixture.others = [self.competitor(fixture)]
                         fixture.other_labels[2].update(changes)
                     self.assertFalse(fixture.admit()["admitted"])
+
+    def test_expired_candidate_refuses(self):
+        fixture = NativeFixture()
+        fixture.label["created_at"] = (NOW-timedelta(hours=2, seconds=1)).isoformat()
+        fixture.review["submitted_at"] = (NOW-timedelta(hours=2, seconds=2)).isoformat()
+        self.assertFalse(fixture.admit()["admitted"])
+
+    def test_expiry_during_native_collection_refuses(self):
+        fixture = NativeFixture()
+        fixture.label["created_at"] = (NOW-timedelta(hours=2)).isoformat()
+        fixture.review["submitted_at"] = (NOW-timedelta(hours=2, seconds=1)).isoformat()
+        class ExpiringClock(datetime):
+            reads = 0
+            @classmethod
+            def now(cls, tz=None):
+                cls.reads += 1
+                return NOW if cls.reads == 1 else NOW+timedelta(microseconds=1)
+        with patch.object(admission, "api", fixture.api), patch.object(admission, "datetime", ExpiringClock):
+            self.assertFalse(admission.admit("open-hax/knoxx", 1, "testing")["admitted"])
+
+    def test_truncated_3000_file_listing_refuses_before_ownership(self):
+        fixture = NativeFixture()
+        fixture.pr["changed_files"] = 3001
+        fixture.files = [{"filename": f"docs/{index}.md"} for index in range(3000)]
+        result = fixture.admit()
+        self.assertFalse(result["admitted"], result)
+        self.assertFalse(any("CODEOWNERS" in path for path in fixture.calls))
+        self.assertEqual(31, sum("/files?" in path for path in fixture.calls))
+
+    def test_changed_file_count_must_be_native_and_complete(self):
+        for count in (None, True, "1", 0, 2):
+            with self.subTest(count=count):
+                fixture = NativeFixture()
+                fixture.pr["changed_files"] = count
+                self.assertFalse(fixture.admit()["admitted"])
+        fixture = NativeFixture()
+        fixture.pr.pop("changed_files")
+        self.assertFalse(fixture.admit()["admitted"])
+
+    def test_duplicate_file_rows_cannot_hide_an_unexamined_path(self):
+        fixture = NativeFixture()
+        fixture.pr["changed_files"] = 2
+        fixture.files *= 2
+        self.assertFalse(fixture.admit()["admitted"])
+
+    def test_complete_multipage_and_rename_original_path_coverage_are_preserved(self):
+        fixture = NativeFixture()
+        fixture.files = [{"filename": f"docs/{index}.md"} for index in range(101)]
+        fixture.pr["changed_files"] = len(fixture.files)
+        self.assertTrue(fixture.admit()["admitted"])
+        fixture = NativeFixture()
+        fixture.files = [{"filename": "docs/new.md", "previous_filename": "secure/old.md"}]
+        self.assertTrue(fixture.admit()["admitted"])
+        fixture.rules += "/secure/** @security\n"
+        self.assertFalse(fixture.admit()["admitted"])
+
+    def test_current_direct_owner_write_permission_is_required(self):
+        for permission in ("write", "admin", "read", "triage", "none", None, True, "custom-writer"):
+            with self.subTest(permission=permission):
+                fixture = NativeFixture()
+                fixture.user_permission = permission
+                self.assertEqual(permission in ("write", "admin"), fixture.admit()["admitted"])
+
+    def test_named_team_needs_its_own_repository_write_permission_and_active_member(self):
+        for permissions, active, expected in (({"push": True}, True, True),
+                ({"push": False, "pull": True}, True, False), ({}, True, False),
+                ({"push": "true"}, True, False), ({"push": True}, False, False)):
+            with self.subTest(permissions=permissions, active=active):
+                fixture = NativeFixture()
+                fixture.rules = "* @example/writers\n"
+                fixture.team_permissions = {"permissions": permissions}
+                fixture.team_membership = {"state": "active" if active else "pending"}
+                result = fixture.admit()
+                self.assertEqual(expected, result["admitted"])
+                if expected:
+                    self.assertIn(("orgs/example/teams/writers/repos/open-hax/knoxx",
+                        "application/vnd.github.v3.repository+json"), fixture.accepts)
+
+    def test_missing_or_unavailable_repository_permission_never_admits(self):
+        for team in (False, True):
+            for status in (404, 403):
+                with self.subTest(team=team, status=status):
+                    fixture = NativeFixture()
+                    if team:
+                        fixture.rules = "* @example/writers\n"
+                    fixture.permission_failure = HTTPError("synthetic", status, "synthetic", {}, None)
+                    if status == 404:
+                        self.assertFalse(fixture.admit()["admitted"])
+                    else:
+                        with self.assertRaises(HTTPError):
+                            fixture.admit()
 
 
 class NativeCodeownersTests(unittest.TestCase):
