@@ -252,3 +252,12 @@
   spore: none
   receipt-refs: receipts.edn#4a765865-279c-498f-a216-274900901fa2
   note: Verify review premises against actual systemd socket/service semantics and real pinned Caddy adaptation. Preserve meaningful RED separately from a missing-key fixture error; combine disjoint source fixes through ordinary history and run full133environment/24Website/5contracts before publication. Exact Website dependency set and hostname diagnostics close real gaps. Prior367approval does not transfer to the changed source; retain provider quota/cooldown and all deployment obligations. Portable candidate0/no spore.
+- ts: 2026-10-16T09:39:08.078115044Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-environment-required-secret-over-bc4-v1
+  task: Qualify required environment secret forwarding and real fail-closed shell preflight
+  p-efficiency: 0.87
+  p-friction: 0.24
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#eb57d3a9-9850-4ee2-a598-f22701d446a9
+  note: Verify current primary GitHub docs rather than cached environment-secret guidance; require one consumed named secret, keep callers unbound until actual repaired trusted SHA. Actual shell tests superseded the initial static-safe assumption: Bash exempts nonfinal AND-list failures from errexit, so empty key/knownhosts continued. Preserve first14/5 and expanded16/9 RED; empty target already refused and earns no RED credit. Use independent preflight commands, then actual full137PASS/5contracts/actionlint/6shellsyntax. Native environment name presence supplies metadata only, never secret values or host/SSH capability. Preserve failures and exact prefixes; no cloud/public/runtime effects. Candidate0/no spore.
