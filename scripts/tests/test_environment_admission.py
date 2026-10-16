@@ -208,12 +208,17 @@ class NativeTestingAdmissionTests(unittest.TestCase):
         fixture.others_after = list(reversed(fixture.others))
         self.assertTrue(fixture.admit()["admitted"])
 
-    def test_initial_fresh_competitor_keeps_its_existing_refusal(self):
+    def test_initial_earlier_fresh_competitor_keeps_its_existing_refusal(self):
         fixture = NativeFixture()
-        fixture.others = [self.competitor(fixture, age=1)]
+        fixture.others = [self.competitor(fixture, age=10)]
         result = fixture.admit()
         self.assertFalse(result["admitted"])
         self.assertEqual([2], result["blocking_prs"])
+
+    def test_stable_later_competing_claim_does_not_revoke_the_existing_lease(self):
+        fixture = NativeFixture()
+        fixture.others = [self.competitor(fixture, age=1)]
+        self.assertTrue(fixture.admit()["admitted"])
 
     def test_unavailable_final_listing_or_timeline_never_admits(self):
         for failure in ("claims", "competitor-timeline", "candidate-timeline"):
