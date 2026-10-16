@@ -207,3 +207,12 @@
   spore: none
   receipt-refs: receipts.edn#662968a1-0be5-462e-ba76-d527c6fec21f
   note: Serialize the native job with supported toJSON and strictly validate the callee repository, path, immutable SHA and ref before emitting one output for all controller checkouts; never substitute caller workflow identity. Preserve unchanged actionlint and use actual shell tests for SSH options, input, failure and key cleanup. Retain the 12-test 34-assertion RED and 112-test registered GREEN. Deploy has a 30-minute cap and SSH connect/liveness bounds. Native contexts and transport are synthetic; hosted identity, real SSH, review and deployment remain separate. No spore.
+- ts: 2026-10-16T07:12:59.587372758Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-catalog-slot-env-over-9be-isolated-v1
+  task: Validate the full catalog before intake and effective public slot settings
+  p-efficiency: 0.9
+  p-friction: 0.15
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#0881435c-38f9-479a-aaa2-329aa1f7a4ea
+  note: Inspect every saved tag/ID before effects, including unrelated source generations. Delegate dotenv semantics to bounded Compose config with a public-only model and stripped environment; preserve secret bytes and redact parser failure. Retain genuine121-test/31-assertion RED and own121-test GREEN. Local process/config qualification supplies no deployment or hosted review credit. Candidate0, no spore.
