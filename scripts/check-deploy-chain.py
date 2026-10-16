@@ -147,6 +147,33 @@ def main() -> int:
         )
         return 1
 
+    if host_prerequisite.get("needs") != "knoxx-preflight":
+        print("deploy chain error: production host can change before qualification", file=sys.stderr)
+        return 1
+    website = jobs.get("deploy-website", {})
+    website_needs = website.get("needs", [])
+    if isinstance(website_needs, str):
+        website_needs = [website_needs]
+    required_website_if = " ".join("""
+        always()
+        && (inputs.include_website || inputs.scope == 'website')
+        && needs.select-website.result == 'success'
+        && (inputs.scope == 'website' || needs.deploy-knoxx.result == 'success')
+        && (
+          (inputs.scope == 'website' && needs.deploy-caddy.result == 'skipped')
+          || (inputs.scope == 'stack' && (
+            (!inputs.include_ingress && needs.deploy-caddy.result == 'skipped')
+            || (inputs.include_ingress && needs.deploy-caddy.result == 'success')
+          ))
+        )
+    """.split())
+    website_if = website.get("if", "")
+    if (sorted(website_needs) != ["deploy-caddy", "deploy-knoxx", "select-website"]
+            or not isinstance(website_if, str)
+            or " ".join(website_if.split()) != required_website_if):
+        print("deploy chain error: optional ingress can bypass production qualification", file=sys.stderr)
+        return 1
+
     host_workflow = yaml.load(HOST_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     host_events = host_workflow.get("on", {})
     host_call = host_events.get("workflow_call", {})

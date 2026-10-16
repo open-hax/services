@@ -132,11 +132,14 @@ class CandidateDecisionTests(unittest.TestCase):
         self.assertEqual("ghcr.io/open-hax/website:" + record["sourceSha"] +
                          "@sha256:ef3f2daa46b212cfcd82c2a72492946b0c44c23f1fab9b0fffde35d7199c836f", record["image"])
         self.assertIn(record["ownerDecision"]["status"], ("pending", "approved", "rejected"))
-        self.assertEqual(candidate.deployment_inputs(), record["deploymentInputs"])
-        if record["ownerDecision"]["status"] == "approved":
+        if record["ownerDecision"]["status"] != "approved":
+            with self.assertRaises(ValueError):
+                candidate.select(record, record["sourceSha"], record["image"])
+        elif candidate.deployment_inputs() == record["deploymentInputs"]:
             self.assertEqual(record["image"], candidate.select(record, record["sourceSha"], record["image"])["image"])
         else:
-            with self.assertRaises(ValueError):
+            # Historical approval remains evidence, not permission for new inputs.
+            with self.assertRaisesRegex(ValueError, "^Public deployment inputs differ from the exact owner-approved configuration$"):
                 candidate.select(record, record["sourceSha"], record["image"])
 
     def test_reviewed_real_candidate_refuses_public_deployment_input_drift(self):
@@ -172,7 +175,9 @@ class CandidateDecisionTests(unittest.TestCase):
             try:
                 candidate.ROOT = checkout
                 self.assertEqual(image, candidate.qualify(record, source, image, "7" * 40, nginx, receipt)["image"])
-                for path in ("digitalocean/services/website/compose.yaml",
+                for path in ("digitalocean/services/caddy/compose.yaml",
+                             "digitalocean/services/caddy/env.template",
+                             "digitalocean/services/website/compose.yaml",
                              "digitalocean/services/website/compose.staging.yaml",
                              "digitalocean/services/website/env.template",
                              "digitalocean/services/website/verify.sh",

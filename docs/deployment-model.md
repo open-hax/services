@@ -34,8 +34,8 @@ Definitions   digitalocean/hosts/production.yaml, digitalocean/services/*/
 Workflows     deploy-stack.yml -> deploy-stack-chain.yml -> deploy-digitalocean.yml
               build-images.yml
 Delivery      an image built in CI, pushed to GHCR, pulled on the host
-Trigger       a merged PR carrying the `deploy` label at merge time
-Authorization the frozen closed pull_request_target payload
+Trigger       manual Deploy Stack workflow_dispatch with an explicit scope
+Authorization immutable merged Knoxx candidate and qualification for stack scope
 Ingress       Caddy, sole owner of host 80/443, ACME HTTP-01
 Health gate   digitalocean/services/<svc>/verify.sh, required
 Host contract digitalocean/lib/host-contract.sh
@@ -129,10 +129,18 @@ the check exists to catch.
 
 ```text
 dev         developer machine; this repo owns nothing
-testing     PR head, shared slot, label-gated, overwritten freely
-staging     the integration branch's head
-production  the default branch's head, deploy-labelled merge only
+testing     PR head, shared slot, label-gated exclusive two-hour lease
+staging     successful main merge commit, while still current main
+production  qualified merged application revision, explicitly dispatched
 ```
+
+For production stack deployment, use **Run workflow** on `Deploy Stack` with
+`scope: stack` and `knoxx_ref` set to the merged candidate's full 40-character
+lowercase hexadecimal commit SHA. Qualification of that exact candidate runs
+inside the production host lock before any host mutation. A Services PR merge
+or `deploy` label does not trigger this workflow. Testing and staging retain
+their separate admission rules in
+[the environments runbook](environments/promotion.md).
 
 **Model rule 3 (the promotion rule).** A revision may enter `production` only if
 the same source SHA is `identical` to, or an ancestor of, what `staging` last
@@ -154,7 +162,7 @@ staging record to compare against.
 The website now has an isolated staging phase. Its authored production gate
 also remains closed until unsupported mutation qualification is resolved
 explicitly. See `docs/website-staging-deployment.md` for commands and evidence.
-Stack and labelled merge deploys leave the website unchanged. Its explicit
+Stack dispatches leave the website unchanged. Its explicit
 website scope stages the candidate; stack website opt-in is rejected in
 authorization before any host mutation while qualification is unsupported.
 

@@ -32,9 +32,8 @@ on:
         required: true
         type: string
       knoxx_ref:
-        description: open-hax/knoxx ref to deploy
-        required: false
-        default: main
+        description: Immutable merged open-hax/knoxx commit to qualify
+        required: true
         type: string
       openplanner_ref:
         description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
@@ -76,6 +75,7 @@ jobs:
   # across this entire chain; the required flag below attests that this nested
   # bootstrap is running inside that single production mutation queue.
   provision-host:
+    needs: knoxx-preflight
     if: inputs.scope == 'stack'
     uses: ./.github/workflows/digitalocean-host.yml
     with:
@@ -85,7 +85,7 @@ jobs:
 
   # The deployment consumes the immutable SHA emitted by Knoxx's own release
   # gate. This keeps application validation in Knoxx while making it an actual
-  # prerequisite of both label-authorized and manually dispatched deploys.
+  # prerequisite of every stack production deployment before host changes.
   resolve-knoxx:
     if: inputs.scope == 'stack'
     runs-on: ubuntu-latest
@@ -227,7 +227,7 @@ jobs:
           echo "source_sha=$source" >> "$GITHUB_OUTPUT"
 
   deploy-website:
-    needs: [select-website, deploy-caddy]
+    needs: [select-website, deploy-caddy, deploy-knoxx]
     # deploy-caddy is conditional, and a skipped ingress must not silently skip
     # the website with it: the website's gate classifies an absent ingress as a
     # WARN owned by caddy and still proves the site serves on loopback. When
@@ -237,6 +237,7 @@ jobs:
       always()
       && (inputs.include_website || inputs.scope == 'website')
       && needs.select-website.result == 'success'
+      && (inputs.scope == 'website' || needs.deploy-knoxx.result == 'success')
       && (
         (inputs.scope == 'website' && needs.deploy-caddy.result == 'skipped')
         || (inputs.scope == 'stack' && (

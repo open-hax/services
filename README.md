@@ -31,16 +31,17 @@ Production is declared under [`digitalocean/`](digitalocean/README.md):
 - GitHub's protected `production` environment supplies deployment credentials
   and runtime secrets.
 
-A merged Services pull request deploys only when it carries the exact `deploy`
-label at merge time. The workflow builds application `main`, never PR code, and
-derives authorization from the immutable merge event. Operators can also use
-the explicit manual dispatch with chosen refs.
+Start a production stack deployment with **Run workflow** on `Deploy Stack`
+(`workflow_dispatch`), selecting `scope: stack` and supplying `knoxx_ref` as the
+full 40-character lowercase hexadecimal commit SHA of the merged Knoxx
+candidate. The locked deployment chain requires that exact candidate's
+qualification before any host mutation. A Services PR merge or `deploy` label
+does not start this production workflow.
 
 Manual dispatch also accepts `scope: website` for the isolated staging and
 production handoff in [the website runbook](docs/website-staging-deployment.md).
-Stack and labelled merge deploys leave the website unchanged. Manual stack
-website opt-in is rejected before host mutation; website staging uses its
-explicit scope.
+Stack dispatches leave the website unchanged. Stack website opt-in is rejected
+before host mutation; website staging uses its explicit scope.
 Its receipt binds application source, image digest and serving configuration.
 Production stops at an explicit unsupported website mutation-qualification
 gate; a healthy stage does not satisfy that policy.

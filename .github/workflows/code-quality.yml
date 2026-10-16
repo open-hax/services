@@ -49,6 +49,29 @@ jobs:
       - name: Enforce deploy-chain failure propagation
         run: python scripts/check-deploy-chain.py
 
+      - name: Prepare checksum-pinned Caddy configuration test tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          caddy_test_dir="$(mktemp -d "${RUNNER_TEMP:?}/caddy-2.8.4.XXXXXX")"
+          caddy_archive="$caddy_test_dir/caddy_2.8.4_linux_amd64.tar.gz"
+          # Official release asset, verified against its published SHA-512 before
+          # pinning this SHA-256: https://github.com/caddyserver/caddy/releases/tag/v2.8.4
+          curl --fail --location --silent --show-error --connect-timeout 20 --max-time 120 \
+            --output "$caddy_archive" \
+            https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz
+          printf '%s  %s\n' a7e8306c54138cf88e371c5ec0caf7baf142ecc1d60a30897dfb67d65d3748c8 \
+            "$caddy_archive" | sha256sum --check --strict
+          tar --extract --gzip --file "$caddy_archive" --directory "$caddy_test_dir" \
+            --no-same-owner caddy
+          chmod 700 "$caddy_test_dir/caddy"
+          test "$("$caddy_test_dir/caddy" version | cut -d' ' -f1)" = v2.8.4
+          printf 'CADDY_TEST_BINARY=%s\n' "$caddy_test_dir/caddy" >> "$GITHUB_ENV"
+
+      - name: Test service environment admission and receiver boundaries
+        run: python3 -m unittest discover -s scripts/tests -p 'test_environment*.py'
       - name: Test website phase isolation and serving gates
         run: python scripts/test_website_deployment.py
 

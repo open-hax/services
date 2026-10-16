@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Exercise phase isolation, receipt admission and verifier failure paths."""
 import copy
+import contextlib
+import io
 import importlib.util
+import itertools
 import json
 import os
 from pathlib import Path
@@ -84,13 +87,120 @@ class WebsiteDeploymentTests(unittest.TestCase):
                 output = Path(temporary) / "outputs"
                 result = subprocess.run(["bash", "-c", decide["run"]], cwd=ROOT,
                     env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": scope,
-                         "INCLUDE_WEBSITE": include, "WEBSITE_IMAGE": "", "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
+                         "INCLUDE_WEBSITE": include, "WEBSITE_IMAGE": "", "KNOXX_SHA": "a" * 40,
+                         "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
                 self.assertEqual(status, result.returncode, result.stdout + result.stderr)
                 if status:
                     self.assertFalse(output.exists(), "rejected opt-in must emit no deploy authorization")
                     self.assertIn("production qualification is unsupported", result.stderr)
                 else:
                     self.assertEqual("should_deploy=true", output.read_text().strip())
+
+    def test_manual_stack_candidate_is_immutable_without_widening_website_scope(self):
+        """Run the actual entry script: denied candidates emit no deployment coordinates."""
+        self.assertEqual({"workflow_dispatch"}, set(self.entry["on"]))
+        command = self.entry["jobs"]["authorize"]["steps"][0]["run"]
+        cases = [("stack", "", 2), ("stack", "main", 2),
+                 ("stack", "a" * 39, 2), ("stack", "g" * 40, 2),
+                 ("stack", "a" * 40, 0), ("website", "", 0)]
+        for scope, candidate, expected in cases:
+            with self.subTest(scope=scope, candidate=candidate), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary) / "outputs"
+                result = subprocess.run(["bash", "-c", command], cwd=ROOT,
+                    env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": scope,
+                         "INCLUDE_WEBSITE": "false", "WEBSITE_IMAGE": "", "KNOXX_SHA": candidate,
+                         "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
+                self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(expected == 0, output.exists())
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "outputs"
+            environment = {**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": "stack",
+                           "INCLUDE_WEBSITE": "false", "WEBSITE_IMAGE": "", "GITHUB_OUTPUT": str(output)}
+            environment.pop("KNOXX_SHA", None)
+            missing = subprocess.run(["bash", "-c", command], cwd=ROOT,
+                env=environment, text=True, capture_output=True)
+            self.assertEqual(2, missing.returncode, missing.stdout + missing.stderr)
+            self.assertFalse(output.exists())
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "outputs"
+            denied = subprocess.run(["bash", "-c", command], cwd=ROOT,
+                env={**os.environ, "EVENT_NAME": "pull_request_target", "DEPLOY_SCOPE": "stack",
+                     "INCLUDE_WEBSITE": "false", "WEBSITE_IMAGE": "", "KNOXX_SHA": "a" * 40,
+                     "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
+            self.assertEqual(2, denied.returncode, denied.stdout + denied.stderr)
+            self.assertFalse(output.exists())
+
+    def test_real_chain_guard_refuses_stack_and_health_admission_bypasses(self):
+        """Feed mutated actual workflow files to the owning guard; leave shipped files untouched."""
+        cases = []
+        missing_qualification = copy.deepcopy(self.chain)
+        del missing_qualification["jobs"]["provision-host"]["needs"]
+        cases.append(("WORKFLOW", missing_qualification, "production host can change before qualification"))
+        missing_knoxx = copy.deepcopy(self.chain)
+        missing_knoxx["jobs"]["deploy-website"]["needs"].remove("deploy-knoxx")
+        cases.append(("WORKFLOW", missing_knoxx, "optional ingress can bypass production qualification"))
+        substring_knoxx = copy.deepcopy(self.chain)
+        substring_knoxx["jobs"]["deploy-website"]["needs"] = "deploy-knoxx-extra"
+        cases.append(("WORKFLOW", substring_knoxx, "optional ingress can bypass production qualification"))
+        bypass_knoxx = copy.deepcopy(self.chain)
+        bypass_knoxx["jobs"]["deploy-website"]["if"] = bypass_knoxx["jobs"]["deploy-website"]["if"].replace(
+            "&& (inputs.scope == 'website' || needs.deploy-knoxx.result == 'success')", "")
+        cases.append(("WORKFLOW", bypass_knoxx, "optional ingress can bypass production qualification"))
+        extra_or = copy.deepcopy(self.chain)
+        extra_or["jobs"]["deploy-website"]["if"] += (
+            " || (inputs.scope == 'stack' && needs.deploy-knoxx.result == 'failure')"
+        )
+        cases.append(("WORKFLOW", extra_or, "optional ingress can bypass production qualification"))
+        for name, marker, replacement in (("Health gate", "attempts=5", "attempts=1"),
+                                           ("Admit Knoxx publication content", "./post-deploy.sh", "true")):
+            altered = workflow("deploy-digitalocean.yml")
+            target = next(s for s in altered["jobs"]["deploy"]["steps"] if s.get("name") == name)
+            self.assertIn(marker, target["run"])
+            target["run"] = target["run"].replace(marker, replacement)
+            expected = "health retries" if name == "Health gate" else "post-deploy hook invocation"
+            cases.append(("SERVICE_DEPLOY_WORKFLOW", altered, expected))
+        for binding, altered, expected in cases:
+            with self.subTest(binding=binding, expected=expected), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "workflow.yml"
+                source.write_text(yaml.safe_dump(altered))
+                original = getattr(chain_guard, binding)
+                output, errors = io.StringIO(), io.StringIO()
+                try:
+                    setattr(chain_guard, binding, source)
+                    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                        result = chain_guard.main()
+                finally:
+                    setattr(chain_guard, binding, original)
+                self.assertEqual(1, result, output.getvalue() + errors.getvalue())
+                self.assertIn(expected, errors.getvalue())
+
+    def test_real_chain_guard_requires_exact_website_dependencies(self):
+        required = ["deploy-caddy", "deploy-knoxx", "select-website"]
+        cases = [(list(order), True) for order in itertools.permutations(required)]
+        cases += [(needs, False) for needs in (
+            ["deploy-knoxx", "select-website"],
+            ["deploy-caddy", "deploy-knoxx"],
+            required + ["build-website"],
+            required + ["deploy-knoxx"],
+            "deploy-knoxx",
+        )]
+        for needs, accepted in cases:
+            with self.subTest(needs=needs), tempfile.TemporaryDirectory() as temporary:
+                altered = copy.deepcopy(self.chain)
+                altered["jobs"]["deploy-website"]["needs"] = needs
+                source = Path(temporary) / "workflow.yml"
+                source.write_text(yaml.safe_dump(altered))
+                original = chain_guard.WORKFLOW
+                output, errors = io.StringIO(), io.StringIO()
+                try:
+                    chain_guard.WORKFLOW = source
+                    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                        result = chain_guard.main()
+                finally:
+                    chain_guard.WORKFLOW = original
+                self.assertEqual(0 if accepted else 1, result, output.getvalue() + errors.getvalue())
+                if not accepted:
+                    self.assertIn("optional ingress can bypass production qualification", errors.getvalue())
 
     def test_unscoped_application_build_or_unlocked_phase_is_rejected(self):
         broken = copy.deepcopy(self.chain)

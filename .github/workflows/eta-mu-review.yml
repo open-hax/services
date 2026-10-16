@@ -11,11 +11,12 @@ permissions:
 jobs:
   review:
     name: Evidence-first review (eta-mu)
-    uses: open-hax/eta-mu/.github/workflows/opencode-code-review.yml@d98ab446d56ddfd24542df49b102b851f2a767fa
+    uses: open-hax/eta-mu/.github/workflows/opencode-code-review.yml@4eaa34d18b5e07d9f26f0ebe4d20cf7e65ef9a41
     with:
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       opencode_version: '1.18.31'
-      muse_revision: e733f5b417a870a6c8480ae433d643ee1598af27
+      review_timeout_minutes: 120
+      muse_revision: c1369c223cf3c57e3e31934a6d746bfcdfe73f5a
       setup_eta_mu_toolchain: false
       evidence_gates_script: |
         run_gate deployment_boundary python3 scripts/check-deployment-boundary.py

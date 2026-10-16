@@ -85,8 +85,11 @@ name that does not resolve here fails issuance for itself.
 
 1. **DNS.** Create an A record for `<name>-dev.promethean.rest` pointing at the
    droplet's current public address, DNS-only (not proxied) — HTTP-01 must reach
-   the origin. `promethean.rest` is on Cloudflare. There is no wildcard, on
-   purpose: a wildcard would silently publish every future port someone opens.
+   the origin. `promethean.rest` is on Cloudflare. There is no wildcard DNS record in this flow; public names and proxy routes
+   are added explicitly. DNS or a certificate alone does not publish a port.
+   Nested names such as `testing.knoxx.promethean.rest` are supported; see
+   [nested Knoxx hostnames](knoxx-nested-hostnames.md) for the existing HTTPS
+   placeholders and certificate workflow.
 2. **ufw.** Allow the port from Caddy's fixed dedicated address only, and say
    what it is:
    ```sh
@@ -115,10 +118,13 @@ name that does not resolve here fails issuance for itself.
      caddy:2.8-alpine \
      caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
    ```
-7. **Bootstrap, verify, and deploy.** Use the `deploy` label on the merged PR,
-   or dispatch `Deploy Stack` manually. Its locked host prerequisite performs
-   the bootstrap and produces the verification report; that report must contain
-   a passing `firewall-dev-ingress-scoped` check. Every Caddy deploy re-runs the
+7. **Bootstrap, verify, and deploy.** Manually dispatch `Deploy Stack` with
+   `scope: stack` and `knoxx_ref` set to the merged Knoxx candidate's full
+   40-character lowercase hexadecimal commit SHA. A merge or `deploy` label
+   does not start production deployment. The locked chain requires the exact
+   candidate's qualification before host mutation. Its host prerequisite then
+   performs the bootstrap and produces the verification report; that report must
+   contain a passing `firewall-dev-ingress-scoped` check. Every Caddy deploy re-runs the
    installed firewall verifier before rendering or changing the service. A
    Caddyfile change is a bind mount, and compose hashes the image and the
    environment but never the contents of a bind mount — the deploy step's rsync

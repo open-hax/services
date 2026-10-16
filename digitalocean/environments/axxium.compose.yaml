@@ -1,0 +1,76 @@
+services:
+  axxium:
+    image: ${AXXIUM_IMAGE:?Set an immutable built Axxium image}
+    restart: unless-stopped
+    ports:
+    - 127.0.0.1:${AXXIUM_LISTEN_PORT:-18877}:8787
+    environment:
+      NODE_ENV: production
+      AXXIUM_HOST: 0.0.0.0
+      AXXIUM_PORT: 8787
+      AXXIUM_PUBLIC_BASE_URL: ${AXXIUM_PUBLIC_BASE_URL:?Set the public environment
+        hostname}
+      DB_HOST: database
+      DB_NAME: axxium
+      DB_USER: axxium
+      DB_PASSWORD: ${DB_PASSWORD:?Set an instance-specific database password}
+      JWT_SECRET: ${JWT_SECRET:?Set an instance-specific session secret}
+      JWT_ISSUER: ${AXXIUM_PUBLIC_BASE_URL}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      AXXIUM_IDENTITY_KEY_FILE: /run/axxium/identity-private.json
+      AXXIUM_IDENTITY_TRUST_FILE: /run/axxium/trust.json
+    volumes:
+    - ./identity-private.json:/run/axxium/identity-private.json:ro
+    - ./trust.json:/run/axxium/trust.json:ro
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - node
+      - -e
+      - fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 4
+    mem_limit: 192m
+    cpus: '1.0'
+    pids_limit: 160
+    security_opt:
+    - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    cap_drop:
+    - ALL
+  database:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: axxium
+      POSTGRES_USER: axxium
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+    - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U axxium -d axxium
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    mem_limit: 192m
+    cpus: '1.0'
+    pids_limit: 160
+    security_opt:
+    - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+volumes:
+  postgres-data: null

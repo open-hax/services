@@ -1,0 +1,182 @@
+name: Deploy Service Environment
+on:
+  workflow_call:
+    inputs:
+      controller_sha:
+        type: string
+        required: true
+      service:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: true
+      pull_request:
+        type: string
+        required: true
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  admit:
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.admission.outputs.source_sha }}
+      controller_sha: ${{ steps.controller.outputs.controller_sha }}
+    steps:
+      - name: Validate controller arguments
+        id: controller
+        env:
+          CONTROLLER_SHA: ${{ inputs.controller_sha }}
+          WORKFLOW_CONTEXT: ${{ toJSON(job) }}
+          SERVICE: ${{ inputs.service }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          PR_NUMBER: ${{ inputs.pull_request }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ENVIRONMENT" =~ ^(testing|staging)$ ]]
+          [[ "$SERVICE" =~ ^(knoxx|axxium)$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          test "$SOURCE_REPOSITORY" = "open-hax/$SERVICE"
+          # Native job identity names this callee; github workflow identity names its caller.
+          python3 - <<'PY'
+          import json, os, re
+          try:
+              workflow = json.loads(os.environ['WORKFLOW_CONTEXT'])
+          except (KeyError, json.JSONDecodeError):
+              raise SystemExit('Missing or invalid native reusable workflow identity')
+          sha = workflow.get('workflow_sha') if isinstance(workflow, dict) else None
+          repository = 'open-hax/services'
+          path = '.github/workflows/deploy-service-environment.yml'
+          if (not isinstance(sha, str) or re.fullmatch(r'[0-9a-f]{40}', sha) is None
+                  or workflow.get('workflow_repository') != repository
+                  or workflow.get('workflow_file_path') != path
+                  or workflow.get('workflow_ref') != f'{repository}/{path}@{sha}'
+                  or os.environ['CONTROLLER_SHA'] != sha):
+              raise SystemExit('Missing or invalid native reusable workflow identity')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'controller_sha={sha}\n')
+          PY
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/services
+          ref: ${{ steps.controller.outputs.controller_sha }}
+          persist-credentials: false
+      - id: admission
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pull_request }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: python3 scripts/github_environment_admission.py "$SOURCE_REPOSITORY" "$PR_NUMBER" "$ENVIRONMENT"
+  build:
+    needs: admit
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/services
+          ref: ${{ needs.admit.outputs.controller_sha }}
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.admit.outputs.source_sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        if: inputs.service == 'knoxx'
+        with:
+          repository: open-hax/openplanner
+          ref: 07085d6557b75834ce6f50e6c54b8ca47e1c7c08
+          path: openplanner
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # v13.6.1
+        with:
+          cli: 1.12.5.1664
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10.20.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Build isolated application artifacts
+        env:
+          SERVICE: ${{ inputs.service }}
+          SOURCE_SHA: ${{ needs.admit.outputs.source_sha }}
+        run: bash controller/scripts/build-service-environment.sh "$SERVICE" "$SOURCE_SHA" "$GITHUB_WORKSPACE/source" "$GITHUB_WORKSPACE/artifact"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: service-environment-images
+          path: |
+            artifact/images.tar
+            artifact/images.sha256
+          if-no-files-found: error
+          retention-days: 3
+  deploy:
+    needs: [admit, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: promethean-${{ inputs.service }}-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/services
+          ref: ${{ needs.admit.outputs.controller_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: service-environment-images
+          path: artifact
+      - name: Recheck the lease and immutable revision inside the deployment slot
+        id: recheck
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pull_request }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          BUILT_SHA: ${{ needs.admit.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/github_environment_admission.py "$SOURCE_REPOSITORY" "$PR_NUMBER" "$ENVIRONMENT" > admission.json
+          test "$(python3 -c 'import json; print(json.load(open("admission.json"))["source_sha"])')" = "$BUILT_SHA"
+          test "$(sha256sum artifact/images.tar | cut -d' ' -f1)" = "$(cat artifact/images.sha256)"
+      - name: Deploy through the restricted environment receiver
+        env:
+          SERVICE: ${{ inputs.service }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          SOURCE_SHA: ${{ needs.admit.outputs.source_sha }}
+          DEPLOY_SSH_KEY: ${{ secrets.PROMETHEAN_ENVIRONMENT_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.PROMETHEAN_ENVIRONMENT_KNOWN_HOSTS }}
+          DEPLOY_TARGET: ${{ vars.PROMETHEAN_ENVIRONMENT_SSH_TARGET }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS" && test -n "$DEPLOY_TARGET"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/environment_key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/environment_key"
+          trap 'rm -f "$HOME/.ssh/environment_key"' EXIT
+          ssh -i "$HOME/.ssh/environment_key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+            -o StrictHostKeyChecking=yes "$DEPLOY_TARGET" \
+            "receive $ENVIRONMENT $SERVICE $SOURCE_SHA" < artifact/images.tar
+      - name: Verify public HTTPS and readiness
+        env:
+          SERVICE: ${{ inputs.service }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 20 --retry 8 --retry-all-errors --retry-delay 5 \
+            "https://$ENVIRONMENT.$SERVICE.promethean.rest/api/auth/config"

@@ -81,3 +81,174 @@
   spore: none
   receipt-refs: 6bd8adbe98817b6aa402860418832e10570b8dda202338d1e56fec82761eeb72
   note: Guide records the actual approved Website delivery, distinct C/S/G ownership, application-owned qualification and attestation, effective hosted translation and review evidence, public browser proof, preservation and rollback. Prepared contract permalink is attributed as preparation. Five unfinished code paths and old controller pin remain intact. Only documentation and provenance change; the new CMS deployment remains pending. No new spore.
+- ts: 2026-10-15T09:07:51.189014195Z
+  session: 01a12257-fc69-7720-888c-dd2595ff7dc7
+  task: Services inherited-Caddy-filecap source repair and honest native private UI qualification
+  p-efficiency: 0.58
+  p-friction: 0.82
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#93dfb30a-df9b-4f3a-a9e3-287278c56e5c
+  note: Bind immutable source bytes and Unix modes before Docker COPY; public Caddyfile mode must remain readable by the final nonroot UID. Preserve effective filecap mismatch RED, remove capability during build before USER, and retain cap-drop ALL/NNP at runtime. On internal-only Docker bridges, distinguish requested HostConfig mapping from actual allocation; attach only frontend to an owned normal bridge for loopback UI access, preserving DB/model isolation. Protected401/no_session proves auth boundary, not dependency health. Actual normalUI login200 and CMSshell screenshot passed; Spanishrow tour failed and remains unqualified. New diagnostic is proposed, no false fullpass, candidate0/no spore.
+- ts: 2026-10-15T09:26:32.331732367Z
+  session: 01a12257-fc69-7720-888c-dd2595ff7dc7
+  task: Services native CMS browser diagnostics and confirmed resource-locale selection gap
+  p-efficiency: 0.62
+  p-friction: 0.76
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#a48cd7da-36d2-415d-8f61-5494a3728934
+  note: Bind browser option sampling to a completed exact-project page request and current DOM loading state. Distinguish unassigned diagnostic variables from sampled empty inventories. An exact wrapping label includes descendant option text; scope its visible label span and require one combobox. Normal UI login/auth context and native Spanish split-detail read are now observed, while actual All-only locale choices keep the tour and release failed. Preserve original failures, ancillary 502/console limits and source/runtime identity. Source repair belongs to existing UI owner and must use unfiltered resource locale inventory, not target-filtered documents or legacy statistics. No product source change or model/content/review/publication effects; candidate zero, no spore.
+- ts: 2026-10-15T10:20:50.797778571Z
+  session: codex:01a12257-fc69-7720-888c-dd2595ff7dc7/cms_native_journey_binding
+  task: Services83 compiled-runtime JavaScript packaging P1 causal RED and GREEN
+  p-efficiency: 0.9
+  p-friction: 0.2
+  p-skill-candidate: 0.1
+  spore: none
+  receipt-refs: receipts.edn#5cc9afa8-3f21-47ba-a1e8-1d15065f1faa,receipts.edn#04248fb3-5828-47bd-94fa-1256a54884d6,receipts.edn#e587829f-00cd-4b7a-945d-8f388422753d
+  note: A directory-existence fixture reproduced the same false positive as its packaging guard. Commit three actual invalid-output RED cases first, then require one regular .js file; source-map-only and symlink-only trees retain refusal. Keep tool-double orchestration proof separate from real compiler/image/runtime qualification. Exact guards read-only accepted genuine retained19f output with549 regular JavaScript files. Only two source paths changed; original failures, unaffected controls and append-only ledgers preserved. Existing owner already covers PR83 review fixes; no card/status or runtime/model/image/push/PR effect. Candidate0.1, no spore.
+- ts: 2026-10-15T10:35:19.861141890Z
+  session: codex:01a12257-fc69-7720-888c-dd2595ff7dc7/cms_native_journey_binding
+  task: Services83 root MCP routing official-Caddy-adapter causal RED and GREEN
+  p-efficiency: 0.85
+  p-friction: 0.25
+  p-skill-candidate: 0.1
+  spore: none
+  receipt-refs: receipts.edn#1a9d4469-f2bd-4c2a-a365-b840fa891f2d,receipts.edn#c5694e44-34c6-4086-ad2d-9e0be4d13b90,receipts.edn#423d99ff-61ff-4043-a9b3-e9482e85484b
+  note: Use the product official adapter for configuration semantics, not a second Caddy parser or assumed JSON. Verify the published checksum algorithm before deriving the pinned archiveSHA256; retain the failed assumption before execution. Declare the actual workflow shell when checking an extracted run block. Keep the genuine two missing-route RED failures separate from setup diagnostics. Official adapter controls and local setup pass while live HTTP/auth/MCP remain outstanding; no listener/container/model or production effect. Existing discovery and owner reused, prior packaging P1 unchanged. Candidate0.1, no spore.
+- ts: 2026-10-15T11:35:04.957350260Z
+  session: codex:/root/pr354_terminal_rerun_verify
+  task: Services83 receiver healthy rollback and safe owned-image retention
+  p-efficiency: 0.65
+  p-friction: 0.65
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#f6385286-bec6-45d1-8297-a86cfc307b82,receipts.edn#ab7a4f77-0cc0-45d9-826c-1ff9dedd0447,receipts.edn#23d1ca41-0182-4830-83ec-3746c35dc3b4
+  note: Codex agent /root/pr354_terminal_rerun_verify. Qualify the actual receiver with cold orchestration tests and real disposable Docker objects. A replaced release is not healthy admission; compare full keyed last-healthy evidence and preserve distinct rollback on repeat. Durably flush/fsync the refusal barrier and directory before destructive effects, retaining first cause. Real Docker digest-only rows exposed a stub gap: complete --digests and literal native rows must preserve foreign aliases while rejecting unknowns. Keep failed/partial native qualification and independent old-object disposal distinct; stop on uncertainty and never retry a tag removal. Final52 tests and freshnative3cases/fullfixturecleanup pass; separate olddisposal removedA then newline-readback predicate stopped with B/C held. Source-qualified only, no public push/install/deploy. Candidate0, no spore.
+- ts: 2026-10-15T12:16:52.935426813Z
+  session: codex:/root/pr354_terminal_rerun_verify
+  task: Services accepted-main and qualified controller integration before personal review
+  p-efficiency: 0.74
+  p-friction: 0.62
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#b5f8a62c-125e-413d-9bc7-7e25802dd188
+  note: Distinguish direct-tree absence from intentional PR deletion, then integrate the actual accepted main through an ordinary two-parent merge. Preserve accepted Website phase/approval/content/session-secret safeguards and complete controller source/RED ancestry. Retain current-head refusal of historical Website approval after public input drift. Qualify all combined owning gates, record extra baseline lint/Caddy diagnostics without waivers, preserve actual hosted publisher credential failure and immutable caller pins. Source merge fc7281e1 tree711adbff; no deployment or board closure. Candidate0, no spore.
+- ts: 2026-10-15T13:37:59.995006001Z
+  session: codex:/root/pr354_terminal_rerun_verify
+  task: Services six-review repair with exact-head testing and durable intake refusal
+  p-efficiency: 0.72
+  p-friction: 0.6
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#2ada31d6-05b8-4bee-89d0-41daffc1d4e1
+  note: Verify real immutable authorization rather than label/commit chronology guesses. Exercise two distinct image IDs behind one source-SHA tag, failed load/inspection and uncertain paired restoration before release. Preserve first cause and failed-stage artifacts; require a checked guard before every dependent mutation. Native inert load/restoration is image custody, not application deployment. Document marker completion storage limits without claiming impossible durability or adding automatic retry. Reviewed source af17196f118e32ae9594ea1821db41df8408d169; candidate0/no spore; public publication held.
+- ts: 2026-10-15T14:14:59.307374630Z
+  session: codex:/root/pr354_terminal_rerun_verify
+  task: Seventh Services P1 exact complete Website deployment condition
+  p-efficiency: 0.72
+  p-friction: 0.6
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#ffc4d298-52d9-4268-a3ee-238d96241221
+  note: A substring can preserve a guard while adding a bypass branch. Test the actual owning checker on a mutated workflow before comparing the whole permitted condition. Preserve actual RED and qualified sources; inspect every guard before dependent mutation. Keep historical native passes distinct from a newly changed source and keep source publication separate from deployment. Candidate0/no spore; reviewed source a61bf8bfccbcb318573fca2d2069e080e3ebb5ed.
+- ts: 2026-10-15T16:07:23.100011501Z
+  session: codex:/root/pr354_terminal_rerun_verify
+  task: Two new Services P2 source/claim snapshot repairs and preserved limits
+  p-efficiency: 0.7
+  p-friction: 0.6
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#3038d56b-7ec8-4da6-82f5-646f61507e2d
+  note: Native event identity makes same-second relabels observable; final snapshots remain non-atomic. Verify real Caddy adapter output for both existing sites. Preserve each causal failure and use exact checked guards before dependent effects. Private qualification is separate from native approval, trusted publisher capability and deployment. Candidate0; no native SM event claimed; source 132777ca366c85dbc7d51571caf965cec1bb08d3.
+- ts: 2026-10-16T00:22:13.908576848Z
+  session: codex:/root/cms_paragraph_source_repair
+  task: Services current-catalog free MiMo review caller prerequisite
+  p-efficiency: 0.85
+  p-friction: 0.4
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#c906dece-4209-452b-8faf-39ff2304a3ce
+  note: Use the already accepted worker and its compatible compiled verifier; prove exact caller interface and preserve every unrelated gate/permission/secret reference. Recovered prior slice-specific holds require an explicit finite owner continuation, not a new implicit implementation scope. App publication credentials stay separate from anonymous OpenCode inference; fixed-slug predecessor attempts remain held. Nominal headroom is not elapsed reserve or hosted success. Source89cad808992029bb5c9f100dcb64acdb180ddf57; candidate0/no spore; portable reflection only.
+- ts: 2026-10-16T05:03:42.511803921Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-PR4-three-findings-0b71-isolated-v1
+  task: Services4 three native CodeRabbit deployment safety findings: exact action pins, bounded readiness, FreeBind
+  p-efficiency: 0.82
+  p-friction: 0.28
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#de81db49-dd5f-4fd2-8a83-c7a4f86bcd10
+  note: Verify official exact action release commits and peel annotated tags, reuse qualified repository toolchain inputs, and test actual generated socket configuration through Linux IP_FREEBIND with no listener or host mutation. Preserve the initial test-reader duplicate-option error, correct only the fixture, repeat its causal old-source RED, and retain all results. RED70acd2921cfe19ddf32fb299cd89dda8daaaf1a5; GREEN9ef019a2cdb57e79b0957fbc1b651fee70625ee0. Registered environment92, Website23, owner14 and owning contracts/syntax/actionlint pass; hosted action execution, latest-head review and deployment remain separate. Candidate0/no spore; portable reflection only; no native SM retry.
+- ts: 2026-10-16T06:01:40.283159097Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-PR4-three-findings-0b71-isolated-v1
+  task: Services PR98: bounded first-failure cleanup and immutable qualification readability
+  p-efficiency: 0.85
+  p-friction: 0.2
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#0b0345e5-bdb9-4d5e-b917-6eed0860b85f
+  note: The first-failure application stop now has a deadline of 120 seconds. The original source failed the missing-deadline assertion for both Axxium and Knoxx; the repaired full environment suite passed 93 tests. The lifecycle test also preserves failed-selection cleanup and proves another slot can acquire the real shared lock after an injected timeout. Readability clarifications for immutable qualification entries: the entry at 2026-10-15T09:07:51.189014195Z records that normal UI login returned 200 and the CMS shell screenshot passed, while the Spanish row tour failed; the entry at 2026-10-15T10:20:50.797778571Z records retained compiler output containing 549 regular JavaScript files; the entry at 2026-10-15T11:35:04.957350260Z records a final suite of 52 tests and three fresh native cases with complete fixture cleanup, while the separate older-object disposal failure and B/C hold remain recorded; the entry at 2026-10-16T05:03:42.511803921Z records 92 environment tests, 23 Website tests and 14 owner-decision tests passing on that entry's source, with hosted review and deployment still separate. These statements clarify those dated entries without rewriting their bytes, hashes or intentional identifiers, and supply no new execution credit. Current follow-up source remains local; upstream PR98 and its existing review invocation are separate. Portable reflection with candidate zero, no spore.
+- ts: 2026-10-16T06:17:30.122102164Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-admission-safety-over-ace96-isolated-v1
+  task: Repair three reviewed Services testing-admission gaps with native-shaped synthetic controls
+  p-efficiency: 0.88
+  p-friction: 0.16
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#a62860d3-2cd2-4375-b6bd-b929011dcf97
+  note: Bind admission to a still-active candidate lease using the same closed two-hour threshold as competitors; recheck expiry after collection. Compare complete unique file rows with native changed_files before ownership, retain renamed-path coverage, and verify direct-user or named-team repository write access. Preserve both causal RED captures and the new 104-test registered GREEN; earlier root 93 applies only to ace. Synthetic API responses supply no public admission, review or deployment credit. No spore.
+- ts: 2026-10-16T06:27:34.364784777Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-workflow-identity-ssh-over-87c018-isolated-v1
+  task: Bind Services controller source to native callee identity and bound deployment transport
+  p-efficiency: 0.88
+  p-friction: 0.16
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#662968a1-0be5-462e-ba76-d527c6fec21f
+  note: Serialize the native job with supported toJSON and strictly validate the callee repository, path, immutable SHA and ref before emitting one output for all controller checkouts; never substitute caller workflow identity. Preserve unchanged actionlint and use actual shell tests for SSH options, input, failure and key cleanup. Retain the 12-test 34-assertion RED and 112-test registered GREEN. Deploy has a 30-minute cap and SSH connect/liveness bounds. Native contexts and transport are synthetic; hosted identity, real SSH, review and deployment remain separate. No spore.
+- ts: 2026-10-16T07:03:11.755853062Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-policy-lease-evidence-over-9be-isolated-v1
+  task: Preserve earlier testing leases and reject negative promotion evidence
+  p-efficiency: 0.88
+  p-friction: 0.16
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#78b259c7-fa35-46e5-8a1a-793dbdf29a3a
+  note: Retain earliest valid unexpired claim; equal timestamps fail closed. Reject future competing timestamps before ordering and preserve the closed7200 boundary. Reject negative or malformed optional timeout/warning markers at all four evidence levels. Actual test-only RED16/62failures retained; initial full118/1 legacy expectation retained; corrected admitted collector fixture and final registered119 PASS plus contracts. Synthetic inputs, no public or deployment effects. No spore.
+- ts: 2026-10-16T07:12:59.587372758Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-catalog-slot-env-over-9be-isolated-v1
+  task: Validate the full catalog before intake and effective public slot settings
+  p-efficiency: 0.9
+  p-friction: 0.15
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#0881435c-38f9-479a-aaa2-329aa1f7a4ea
+  note: Inspect every saved tag/ID before effects, including unrelated source generations. Delegate dotenv semantics to bounded Compose config with a public-only model and stripped environment; preserve secret bytes and redact parser failure. Retain genuine121-test/31-assertion RED and own121-test GREEN. Local process/config qualification supplies no deployment or hosted review credit. Candidate0, no spore.
+- ts: 2026-10-16T07:25:01.264401818Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-PR4-three-findings-0b71-isolated-v1
+  task: Qualify all five Services follow-up repairs together
+  p-efficiency: 0.9
+  p-friction: 0.16
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#e9ccdaa3-5275-4aac-8f11-d3828b2c0c8e
+  note: Qualified all five follow-up Services findings through separate genuine RED/GREEN histories, independent full-source reviews and ordinary merges. Root docs now describe manual workflow_dispatch and immutable merged Knoxx SHA, separate testing/staging and earliest closed two-hour lease. Combined128 tests and contracts PASS. Public review, protected main adoption, current caller pin and application qualification remain separate; no deployment credit. Preserve both child provenance suffixes and all prior failures. Candidate0/no spore.
+- ts: 2026-10-16T08:09:43.335424163Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-three-CR-diagnostics-exact-needs-over367-v1
+  task: Qualify hostname diagnostics and exact Website prerequisite admission
+  p-efficiency: 0.93
+  p-friction: 0.12
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#4d1b1f0a-6e6c-4821-9fd4-a0bbed697826
+  note: Use process doubles to prove both HTTPS and HTTP failures identify the selected hostname without exposing response bodies. Exercise the actual graph checker with all6required orderings and missing/extra/duplicate/scalar needs. Preserve genuine test-only RED15assertions then fullenvironment130PASS/Website24PASS and contracts. TLS flags/budgets, redirect law and root-owned relay method unchanged. No hosted approval, runtime, model or deployment credit. Candidate0; no spore.
+- ts: 2026-10-16T08:23:50.133896320Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-socket-managed-ingress-over367-v1
+  task: Qualify combined Services ingress and diagnostic follow-up
+  p-efficiency: 0.85
+  p-friction: 0.3
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#4a765865-279c-498f-a216-274900901fa2
+  note: Verify review premises against actual systemd socket/service semantics and real pinned Caddy adaptation. Preserve meaningful RED separately from a missing-key fixture error; combine disjoint source fixes through ordinary history and run full133environment/24Website/5contracts before publication. Exact Website dependency set and hostname diagnostics close real gaps. Prior367approval does not transfer to the changed source; retain provider quota/cooldown and all deployment obligations. Portable candidate0/no spore.
