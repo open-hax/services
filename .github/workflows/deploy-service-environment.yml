@@ -22,10 +22,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       source_sha: ${{ steps.admission.outputs.source_sha }}
+      controller_sha: ${{ steps.controller.outputs.controller_sha }}
     steps:
       - name: Validate controller arguments
+        id: controller
         env:
           CONTROLLER_SHA: ${{ inputs.controller_sha }}
+          WORKFLOW_CONTEXT: ${{ toJSON(job) }}
           SERVICE: ${{ inputs.service }}
           ENVIRONMENT: ${{ inputs.environment }}
           PR_NUMBER: ${{ inputs.pull_request }}
@@ -37,10 +40,29 @@ jobs:
           [[ "$SERVICE" =~ ^(knoxx|axxium)$ ]]
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
           test "$SOURCE_REPOSITORY" = "open-hax/$SERVICE"
+          # Native job identity names this callee; github workflow identity names its caller.
+          python3 - <<'PY'
+          import json, os, re
+          try:
+              workflow = json.loads(os.environ['WORKFLOW_CONTEXT'])
+          except (KeyError, json.JSONDecodeError):
+              raise SystemExit('Missing or invalid native reusable workflow identity')
+          sha = workflow.get('workflow_sha') if isinstance(workflow, dict) else None
+          repository = 'open-hax/services'
+          path = '.github/workflows/deploy-service-environment.yml'
+          if (not isinstance(sha, str) or re.fullmatch(r'[0-9a-f]{40}', sha) is None
+                  or workflow.get('workflow_repository') != repository
+                  or workflow.get('workflow_file_path') != path
+                  or workflow.get('workflow_ref') != f'{repository}/{path}@{sha}'
+                  or os.environ['CONTROLLER_SHA'] != sha):
+              raise SystemExit('Missing or invalid native reusable workflow identity')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'controller_sha={sha}\n')
+          PY
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: open-hax/services
-          ref: ${{ inputs.controller_sha }}
+          ref: ${{ steps.controller.outputs.controller_sha }}
           persist-credentials: false
       - id: admission
         env:
@@ -59,7 +81,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: open-hax/services
-          ref: ${{ inputs.controller_sha }}
+          ref: ${{ needs.admit.outputs.controller_sha }}
           path: controller
           persist-credentials: false
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -103,6 +125,7 @@ jobs:
   deploy:
     needs: [admit, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: ${{ inputs.environment }}
     concurrency:
       group: promethean-${{ inputs.service }}-${{ inputs.environment }}
@@ -111,7 +134,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: open-hax/services
-          ref: ${{ inputs.controller_sha }}
+          ref: ${{ needs.admit.outputs.controller_sha }}
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -147,6 +170,7 @@ jobs:
           chmod 600 "$HOME/.ssh/environment_key"
           trap 'rm -f "$HOME/.ssh/environment_key"' EXIT
           ssh -i "$HOME/.ssh/environment_key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
             -o StrictHostKeyChecking=yes "$DEPLOY_TARGET" \
             "receive $ENVIRONMENT $SERVICE $SOURCE_SHA" < artifact/images.tar
       - name: Verify public HTTPS and readiness
