@@ -152,6 +152,13 @@ function translationSummary(payload, requiredModel) {
   };
 }
 
+/**
+ * Summarize a required-model OpenAI-compatible draft-tool response.
+ * Mark it well formed only for one assistant tool-call choice with exact
+ * save_publication_draft arguments and nonblank title/content. Require blank
+ * or absent assistant content, no nonblank thinking/reasoning strings and no
+ * own error field; return the individual contract flags.
+ */
 function agentToolCallSummary(payload, requiredModel) {
   const objectPayload = Boolean(payload && typeof payload === 'object' && !Array.isArray(payload));
   const model = objectPayload && typeof payload.model === 'string' ? payload.model : '';
