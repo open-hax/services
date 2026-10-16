@@ -198,3 +198,12 @@
   spore: none
   receipt-refs: receipts.edn#a62860d3-2cd2-4375-b6bd-b929011dcf97
   note: Bind admission to a still-active candidate lease using the same closed two-hour threshold as competitors; recheck expiry after collection. Compare complete unique file rows with native changed_files before ownership, retain renamed-path coverage, and verify direct-user or named-team repository write access. Preserve both causal RED captures and the new 104-test registered GREEN; earlier root 93 applies only to ace. Synthetic API responses supply no public admission, review or deployment credit. No spore.
+- ts: 2026-10-16T06:27:34.364784777Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-workflow-identity-ssh-over-87c018-isolated-v1
+  task: Bind Services controller source to native callee identity and bound deployment transport
+  p-efficiency: 0.88
+  p-friction: 0.16
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#662968a1-0be5-462e-ba76-d527c6fec21f
+  note: Serialize the native job with supported toJSON and strictly validate the callee repository, path, immutable SHA and ref before emitting one output for all controller checkouts; never substitute caller workflow identity. Preserve unchanged actionlint and use actual shell tests for SSH options, input, failure and key cleanup. Retain the 12-test 34-assertion RED and 112-test registered GREEN. Deploy has a 30-minute cap and SSH connect/liveness bounds. Native contexts and transport are synthetic; hosted identity, real SSH, review and deployment remain separate. No spore.
