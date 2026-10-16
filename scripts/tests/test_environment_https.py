@@ -1,10 +1,15 @@
 """Run the shipped verifier with an isolated curl process double; no network."""
 import json
 import os
+import configparser
+import errno
 from pathlib import Path
+import runpy
+import socket
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 VERIFY = Path(__file__).resolve().parents[2] / "digitalocean/scripts/verify-knoxx-nested-https.sh"
 CURL = r'''#!/usr/bin/env python3
@@ -69,6 +74,60 @@ class EnvironmentHttpsVerifierTests(unittest.TestCase):
         for label, row in cases:
             with self.subTest(label=label, response=row):
                 self.assertNotEqual(0, self.run_verifier({label + ".knoxx.promethean.rest": row})[0].returncode)
+
+
+class EnvironmentIngressSocketTests(unittest.TestCase):
+    def test_all_generated_relays_bind_before_their_address_exists(self):
+        """Exercise generated FreeBind through real Linux IP_FREEBIND, no listener.
+
+        Filesystem writes and systemctl/ufw are isolated doubles. A nonlocal
+        TEST-NET address models the absent bridge; no interface is configured.
+        """
+        installer = Path(__file__).resolve().parents[1] / "install-environment-ingress.py"
+        slots = (("testing-axxium", 19071, 18871), ("staging-axxium", 19072, 18872),
+                 ("testing-knoxx", 19082, 18881), ("staging-knoxx", 19083, 18882))
+        nonlocal_address = "198.51.100.254"
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as baseline:
+            with self.assertRaises(OSError) as refused:
+                baseline.bind((nonlocal_address, 0))
+            self.assertEqual(errno.EADDRNOTAVAIL, refused.exception.errno,
+                             "The causal fixture needs an actually absent local address")
+        with tempfile.TemporaryDirectory(prefix="environment ingress ") as directory:
+            root = Path(directory)
+
+            def isolated_path(path):
+                self.assertEqual("/etc/systemd/system", path)
+                return root
+
+            with patch("pathlib.Path", side_effect=isolated_path), \
+                    patch("subprocess.run") as commands, patch("builtins.print"):
+                runpy.run_path(str(installer), run_name="__owned_ingress_fixture__")
+            for name, listen, target in slots:
+                with self.subTest(slot=name):
+                    config = configparser.ConfigParser()
+                    config.read(root / f"promethean-{name}.socket")
+                    self.assertEqual(f"172.31.255.1:{listen}", config["Socket"]["ListenStream"])
+                    free_bind = config.getboolean("Socket", "FreeBind", fallback=False)
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as actual:
+                        if free_bind:
+                            actual.setsockopt(socket.SOL_IP, getattr(socket, "IP_FREEBIND", 15), 1)
+                        try:
+                            actual.bind((nonlocal_address, 0))
+                        except OSError as error:
+                            self.fail(f"{name}: generated FreeBind={free_bind} cannot bind before bridge setup: {error}")
+                    # systemd permits repeated IPAddressAllow= declarations.
+                    service = configparser.ConfigParser(strict=False)
+                    service.read(root / f"promethean-{name}.service")
+                    self.assertEqual(f"/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:{target}",
+                                     service["Service"]["ExecStart"])
+                    self.assertIn("IPAddressDeny=any", (root / f"promethean-{name}.service").read_text())
+            calls = [call.args[0] for call in commands.call_args_list]
+            self.assertEqual(["systemctl", "daemon-reload"], calls[0])
+            self.assertEqual(["systemctl", "enable", "--now"] +
+                             [f"promethean-{name}.socket" for name, _, _ in slots], calls[1])
+            self.assertEqual([["ufw", "allow", "from", "172.31.255.2", "to", "172.31.255.1",
+                              "port", str(port), "proto", "tcp", "comment", "Caddy environment ingress"]
+                             for _, port, _ in slots], calls[2:])
 
 
 if __name__ == "__main__":
