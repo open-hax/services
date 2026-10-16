@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -212,6 +213,131 @@ class EnvironmentBuildTest(unittest.TestCase):
         self.assertEqual([call["args"] for call in self.calls("npm")],
                          [["ci", "--ignore-scripts"], ["run", "typecheck"], ["test"], ["run", "build"]])
         self.assertEqual([call["args"][0] for call in self.calls("docker")], ["build", "save"])
+
+
+class EnvironmentPreparationTest(unittest.TestCase):
+    """Real Node preparer and Compose config parsing; no Docker daemon or network."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="environment preparation ")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.slots = self.root / "slots"
+        self.script = BUILDER.with_name("prepare-service-environments.mjs")
+        self.templates = BUILDER.parents[1] / "digitalocean/environments"
+        self.environment = {"PATH": os.environ["PATH"], "TMPDIR": str(self.root)}
+        result = self.prepare()
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def prepare(self, **environment):
+        return subprocess.run(["node", str(self.script), str(self.slots), str(self.templates)],
+                              env={**self.environment, **environment}, text=True,
+                              capture_output=True, timeout=20)
+
+    def env_file(self, phase="testing", service="knoxx"):
+        return self.slots / phase / service / ".env"
+
+    def assert_refused_unchanged(self, path, **environment):
+        before = path.read_bytes()
+        result = self.prepare(**environment)
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(before, path.read_bytes())
+        self.assertNotIn("PRIVATE-CONTROL-DO-NOT-PRINT", result.stdout + result.stderr)
+        return result
+
+    def test_generated_slots_recheck_without_rotating_secret_files(self):
+        paths = [path for path in self.slots.rglob("*") if path.is_file() and path.name != "compose.yaml"]
+        before = {str(path): path.read_bytes() for path in paths}
+        result = self.prepare()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(before, {str(path): path.read_bytes() for path in paths})
+
+    def test_comment_or_duplicate_cannot_mask_wrong_effective_public_origin(self):
+        for phase in ("testing", "staging"):
+            for service in ("knoxx", "axxium"):
+                for mode in ("comment", "duplicate", "comment-only"):
+                    with self.subTest(phase=phase, service=service, mode=mode):
+                        path = self.env_file(phase, service)
+                        original = path.read_text();key = service.upper() + "_PUBLIC_BASE_URL"
+                        expected = f"{key}=https://{phase}.{service}.promethean.rest\n"
+                        replacement = ("#" + expected if mode != "duplicate" else expected)
+                        if mode != "comment-only": replacement += key + "=https://wrong.invalid\n"
+                        path.write_text(original.replace(expected, replacement))
+                        self.assert_refused_unchanged(path)
+                        path.write_text(original)
+
+    def test_identity_and_listen_ports_are_slot_specific(self):
+        for phase in ("testing", "staging"):
+            for service, key in (("knoxx", "KNOXX_AXXIUM_ORIGIN"), ("knoxx", "KNOXX_LISTEN_PORT"),
+                                 ("axxium", "AXXIUM_LISTEN_PORT")):
+                with self.subTest(phase=phase, key=key):
+                    path = self.env_file(phase, service);original = path.read_text()
+                    path.write_text(original + key + "=wrong\n")
+                    self.assert_refused_unchanged(path)
+                    path.write_text(original)
+
+    def test_compose_quotes_comments_colons_and_interpolation_remain_supported(self):
+        path = self.env_file()
+        original = path.read_text()
+        text = original.replace("KNOXX_PUBLIC_BASE_URL=https://testing.knoxx.promethean.rest",
+            'KNOXX_PUBLIC_BASE_URL : "https://testing.knoxx.promethean.rest" # public')
+        text = text.replace("KNOXX_AXXIUM_ORIGIN=https://testing.axxium.promethean.rest",
+            "IDENTITY_HOST=testing.axxium.promethean.rest\nKNOXX_AXXIUM_ORIGIN=https://${IDENTITY_HOST}")
+        text = text.replace("KNOXX_LISTEN_PORT=18881", "KNOXX_LISTEN_PORT='18881'")
+        text += "UNRELATED_SECRET='PRIVATE-CONTROL-DO-NOT-PRINT\n${UNEXPANDED}# literal'\n"
+        path.write_text(text)
+        result = self.prepare(KNOXX_PUBLIC_BASE_URL="https://ambient.invalid")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(text.encode(), path.read_bytes())
+        self.assertNotIn("PRIVATE-CONTROL-DO-NOT-PRINT", result.stdout + result.stderr)
+
+    def test_ambient_values_cannot_hide_bad_file_and_malformed_syntax_is_safe(self):
+        path = self.env_file();original = path.read_text()
+        key = "KNOXX_AXXIUM_ORIGIN"
+        path.write_text(original + key + "=wrong\n")
+        self.assert_refused_unchanged(path, **{key: "https://testing.axxium.promethean.rest"})
+        path.write_text(original + "UNRELATED_SECRET='PRIVATE-CONTROL-DO-NOT-PRINT\n")
+        self.assert_refused_unchanged(path)
+
+    def test_unavailable_or_invalid_parser_is_a_redacted_refusal(self):
+        binary = self.root / "bin";binary.mkdir()
+        docker = binary / "docker"
+        for body in ("echo PRIVATE-CONTROL-DO-NOT-PRINT >&2; exit 71",
+                     "echo PRIVATE-CONTROL-DO-NOT-PRINT"):
+            with self.subTest(body=body):
+                docker.write_text("#!/bin/sh\n" + body + "\n");docker.chmod(0o700)
+                self.assert_refused_unchanged(self.env_file(), PATH=str(binary) + os.pathsep + self.environment["PATH"])
+
+    def test_parser_timeout_is_bounded_and_does_not_rewrite_secrets(self):
+        binary = self.root / "bin";binary.mkdir()
+        docker = binary / "docker"
+        docker.write_text("#!/usr/bin/python3\nimport time\ntime.sleep(30)\n");docker.chmod(0o700)
+        started = time.monotonic()
+        self.assert_refused_unchanged(self.env_file(), PATH=str(binary) + os.pathsep + self.environment["PATH"])
+        self.assertLess(time.monotonic() - started, 15)
+
+    def test_parser_receives_no_ambient_values_or_credentials(self):
+        binary = self.root / "bin";binary.mkdir()
+        docker = binary / "docker"
+        docker.write_text('''#!/usr/bin/python3
+import json,os,sys
+from pathlib import Path
+assert set(os.environ) <= {'PATH','LC_CTYPE'}
+assert sys.argv[1] == 'compose' and '--env-file' in sys.argv and '-f' in sys.argv
+assert sys.argv[sys.argv.index('-f')+1] == '-'
+assert sys.argv[-3:] == ['config','--format','json']
+path=Path(sys.argv[sys.argv.index('--env-file')+1]);phase,service=path.parts[-3:-1]
+values={service.upper()+'_PUBLIC_BASE_URL':f'https://{phase}.{service}.promethean.rest',service.upper()+'_LISTEN_PORT':str((18881 if service=='knoxx' else 18871)+(phase=='staging'))}
+if service=='knoxx':values['KNOXX_AXXIUM_ORIGIN']=f'https://{phase}.axxium.promethean.rest'
+model=json.load(sys.stdin);assert set(model['services']['slot']['environment'])==set(values)
+print(json.dumps({'services':{'slot':{'environment':values}}}))
+''');docker.chmod(0o700)
+        before = self.env_file().read_bytes()
+        result = self.prepare(PATH=str(binary) + os.pathsep + self.environment["PATH"],
+                              GH_TOKEN="PRIVATE-CONTROL-DO-NOT-PRINT", DOCKER_HOST="forbidden",
+                              KNOXX_PUBLIC_BASE_URL="https://ambient.invalid")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(before, self.env_file().read_bytes())
 
 
 if __name__ == "__main__":
