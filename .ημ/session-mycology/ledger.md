@@ -225,3 +225,12 @@
   spore: none
   receipt-refs: receipts.edn#0881435c-38f9-479a-aaa2-329aa1f7a4ea
   note: Inspect every saved tag/ID before effects, including unrelated source generations. Delegate dotenv semantics to bounded Compose config with a public-only model and stripped environment; preserve secret bytes and redact parser failure. Retain genuine121-test/31-assertion RED and own121-test GREEN. Local process/config qualification supplies no deployment or hosted review credit. Candidate0, no spore.
+- ts: 2026-10-16T07:25:01.264401818Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-PR4-three-findings-0b71-isolated-v1
+  task: Qualify all five Services follow-up repairs together
+  p-efficiency: 0.9
+  p-friction: 0.16
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#e9ccdaa3-5275-4aac-8f11-d3828b2c0c8e
+  note: Qualified all five follow-up Services findings through separate genuine RED/GREEN histories, independent full-source reviews and ordinary merges. Root docs now describe manual workflow_dispatch and immutable merged Knoxx SHA, separate testing/staging and earliest closed two-hour lease. Combined128 tests and contracts PASS. Public review, protected main adoption, current caller pin and application qualification remain separate; no deployment credit. Preserve both child provenance suffixes and all prior failures. Candidate0/no spore.
