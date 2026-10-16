@@ -261,3 +261,12 @@
   spore: none
   receipt-refs: receipts.edn#eb57d3a9-9850-4ee2-a598-f22701d446a9
   note: Verify current primary GitHub docs rather than cached environment-secret guidance; require one consumed named secret, keep callers unbound until actual repaired trusted SHA. Actual shell tests superseded the initial static-safe assumption: Bash exempts nonfinal AND-list failures from errexit, so empty key/knownhosts continued. Preserve first14/5 and expanded16/9 RED; empty target already refused and earns no RED credit. Use independent preflight commands, then actual full137PASS/5contracts/actionlint/6shellsyntax. Native environment name presence supplies metadata only, never secret values or host/SSH capability. Preserve failures and exact prefixes; no cloud/public/runtime effects. Candidate0/no spore.
+- ts: 2026-10-16T13:08:55.218597630Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-knoxx-probe-dimensions-over9d9-v1
+  task: Send exact configured embedding dimensions through the existing Services probe
+  p-efficiency: 0.80
+  p-friction: 0.24
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#46ff30e0-d4ae-4971-a286-da5c071babc7
+  note: At the actual HTTP boundary send the configured width, not merely assert returned vector length. Existing exact fake-fetch request assertion gives genuine missingdimensionsRED; one dimensions field restoresGREEN without model calls. Preserve pinned model/runtime, finite-width refusals and old9d9source. Keep sourcecompatibility separate from dual-model startup/residency/preactivation and stagingreadiness. Privateguard type and bytecount mistakes stopped before dependent effects; no successfultest/effect replay. Candidate0/noSpore.
