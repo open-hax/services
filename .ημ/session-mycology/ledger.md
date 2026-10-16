@@ -171,3 +171,12 @@
   spore: none
   receipt-refs: receipts.edn#c906dece-4209-452b-8faf-39ff2304a3ce
   note: Use the already accepted worker and its compatible compiled verifier; prove exact caller interface and preserve every unrelated gate/permission/secret reference. Recovered prior slice-specific holds require an explicit finite owner continuation, not a new implicit implementation scope. App publication credentials stay separate from anonymous OpenCode inference; fixed-slug predecessor attempts remain held. Nominal headroom is not elapsed reserve or hosted success. Source89cad808992029bb5c9f100dcb64acdb180ddf57; candidate0/no spore; portable reflection only.
+- ts: 2026-10-16T05:03:42.511803921Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-PR4-three-findings-0b71-isolated-v1
+  task: Services4 three native CodeRabbit deployment safety findings: exact action pins, bounded readiness, FreeBind
+  p-efficiency: 0.82
+  p-friction: 0.28
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#de81db49-dd5f-4fd2-8a83-c7a4f86bcd10
+  note: Verify official exact action release commits and peel annotated tags, reuse qualified repository toolchain inputs, and test actual generated socket configuration through Linux IP_FREEBIND with no listener or host mutation. Preserve the initial test-reader duplicate-option error, correct only the fixture, repeat its causal old-source RED, and retain all results. RED70acd2921cfe19ddf32fb299cd89dda8daaaf1a5; GREEN9ef019a2cdb57e79b0957fbc1b651fee70625ee0. Registered environment92, Website23, owner14 and owning contracts/syntax/actionlint pass; hosted action execution, latest-head review and deployment remain separate. Candidate0/no spore; portable reflection only; no native SM retry.
