@@ -4,6 +4,7 @@ import copy
 import contextlib
 import io
 import importlib.util
+import itertools
 import json
 import os
 from pathlib import Path
@@ -172,6 +173,34 @@ class WebsiteDeploymentTests(unittest.TestCase):
                     setattr(chain_guard, binding, original)
                 self.assertEqual(1, result, output.getvalue() + errors.getvalue())
                 self.assertIn(expected, errors.getvalue())
+
+    def test_real_chain_guard_requires_exact_website_dependencies(self):
+        required = ["deploy-caddy", "deploy-knoxx", "select-website"]
+        cases = [(list(order), True) for order in itertools.permutations(required)]
+        cases += [(needs, False) for needs in (
+            ["deploy-knoxx", "select-website"],
+            ["deploy-caddy", "deploy-knoxx"],
+            required + ["build-website"],
+            required + ["deploy-knoxx"],
+            "deploy-knoxx",
+        )]
+        for needs, accepted in cases:
+            with self.subTest(needs=needs), tempfile.TemporaryDirectory() as temporary:
+                altered = copy.deepcopy(self.chain)
+                altered["jobs"]["deploy-website"]["needs"] = needs
+                source = Path(temporary) / "workflow.yml"
+                source.write_text(yaml.safe_dump(altered))
+                original = chain_guard.WORKFLOW
+                output, errors = io.StringIO(), io.StringIO()
+                try:
+                    chain_guard.WORKFLOW = source
+                    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                        result = chain_guard.main()
+                finally:
+                    chain_guard.WORKFLOW = original
+                self.assertEqual(0 if accepted else 1, result, output.getvalue() + errors.getvalue())
+                if not accepted:
+                    self.assertIn("optional ingress can bypass production qualification", errors.getvalue())
 
     def test_unscoped_application_build_or_unlocked_phase_is_rejected(self):
         broken = copy.deepcopy(self.chain)

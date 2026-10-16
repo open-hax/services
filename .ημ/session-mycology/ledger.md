@@ -234,3 +234,12 @@
   spore: none
   receipt-refs: receipts.edn#e9ccdaa3-5275-4aac-8f11-d3828b2c0c8e
   note: Qualified all five follow-up Services findings through separate genuine RED/GREEN histories, independent full-source reviews and ordinary merges. Root docs now describe manual workflow_dispatch and immutable merged Knoxx SHA, separate testing/staging and earliest closed two-hour lease. Combined128 tests and contracts PASS. Public review, protected main adoption, current caller pin and application qualification remain separate; no deployment credit. Preserve both child provenance suffixes and all prior failures. Candidate0/no spore.
+- ts: 2026-10-16T08:09:43.335424163Z
+  session: /home/err/.local/share/openhax-codex/20261010/services98-three-CR-diagnostics-exact-needs-over367-v1
+  task: Qualify hostname diagnostics and exact Website prerequisite admission
+  p-efficiency: 0.93
+  p-friction: 0.12
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#4d1b1f0a-6e6c-4821-9fd4-a0bbed697826
+  note: Use process doubles to prove both HTTPS and HTTP failures identify the selected hostname without exposing response bodies. Exercise the actual graph checker with all6required orderings and missing/extra/duplicate/scalar needs. Preserve genuine test-only RED15assertions then fullenvironment130PASS/Website24PASS and contracts. TLS flags/budgets, redirect law and root-owned relay method unchanged. No hosted approval, runtime, model or deployment credit. Candidate0; no spore.

@@ -19,7 +19,8 @@ from urllib.parse import urlsplit
 a=sys.argv[1:];u=urlsplit(a[-1]);host=u.hostname
 with open(os.environ['CURL_CALLS'],'a') as f:f.write(json.dumps(a)+'\n')
 s=json.loads(os.environ['CURL_SCENARIO']);row=s.get(host,{})
-if row.get('exit'):raise SystemExit(row['exit'])
+exit_code=row.get(u.scheme+'_exit',row.get('exit',0))
+if exit_code:raise SystemExit(exit_code)
 if u.scheme=='https':
  Path(a[a.index('-o')+1]).write_text(row.get('body','application'))
  print(row.get('status',200),end='')
@@ -62,6 +63,26 @@ class EnvironmentHttpsVerifierTests(unittest.TestCase):
         scenario = {label + ".knoxx.promethean.rest": {"status": 503, "body": "Service not configured or unavailable."}
                     for label in ("testing", "staging")}
         self.assertEqual(0, self.run_verifier(scenario)[0].returncode)
+
+    def test_placeholder_body_failure_names_host_without_exposing_body(self):
+        for label in ("testing", "staging"):
+            host = label + ".knoxx.promethean.rest"
+            with self.subTest(host=host):
+                result, calls = self.run_verifier({host: {"status": 503, "body": "wrong placeholder"}})
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(host + ": unexpected 503 placeholder body", result.stderr)
+                self.assertNotIn("wrong placeholder", result.stderr)
+                self.assertEqual("https://" + host + "/", calls[-1][-1])
+
+    def test_https_and_http_transport_failures_name_current_host(self):
+        for label in ("testing", "stealth", "yoga", "staging"):
+            host = label + ".knoxx.promethean.rest"
+            for scheme, code in (("https", 60), ("http", 28)):
+                with self.subTest(host=host, scheme=scheme):
+                    result, calls = self.run_verifier({host: {scheme + "_exit": code}})
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertIn(host + ": " + scheme.upper() + " curl failed", result.stderr)
+                    self.assertEqual(scheme + "://" + host + "/", calls[-1][-1])
 
     def test_reject_wrong_placeholder_host_body_status_redirect_or_transport(self):
         cases = [(label, {"status": 503, "body": "Service not configured or unavailable."})
