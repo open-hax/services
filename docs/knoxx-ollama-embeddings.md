@@ -213,7 +213,8 @@ the backend health endpoint is green. Its Ollama probe:
 6. rejects prose, malformed or blank draft arguments, extra fields, multiple
    calls, or any returned reasoning;
 7. posts a real request to Ollama's OpenAI-compatible `/v1/embeddings` endpoint
-   and accepts only a nonempty vector of exactly 1024 finite numbers.
+   with the validated configured width (`dimensions: 1024`) and accepts only a
+   nonempty vector of exactly 1024 finite numbers.
 
 The later MCP `semantic_query` probe still exercises Knoxx and the in-process
 OpenPlanner data plane end to end. Neither check publishes content.
