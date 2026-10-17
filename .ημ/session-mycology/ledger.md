@@ -324,3 +324,12 @@
   spore: none
   receipt-refs: 065c2c37da435202e741c4684e64693df60e24aa,sha256:04550a80bdce5051c1f69bb8377c5e0dfd0106c36e00d9892f0b506b902d451f
   note: An accepted optional callable-interface prerequisite and its required-secret successor compose by preserving the entire reviewed successor workflow plus both complete raw historical ledger tails. Qualify actual registered tests on the merged source rather than transferring old results. Keep source composition, local QA, native reviews, finding dispositions and application activation as separate facts. No new spore; candidate0.
+- ts: 2026-10-17T08:37:48.259171650Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-M1-required-secret-over-accepted-M0-48c9-v1
+  task: Preserve accepted provenance prefix in the unmerged required-receiver successor
+  p-efficiency: 0.95
+  p-friction: 0.30
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: f2ff044fb0c6d270f7a028655a700882b84818d0,sha256:55b8b9f7fc290d374aad4697d72d91c894bd265a08d3b8dd274298470cdaabfa
+  note: Exact raw-tail conservation is weaker than preserving an already accepted target as the full prefix. For this still-unmerged integration, keep the whole accepted base first, then preserve both complete incoming and owned suffixes without parsing or deduplication; retain the original erroneous merge-view commits as history. Independent source/policy peer and actual owning16 tests qualify this finite correction. MiMo full-input approval missed the prefix issue and remains dated original-head evidence. No spore; candidate0.
