@@ -252,3 +252,12 @@
   spore: none
   receipt-refs: receipts.edn#4a765865-279c-498f-a216-274900901fa2
   note: Verify review premises against actual systemd socket/service semantics and real pinned Caddy adaptation. Preserve meaningful RED separately from a missing-key fixture error; combine disjoint source fixes through ordinary history and run full133environment/24Website/5contracts before publication. Exact Website dependency set and hostname diagnostics close real gaps. Prior367approval does not transfer to the changed source; retain provider quota/cooldown and all deployment obligations. Portable candidate0/no spore.
+- ts: 2026-10-17T06:13:05.308097352Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-optional-environment-secret-interface-over-bc4-v1
+  task: Optional named workflow-secret compatibility prerequisite without deployment activation
+  p-efficiency: 0.9
+  p-friction: 0.24
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: 334fbdaf3c079eeba7348a51f95f0fc913834aaa,sha256:e1727b923d219219d57b1b4e0c48eb71d18c7cae64faa9e52047b531a7426bf6
+  note: Use the exact current callable workflow in local actionlint fixtures to prove the real undeclared-name failure and optional-interface compatibility; preserve the entire old callee outside the declaration. Run the actual registered suite, retain genuine expected failure versus helper refusal separately, and keep source/provenance commits distinct. An optional-interface bridge enables source ordering but does not repair the old chained shell preflight, settle a future caller promise or authorize deployment. Keep existing owner state and complete ledger prefixes; new source still needs personal review/adoption and final required-secret safeguards. Candidate0/no spore.
