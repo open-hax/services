@@ -315,3 +315,12 @@
   spore: none
   receipt-refs: 334fbdaf3c079eeba7348a51f95f0fc913834aaa,sha256:e1727b923d219219d57b1b4e0c48eb71d18c7cae64faa9e52047b531a7426bf6
   note: Use the exact current callable workflow in local actionlint fixtures to prove the real undeclared-name failure and optional-interface compatibility; preserve the entire old callee outside the declaration. Run the actual registered suite, retain genuine expected failure versus helper refusal separately, and keep source/provenance commits distinct. An optional-interface bridge enables source ordering but does not repair the old chained shell preflight, settle a future caller promise or authorize deployment. Keep existing owner state and complete ledger prefixes; new source still needs personal review/adoption and final required-secret safeguards. Candidate0/no spore.
+- ts: 2026-10-17T08:06:58.090182530Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-M1-required-secret-over-accepted-M0-48c9-v1
+  task: Integrate accepted optional interface while preserving required receiver safeguards
+  p-efficiency: 0.95
+  p-friction: 0.15
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: 065c2c37da435202e741c4684e64693df60e24aa,sha256:04550a80bdce5051c1f69bb8377c5e0dfd0106c36e00d9892f0b506b902d451f
+  note: An accepted optional callable-interface prerequisite and its required-secret successor compose by preserving the entire reviewed successor workflow plus both complete raw historical ledger tails. Qualify actual registered tests on the merged source rather than transferring old results. Keep source composition, local QA, native reviews, finding dispositions and application activation as separate facts. No new spore; candidate0.
