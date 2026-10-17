@@ -306,3 +306,12 @@
   spore: none
   receipt-refs: receipts.edn#f310a63a-fe9a-4ca0-bcdd-c73d636a801b
   note: Native current86f warning75pct still lacks named denominator. Six coherent helper docs complete9named functions; stripped JSDoc preserves executable bytes, syntax/inert selftest/diff PASS. Comments-only expectedPASS/no syntheticRED; no claimed new analyzer metric or approval transfer. Same existing official owner; no lifecycle/estimate change. Preserve failed MiMo protocol traces separately from anonymous OpenCode provider health. Candidate0/noSpore; no nativeSM retry.
+- ts: 2026-10-17T06:13:05.308097352Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-optional-environment-secret-interface-over-bc4-v1
+  task: Optional named workflow-secret compatibility prerequisite without deployment activation
+  p-efficiency: 0.9
+  p-friction: 0.24
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: 334fbdaf3c079eeba7348a51f95f0fc913834aaa,sha256:e1727b923d219219d57b1b4e0c48eb71d18c7cae64faa9e52047b531a7426bf6
+  note: Use the exact current callable workflow in local actionlint fixtures to prove the real undeclared-name failure and optional-interface compatibility; preserve the entire old callee outside the declaration. Run the actual registered suite, retain genuine expected failure versus helper refusal separately, and keep source/provenance commits distinct. An optional-interface bridge enables source ordering but does not repair the old chained shell preflight, settle a future caller promise or authorize deployment. Keep existing owner state and complete ledger prefixes; new source still needs personal review/adoption and final required-secret safeguards. Candidate0/no spore.
