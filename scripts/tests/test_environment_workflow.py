@@ -49,10 +49,12 @@ raise SystemExit(int(os.environ['SSH_EXIT']))
 
 class EnvironmentWorkflowTest(unittest.TestCase):
     def setUp(self):
+        """Read the shipped workflow with scalar-preserving YAML decoding."""
         self.source = WORKFLOW.read_text()
         self.workflow = yaml.load(self.source, Loader=yaml.BaseLoader)
 
     def test_every_action_input_is_immutable_and_version_annotated(self):
+        """Require full immutable action revisions and version annotations."""
         actions = [line.strip() for line in self.source.splitlines()
                    if re.match(r"\s*(?:-\s*)?uses:", line)]
         self.assertTrue(actions, "Exercise the actual workflow action inputs")
@@ -60,13 +62,28 @@ class EnvironmentWorkflowTest(unittest.TestCase):
             with self.subTest(action=line):
                 self.assertRegex(line, r"^(?:-\s*)?uses: [\w.-]+/[\w.-]+@[0-9a-f]{40} # v\d+(?:\.\d+)*$")
 
+    def test_only_consumed_receiver_secret_is_declared_and_required(self):
+        """Require the consumed receiver secret and confine its use to deployment."""
+        consumed = set(re.findall(r"\$\{\{\s*secrets\.([A-Z][A-Z0-9_]*)\s*\}\}", self.source))
+        self.assertEqual({"PROMETHEAN_ENVIRONMENT_SSH_KEY"}, consumed)
+        declared = self.workflow["on"]["workflow_call"].get("secrets", {})
+        self.assertEqual(consumed, set(declared), "Every consumed receiver secret needs an explicit call contract")
+        for name in consumed:
+            self.assertEqual("true", declared[name].get("required"))
+        for name, job in self.workflow["jobs"].items():
+            with self.subTest(job=name):
+                uses = set(re.findall(r"\$\{\{\s*secrets\.([A-Z][A-Z0-9_]*)\s*\}\}", json.dumps(job)))
+                self.assertEqual(consumed if name == "deploy" else set(), uses)
+
     def test_clojure_cli_is_a_concrete_version(self):
+        """Require a concrete four-part Clojure CLI version."""
         steps = self.workflow["jobs"]["build"]["steps"]
         setup = next(step for step in steps
                      if step.get("uses", "").startswith("DeLaGuardo/setup-clojure@"))
         self.assertRegex(setup["with"]["cli"], r"^\d+\.\d+\.\d+\.\d+$")
 
     def run_controller(self, context=WORKFLOW_IDENTITY, controller=CONTROLLER_SHA, **overrides):
+        """Run the actual admission shell with inert context and retained output."""
         step = self.workflow["jobs"]["admit"]["steps"][0]
         with tempfile.TemporaryDirectory(prefix="environment controller ") as directory:
             root = Path(directory)
@@ -83,6 +100,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
             return result, output.read_text()
 
     def test_native_callee_identity_is_required_before_any_controller_checkout(self):
+        """Require validated callee identity before every controller checkout."""
         jobs = self.workflow["jobs"]
         first = jobs["admit"]["steps"][0]
         self.assertEqual("controller", first.get("id"))
@@ -98,6 +116,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                 self.assertEqual(expected, checkouts[0]["with"]["ref"])
 
     def test_matching_native_identity_emits_only_validated_immutable_sha(self):
+        """Accept matching immutable identities across both service environments."""
         for service in ("knoxx", "axxium"):
             for environment in ("testing", "staging"):
                 with self.subTest(service=service, environment=environment):
@@ -107,11 +126,13 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                     self.assertEqual("preserved=value\ncontroller_sha="+CONTROLLER_SHA+"\n", output)
 
     def test_independently_mismatched_caller_pin_refuses_without_output(self):
+        """Reject a mismatched caller pin without changing existing output."""
         result, output = self.run_controller(controller="b" * 40)
         self.assertNotEqual(0, result.returncode)
         self.assertEqual("preserved=value\n", output)
 
     def test_missing_malformed_or_wrong_native_identity_fails_closed(self):
+        """Reject malformed identities without exposing synthetic input values."""
         cases = [None, [], 42, "", "{sensitive-native-input",
                  {}, *[{k: v for k, v in WORKFLOW_IDENTITY.items() if k != field}
                        for field in WORKFLOW_IDENTITY]]
@@ -131,6 +152,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                 self.assertNotIn("sensitive-native-input", result.stdout+result.stderr)
 
     def test_native_binding_preserves_service_repository_and_pr_validation(self):
+        """Retain service, environment, repository and pull-request validation."""
         for invalid in ({"SERVICE": "other"}, {"ENVIRONMENT": "production"},
                 {"SOURCE_REPOSITORY": "other/knoxx"}, {"PR_NUMBER": "0"},
                 {"PR_NUMBER": "1; echo bad"}):
@@ -139,7 +161,9 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                 self.assertNotEqual(0, result.returncode)
                 self.assertEqual("preserved=value\n", output)
 
-    def run_deployment(self, service, environment, exit_code):
+    def run_deployment(self, service, environment, exit_code, key="synthetic private key",
+                       known_hosts="synthetic known hosts", target="synthetic@invalid"):
+        """Run the actual deployment shell through an inert SSH recorder."""
         step = next(s for s in self.workflow["jobs"]["deploy"]["steps"]
                     if s.get("name") == "Deploy through the restricted environment receiver")
         with tempfile.TemporaryDirectory(prefix="environment ssh ") as directory:
@@ -156,15 +180,54 @@ class EnvironmentWorkflowTest(unittest.TestCase):
             result = subprocess.run(["bash", "-euo", "pipefail", "-c", step["run"]],
                 cwd=root, env={"HOME": str(root), "PATH": str(binary)+os.pathsep+os.defpath,
                     "SERVICE": service, "ENVIRONMENT": environment, "SOURCE_SHA": "c"*40,
-                    "DEPLOY_SSH_KEY": "synthetic private key", "DEPLOY_KNOWN_HOSTS": "synthetic known hosts",
-                    "DEPLOY_TARGET": "synthetic@invalid", "SSH_CALLS": str(calls), "SSH_EXIT": str(exit_code)},
+                    "DEPLOY_SSH_KEY": key, "DEPLOY_KNOWN_HOSTS": known_hosts,
+                    "DEPLOY_TARGET": target, "SSH_CALLS": str(calls), "SSH_EXIT": str(exit_code)},
                 capture_output=True, text=True, timeout=10, check=False)
-            record = json.loads(calls.read_text())
+            record = json.loads(calls.read_text()) if calls.exists() else {}
+            record["ssh_called"] = calls.exists()
+            record["ssh_directory_created"] = (root/".ssh").exists()
             record["key_removed"] = not (root/".ssh/environment_key").exists()
             record["archive_sha256"] = hashlib.sha256(archive).hexdigest()
             return result, record
 
+    def test_empty_forwarded_key_refuses_before_ssh_or_key_materialization(self):
+        """Refuse an empty key before creating SSH files or calling the adapter."""
+        for service in ("knoxx", "axxium"):
+            for environment in ("testing", "staging"):
+                with self.subTest(service=service, environment=environment):
+                    result, record = self.run_deployment(service, environment, 0, key="")
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertFalse(record["ssh_called"])
+                    self.assertFalse(record["ssh_directory_created"])
+                    self.assertTrue(record["key_removed"])
+                    self.assertEqual("", result.stdout + result.stderr)
+
+    def test_empty_known_hosts_refuses_before_ssh_or_key_materialization(self):
+        """Refuse empty known hosts before creating SSH files or calling SSH."""
+        for service in ("knoxx", "axxium"):
+            for environment in ("testing", "staging"):
+                with self.subTest(service=service, environment=environment):
+                    result, record = self.run_deployment(service, environment, 0, known_hosts="")
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertFalse(record["ssh_called"])
+                    self.assertFalse(record["ssh_directory_created"])
+                    self.assertTrue(record["key_removed"])
+                    self.assertEqual("", result.stdout + result.stderr)
+
+    def test_empty_target_refuses_before_ssh_or_key_materialization(self):
+        """Refuse an empty target before creating SSH files or calling SSH."""
+        for service in ("knoxx", "axxium"):
+            for environment in ("testing", "staging"):
+                with self.subTest(service=service, environment=environment):
+                    result, record = self.run_deployment(service, environment, 0, target="")
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertFalse(record["ssh_called"])
+                    self.assertFalse(record["ssh_directory_created"])
+                    self.assertTrue(record["key_removed"])
+                    self.assertEqual("", result.stdout + result.stderr)
+
     def test_actual_ssh_transfer_has_liveness_bounds_and_retains_receiver_input(self):
+        """Verify bounded synthetic transfers, secure key files and archive input."""
         for service in ("knoxx", "axxium"):
             for environment in ("testing", "staging"):
                 with self.subTest(service=service, environment=environment):
@@ -185,6 +248,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                     self.assertTrue(record["key_removed"])
 
     def test_ssh_failure_propagates_and_removes_owned_key(self):
+        """Propagate synthetic SSH failures and remove the owned private key."""
         for service in ("knoxx", "axxium"):
             for environment in ("testing", "staging"):
                 with self.subTest(service=service, environment=environment):
@@ -194,9 +258,11 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                     self.assertTrue(record["key_removed"])
 
     def test_deploy_job_has_total_deadline_even_when_peer_answers_keepalives(self):
+        """Require a total deployment deadline despite peer keepalive responses."""
         self.assertEqual("30", self.workflow["jobs"]["deploy"].get("timeout-minutes"))
 
     def run_readiness(self, service, environment, exit_code=0):
+        """Run the actual readiness shell through an inert curl recorder."""
         step = next(step for step in self.workflow["jobs"]["deploy"]["steps"]
                     if step.get("name") == "Verify public HTTPS and readiness")
         with tempfile.TemporaryDirectory(prefix="environment readiness ") as directory:
@@ -217,6 +283,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
             return result, json.loads(calls.read_text())
 
     def test_both_service_slots_bound_connect_and_complete_request(self):
+        """Verify bounded HTTPS arguments and serialized slots for both services."""
         for service in ("knoxx", "axxium"):
             for environment in ("testing", "staging"):
                 with self.subTest(service=service, environment=environment):
@@ -239,6 +306,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                     self.assertEqual("false", self.workflow["jobs"]["deploy"]["concurrency"]["cancel-in-progress"])
 
     def test_readiness_timeout_exit_is_not_changed_to_success(self):
+        """Preserve the curl timeout failure instead of reporting success."""
         result, _ = self.run_readiness("knoxx", "staging", exit_code=28)
         self.assertEqual(28, result.returncode, result.stderr)
 

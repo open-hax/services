@@ -261,3 +261,75 @@
   spore: none
   receipt-refs: 334fbdaf3c079eeba7348a51f95f0fc913834aaa,sha256:e1727b923d219219d57b1b4e0c48eb71d18c7cae64faa9e52047b531a7426bf6
   note: Use the exact current callable workflow in local actionlint fixtures to prove the real undeclared-name failure and optional-interface compatibility; preserve the entire old callee outside the declaration. Run the actual registered suite, retain genuine expected failure versus helper refusal separately, and keep source/provenance commits distinct. An optional-interface bridge enables source ordering but does not repair the old chained shell preflight, settle a future caller promise or authorize deployment. Keep existing owner state and complete ledger prefixes; new source still needs personal review/adoption and final required-secret safeguards. Candidate0/no spore.
+- ts: 2026-10-16T09:39:08.078115044Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-environment-required-secret-over-bc4-v1
+  task: Qualify required environment secret forwarding and real fail-closed shell preflight
+  p-efficiency: 0.87
+  p-friction: 0.24
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#eb57d3a9-9850-4ee2-a598-f22701d446a9
+  note: Verify current primary GitHub docs rather than cached environment-secret guidance; require one consumed named secret, keep callers unbound until actual repaired trusted SHA. Actual shell tests superseded the initial static-safe assumption: Bash exempts nonfinal AND-list failures from errexit, so empty key/knownhosts continued. Preserve first14/5 and expanded16/9 RED; empty target already refused and earns no RED credit. Use independent preflight commands, then actual full137PASS/5contracts/actionlint/6shellsyntax. Native environment name presence supplies metadata only, never secret values or host/SSH capability. Preserve failures and exact prefixes; no cloud/public/runtime effects. Candidate0/no spore.
+- ts: 2026-10-16T13:08:55.218597630Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-knoxx-probe-dimensions-over9d9-v1
+  task: Send exact configured embedding dimensions through the existing Services probe
+  p-efficiency: 0.80
+  p-friction: 0.24
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#46ff30e0-d4ae-4971-a286-da5c071babc7
+  note: At the actual HTTP boundary send the configured width, not merely assert returned vector length. Existing exact fake-fetch request assertion gives genuine missingdimensionsRED; one dimensions field restoresGREEN without model calls. Preserve pinned model/runtime, finite-width refusals and old9d9source. Keep sourcecompatibility separate from dual-model startup/residency/preactivation and stagingreadiness. Privateguard type and bytecount mistakes stopped before dependent effects; no successfultest/effect replay. Candidate0/noSpore.
+- ts: 2026-10-16T14:36:10.164646207Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-knoxx-probe-dimensions-over9d9-v1
+  task: Retain accepted Services5 review and fix embedding request documentation
+  p-efficiency: 0.75
+  p-friction: 0.25
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: sha256:49f2bc7c264c81b72b5e8d46da0184444a1392cd3f45c182abecb7248f3fb3e6
+  note: Current native complete-input approval5549033967 is real; source8c77 docs correct dimensions request description, so old-head approval is retained historically and not transferred. Preserve two failed attempts and original live target-provider/readiness obligation. Actual REST and GraphQL login spellings differ but immutable Bot IDs/node IDs agree; no guessed identity alias or policy change. No spore/promotion.
+- ts: 2026-10-16T15:22:07.068736693Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-knoxx-probe-dimensions-over9d9-v1
+  task: Document the existing Ollama probe readiness and inert selftest refusal contracts
+  p-efficiency: 0.82
+  p-friction: 0.20
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#3ced3306-de42-4b17-816d-e2b5dbca4485
+  note: Verified first-round aggregate docstring note against actual touched functions; add only accurate JSDoc, not a coverage waiver. Whole current diff and accepted invocation/native body qualify old eb498 approval; do not transfer it to new docs source. Keep provider and external SDK dimensions questions as deployment obligations. Context artifact differs only in generated actor symbols and checksum; quantify static delta, preserve failed exact-byte premise, reuse immutable machinery rather than repeat leaf census. Explicit partial surrounding-source reads are distinct from complete changed-diff delivery. Anonymous current-catalog OpenCode MiMo remains credential-free; slug is dated. Candidate0/noSpore.
+- ts: 2026-10-16T16:45:56.744693002Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-knoxx-probe-dimensions-over9d9-v1
+  task: Document the existing Ollama draft-tool response predicates
+  p-efficiency: 0.88
+  p-friction: 0.12
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#5f8550ea-6e61-41dc-975d-b5409c3f1915
+  note: One precise helper JSDoc only; actual syntax, existing inert selftest and diff check PASS with unchanged executable bytes. ExpectedPASS/no syntheticRED. Native aggregate66.67pct denominator remains unconfirmed; no prediction, approval transfer or runtime claim. Existing official Services5 scope and foreign source preserved. Historical runtime before-effect HOLD separate. Candidate0/noSpore; no nativeSM retry.
+- ts: 2026-10-16T17:39:17.667161396Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-knoxx-probe-dimensions-over9d9-v1
+  task: Document every remaining named helper in the existing Ollama probe
+  p-efficiency: 0.9
+  p-friction: 0.16
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: receipts.edn#f310a63a-fe9a-4ca0-bcdd-c73d636a801b
+  note: Native current86f warning75pct still lacks named denominator. Six coherent helper docs complete9named functions; stripped JSDoc preserves executable bytes, syntax/inert selftest/diff PASS. Comments-only expectedPASS/no syntheticRED; no claimed new analyzer metric or approval transfer. Same existing official owner; no lifecycle/estimate change. Preserve failed MiMo protocol traces separately from anonymous OpenCode provider health. Candidate0/noSpore; no nativeSM retry.
+- ts: 2026-10-17T08:06:58.090182530Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-M1-required-secret-over-accepted-M0-48c9-v1
+  task: Integrate accepted optional interface while preserving required receiver safeguards
+  p-efficiency: 0.95
+  p-friction: 0.15
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: 065c2c37da435202e741c4684e64693df60e24aa,sha256:04550a80bdce5051c1f69bb8377c5e0dfd0106c36e00d9892f0b506b902d451f
+  note: An accepted optional callable-interface prerequisite and its required-secret successor compose by preserving the entire reviewed successor workflow plus both complete raw historical ledger tails. Qualify actual registered tests on the merged source rather than transferring old results. Keep source composition, local QA, native reviews, finding dispositions and application activation as separate facts. No new spore; candidate0.
+- ts: 2026-10-17T08:37:48.259171650Z
+  session: /home/err/.local/share/openhax-codex/20261010/services-M1-required-secret-over-accepted-M0-48c9-v1
+  task: Preserve accepted provenance prefix in the unmerged required-receiver successor
+  p-efficiency: 0.95
+  p-friction: 0.30
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: f2ff044fb0c6d270f7a028655a700882b84818d0,sha256:55b8b9f7fc290d374aad4697d72d91c894bd265a08d3b8dd274298470cdaabfa
+  note: Exact raw-tail conservation is weaker than preserving an already accepted target as the full prefix. For this still-unmerged integration, keep the whole accepted base first, then preserve both complete incoming and owned suffixes without parsing or deduplication; retain the original erroneous merge-view commits as history. Independent source/policy peer and actual owning16 tests qualify this finite correction. MiMo full-input approval missed the prefix issue and remains dated original-head evidence. No spore; candidate0.
