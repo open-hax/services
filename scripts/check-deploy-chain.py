@@ -546,6 +546,7 @@ def main() -> int:
         return 1
     health_run = health.get("run", "")
     required_health_budget = (
+        'if [ "$service" = proxx ]; then\n  # Reserve time for diagnostics and reporting after stalled probes.\n  health_budget_seconds=900\nfi',
         "attempts=5",
         "health_budget_seconds=900",
         "health_deadline=$((SECONDS + health_budget_seconds))",
