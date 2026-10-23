@@ -128,7 +128,7 @@ axxium.promethean.rest, *.axxium.promethean.rest {
 
 	@axxium_api {
 		host axxium.promethean.rest
-		path / /health /portal/* /api/auth/* /api/actors* /api/entities* /api/atproto/*
+		path / /health /portal/* /oidc/* /api/auth/* /api/actors* /api/entities* /api/atproto/*
 	}
 	handle @axxium_api {
 		reverse_proxy axxium:8787 {

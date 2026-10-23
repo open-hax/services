@@ -31,6 +31,8 @@ services:
       NODE_ENV: production
       AXXIUM_PORT: "8787"
       AXXIUM_HOST: 0.0.0.0
+      AXXIUM_OIDC_CONFIG_FILE: ${AXXIUM_OIDC_CONFIG_FILE:-}
+      AXXIUM_TRUST_PROXY: ${AXXIUM_TRUST_PROXY:-}
       AXXIUM_PUBLIC_BASE_URL: https://${AXXIUM_PUBLIC_HOST:?AXXIUM_PUBLIC_HOST must be set}
       DB_HOST: axxium-db
       DB_PORT: "5432"
@@ -46,6 +48,14 @@ services:
       AXXIUM_BOOTSTRAP_ADMIN_EMAIL: ${AXXIUM_BOOTSTRAP_ADMIN_EMAIL:?AXXIUM_BOOTSTRAP_ADMIN_EMAIL must be set}
     volumes:
       - ${AXXIUM_STATE_PATH}/google-client.json:/run/axxium/google-client.json:ro
+      # Disabled instances mount an existing empty device; Docker must never
+      # create a missing private file as a root-owned directory.
+      - type: bind
+        source: ${AXXIUM_OIDC_HOST_CONFIG_FILE:-/dev/null}
+        target: /run/axxium/oidc-authority.json
+        read_only: true
+        bind:
+          create_host_path: false
     ports:
       - "127.0.0.1:8787:8787"
     healthcheck:

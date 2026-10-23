@@ -197,6 +197,9 @@ jobs:
           PROXY_TOKEN_PEPPER: ${{ secrets.PROXY_TOKEN_PEPPER }}
           PROXX_SESSION_SECRET: ${{ secrets.PROXX_SESSION_SECRET }}
           PROXX_POSTGRES_PASSWORD: ${{ secrets.PROXX_POSTGRES_PASSWORD }}
+          AXXIUM_OIDC_CONFIG_FILE: ${{ vars.AXXIUM_OIDC_CONFIG_FILE }}
+          AXXIUM_OIDC_HOST_CONFIG_FILE: ${{ vars.AXXIUM_OIDC_HOST_CONFIG_FILE }}
+          AXXIUM_TRUST_PROXY: ${{ vars.AXXIUM_TRUST_PROXY }}
           AXXIUM_DB_PASSWORD: ${{ secrets.AXXIUM_DB_PASSWORD }}
           AXXIUM_JWT_SECRET: ${{ secrets.AXXIUM_JWT_SECRET }}
           AXXIUM_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.AXXIUM_BOOTSTRAP_ADMIN_EMAIL }}
@@ -265,9 +268,17 @@ jobs:
 
           # An unset secret renders as `NAME=''` — refuse rather than deploy a
           # blank credential into production.
-          if grep -nE "^[A-Z0-9_]+=''$" rendered.env; then
-            echo "::error::the above variables rendered empty; check the ${{ inputs.environment }} environment" >&2
-            exit 2
+          missing=0
+          while IFS= read -r key; do
+            case "$SERVICE:$key" in
+              axxium:AXXIUM_OIDC_CONFIG_FILE|axxium:AXXIUM_OIDC_HOST_CONFIG_FILE|axxium:AXXIUM_TRUST_PROXY) ;;
+              *) echo "::error::required variable ${key} rendered empty" >&2; missing=1 ;;
+            esac
+          done < <(sed -nE "s/^([A-Z0-9_]+)=''$/\1/p" rendered.env)
+          if [ "$missing" != 0 ]; then exit 2; fi
+          if [ "$SERVICE" = axxium ]; then
+            . "${SERVICE_DIR}/oidc-config-policy.sh"
+            require_axxium_oidc_mounts "${AXXIUM_OIDC_CONFIG_FILE:-}" "${AXXIUM_OIDC_HOST_CONFIG_FILE:-}" "$OPEN_HAX_STATE_PATH" "${AXXIUM_TRUST_PROXY:-}"
           fi
 
           # Templates single-quote every value so the file is parseable both by
@@ -473,6 +484,18 @@ jobs:
               echo "::error::Axxium requires a UID-1000, mode-600 Google client file at ${STATE_PATH}/google-client.json" >&2
               exit 2
             }
+          fi
+
+          if [ "$SERVICE" = axxium ]; then
+            oidc_file=$(sed -nE "s/^AXXIUM_OIDC_CONFIG_FILE='([^']*)'$/\1/p" rendered.env)
+            if [ -n "$oidc_file" ]; then
+              # STATE_PATH is a validated controller path, expanded locally.
+              # shellcheck disable=SC2029
+              ssh open-hax-target "test -f '${STATE_PATH}/oidc-authority.json' && test \"\$(stat -c %u:%a '${STATE_PATH}/oidc-authority.json')\" = 1000:600" || {
+                echo "::error::Axxium OIDC requires a UID-1000, mode-600 private authority file" >&2
+                exit 2
+              }
+            fi
           fi
 
           # Older Caddy deployments include extra machine-specific routes at
