@@ -36,7 +36,7 @@ running_image=$(docker inspect --format '{{.Config.Image}}' "$container")
   echo "proxx: running image differs from the selected release" >&2
   exit 1
 }
-docker compose --project-name proxx --env-file .env exec -T proxx   node --input-type=module <<'POLICY_PROBE'
+policy_probe=$(cat <<'POLICY_PROBE'
 import assert from 'node:assert/strict';
 const runtime = await import('./dist/cljs/proxx-runtime.js');
 const manifest = process.env.PROXX_CLJS_POLICY_MANIFEST || 'resources/policies/runtime/00-manifest.edn';
@@ -58,6 +58,9 @@ assert.equal(compiled.status, 'ok', 'model alias API failed');
 assert.equal(compiled.alias, 'gemma-4-31b-it', 'provider-specific alias contract missing');
 console.log('proxx: compiled credential-failure policy verified for Kimi Code, Zen, Requesty and OpenRouter');
 POLICY_PROBE
+)
+docker compose --project-name proxx --env-file .env exec -T proxx \
+  node --input-type=module -e "$policy_probe" </dev/null
 echo "proxx: running release image verified: $running_image"
 
 # 2. Register providers. With DATABASE_URL set, Proxx serves credentials from
