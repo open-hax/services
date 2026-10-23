@@ -59,7 +59,7 @@ assert.equal(compiled.alias, 'gemma-4-31b-it', 'provider-specific alias contract
 console.log('proxx: compiled credential-failure policy verified for Kimi Code, Zen, Requesty and OpenRouter');
 POLICY_PROBE
 )
-docker compose --project-name proxx --env-file .env exec -T proxx \
+timeout --kill-after=5s 60s docker compose --project-name proxx --env-file .env exec -T proxx \
   node --input-type=module -e "$policy_probe" </dev/null
 echo "proxx: running release image verified: $running_image"
 
