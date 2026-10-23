@@ -94,8 +94,35 @@ base, `base_tip`, head and diff bindings, complete path coverage, empty native
 stderr and verified process-group/workspace cleanup. The EDN declaration records
 their exact durations and result/native-stream hashes. These fixtures have
 `base_tip` equal to the unique merge base; divergent-history behavior is covered
-by deterministic regressions, not a new native scenario. R4 hosted end-to-end
-qualification remains pending.
+by deterministic regressions, not a new native scenario.
+
+Both R4 hosted pilots subsequently passed independent validation:
+
+| Repository and exact candidate | Hosted run | Native result |
+| --- | --- | --- |
+| [eta-mu `5e6af5489b42e494f3f83642a37ea4e1f98ad945`](https://github.com/open-hax/eta-mu/commit/5e6af5489b42e494f3f83642a37ea4e1f98ad945) | [39925909795](https://github.com/open-hax/eta-mu/actions/runs/39925909795), job `120322152492`, artifact `12489034409` | clean, 54 paths, 321.908806169 seconds |
+| [shx `1717d9a7173f676d7df959c08c33eabd71ce0b7b`](https://github.com/octave-commons/shx/commit/1717d9a7173f676d7df959c08c33eabd71ce0b7b) | [39926493415](https://github.com/octave-commons/shx/actions/runs/39926493415), job `120324119976`, artifact `12489847091` | clean, 4 paths, 181.372344673 seconds |
+
+Both used runtime R4, their declared A4/B4 workflow routes, the exact configured
+model and strict native mode. Independent current-law validation reported no
+errors, complete reviewed scope, genuine native structured output, empty stderr
+and successful process-group/job-root cleanup. Every Git path/blob, canonical
+unique merge base, `base_tip`, full-index forced-text diff, and prompt/stdin
+byte count and digest matched. The supplied base tips equal their merge bases;
+these hosted cases do not add a divergent-history native scenario.
+
+The downloaded artifact ZIP SHA-256 values match GitHub's native digests:
+eta-mu `b453b2fff43c9e7ae6bf4e1438ebfb508a2247b6323fb5080964c6e06b6a171f`;
+shx `c8fcb9084000291d3f0f2c1a89e43ab4e2aadfe5049c710b998739a5ee6726e6`.
+The EDN declaration retains exact source/base/workflow/runtime and artifact
+bindings, input/diff sizes and digests, and review/native-stream hashes. The
+verbatim local cache is
+`/home/err/.local/share/antigravity-review/qualification/20261023/R4`; Foresight's
+compact `.ημ/antigravity-review/hosted-qualification-R4-20261023.json` records
+the shared observation under [PR145](https://github.com/open-hax/foresight/pull/145).
+These two successful advisory executions supply no native GitHub approval or
+merge/deployment credit. Default-branch adoption remains unmerged, and negative
+runner-group enforcement remains UNKNOWN.
 
 The earlier A3 runtime `d79b80505e1fef9d3798175ce14261ebd0281b49` passed two
 actual native cases in the repaired service context with exactly
@@ -178,7 +205,7 @@ and successful write within the intended snapshot. Those inert results establish
 the namespace/mount seam only. The separate A3 native service cases above
 subsequently passed, after which the operator restarted both listeners for the
 successful A3 hosted pilots. Those historical results remain separate from the
-fresh R4 service cases and pending R4 hosted qualification.
+fresh R4 service cases and the two exact-head R4 hosted successes above.
 
 The reviewed [profile](../contracts/antigravity-review-worker/usr.local.libexec.antigravity-review.bwrap-0.9.0),
 [install script](../contracts/antigravity-review-worker/install.sh), and

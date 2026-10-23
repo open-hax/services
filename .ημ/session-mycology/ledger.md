@@ -291,3 +291,13 @@
   spore: none
   receipt-refs: "receipts.edn#sha256:67cb4dcb389186379b7f17b6f5936008c881b9812977acce92bd5e284abb0309"
   note: "Bind service evidence to its runtime revision; keep prior hosted successes historical when rotating only the runtime. Compare exact deployed templates and qualify new native cases before restoring readiness. Hosted R4 and negative enforcement remain separate obligations. No spore or promotion."
+
+- ts: "2026-10-23T08:53:53.442260315Z"
+  session: "/home/err/.local/share/foresight-worktrees/antigravity-members-20261023/services"
+  task: "Persist exact R4 hosted advisory qualification observations"
+  p-efficiency: 0.95
+  p-friction: 0.05
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: "receipts.edn#sha256:01220d590eadf48505859ccefa6faf4afe8d6e663d43ea2ea5217d379e38fd9c"
+  note: "Promote pending hosted evidence only after exact source/runtime/artifact bindings and current-law validation agree. Keep historical runtime proofs, native approval, default adoption and negative enforcement as distinct facts. No spore or promotion."

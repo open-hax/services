@@ -145,7 +145,58 @@
             :services-readiness {:variable "ANTIGRAVITY_REVIEW_WORKER_READY" :value "true"
                                  :all-caller-values-read-back 23
                                  :meaning :dispatch-availability-not-hosted-qualification}
-            :hosted-end-to-end-probe :pending-runtime-r4
+            :hosted-end-to-end-probe :passed-runtime-r4
+            :hosted-qualification
+            {:runtime-revision "9955ba838ff187beced4beb26f4c271941a956ec"
+             :runtime-tree "6be97a75dd8398dabc13194412f62eebe5770aa0"
+             :observed-at "2026-10-23T08:48:21.943374+00:00"
+             :evidence-kind :imported-cli-advisory :native-approval? false
+             :default-branch-adoption :unmerged
+             :local-evidence-cache "/home/err/.local/share/antigravity-review/qualification/20261023/R4"
+             :summary-sha256 "73685aff67b0a019e11210944f54afe2d270a5a3673a376a31f4d5b0361712a7"
+             :runs
+             [{:repository "open-hax/eta-mu" :pr 364
+               :source "https://github.com/open-hax/eta-mu/actions/runs/39925909795"
+               :run 39925909795 :attempt 1 :job 120322152492
+               :head "5e6af5489b42e494f3f83642a37ea4e1f98ad945"
+               :base_tip "7112c36440d180ca183d6a3f89661cee161fdae5"
+               :canonical-base "7112c36440d180ca183d6a3f89661cee161fdae5"
+               :workflow-revision "2f49ccc2378ef2bbe873e79fb3cd52508ebe32f2"
+               :artifact 12489034409 :zip-sha256 "b453b2fff43c9e7ae6bf4e1438ebfb508a2247b6323fb5080964c6e06b6a171f"
+               :conclusion :success :status :clean :findings 0
+               :native-duration-seconds 321.908806169 :reviewed-paths 54
+               :input-bytes 2444293 :diff-bytes 965631
+               :prompt-bytes 2447333 :stdin-bytes 3018842
+               :input-sha256 "3dd6c0ccbae574bec66512c91233d2d0e805d59b68d705b5a68407e9f8a894a3"
+               :diff-digest "5fe1fb2f2f75604be974ed52063ccbb12000ecf21a4a388a52f9cb69781444e8"
+               :review-sha256 "5f233e84819a39dfe566f59fed99d07477e074d06b73a0f87ea146ea6bb94308"
+               :native-stdout-sha256 "3bee49405663495ea4a013edbe96ebae23288c70e54d53413b2edd8a052d24cb"
+               :independent-current-law-errors [] :strict-native? true :scope-complete? true
+               :native-stderr-bytes 0 :process-group-cleanup? true
+               :job-cleanup? true :snapshot-and-job-root-removed? true}
+              {:repository "octave-commons/shx" :pr 4
+               :source "https://github.com/octave-commons/shx/actions/runs/39926493415"
+               :run 39926493415 :attempt 1 :job 120324119976
+               :head "1717d9a7173f676d7df959c08c33eabd71ce0b7b"
+               :base_tip "f4ee133dcf1650c7eafb623ef084f62417252477"
+               :canonical-base "f4ee133dcf1650c7eafb623ef084f62417252477"
+               :workflow-revision "93ea554332bcdafffc26688836b2e6a655575c94"
+               :artifact 12489847091 :zip-sha256 "c8fcb9084000291d3f0f2c1a89e43ab4e2aadfe5049c710b998739a5ee6726e6"
+               :conclusion :success :status :clean :findings 0
+               :native-duration-seconds 181.372344673 :reviewed-paths 4
+               :input-bytes 307353 :diff-bytes 17438
+               :prompt-bytes 310393 :stdin-bytes 324687
+               :input-sha256 "ead42e75b2815109aad138251f69b76c8354caad872e97585de1d58791bb2d56"
+               :diff-digest "9303b8f1b87c0b78d6b9a18bcfb3aa29629a86d4dc9e03b5a1d0b9c9ff1c7c8d"
+               :review-sha256 "ced615cd4a9dae24a338f22189db5a855563f99402564af494e13188c559f356"
+               :native-stdout-sha256 "73caca99fcb6ab8d322042442bec8ae5ad03410458616251457702971ae7dd71"
+               :independent-current-law-errors [] :strict-native? true :scope-complete? true
+               :native-stderr-bytes 0 :process-group-cleanup? true
+               :job-cleanup? true :snapshot-and-job-root-removed? true}]
+             :limits ["These two exact-head hosted runs qualify imported CLI advisory execution only; no native GitHub approval, merge or production credit."
+                      "Both supplied base tips equal their unique merge bases; divergent-history behavior retains its separate deterministic regression evidence."
+                      "All input/blob/diff/prompt/stdin bindings and full-index forced-text patches were independently verified under current R4 laws."
+                      "Negative access-control enforcement remains UNKNOWN without an explicit native denial; configuration and same-head scheduling skips do not prove enforcement."]}
             :prior-hosted-failure "https://github.com/open-hax/eta-mu/actions/runs/39919264609"
             :negative-group-enforcement :unknown
             :negative-canaries
