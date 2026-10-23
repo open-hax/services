@@ -36,10 +36,25 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     """Keep the isolated phase graph fail closed without authorizing new callers."""
     errors = []
     scope = entry["on"]["workflow_dispatch"]["inputs"].get("scope", {})
-    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website"]:
+    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx"]:
         errors.append("manual scope must retain stack as default and offer website")
     jobs = chain["jobs"]
-    for name in ("provision-host", "resolve-knoxx", "knoxx-preflight", "build-proxx"):
+    if chain["jobs"]["build-proxx"].get("if") != "inputs.scope == 'stack' || inputs.scope == 'proxx'":
+        errors.append("Proxx builds must be limited to stack and proxx scopes")
+    proxx_verify = chain["jobs"].get("verify-proxx-host", {})
+    proxx_deploy = chain["jobs"].get("deploy-proxx-only", {})
+    if (proxx_verify.get("if") != "inputs.scope == 'proxx'"
+        or proxx_verify.get("uses") != "./.github/workflows/digitalocean-host.yml"
+        or proxx_verify.get("with", {}).get("operation") != "verify"
+        or proxx_verify.get("with", {}).get("caller_holds_production_host_lock") != "true"):
+        errors.append("Proxx-only release must verify the existing host under the production lock")
+    if (proxx_deploy.get("if") != "inputs.scope == 'proxx'"
+        or proxx_deploy.get("needs") != ["verify-proxx-host", "build-proxx"]
+        or proxx_deploy.get("uses") != "./.github/workflows/deploy-digitalocean.yml"
+        or proxx_deploy.get("with", {}).get("service") != "proxx"
+        or proxx_deploy.get("with", {}).get("image") != "${{ needs.build-proxx.outputs.image }}@${{ needs.build-proxx.outputs.digest }}"):
+        errors.append("Proxx-only release must deploy the built digest after build and host verification")
+    for name in ("provision-host", "resolve-knoxx", "knoxx-preflight"):
         if jobs[name].get("if") != "inputs.scope == 'stack'":
             errors.append(f"website scope must skip {name}")
     if jobs["knoxx-preflight"].get("needs") != "resolve-knoxx" or jobs["knoxx-preflight"]["with"].get("source_ref") != "${{ needs.resolve-knoxx.outputs.source_sha }}":
@@ -278,7 +293,8 @@ def main() -> int:
         or bootstrap_host.get("if")
         != "steps.target.outputs.operation == 'bootstrap'"
         or host_callers
-        != [("deploy-stack-chain.yml", "provision-host", "true")]
+        != [("deploy-stack-chain.yml", "provision-host", "true"),
+            ("deploy-stack-chain.yml", "verify-proxx-host", "true")]
         or chain_callers != [("deploy-stack.yml", "deploy")]
         or resolve_environment.get("INPUT_HOST") != "${{ inputs.host || '' }}"
         or resolve_environment.get("INPUT_OPERATION")
@@ -336,6 +352,7 @@ def main() -> int:
         ("deploy-stack-chain.yml", "deploy-knoxx", "true"),
         ("deploy-stack-chain.yml", "deploy-caddy", "true"),
         ("deploy-stack-chain.yml", "deploy-proxx", "true"),
+        ("deploy-stack-chain.yml", "deploy-proxx-only", "true"),
         ("deploy-website-phases.yml", "stage", "true"),
         ("deploy-website-phases.yml", "production", "true"),
     ]

@@ -13,7 +13,7 @@ on:
         required: false
         default: stack
         type: choice
-        options: [stack, website]
+        options: [stack, website, proxx]
       proxx_ref:
         description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
@@ -65,6 +65,7 @@ jobs:
       - name: Admit the manual scope and immutable stack candidate
         id: decide
         env:
+          PROXX_SHA: ${{ inputs.proxx_ref }}
           KNOXX_SHA: ${{ inputs.knoxx_ref }}
           EVENT_NAME: ${{ github.event_name }}
           DEPLOY_SCOPE: ${{ inputs.scope || 'stack' }}
@@ -75,7 +76,7 @@ jobs:
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             case "$DEPLOY_SCOPE" in
-              stack|website) ;;
+              stack|website|proxx) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
             esac
             if [ -n "$WEBSITE_IMAGE" ] && [ "$DEPLOY_SCOPE" != website ]; then
@@ -89,6 +90,16 @@ jobs:
             if [ "$DEPLOY_SCOPE" = stack ] && ! [[ "${KNOXX_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
               echo '::error::Stack deployment requires an immutable Knoxx candidate.' >&2
               exit 2
+            fi
+            if [ "$DEPLOY_SCOPE" = proxx ]; then
+              if [ "$INCLUDE_WEBSITE" = true ]; then
+                echo '::error::Proxx scope cannot include the website.' >&2
+                exit 2
+              fi
+              if [ -n "$PROXX_SHA" ] && ! [[ "$PROXX_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+                echo '::error::Proxx scope requires an immutable source SHA.' >&2
+                exit 2
+              fi
             fi
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "Manual dispatch; deploying the requested refs."
@@ -114,7 +125,7 @@ jobs:
       scope: ${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'stack' }}
       # Pin the release source at the production entry point. A manual
       # dispatch may deliberately override this reviewed immutable default.
-      proxx_ref: ${{ inputs.proxx_ref || '88471efd7f8cd27f64fc733a1c31369f00a6d432' }}
+      proxx_ref: ${{ inputs.proxx_ref || '3ed25eec53a5bed6dc224f108323ea5d20420a22' }}
       knoxx_ref: ${{ inputs.knoxx_ref }}
       # Keep the production default in one place. Nested reusable workflows
       # require this input instead of carrying independent, drift-prone pins.
