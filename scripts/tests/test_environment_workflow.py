@@ -21,6 +21,7 @@ WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/deploy-servi
 CURL = """import json,os,sys
 from pathlib import Path
 Path(os.environ['CURL_CALLS']).write_text(json.dumps(sys.argv[1:]))
+print(os.environ.get('CURL_BODY','{\"ok\":true}'))
 raise SystemExit(int(os.environ['CURL_EXIT']))
 """
 CONTROLLER_SHA = "a" * 40
@@ -98,7 +99,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                 self.assertEqual(expected, checkouts[0]["with"]["ref"])
 
     def test_matching_native_identity_emits_only_validated_immutable_sha(self):
-        for service in ("knoxx", "axxium"):
+        for service in ("knoxx", "axxium", "proxx"):
             for environment in ("testing", "staging"):
                 with self.subTest(service=service, environment=environment):
                     result, output = self.run_controller(SERVICE=service,
@@ -165,7 +166,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
             return result, record
 
     def test_actual_ssh_transfer_has_liveness_bounds_and_retains_receiver_input(self):
-        for service in ("knoxx", "axxium"):
+        for service in ("knoxx", "axxium", "proxx"):
             for environment in ("testing", "staging"):
                 with self.subTest(service=service, environment=environment):
                     result, record = self.run_deployment(service, environment, 0)
@@ -185,7 +186,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                     self.assertTrue(record["key_removed"])
 
     def test_ssh_failure_propagates_and_removes_owned_key(self):
-        for service in ("knoxx", "axxium"):
+        for service in ("knoxx", "axxium", "proxx"):
             for environment in ("testing", "staging"):
                 with self.subTest(service=service, environment=environment):
                     result, record = self.run_deployment(service, environment, 255)
@@ -196,7 +197,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
     def test_deploy_job_has_total_deadline_even_when_peer_answers_keepalives(self):
         self.assertEqual("30", self.workflow["jobs"]["deploy"].get("timeout-minutes"))
 
-    def run_readiness(self, service, environment, exit_code=0):
+    def run_readiness(self, service, environment, exit_code=0, body='{"ok":true}'):
         step = next(step for step in self.workflow["jobs"]["deploy"]["steps"]
                     if step.get("name") == "Verify public HTTPS and readiness")
         with tempfile.TemporaryDirectory(prefix="environment readiness ") as directory:
@@ -211,13 +212,13 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                 ["bash", "-euo", "pipefail", "-c", step["run"]],
                 env={"HOME": str(root), "PATH": str(binary) + os.pathsep + os.defpath,
                      "SERVICE": service, "ENVIRONMENT": environment,
-                     "CURL_CALLS": str(calls), "CURL_EXIT": str(exit_code)},
+                     "CURL_CALLS": str(calls), "CURL_EXIT": str(exit_code), "CURL_BODY": body},
                 capture_output=True, text=True, timeout=10, check=False,
             )
             return result, json.loads(calls.read_text())
 
     def test_both_service_slots_bound_connect_and_complete_request(self):
-        for service in ("knoxx", "axxium"):
+        for service in ("knoxx", "axxium", "proxx"):
             for environment in ("testing", "staging"):
                 with self.subTest(service=service, environment=environment):
                     result, args = self.run_readiness(service, environment)
@@ -233,10 +234,16 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                     self.assertEqual("5", args[args.index("--retry-delay") + 1])
                     self.assertIn("--retry-all-errors", args)
                     self.assertIn("--fail", args)
-                    self.assertEqual(f"https://{environment}.{service}.promethean.rest/api/auth/config", args[-1])
+                    self.assertEqual(f"https://{environment}.{service}.promethean.rest" + ("/health" if service == "proxx" else "/api/auth/config"), args[-1])
                     self.assertEqual("promethean-${{ inputs.service }}-${{ inputs.environment }}",
                                      self.workflow["jobs"]["deploy"]["concurrency"]["group"])
                     self.assertEqual("false", self.workflow["jobs"]["deploy"]["concurrency"]["cancel-in-progress"])
+
+    def test_proxx_public_readiness_requires_json_true(self):
+        for body in ('{"ok":false}', '{"ok":"true"}', '{}', '<html>healthy placeholder</html>'):
+            with self.subTest(body=body):
+                result,_=self.run_readiness('proxx','testing',body=body)
+                self.assertNotEqual(0,result.returncode)
 
     def test_readiness_timeout_exit_is_not_changed_to_success(self):
         result, _ = self.run_readiness("knoxx", "staging", exit_code=28)

@@ -1,5 +1,7 @@
 from pathlib import Path
 import subprocess
+# Proxx host relays require a reviewed reserved-slot mapping before installation.
+# Do not infer free ports or forward the global production admin endpoint.
 root=Path('/etc/systemd/system')
 for name,listen,target in [('testing-axxium',19071,18871),('staging-axxium',19072,18872),('testing-knoxx',19082,18881),('staging-knoxx',19083,18882)]:
  unit=f'promethean-{name}'

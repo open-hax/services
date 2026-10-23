@@ -1,7 +1,9 @@
 # Per-service environments
 
 Public names are `<environment>.<service>.promethean.rest`. The initial services
-are `knoxx` and `axxium`; environments are `stealth`, `yoga`, `testing`, `staging`,
+are `knoxx` and `axxium`; the source controller also builds `proxx`, whose
+publication remains blocked pending declared slot reservations. See
+[shared login and relay admission gaps](shared-login-and-relays.md). Environments are `stealth`, `yoga`, `testing`, `staging`,
 and `production`. Stealth is 192.168.12.128; Yoga is 192.168.12.68. Public DNS points
 to Knoxx ingress, which forwards only the named application ports.
 

@@ -7,16 +7,21 @@ installed by the operator; candidate source never supplies a deployment script.
 import fcntl,json,os,re,shlex,subprocess,sys,tarfile,tempfile,time
 from pathlib import Path
 
+# Install this reviewed helper alongside receive.py.
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from service_environment_config import SERVICES, preflight
+
 ROOT=Path('/srv/open-hax/environments')
 MAX_ARCHIVE=4*1024**3
 IMAGE_ID=re.compile(r'sha256:[0-9a-f]{64}')
-OWNED_TAG=re.compile(r'promethean-(?:axxium|knoxx-backend|knoxx-frontend):[0-9a-f]{40}')
+OWNED_TAG=re.compile(r'promethean-(?:axxium|proxx|knoxx-backend|knoxx-frontend):[0-9a-f]{40}')
 REMOVAL_BARRIER='Removal in progress or uncertain; operator review required'
 
 class RetentionBlocked(ValueError):pass
 
 def image_names(service):
- return ['AXXIUM_IMAGE'] if service=='axxium' else ['KNOXX_BACKEND_IMAGE','KNOXX_FRONTEND_IMAGE']
+ if service not in SERVICES:raise ValueError('Unsupported service')
+ return {'axxium':['AXXIUM_IMAGE'],'proxx':['PROXX_IMAGE'],'knoxx':['KNOXX_BACKEND_IMAGE','KNOXX_FRONTEND_IMAGE']}[service]
 
 def sync_directory(path):
  descriptor=os.open(path,os.O_RDONLY|os.O_DIRECTORY)
@@ -85,8 +90,12 @@ def reference_inventory():
  """Read IDs/tags only: never inspect container configuration or slot secrets."""
  protected=set()
  for environment in ('testing','staging'):
-  for service in ('knoxx','axxium'):
+  for service in SERVICES:
    slot=ROOT/environment/service
+   if service=='proxx' and not slot.exists() and not slot.is_symlink():
+    if any(tag.startswith('promethean-proxx:') for tag in read_ownership()['owned_tags']):
+     raise RetentionBlocked('Owned Proxx slot inventory unavailable')
+    continue
    if slot.is_symlink() or not slot.is_dir():raise RetentionBlocked('Deployment slot inventory unavailable')
    active=slot/'release.env';rollback=slot/'rollback.env'
    if active.exists() or active.is_symlink():protected.update(selection_ids(active,service))
@@ -192,7 +201,11 @@ def retain_after_health(slot,previous,loaded):
   return {'status':'failed','retained':[],'removed':[],'refused':[{'tag':tag,'reason':'Retention state persistence failed; operator review required'} for tag in loaded]}
 
 def expected_tags(service,sha):
- return {f'promethean-axxium:{sha}'} if service=='axxium' else {f'promethean-knoxx-backend:{sha}',f'promethean-knoxx-frontend:{sha}'}
+ return set(ordered_tags(service,sha))
+
+def ordered_tags(service,sha):
+ if service not in SERVICES or not re.fullmatch('[0-9a-f]{40}',sha):raise ValueError('Unsupported service or revision')
+ return [f'promethean-{name}:{sha}' for name in ({'axxium':['axxium'],'proxx':['proxx'],'knoxx':['knoxx-backend','knoxx-frontend']}[service])]
 def validate_archive(path,service,sha):
  with tarfile.open(path,'r:') as archive:
   members=archive.getmembers()
@@ -274,7 +287,7 @@ def load_images(path,environment,service,sha):
    raise RetentionBlocked(journal['first_failure']+'; intake held for operator review: '+str(marker))
   journal['status']='verified';save()
   marker.unlink();sync_directory(ROOT)
-  ordered=[f'promethean-axxium:{sha}'] if service=='axxium' else [f'promethean-knoxx-backend:{sha}',f'promethean-knoxx-frontend:{sha}']
+  ordered=ordered_tags(service,sha)
   return {key:loaded[tag] for key,tag in zip(image_names(service),ordered)}
  except OSError as error:
   failure('Image intake state persistence failed: '+type(error).__name__)
@@ -289,7 +302,7 @@ def load_images(path,environment,service,sha):
 
 def main():
  environment,service=sys.argv[1:]
- if environment not in {'testing','staging'} or service not in {'knoxx','axxium'}:raise ValueError('Unsupported slot')
+ if environment not in {'testing','staging'} or service not in SERVICES:raise ValueError('Unsupported slot')
  command=shlex.split(os.environ.get('SSH_ORIGINAL_COMMAND',''))
  if len(command)!=4 or command[:3]!=['receive',environment,service] or not re.fullmatch('[0-9a-f]{40}',command[3]):
   raise ValueError('This key only accepts an image archive for its fixed deployment slot')
@@ -302,6 +315,7 @@ def main():
   # Refuse unknown/crash residue before loading images, changing a selection,
   # attempting health or considering cleanup. Recovery is an operator decision.
   previous=admitted_selection(slot,environment,service)
+  overlays=preflight(slot,service)
   with tempfile.TemporaryDirectory(prefix='incoming-',dir=ROOT) as scratch:
    image_file=Path(scratch)/'images.tar';total=0
    with image_file.open('wb') as output:
@@ -311,11 +325,12 @@ def main():
      output.write(chunk)
    validate_archive(image_file,service,sha)
    values=load_images(image_file,environment,service,sha)
-   images=[f'promethean-axxium:{sha}'] if service=='axxium' else [f'promethean-knoxx-backend:{sha}',f'promethean-knoxx-frontend:{sha}']
+   images=ordered_tags(service,sha)
    # Pin verified IDs only after the complete import transaction succeeds.
    release=slot/'release.env'
    atomic_write(release,''.join(f'{key}={value}\n' for key,value in values.items()))
    compose=['docker','compose','--project-name',f'{service}-{environment}','--env-file',str(slot/'.env'),'--env-file',str(release),'-f',str(slot/'compose.yaml')]
+   for overlay in overlays:compose+=['-f',overlay]
    try:
     subprocess.run(compose+['up','-d','--wait','--wait-timeout','180','--pull','never'],cwd=slot,check=True,timeout=240)
    except Exception:
@@ -324,7 +339,7 @@ def main():
      subprocess.run(compose+['up','-d','--wait','--wait-timeout','180','--pull','never'],cwd=slot,check=True,timeout=240)
     else:
      # Preserve database volumes and its state on a first failed application start.
-     try:subprocess.run(compose+['stop']+(['axxium'] if service=='axxium' else ['backend','frontend']),cwd=slot,check=True,timeout=120)
+     try:subprocess.run(compose+['stop']+({'axxium':['axxium'],'proxx':['proxx'],'knoxx':['backend','frontend']}[service]),cwd=slot,check=True,timeout=120)
      finally:
       # No healthy generation existed before this attempt. Do not let the
       # failed selection become a later deployment's purported rollback.

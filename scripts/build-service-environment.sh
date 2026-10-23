@@ -3,7 +3,7 @@
 set -euo pipefail
 service="$1"; source_sha="$2"; source_root="$3"; artifact_dir="$4"
 [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
-case "$service" in knoxx|axxium) ;; *) exit 2;; esac
+case "$service" in knoxx|axxium|proxx) ;; *) exit 2;; esac
 mkdir -p "$artifact_dir"
 test "$(git -C "$source_root" rev-parse HEAD)" = "$source_sha"
 controller_root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,6 +11,18 @@ if [ "$service" = axxium ]; then
   (cd "$source_root" && npm ci --ignore-scripts && npm run typecheck && npm test && npm run build)
   docker build -t "promethean-axxium:$source_sha" "$source_root"
   docker save "promethean-axxium:$source_sha" > "$artifact_dir/images.tar"
+elif [ "$service" = proxx ]; then
+  pnpm -C "$source_root" install --frozen-lockfile
+  pnpm -C "$source_root" typecheck
+  pnpm -C "$source_root" test
+  pnpm -C "$source_root" build:runtime
+  pnpm -C "$source_root" web:build
+  test -f "$source_root/dist/main.js"
+  test -f "$source_root/dist/cljs/proxx-runtime.js"
+  test -f "$source_root/web/dist/index.html"
+  docker build -f "$controller_root/digitalocean/environments/Dockerfile.proxx" \
+    -t "promethean-proxx:$source_sha" "$source_root"
+  docker save "promethean-proxx:$source_sha" > "$artifact_dir/images.tar"
 else
   workspace_root="$(dirname "$source_root")"
   pnpm -C "$workspace_root/openplanner" --filter @open-hax/openplanner-sdk... install --frozen-lockfile

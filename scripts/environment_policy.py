@@ -21,7 +21,7 @@ def timestamp(value: str) -> datetime:
 
 
 def hostname(environment: str, service: str) -> str:
-    if environment not in {"testing", "staging", "production", "stealth", "yoga"} or not SERVICE.fullmatch(service):
+    if environment not in {"testing", "staging", "production", "stealth", "yoga"} or service not in {"knoxx", "axxium", "proxx"}:
         raise ValueError("Unsupported environment or service")
     return f"{environment}.{service}.promethean.rest"
 

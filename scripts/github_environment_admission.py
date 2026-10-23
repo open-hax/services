@@ -142,7 +142,7 @@ def admit(repo,number,environment):
  return result
 if __name__=='__main__':
  repo,number,environment=sys.argv[1:]
- if repo not in {'open-hax/knoxx','open-hax/axxium'}:raise SystemExit('Service repository not enabled')
+ if repo not in {'open-hax/knoxx','open-hax/axxium','open-hax/proxx'}:raise SystemExit('Service repository not enabled')
  result=admit(repo,int(number),environment)
  print(json.dumps(result))
  if not result['admitted']:raise SystemExit(1)

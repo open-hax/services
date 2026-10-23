@@ -8,6 +8,7 @@ services:
       NODE_ENV: production
       AXXIUM_HOST: 0.0.0.0
       AXXIUM_PORT: 8787
+      AXXIUM_TRUST_PROXY: ${AXXIUM_TRUST_PROXY:-}
       AXXIUM_PUBLIC_BASE_URL: ${AXXIUM_PUBLIC_BASE_URL:?Set the public environment
         hostname}
       DB_HOST: database

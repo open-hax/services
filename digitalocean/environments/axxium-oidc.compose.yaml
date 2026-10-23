@@ -1,0 +1,12 @@
+# Optional, operator installed; selected only after receiver private-file preflight.
+services:
+  axxium:
+    environment:
+      AXXIUM_OIDC_CONFIG_FILE: /run/axxium/oidc-authority.json
+    volumes:
+      - type: bind
+        source: ./oidc-authority.json
+        target: /run/axxium/oidc-authority.json
+        read_only: true
+        bind:
+          create_host_path: false

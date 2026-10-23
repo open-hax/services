@@ -25,7 +25,9 @@ function validateExistingSlot(slot,expected){
 const [rootArg,templateArg]=process.argv.slice(2);
 if(!rootArg||!templateArg)throw Error('Usage: prepare-service-environments.mjs ROOT TEMPLATES');
 const root=resolve(rootArg),templates=resolve(templateArg);
-for(const [environment,index] of [['testing',0],['staging',1]])for(const service of ['knoxx','axxium']){
+for(const [environment,index] of [['testing',0],['staging',1]])for(const service of ['knoxx','axxium','proxx']){
+ // No Proxx slot has a reservation in accepted Services main. Never guess ports.
+ if(service==='proxx'){console.log(`Blocked ${environment}.proxx: declared slot mapping required.`);continue;}
  const slot=`${root}/${environment}/${service}`;mkdirSync(slot,{recursive:true,mode:0o700});
  const origin=`https://${environment}.${service}.promethean.rest`;
  const expected=service==='axxium'
@@ -33,6 +35,7 @@ for(const [environment,index] of [['testing',0],['staging',1]])for(const service
   :{KNOXX_PUBLIC_BASE_URL:origin,KNOXX_AXXIUM_ORIGIN:`https://${environment}.axxium.promethean.rest`,KNOXX_LISTEN_PORT:String(18881+index)};
  if(existsSync(`${slot}/.env`))validateExistingSlot(slot,expected);
  copyFileSync(`${templates}/${service}.compose.yaml`,`${slot}/compose.yaml`);
+ if(service==='axxium')copyFileSync(`${templates}/axxium-oidc.compose.yaml`,`${slot}/axxium-oidc.compose.yaml`);
  let values;
  if(service==='axxium'){
   values={...expected,DB_PASSWORD:randomBytes(32).toString('hex'),JWT_SECRET:randomBytes(48).toString('base64url'),SESSION_COOKIE_SECURE:'true'};

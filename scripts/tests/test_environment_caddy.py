@@ -218,5 +218,31 @@ class ManagedAxxiumCaddyTest(unittest.TestCase):
                     self.assertEqual([{"Cache-Control": ["no-store"]}], headers)
 
 
+class SharedLoginProductionRoutingTest(unittest.TestCase):
+    """Adapt the integration snippet with synthetic PR92-shaped owners, no listener."""
+    def test_only_shared_login_paths_reach_authority_and_pds_discovery_stays_pds(self):
+        binary=Path(os.environ['CADDY_TEST_BINARY']).resolve(strict=True)
+        snippet=(CONFIG.parent/'AxxiumSharedLogin.Caddyfile').read_text()
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'Caddyfile'
+            path.write_text(snippet + """
+axxium.promethean.rest {
+    import axxium_shared_login
+    handle {
+        reverse_proxy axxium-pds:3000
+    }
+}
+""")
+            result=subprocess.run([str(binary),'adapt','--config',str(path),'--adapter','caddyfile'],
+                                  env={'PATH':os.defpath,'HOME':directory},capture_output=True,text=True,check=True,timeout=10)
+            objects=list(ManagedAxxiumCaddyTest.objects(json.loads(result.stdout)))
+            paths=[item['path'] for item in objects if 'path' in item and isinstance(item['path'],list)]
+            self.assertEqual([['/oidc/*','/api/federation/relay-lease']],paths)
+            proxies=[item for item in objects if item.get('handler')=='reverse_proxy']
+            self.assertEqual([[{'dial':'axxium:8787'}],[{'dial':'axxium-pds:3000'}]],
+                             [item['upstreams'] for item in proxies])
+            self.assertNotIn('path /.well-known',snippet)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,8 @@
+# Explicit opt-in only. Empty defaults are deliberately absent: the application
+# treats presence of relay variables as activation, including empty strings.
+services:
+  proxx:
+    environment:
+      AXXIUM_RELAY_ISSUER: ${AXXIUM_RELAY_ISSUER:?Fixed shared issuer required}
+      AXXIUM_RELAY_AUDIENCE: ${AXXIUM_RELAY_AUDIENCE:?Exact broker origin required}
+      AXXIUM_RELAY_NODES: ${AXXIUM_RELAY_NODES:?Verified local node and subject pairs required}
