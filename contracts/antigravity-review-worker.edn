@@ -1,5 +1,5 @@
 {:contract/id :services/antigravity-review-worker
- :contract/version 2
+ :contract/version 3
  :contract/document "docs/antigravity-review-workers.md"
  :authorization {:source :explicit-session-user-direction
                  :purpose :local-advisory-review-worker
@@ -8,8 +8,8 @@
                  :production-digitalocean-lane? false
                  :production-deployment-authority? false}
  :runtime {:repository "open-hax/eta-mu"
-           :revision "d79b80505e1fef9d3798175ce14261ebd0281b49"
-           :path "/home/err/.local/share/antigravity-review/runtime-d79b80505e1fef9d3798175ce14261ebd0281b49"
+           :revision "9955ba838ff187beced4beb26f4c271941a956ec"
+           :path "/home/err/.local/share/antigravity-review/runtime-9955ba838ff187beced4beb26f4c271941a956ec"
            :require-clean-source? true
            :nbb "/home/err/.volta/tools/image/packages/nbb/bin/nbb"
            :model "gemini-3.8-flash-high"
@@ -24,7 +24,7 @@
             :open-hax-revision "2f49ccc2378ef2bbe873e79fb3cd52508ebe32f2"
             :octave-commons-revision "93ea554332bcdafffc26688836b2e6a655575c94"
             :shared-bytes-sha256 "9eab25fa2a8e2508d9eb14b268a41639afa0b562b8267f11c603643a75651c16"
-            :source {:runtime "https://github.com/open-hax/eta-mu/commit/d79b80505e1fef9d3798175ce14261ebd0281b49"
+            :source {:runtime "https://github.com/open-hax/eta-mu/commit/9955ba838ff187beced4beb26f4c271941a956ec"
                      :workflow "https://github.com/open-hax/eta-mu/commit/2f49ccc2378ef2bbe873e79fb3cd52508ebe32f2"
                      :mirror "https://github.com/octave-commons/muse/commit/93ea554332bcdafffc26688836b2e6a655575c94"
                      :provider-plan "https://github.com/open-hax/eta-mu/pull/364"
@@ -87,10 +87,12 @@
                :profile-source "contracts/antigravity-review-worker/usr.local.libexec.antigravity-review.bwrap-0.9.0"}
  :credentials {:authentication :explicitly-approved-existing-local-login
                :copy-login? false :inherited-github-token? false
+               :model-and-descendant-github-credentials? false
                :signing-and-deployment-secrets? false
                :registration-state :host-local-only
                :repository-secret-material? false}
  :evidence {:observed-on "2026-10-23"
+            :runtime-revision "9955ba838ff187beced4beb26f4c271941a956ec"
             :group-readback :verified
             :selected-repository-readback :verified
             :services :active-running-enabled
@@ -98,6 +100,31 @@
                                   :provenance :coordinator-service-context-probe}
             :native-service-smokes :passed
             :native-service-cases
+            {:clean {:status :clean :findings 0 :duration-seconds 28.380800615
+                     :base_tip "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
+                     :base "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
+                     :head "fa36a56fb106e068d8661abc6232fdc008371516"
+                     :diff-digest "a293093b7f47130b5dbcd93cf89adf97fbea941cfe7da157b363d78186e1d3ac"
+                     :review-sha256 "7b0726dbc932fb353ec7214a5252d44b20874cc3e1c4c370d899dd9790364feb"
+                     :native-stdout-sha256 "71051c72c6f3ba440eed200bdabfaccf7c7b2494043410d409e3d5c574977988"}
+             :defect {:status :findings :findings 1 :duration-seconds 31.541713518999998
+                      :base_tip "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
+                      :base "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
+                      :head "78ef5c894570b47c9a04896ef29db50091c6b532"
+                      :diff-digest "cd0d7c7ce9f3553c965bc4dbe0dd8b6936ac6aa602fbeacceb09f4d3530f8250"
+                      :path "increment.clj" :line 4 :confidence 0.99
+                      :review-sha256 "a7e8ec18940644ddf6ec97145a3b3171fc040d33f577d92f7c443b59ff390341"
+                      :native-stdout-sha256 "96d1884b64a04ff70ad35ddc125f80a84ce91a2984df55a54e9b9a9533f066d8"}}
+            :native-service-case-contract {:strict-mode? true :exact-model? true
+                                           :exact-input-and-diff-binding? true
+                                           :independent-current-law-errors []
+                                           :native-stderr-empty? true :workspace-cleanup? true
+                                           :owned-group-cleanup? true :env-i? true
+                                           :divergent-base-native-scenario? false}
+            :historical-a3-qualification
+            {:runtime-revision "d79b80505e1fef9d3798175ce14261ebd0281b49"
+             :native-service-smokes :passed
+             :native-service-cases
             {:clean {:status :clean :findings 0 :duration-seconds 33.85452516
                      :review-sha256 "8fef7b5d53a5af1200b77f2c65537790925b5d1a9ef0d843fecbc304d2b50816"
                      :native-stdout-sha256 "dd2a8ab9b341d53bebb315d9f2b43433aa25a6bbd2cae541e843bc5e5e368ef0"}
@@ -105,13 +132,20 @@
                       :path "increment.clj" :line 4 :confidence 0.95
                       :review-sha256 "9bd21428dc8089812905827a559f95ce31a1cd5495f213f1a8e466b7b66eeb3a"
                       :native-stdout-sha256 "65286df415aaa6ec7b2e54de343efe5eb4a808e0774e954675408b98664b2acb"}}
-            :native-service-case-contract {:strict-mode? true :exact-model? true
+             :native-service-case-contract {:strict-mode? true :exact-model? true
                                            :exact-input-and-diff-binding? true
                                            :native-stderr-empty? true :workspace-cleanup? true
                                            :owned-group-cleanup? true}
+             :hosted-end-to-end-probes
+             [{:repository "open-hax/eta-mu" :run 39922445083 :status :success
+               :source "https://github.com/open-hax/eta-mu/actions/runs/39922445083"}
+              {:repository "octave-commons/shx" :run 39922163209 :status :success
+               :source "https://github.com/octave-commons/shx/actions/runs/39922163209"}]
+             :qualifies-runtime-r4? false}
             :services-readiness {:variable "ANTIGRAVITY_REVIEW_WORKER_READY" :value "true"
+                                 :all-caller-values-read-back 23
                                  :meaning :dispatch-availability-not-hosted-qualification}
-            :hosted-end-to-end-probe :pending-after-host-policy-repair
+            :hosted-end-to-end-probe :pending-runtime-r4
             :prior-hosted-failure "https://github.com/open-hax/eta-mu/actions/runs/39919264609"
             :negative-group-enforcement :unknown
             :negative-canaries

@@ -28,7 +28,7 @@ export HOME=/home/err USER=err LOGNAME=err SHELL=/bin/bash LANG=C.UTF-8 LC_ALL=C
 export PATH=/home/err/.volta/tools/image/node/24.11.0/bin:/usr/bin:/bin
 export RUNNER_MANUALLY_TRAP_SIG=1
 
-[[ "$(git -C "$ANTIGRAVITY_REVIEW_RUNTIME" rev-parse HEAD)" == d79b80505e1fef9d3798175ce14261ebd0281b49 ]]
+[[ "$(git -C "$ANTIGRAVITY_REVIEW_RUNTIME" rev-parse HEAD)" == 9955ba838ff187beced4beb26f4c271941a956ec ]]
 [[ -z "$(git -C "$ANTIGRAVITY_REVIEW_RUNTIME" status --porcelain --untracked-files=all)" ]]
 for variable in ANTIGRAVITY_REVIEW_CLI_SHA256 ANTIGRAVITY_REVIEW_BWRAP_SHA256; do
   [[ "${!variable}" =~ ^[a-f0-9]{64}$ ]]

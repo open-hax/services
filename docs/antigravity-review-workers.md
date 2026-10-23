@@ -18,7 +18,7 @@ runner registration token, `.credentials`, signing key, or deployment secret.
 
 | Boundary | Approved immutable value |
 | --- | --- |
-| eta-mu runtime | `d79b80505e1fef9d3798175ce14261ebd0281b49` |
+| eta-mu runtime | `9955ba838ff187beced4beb26f4c271941a956ec` |
 | Open Hax reusable workflow | `open-hax/eta-mu/.github/workflows/antigravity-code-review.yml@2f49ccc2378ef2bbe873e79fb3cd52508ebe32f2` |
 | Octave Commons compatibility workflow | `octave-commons/muse/.github/workflows/antigravity-code-review.yml@93ea554332bcdafffc26688836b2e6a655575c94` |
 | Identical workflow bytes, SHA-256 | `9eab25fa2a8e2508d9eb14b268a41639afa0b562b8267f11c603643a75651c16` |
@@ -27,7 +27,7 @@ runner registration token, `.credentials`, signing key, or deployment secret.
 | Bubblewrap | `0.9.0`; SHA-256 `e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71` |
 | Actions runner archive | `2.338.1`; SHA-256 `08e9ccb3604d2462c24b5e33604dc30810296ca15cc65f23cffd4317eb144c37` |
 
-The immutable sources are the [runtime commit](https://github.com/open-hax/eta-mu/commit/d79b80505e1fef9d3798175ce14261ebd0281b49),
+The immutable sources are the [runtime commit](https://github.com/open-hax/eta-mu/commit/9955ba838ff187beced4beb26f4c271941a956ec),
 [workflow commit](https://github.com/open-hax/eta-mu/commit/2f49ccc2378ef2bbe873e79fb3cd52508ebe32f2),
 and [mirror commit](https://github.com/octave-commons/muse/commit/93ea554332bcdafffc26688836b2e6a655575c94),
 under [eta-mu PR364](https://github.com/open-hax/eta-mu/pull/364) and
@@ -66,7 +66,7 @@ membership alone does not authorize a new caller. The independently owned
 
 The operator root is `/home/err/.local/share/antigravity-review`. It contains:
 
-- `runtime-d79b80505e1fef9d3798175ce14261ebd0281b49`: the preinstalled clean
+- `runtime-9955ba838ff187beced4beb26f4c271941a956ec`: the preinstalled clean
   eta-mu runtime; its scripts never come from the candidate being reviewed.
 - `bin/agy-1.4.6`: the checksummed CLI.
 - `runner-open-hax` and `runner-octave-commons`: separate registrations and work
@@ -74,21 +74,42 @@ The operator root is `/home/err/.local/share/antigravity-review`. It contains:
 - `host/worker.env`: mode `0600`, containing only fixed paths and public digests.
 - `host/launch-worker.sh` and the two user service sources.
 
-Both services are currently **active/running and enabled**, installed under
-`/home/err/.config/systemd/user/`; user `err` has `Linger=yes`. Fresh readback
-followed the operator's restart after local qualification. Services'
-`ANTIGRAVITY_REVIEW_WORKER_READY` variable reads `true`; it permits dispatch and
-does not establish hosted inference or runner-group denial enforcement.
+Both services are **active/running and enabled** under
+`/home/err/.config/systemd/user/`; user `err` has `Linger=yes`. Rotation to runtime
+R4 `9955ba838ff187beced4beb26f4c271941a956ec` quiesced both listeners and disabled
+all 23 caller readiness variables before changing pins. After the R4 service
+qualification below, the coordinator restarted both listeners, verified both
+organization runners online, and restored/read back all 23 readiness values as
+`true` with group `antigravity-review`. Fresh group and selected-repository
+readback matched the declared pins and ID maps. Readiness permits dispatch;
+it does not establish hosted inference or runner-group denial enforcement.
 
-The repaired service context passed two actual native cases with exactly
+R4 passed two fresh actual native cases in matching transient user-service
+contexts with `env -i`, exactly `gemini-3.8-flash-high` and strict native mode:
+the clean case completed in **28.38 seconds** with zero findings, and the known
+defect completed in **31.54 seconds** with one finding at `increment.clj:4`,
+identifying `inc-one` adding 2 instead of 1 with confidence 0.99. Independent
+current-law validation reported no errors for either case. Both retained exact
+base, `base_tip`, head and diff bindings, complete path coverage, empty native
+stderr and verified process-group/workspace cleanup. The EDN declaration records
+their exact durations and result/native-stream hashes. These fixtures have
+`base_tip` equal to the unique merge base; divergent-history behavior is covered
+by deterministic regressions, not a new native scenario. R4 hosted end-to-end
+qualification remains pending.
+
+The earlier A3 runtime `d79b80505e1fef9d3798175ce14261ebd0281b49` passed two
+actual native cases in the repaired service context with exactly
 `gemini-3.8-flash-high` and strict native mode: a clean review in **33.85 seconds**
 returned zero findings, and a deliberate defect review in **32.39 seconds**
 identified `inc-one` adding 2 instead of 1 at `increment.clj:4` with confidence
 0.95. Both cases retained exact base/head/diff binding, complete path coverage,
 empty stderr and successful process-group/workspace cleanup. The reviewed
 result/native-stream SHA-256 values are preserved in the EDN declaration.
-These are actual local systemd-service cases, separate from GitHub-hosted
-end-to-end qualification, which remains pending. The prior
+These are historical A3 local systemd-service cases. A3 also completed the
+[eta-mu hosted pilot](https://github.com/open-hax/eta-mu/actions/runs/39922445083)
+and [shx hosted pilot](https://github.com/octave-commons/shx/actions/runs/39922163209)
+successfully. Those hosted outcomes remain bound to their original candidate
+heads and A3 runtime; they do not qualify the new R4 runtime. The prior
 [hosted failure](https://github.com/open-hax/eta-mu/actions/runs/39919264609)
 returned CLI exit 1 before init with zero stdout and remains historical evidence.
 
@@ -106,8 +127,9 @@ The official adapter reloads `.path`; the launcher refuses a differing snapshot
 at service startup. Existing authentication remains in the explicitly approved
 `/home/err` HOME. No authentication is copied into the repository or job output.
 Inference receives the runtime's separate environment allowlist and strict
-read-only settings overlay. GitHub write/signing/deployment credentials are not
-forwarded to the model. Local runner registration state stays on this host.
+read-only settings overlay. No GitHub credentials, including read-only tokens,
+reach the model or its descendants; signing and deployment credentials are also
+excluded. Local runner registration state stays on this host.
 
 Validate source files without starting listeners:
 
@@ -153,9 +175,10 @@ and existing authentication stays in its separately
 approved location. The service-context inert probe has established
 `/usr/bin/true` exit 0, attempted write outside the snapshot returning `EROFS`,
 and successful write within the intended snapshot. Those inert results establish
-the namespace/mount seam only. The separate native service cases above
-subsequently passed, after which the operator
-restarted both listeners. Hosted end-to-end qualification remains pending.
+the namespace/mount seam only. The separate A3 native service cases above
+subsequently passed, after which the operator restarted both listeners for the
+successful A3 hosted pilots. Those historical results remain separate from the
+fresh R4 service cases and pending R4 hosted qualification.
 
 The reviewed [profile](../contracts/antigravity-review-worker/usr.local.libexec.antigravity-review.bwrap-0.9.0),
 [install script](../contracts/antigravity-review-worker/install.sh), and

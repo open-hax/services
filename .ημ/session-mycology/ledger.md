@@ -281,3 +281,13 @@
   spore: none
   receipt-refs: "receipts.edn#sha256:bbd0791081a8e010737376bf73ca66bc22f0e0675332bba7d40e0ebe9aa9c26b"
   note: "Separate live service availability, locally qualified native cases, hosted workflow proof, and inconclusive negative enforcement. Preserve exact reviewed privileged source bytes and immutable runtime/workflow provenance. No spore or promotion."
+
+- ts: "2026-10-23T08:39:45.366618953Z"
+  session: "/home/err/.local/share/foresight-worktrees/antigravity-members-20261023/services"
+  task: "Rotate Services advisory worker deployment to independently qualified R4"
+  p-efficiency: 0.9
+  p-friction: 0.1
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: "receipts.edn#sha256:67cb4dcb389186379b7f17b6f5936008c881b9812977acce92bd5e284abb0309"
+  note: "Bind service evidence to its runtime revision; keep prior hosted successes historical when rotating only the runtime. Compare exact deployed templates and qualify new native cases before restoring readiness. Hosted R4 and negative enforcement remain separate obligations. No spore or promotion."
