@@ -311,3 +311,13 @@
   spore: none
   receipt-refs: "receipts.edn#sha256:debc31a8187d30c1cbeefff44584a2260ee1c40b8cdab66eda065797c88df3b6"
   note: "Separate immutable runtime publication from pending proof publication. Retain complete raw custody while compacting current evidence below unchanged input limits, and bind fresh service cases before restoring readiness. Historical R4 and pending hosted R5 remain separate facts. No spore or promotion."
+
+- ts: "2026-10-23T10:21:39.142007Z"
+  session: "/home/err/.local/share/foresight-worktrees/antigravity-members-20261023/services"
+  task: "Rotate Services to published R6 with native service proof and preserved refusal history"
+  p-efficiency: 0.9
+  p-friction: 0.1
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: "receipts.edn#sha256:567ee07bf08918cb337d5653372f64ad5bc659b3e4f300bb04370a58a899a83a"
+  note: "Separate successful native processes from admitted reviews. Bind each runtime rotation to fresh exact service evidence; preserve original refusal and incomplete provider outcomes. Optional progress-preview handling remains deterministic coverage until hosted observation. No spore or promotion."

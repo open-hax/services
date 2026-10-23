@@ -8,8 +8,8 @@
                  :production-digitalocean-lane? false
                  :production-deployment-authority? false}
  :runtime {:repository "open-hax/eta-mu"
-           :revision "8b6fe29ad0df2cb053050ea352082aef1f0a0fdb"
-           :path "/home/err/.local/share/antigravity-review/runtime-8b6fe29ad0df2cb053050ea352082aef1f0a0fdb"
+           :revision "5152dcce6e279a49b5a706ab3d3eaa4224df6cd3"
+           :path "/home/err/.local/share/antigravity-review/runtime-5152dcce6e279a49b5a706ab3d3eaa4224df6cd3"
            :require-clean-source? true
            :nbb "/home/err/.volta/tools/image/packages/nbb/bin/nbb"
            :model "gemini-3.8-flash-high"
@@ -24,7 +24,7 @@
             :open-hax-revision "2f49ccc2378ef2bbe873e79fb3cd52508ebe32f2"
             :octave-commons-revision "93ea554332bcdafffc26688836b2e6a655575c94"
             :shared-bytes-sha256 "9eab25fa2a8e2508d9eb14b268a41639afa0b562b8267f11c603643a75651c16"
-            :source {:runtime "https://github.com/open-hax/eta-mu/commit/8b6fe29ad0df2cb053050ea352082aef1f0a0fdb"
+            :source {:runtime "https://github.com/open-hax/eta-mu/commit/5152dcce6e279a49b5a706ab3d3eaa4224df6cd3"
                      :workflow "https://github.com/open-hax/eta-mu/commit/2f49ccc2378ef2bbe873e79fb3cd52508ebe32f2"
                      :mirror "https://github.com/octave-commons/muse/commit/93ea554332bcdafffc26688836b2e6a655575c94"
                      :provider-plan "https://github.com/open-hax/eta-mu/pull/364"
@@ -92,7 +92,7 @@
                :registration-state :host-local-only
                :repository-secret-material? false}
  :evidence {:observed-on "2026-10-23"
-            :runtime-revision "8b6fe29ad0df2cb053050ea352082aef1f0a0fdb"
+            :runtime-revision "5152dcce6e279a49b5a706ab3d3eaa4224df6cd3"
             :group-readback :verified
             :selected-repository-readback :verified
             :services :active-running-enabled
@@ -100,24 +100,24 @@
                                   :provenance :coordinator-service-context-probe}
             :native-service-smokes :passed
             :native-service-cases
-            {:clean {:status :clean :findings 0 :duration-seconds 26.191215022
+            {:clean {:status :clean :findings 0 :duration-seconds 24.088677621
                      :base_tip "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
                      :base "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
                      :head "fa36a56fb106e068d8661abc6232fdc008371516"
                      :diff-digest "a293093b7f47130b5dbcd93cf89adf97fbea941cfe7da157b363d78186e1d3ac"
                      :input-sha256 "1a0e075cbaedbd3d8c26f59d1a7c6eb0d3337ba058a90b1c82554028e9627ce9"
-                     :native-conversation "3a8ef440-69b4-489a-ab53-8dc06332ee3e"
-                     :review-sha256 "52a1931bda9a2c7eaa41ff77ef751f2bb436bcaf70931dd0b15d67fa31fb1a49"
-                     :native-stdout-sha256 "220b8cc7f9b3e00fc69679af5b65859e9aba9bb260a33fcf907f3e3dae565c76"}
-             :defect {:status :findings :findings 1 :duration-seconds 35.561254364
+                     :native-conversation "ed817167-30ab-4148-ab5b-cb3e41376cb8"
+                     :review-sha256 "ec3be2b3c10fc7b24bc7000e7036cbdf23df078afe8e6fddecee92a5d0744c54"
+                     :native-stdout-sha256 "062b30e36576d7177caa0c66f9c11b30bc636218628bbdaf75dc3d35c6cbbf3c"}
+             :defect {:status :findings :findings 1 :duration-seconds 46.065075283
                      :base_tip "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
                      :base "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
                      :head "78ef5c894570b47c9a04896ef29db50091c6b532"
                      :diff-digest "cd0d7c7ce9f3553c965bc4dbe0dd8b6936ac6aa602fbeacceb09f4d3530f8250"
                      :input-sha256 "3c870b22100d5732c767c8cdfa1c48cf33482d16fdb6ffac9df92c9358e41d9c"
-                     :native-conversation "f2876e04-9d76-4622-8907-3181f61ef4b5"
-                     :review-sha256 "9625b0c325e8af1b2d0b2a0f8f8994b64957fdb8a072c87b50e764b709c81ecc"
-                     :native-stdout-sha256 "c513bf503cde0b69a2759169b3377413be280c933b3feb60bf77172d4fed2147"
+                     :native-conversation "afa0a6dd-2bb5-49ab-b81c-5ee6c82ac5b2"
+                     :review-sha256 "373fb9397a26977c7f4ae5b41b82dbae787fdba5754baa305cfddb199a320e83"
+                     :native-stdout-sha256 "8815d8ec6f9182e3cdf2e395f29095c65c824e2cbca8f8713adb01a42d4d8e75"
                      :path "increment.clj" :line 4 :confidence 0.99}}
             :native-service-case-contract {:strict-mode? true :exact-model? true
                                            :exact-input-and-diff-binding? true
@@ -125,28 +125,101 @@
                                            :native-stderr-empty? true :workspace-cleanup? true
                                            :owned-group-cleanup? true :env-i? true
                                            :native-events 5 :native-turns 1 :fresh-conversations? true
-                                           :divergent-base-native-scenario? false}
+                                           :divergent-base-native-scenario? false
+                                           :optional-finish-wrapper-native-observed? false
+                                           :optional-finish-wrapper-deterministic-coverage? true}
             :native-service-qualification
-            {:source-tree "03ba8c8f8cdf669cad6505bc5efcd8394a41b360" :observed-at "2026-10-23T09:30:29.581297+00:00"
+            {:source-tree "e57b14f13e207f88def4cc9f5ebcf6b473585fbe" :observed-at "2026-10-23T10:06:17.663502+00:00"
              :descriptor-repository "open-hax/eta-mu"
-             :descriptor-path ".ημ/antigravity-review/service-qualification-R5.json"
-             :descriptor-sha256 "c5a668a89c2d4a61c1e356b760eab0d3351e74002492c7943f8cb6fe479e121c"
-             :descriptor-bytes 15552
-             :descriptor-source-revision "904ad0acd5d0c2ca634c5af68a8ee98619f2a3c7"
-             :descriptor-publication :pending-source-branch-push
-             :raw-custody {:operator-cache "/home/err/.local/share/antigravity-review/qualification/20261023/R5-service"
-                           :raw-files "raw/" :file-count 49
-                           :lossless-archive "service-qualification-R5.lossless.json"
-                           :lossless-bytes 104359
-                           :lossless-sha256 "e999a30fe1d9edfe4bfb0a115e0582659045038dd8cbc8aa66595a862595c442"
-                           :git-revision "321cb772c5b61d99d5ae1d63bb1a5f3adf71e450"
-                           :git-path ".ημ/antigravity-review/service-qualification-R5.json"
-                           :git-publication :pending-source-branch-push}
+             :descriptor-path ".ημ/antigravity-review/service-qualification-R6.json"
+             :descriptor-sha256 "a711b263e93a28d0401353fa20820cbce34979efb8b6c1cabfce5a4bbfdf708f"
+             :descriptor-bytes 7728
+             :descriptor-source-revision "38c3f66d4a25a83877f2133e2d2e337f823cf59f"
+             :descriptor-publication :verified-source-branch-push
+             :raw-custody {:operator-cache "/home/err/.local/share/antigravity-review/qualification/20261023/R6-service"
+                           :file-count 49 :raw-total-bytes 91361
+                           :raw-manifest-sha256 "9e54aa71f9a424dac09c2b263fdac976c7b93d4b5b11a81116d5679f40581647"
+                           :lossless-bytes 111795
+                           :lossless-sha256 "7be891e089ff87bf75f41f957ed52f90e571f3d70b9213b62310f23dc5a91875"
+                           :all-reconstructions-byte-exact? true}
              :evidence-kind :imported-cli-advisory :native-approval? false
-             :limits ["Fresh R5 service cases qualify native transport/current laws; cumulative-budget rejection remains separate deterministic-test evidence."
+             :limits ["Fresh R6 service cases qualify exact native transport/current laws; optional ACTIVE finish wrapper appears only in deterministic replay coverage, not these five-event calls."
                       "Both supplied base tips equal their unique merge bases; no new native divergent-history scenario is asserted."
-                      "Defect AGY was observed under antigravity-review-bwrap(unconfined) with NoNewPrivs1; the clean call had already completed."
-                      "R4 proof remains historical and unchanged; no native GitHub approval, merge or production deployment credit."]}
+                      "Defect AGY observed under antigravity-review-bwrap(unconfined) with NoNewPrivs1; clean call completed before descendant capture."
+                      "R5, R4 and A3 observations remain historical; no native GitHub approval, merge, deployment or access-control enforcement credit."]}
+            :historical-r5-hosted-failure
+            {:runtime-revision "8b6fe29ad0df2cb053050ea352082aef1f0a0fdb"
+             :candidate-head "609aa87a3ff2f8cece455ea2e435a008dca97669"
+             :workflow-revision "93ea554332bcdafffc26688836b2e6a655575c94"
+             :run "https://github.com/octave-commons/shx/actions/runs/39933620116"
+             :job-id 120347727240 :artifact-id 12493341260
+             :artifact-zip-sha256 "d772dfcc7553169581f76ace52069c0e5ce164d5f40792c7910f2162ec236620"
+             :conclusion :failure :admission :refused-native-effects :law-errors [:native-effects]
+             :native-process-status :success :native-process-exit 0 :native-duration-seconds 434.243635839
+             :native-turns 1 :native-events 6 :native-stderr-bytes 0 :cleanup? true
+             :no-admitted-review? true :native-approval? false :enforcement :unknown
+             :cause "Optional pure ACTIVE finish progress wrapper preceding the full DONE finish was outside the R5 closed event grammar; no other effectful tool was observed."
+             :advisory-triage "Native finding incorrectly distinguished empty-string and null numeric coercion: GitHub documents both as zero under loose equality. This bounded content assessment cannot override the transport refusal."
+             :triage-source "https://docs.github.com/en/actions/reference/workflows-and-actions/expressions"
+             :raw-custody {:operator-cache "/home/err/.local/share/antigravity-review/qualification/20261023/R5-hosted-shx-failure"
+                           :file-count 53 :raw-manifest-sha256 "e92d284ff995415349f5057945089c940e9d1ec57a63b548cba7e2605866093c"
+                           :lossless-bytes 721641 :lossless-sha256 "403e43836b31d136f4ec261305e0f52098f5e54717c7de12ca4494e5ece7c01d"}
+             :retroactive-pass? false}
+            :prior-source-mimo {:run "https://github.com/open-hax/eta-mu/actions/runs/39925909707"
+                                :conclusion :failure :canonical-submission? false
+                                :provider-error-recorded? false :approval? false}
+            :historical-r5-qualification
+            {:runtime-revision "8b6fe29ad0df2cb053050ea352082aef1f0a0fdb"
+             :qualifies-runtime-r6? false
+             :native-service-smokes :passed
+             :native-service-cases
+             {:clean {:status :clean :findings 0 :duration-seconds 26.191215022
+                      :base_tip "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
+                      :base "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
+                      :head "fa36a56fb106e068d8661abc6232fdc008371516"
+                      :diff-digest "a293093b7f47130b5dbcd93cf89adf97fbea941cfe7da157b363d78186e1d3ac"
+                      :input-sha256 "1a0e075cbaedbd3d8c26f59d1a7c6eb0d3337ba058a90b1c82554028e9627ce9"
+                      :native-conversation "3a8ef440-69b4-489a-ab53-8dc06332ee3e"
+                      :review-sha256 "52a1931bda9a2c7eaa41ff77ef751f2bb436bcaf70931dd0b15d67fa31fb1a49"
+                      :native-stdout-sha256 "220b8cc7f9b3e00fc69679af5b65859e9aba9bb260a33fcf907f3e3dae565c76"}
+              :defect {:status :findings :findings 1 :duration-seconds 35.561254364
+                      :base_tip "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
+                      :base "34322bfa842f32b081dd98e450d72c3d6b7a32c4"
+                      :head "78ef5c894570b47c9a04896ef29db50091c6b532"
+                      :diff-digest "cd0d7c7ce9f3553c965bc4dbe0dd8b6936ac6aa602fbeacceb09f4d3530f8250"
+                      :input-sha256 "3c870b22100d5732c767c8cdfa1c48cf33482d16fdb6ffac9df92c9358e41d9c"
+                      :native-conversation "f2876e04-9d76-4622-8907-3181f61ef4b5"
+                      :review-sha256 "9625b0c325e8af1b2d0b2a0f8f8994b64957fdb8a072c87b50e764b709c81ecc"
+                      :native-stdout-sha256 "c513bf503cde0b69a2759169b3377413be280c933b3feb60bf77172d4fed2147"
+                      :path "increment.clj" :line 4 :confidence 0.99}}
+             :native-service-case-contract {:strict-mode? true :exact-model? true
+                                            :exact-input-and-diff-binding? true
+                                            :independent-current-law-errors []
+                                            :native-stderr-empty? true :workspace-cleanup? true
+                                            :owned-group-cleanup? true :env-i? true
+                                            :native-events 5 :native-turns 1 :fresh-conversations? true
+                                            :divergent-base-native-scenario? false}
+             :native-service-qualification
+             {:source-tree "03ba8c8f8cdf669cad6505bc5efcd8394a41b360" :observed-at "2026-10-23T09:30:29.581297+00:00"
+              :descriptor-repository "open-hax/eta-mu"
+              :descriptor-path ".ημ/antigravity-review/service-qualification-R5.json"
+              :descriptor-sha256 "c5a668a89c2d4a61c1e356b760eab0d3351e74002492c7943f8cb6fe479e121c"
+              :descriptor-bytes 15552
+              :descriptor-source-revision "904ad0acd5d0c2ca634c5af68a8ee98619f2a3c7"
+              :descriptor-publication :pending-source-branch-push
+              :raw-custody {:operator-cache "/home/err/.local/share/antigravity-review/qualification/20261023/R5-service"
+                            :raw-files "raw/" :file-count 49
+                            :lossless-archive "service-qualification-R5.lossless.json"
+                            :lossless-bytes 104359
+                            :lossless-sha256 "e999a30fe1d9edfe4bfb0a115e0582659045038dd8cbc8aa66595a862595c442"
+                            :git-revision "321cb772c5b61d99d5ae1d63bb1a5f3adf71e450"
+                            :git-path ".ημ/antigravity-review/service-qualification-R5.json"
+                            :git-publication :pending-source-branch-push}
+              :evidence-kind :imported-cli-advisory :native-approval? false
+              :limits ["Fresh R5 service cases qualify native transport/current laws; cumulative-budget rejection remains separate deterministic-test evidence."
+                       "Both supplied base tips equal their unique merge bases; no new native divergent-history scenario is asserted."
+                       "Defect AGY was observed under antigravity-review-bwrap(unconfined) with NoNewPrivs1; the clean call had already completed."
+                       "R4 proof remains historical and unchanged; no native GitHub approval, merge or production deployment credit."]}}
             :historical-r4-qualification
             {:runtime-revision "9955ba838ff187beced4beb26f4c271941a956ec"
              :services :active-running-enabled
@@ -253,7 +326,7 @@
             :services-readiness {:variable "ANTIGRAVITY_REVIEW_WORKER_READY" :value "true"
                                  :all-caller-values-read-back 23
                                  :meaning :dispatch-availability-not-hosted-qualification}
-            :hosted-end-to-end-probe :pending-runtime-r5
+            :hosted-end-to-end-probe :pending-runtime-r6
             :prior-hosted-failure "https://github.com/open-hax/eta-mu/actions/runs/39919264609"
             :negative-group-enforcement :unknown
             :negative-canaries
