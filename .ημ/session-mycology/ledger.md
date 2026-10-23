@@ -301,3 +301,13 @@
   spore: none
   receipt-refs: "receipts.edn#sha256:01220d590eadf48505859ccefa6faf4afe8d6e663d43ea2ea5217d379e38fd9c"
   note: "Promote pending hosted evidence only after exact source/runtime/artifact bindings and current-law validation agree. Keep historical runtime proofs, native approval, default adoption and negative enforcement as distinct facts. No spore or promotion."
+
+- ts: "2026-10-23T09:38:25.165213906Z"
+  session: "/home/err/.local/share/foresight-worktrees/antigravity-members-20261023/services"
+  task: "Rotate Services deployment to public R5 and fresh native service qualification"
+  p-efficiency: 0.9
+  p-friction: 0.1
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: "receipts.edn#sha256:debc31a8187d30c1cbeefff44584a2260ee1c40b8cdab66eda065797c88df3b6"
+  note: "Separate immutable runtime publication from pending proof publication. Retain complete raw custody while compacting current evidence below unchanged input limits, and bind fresh service cases before restoring readiness. Historical R4 and pending hosted R5 remain separate facts. No spore or promotion."

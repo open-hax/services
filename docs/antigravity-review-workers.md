@@ -18,7 +18,7 @@ runner registration token, `.credentials`, signing key, or deployment secret.
 
 | Boundary | Approved immutable value |
 | --- | --- |
-| eta-mu runtime | `9955ba838ff187beced4beb26f4c271941a956ec` |
+| eta-mu runtime | `8b6fe29ad0df2cb053050ea352082aef1f0a0fdb` |
 | Open Hax reusable workflow | `open-hax/eta-mu/.github/workflows/antigravity-code-review.yml@2f49ccc2378ef2bbe873e79fb3cd52508ebe32f2` |
 | Octave Commons compatibility workflow | `octave-commons/muse/.github/workflows/antigravity-code-review.yml@93ea554332bcdafffc26688836b2e6a655575c94` |
 | Identical workflow bytes, SHA-256 | `9eab25fa2a8e2508d9eb14b268a41639afa0b562b8267f11c603643a75651c16` |
@@ -27,7 +27,7 @@ runner registration token, `.credentials`, signing key, or deployment secret.
 | Bubblewrap | `0.9.0`; SHA-256 `e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71` |
 | Actions runner archive | `2.338.1`; SHA-256 `08e9ccb3604d2462c24b5e33604dc30810296ca15cc65f23cffd4317eb144c37` |
 
-The immutable sources are the [runtime commit](https://github.com/open-hax/eta-mu/commit/9955ba838ff187beced4beb26f4c271941a956ec),
+The immutable sources are the [runtime commit](https://github.com/open-hax/eta-mu/commit/8b6fe29ad0df2cb053050ea352082aef1f0a0fdb),
 [workflow commit](https://github.com/open-hax/eta-mu/commit/2f49ccc2378ef2bbe873e79fb3cd52508ebe32f2),
 and [mirror commit](https://github.com/octave-commons/muse/commit/93ea554332bcdafffc26688836b2e6a655575c94),
 under [eta-mu PR364](https://github.com/open-hax/eta-mu/pull/364) and
@@ -66,7 +66,7 @@ membership alone does not authorize a new caller. The independently owned
 
 The operator root is `/home/err/.local/share/antigravity-review`. It contains:
 
-- `runtime-9955ba838ff187beced4beb26f4c271941a956ec`: the preinstalled clean
+- `runtime-8b6fe29ad0df2cb053050ea352082aef1f0a0fdb`: the preinstalled clean
   eta-mu runtime; its scripts never come from the candidate being reviewed.
 - `bin/agy-1.4.6`: the checksummed CLI.
 - `runner-open-hax` and `runner-octave-commons`: separate registrations and work
@@ -75,6 +75,47 @@ The operator root is `/home/err/.local/share/antigravity-review`. It contains:
 - `host/launch-worker.sh` and the two user service sources.
 
 Both services are **active/running and enabled** under
+`/home/err/.config/systemd/user/`, with `Linger=yes`. Both organization runners
+are online; all 23 caller readiness values read `true` with group
+`antigravity-review` after qualification and restart. The source pin selects
+R5 `8b6fe29ad0df2cb053050ea352082aef1f0a0fdb`, which adds early cumulative
+base/head blob-byte admission before loading later files. Its owning checks
+passed 39 runner tests, 6 pure tests with 71 assertions, 12 workflow tests and
+zero-error/zero-warning Kondo. The immutable R5 revision is publicly available
+through `codex/antigravity-runtime-r5`; that publication supplies source custody,
+not native approval. R5 hosted qualification remains pending.
+
+Two fresh R5 native service cases passed with strict native mode, exactly
+`gemini-3.8-flash-high`, five events and one turn each: clean in
+**26.191215022 seconds** with zero findings, and the known defect in
+**35.561254364 seconds** with one grounded `increment.clj:4` finding at confidence
+0.99. Independent current R5 laws returned no errors; full base/`base_tip`/head,
+blob/path and diff/prompt/stdin bindings, empty stderr and process-group/workspace
+cleanup were verified. Fresh conversation IDs distinguish these from R4 cases.
+The retained defect process was observed under `antigravity-review-bwrap`
+(`unconfined`) with `NoNewPrivs=1`; the clean call had already completed when that
+kernel evidence was collected. The exact service results and stream hashes are
+in the EDN declaration. Eta-mu's compact
+`.ημ/antigravity-review/service-qualification-R5.json` descriptor retains the
+complete qualification and all 49 original file hashes: 15,552 bytes, SHA-256
+`c5a668a89c2d4a61c1e356b760eab0d3351e74002492c7943f8cb6fe479e121c`.
+The descriptor is locally prepared in revision
+`904ad0acd5d0c2ca634c5af68a8ee98619f2a3c7`; its source-branch publication remains
+pending. Exact raw files
+and the original lossless archive remain in the durable operator cache
+`/home/err/.local/share/antigravity-review/qualification/20261023/R5-service`.
+The 104,359-byte lossless archive has SHA-256
+`e999a30fe1d9edfe4bfb0a115e0582659045038dd8cbc8aa66595a862595c442`
+and remains in local immutable Git revision
+`321cb772c5b61d99d5ae1d63bb1a5f3adf71e450` at the same repository path;
+its source-branch publication is also pending. This representation keeps the
+complete source review below the unchanged input ceiling without losing bytes.
+These fixtures have base tips equal to their merge bases. Early aggregate-budget
+refusal remains owning deterministic-test evidence. No R4 result is reused as R5
+qualification.
+
+Previously, runtime R4 `9955ba838ff187beced4beb26f4c271941a956ec` completed its service
+and hosted qualification. Both services were active/running and enabled under
 `/home/err/.config/systemd/user/`; user `err` has `Linger=yes`. Rotation to runtime
 R4 `9955ba838ff187beced4beb26f4c271941a956ec` quiesced both listeners and disabled
 all 23 caller readiness variables before changing pins. After the R4 service
@@ -96,7 +137,7 @@ their exact durations and result/native-stream hashes. These fixtures have
 `base_tip` equal to the unique merge base; divergent-history behavior is covered
 by deterministic regressions, not a new native scenario.
 
-Both R4 hosted pilots subsequently passed independent validation:
+Both historical R4 hosted pilots subsequently passed independent validation:
 
 | Repository and exact candidate | Hosted run | Native result |
 | --- | --- | --- |
@@ -136,7 +177,7 @@ These are historical A3 local systemd-service cases. A3 also completed the
 [eta-mu hosted pilot](https://github.com/open-hax/eta-mu/actions/runs/39922445083)
 and [shx hosted pilot](https://github.com/octave-commons/shx/actions/runs/39922163209)
 successfully. Those hosted outcomes remain bound to their original candidate
-heads and A3 runtime; they do not qualify the new R4 runtime. The prior
+heads and A3 runtime; they do not qualify R4 or R5. The prior
 [hosted failure](https://github.com/open-hax/eta-mu/actions/runs/39919264609)
 returned CLI exit 1 before init with zero stdout and remains historical evidence.
 
@@ -205,7 +246,8 @@ and successful write within the intended snapshot. Those inert results establish
 the namespace/mount seam only. The separate A3 native service cases above
 subsequently passed, after which the operator restarted both listeners for the
 successful A3 hosted pilots. Those historical results remain separate from the
-fresh R4 service cases and the two exact-head R4 hosted successes above.
+historical R4 service cases and the two exact-head R4 hosted successes above;
+R5 requires its own qualification.
 
 The reviewed [profile](../contracts/antigravity-review-worker/usr.local.libexec.antigravity-review.bwrap-0.9.0),
 [install script](../contracts/antigravity-review-worker/install.sh), and
