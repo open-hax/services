@@ -88,3 +88,20 @@ No live `.env`, token, private key, OAuth credential, or host-specific secret
 file belongs here. Commit only variable names, schemas, pinned public host keys,
 and scripts that read secrets from protected GitHub environments or root-owned
 host files at runtime.
+
+## Proxx-only production release
+
+Run **Deploy Stack** on the reviewed Services revision with `scope: proxx`.
+The default Proxx source is pinned to `3ed25eec53a5bed6dc224f108323ea5d20420a22`
+([proxx#455](https://github.com/open-hax/proxx/pull/455)). This includes quota
+and spend-limit cooldowns, provider-specific model aliases in catalogue filtering,
+and explicit account re-enable clearing an old cooldown. An override must be a
+full immutable source SHA. No Knoxx candidate is required for this scope.
+
+The existing production-host lock covers image build, host verification,
+digest-pinned deployment, provider provisioning and the real inference health
+gate. The gate inspects the running container image and probes the compiled
+credential-failure classifier for all four providers without changing accounts. This scope verifies the existing host and leaves Knoxx and ingress alone.
+Provider credentials remain in the protected production environment and Proxx
+SQL store. Local Stealth policy files and credentials are not copied to production.
+A production provider error is a failed health gate, not evidence of a release.

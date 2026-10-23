@@ -857,6 +857,10 @@ jobs:
             attempts=5
             health_budget_seconds=900
           fi
+          if [ "$service" = proxx ]; then
+            # Reserve time for diagnostics and reporting after stalled probes.
+            health_budget_seconds=900
+          fi
           health_deadline=0
           if [ "$health_budget_seconds" -gt 0 ]; then
             health_deadline=$((SECONDS + health_budget_seconds))

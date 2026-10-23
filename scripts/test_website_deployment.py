@@ -96,6 +96,33 @@ class WebsiteDeploymentTests(unittest.TestCase):
                 else:
                     self.assertEqual("should_deploy=true", output.read_text().strip())
 
+    def test_proxx_scope_admits_only_immutable_sources_without_knoxx(self):
+        command = self.entry["jobs"]["authorize"]["steps"][0]["run"]
+        for source, website, expected in (("", "false", 0), ("a" * 40, "false", 0),
+                                           ("main", "false", 2), ("a" * 39, "false", 2),
+                                           ("g" * 40, "false", 2), ("a" * 40, "true", 2)):
+            with self.subTest(source=source, website=website), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary) / "outputs"
+                result = subprocess.run(["bash", "-c", command], cwd=ROOT,
+                    env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": "proxx",
+                         "INCLUDE_WEBSITE": website, "WEBSITE_IMAGE": "", "KNOXX_SHA": "",
+                         "PROXX_SHA": source, "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
+                self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(expected == 0, output.exists())
+
+    def test_proxx_scope_guard_rejects_digest_and_host_verification_bypasses(self):
+        for job, field, value in (("deploy-proxx-only", "needs", ["build-proxx"]),
+                                   ("deploy-proxx-only", "if", "always()"),
+                                   ("verify-proxx-host", "if", "always()")):
+            broken = copy.deepcopy(self.chain)
+            broken["jobs"][job][field] = value
+            self.assertTrue(chain_guard.website_path_errors(self.entry, broken, self.phases))
+        for job, field, value in (("deploy-proxx-only", "image", "ghcr.io/open-hax/proxx:main"),
+                                   ("verify-proxx-host", "operation", "bootstrap")):
+            broken = copy.deepcopy(self.chain)
+            broken["jobs"][job]["with"][field] = value
+            self.assertTrue(chain_guard.website_path_errors(self.entry, broken, self.phases))
+
     def test_manual_stack_candidate_is_immutable_without_widening_website_scope(self):
         """Run the actual entry script: denied candidates emit no deployment coordinates."""
         self.assertEqual({"workflow_dispatch"}, set(self.entry["on"]))
