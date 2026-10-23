@@ -16,7 +16,7 @@ on:
         required: true
     secrets:
       PROMETHEAN_ENVIRONMENT_SSH_KEY:
-        description: Restricted receiver key from the selected testing or staging environment.
+        description: Restricted receiver key from the selected protected environment.
         required: false
 permissions:
   contents: read
@@ -40,10 +40,11 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$ENVIRONMENT" =~ ^(testing|staging)$ ]]
+          [[ "$ENVIRONMENT" =~ ^(testing|staging|production|stealth|yoga)$ ]]
           [[ "$SERVICE" =~ ^(knoxx|axxium|proxx)$ ]]
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
           test "$SOURCE_REPOSITORY" = "open-hax/$SERVICE"
+          if [[ "$ENVIRONMENT" =~ ^(stealth|yoga)$ ]]; then test "$SERVICE" = proxx; fi
           # Native job identity names this callee; github workflow identity names its caller.
           python3 - <<'PY'
           import json, os, re
@@ -74,6 +75,7 @@ jobs:
           SOURCE_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ inputs.pull_request }}
           ENVIRONMENT: ${{ inputs.environment }}
+          ADMITTED_CONTROLLER_SHA: ${{ steps.controller.outputs.controller_sha }}
         run: python3 scripts/github_environment_admission.py "$SOURCE_REPOSITORY" "$PR_NUMBER" "$ENVIRONMENT"
   build:
     needs: admit
@@ -152,11 +154,17 @@ jobs:
           PR_NUMBER: ${{ inputs.pull_request }}
           ENVIRONMENT: ${{ inputs.environment }}
           BUILT_SHA: ${{ needs.admit.outputs.source_sha }}
+          ADMITTED_CONTROLLER_SHA: ${{ needs.admit.outputs.controller_sha }}
         run: |
           set -euo pipefail
           python3 scripts/github_environment_admission.py "$SOURCE_REPOSITORY" "$PR_NUMBER" "$ENVIRONMENT" > admission.json
           test "$(python3 -c 'import json; print(json.load(open("admission.json"))["source_sha"])')" = "$BUILT_SHA"
-          test "$(sha256sum artifact/images.tar | cut -d' ' -f1)" = "$(cat artifact/images.sha256)"
+          image_sha256=$(sha256sum artifact/images.tar | cut -d' ' -f1)
+          test "$image_sha256" = "$(cat artifact/images.sha256)"
+          # Fresh native owner intent is checked only in this protected job.
+          ADMITTED_CONTROLLER_SHA='${{ needs.admit.outputs.controller_sha }}' ADMITTED_IMAGE_SHA256="$image_sha256" \
+            python3 scripts/github_environment_admission.py "$SOURCE_REPOSITORY" "$PR_NUMBER" "$ENVIRONMENT" > admission.json
+          test "$(python3 -c 'import json; print(json.load(open("admission.json"))["source_sha"])')" = "$BUILT_SHA"
       - name: Deploy through the restricted environment receiver
         env:
           SERVICE: ${{ inputs.service }}
@@ -188,6 +196,7 @@ jobs:
             proxx) health_path=/health ;;
             *) exit 2 ;;
           esac
+          host=$(python3 -c 'from scripts.service_slots import hostname; import sys; print(hostname(*sys.argv[1:]))' "$ENVIRONMENT" "$SERVICE")
           curl --fail --silent --show-error --connect-timeout 10 --max-time 20 --retry 8 --retry-all-errors --retry-delay 5 \
-            "https://$ENVIRONMENT.$SERVICE.promethean.rest$health_path" |
+            "https://$host$health_path" |
             python3 -c 'import json,sys; body=sys.stdin.read(); sys.exit(0 if sys.argv[1] != "proxx" or json.loads(body).get("ok") is True else "Proxx readiness refused")' "$SERVICE"

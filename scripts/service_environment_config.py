@@ -11,13 +11,12 @@ import stat
 import subprocess
 
 SERVICES = ('knoxx', 'axxium', 'proxx')
-# Proxx is build-admitted but has no reserved publication slots in accepted main.
-# Parent must supply the reviewed slot law before it can become host-admitted.
-PROXX_SLOTS = {}
+from service_slots import load_slots, proxx_slot, hostname
+PROXX_SLOTS = load_slots()
 ISSUER = 'https://axxium.promethean.rest/oidc'
-AUTHORITY_FILE = '/run/axxium/oidc-authority.json'
+AUTHORITY_FILE = '/run/axxium/oidc/authority.json'
 KEYS = {
- 'axxium': ('AXXIUM_OIDC_CONFIG_FILE', 'AXXIUM_TRUST_PROXY', 'AXXIUM_PUBLIC_BASE_URL'),
+ 'axxium': ('AXXIUM_OIDC_CONFIG_FILE', 'AXXIUM_TRUST_PROXY', 'AXXIUM_PUBLIC_BASE_URL', 'AXXIUM_STATE_PATH'),
  'knoxx': ('KNOXX_AXXIUM_OIDC_ENABLED', 'KNOXX_AXXIUM_OIDC_ISSUER', 'KNOXX_PUBLIC_BASE_URL',
            'KNOXX_AXXIUM_OIDC_CLIENT_ID', 'KNOXX_AXXIUM_OIDC_CLIENT_SECRET', 'KNOXX_AXXIUM_OIDC_LINKS'),
  'proxx': ('AXXIUM_OIDC_ISSUER', 'AXXIUM_OIDC_PUBLIC_ORIGIN', 'AXXIUM_OIDC_CLIENT_ID',
@@ -25,14 +24,27 @@ KEYS = {
            'AXXIUM_RELAY_ISSUER', 'AXXIUM_RELAY_AUDIENCE', 'AXXIUM_RELAY_NODES',
            'AXXIUM_RELAY_NODE_ID', 'AXXIUM_RELAY_NODE_SECRET', 'AXXIUM_RELAY_NODE_ISSUER',
            'AXXIUM_RELAY_NODE_SUBJECT', 'AXXIUM_RELAY_NODE_AUDIENCE',
-           'PROXX_SCOPED_RELAY_ROLE', 'FEDERATION_BRIDGE_RELAY_URL'),
+           'PROXX_SCOPED_RELAY_ROLE', 'FEDERATION_BRIDGE_RELAY_URL',
+           'PROXX_EXISTING_BIND_ADDRESS','PROXX_DATABASE_URL','PROXX_DATA_PATH','PROXX_OPERATOR_ENV_FILE'),
 }
 
 
-def private_file(path, uid):
- """No symlinks, nonregular files, special mode bits, or oversized secrets."""
+def open_no_symlinks(path, flags):
+ """Walk every component with directory descriptors, including parent components."""
+ path = Path(path).absolute()
+ descriptor = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
  try:
-  fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+  for component in path.parts[1:-1]:
+   child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+   os.close(descriptor); descriptor = child
+  return os.open(path.name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
+ finally:
+  os.close(descriptor)
+
+
+def private_file(path, uid):
+ try:
+  fd = open_no_symlinks(path, os.O_RDONLY)
   try:
    info = os.fstat(fd)
    if (not stat.S_ISREG(info.st_mode) or info.st_uid != uid
@@ -42,6 +54,31 @@ def private_file(path, uid):
    os.close(fd)
  except (OSError, ValueError):
   raise ValueError('Private configuration requires expected UID, mode0600, bounded regular file') from None
+
+
+def private_authority(directory, uid=1000):
+ """Dedicated private directory, never the application or database state root."""
+ try:
+  fd = open_no_symlinks(directory, os.O_RDONLY | os.O_DIRECTORY)
+  try:
+   info = os.fstat(fd)
+   if info.st_uid != uid or stat.S_IMODE(info.st_mode) != 0o700:
+    raise ValueError()
+   # Refuse accidental mounting of unrelated application/private state.
+   if set(os.listdir(fd)) != {'authority.json'}:
+    raise ValueError()
+   authority = os.open('authority.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+   try:
+    meta = os.fstat(authority)
+    if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid
+        or stat.S_IMODE(meta.st_mode) != 0o600 or not 0 < meta.st_size <= 1048576):
+     raise ValueError()
+   finally:
+    os.close(authority)
+  finally:
+   os.close(fd)
+ except (OSError, ValueError):
+  raise ValueError('Authority requires dedicated UID1000 mode0700 directory and mode0600 bounded authority.json without symlinks') from None
 
 
 def trusted_proxy(value):
@@ -125,14 +162,11 @@ def validate_relay(values):
    raise ValueError('Relay requires fixed shared issuer and broker audience')
   try:
    nodes=json.loads(get(broker[2]))
-   if (not isinstance(nodes,list) or not 1 <= len(nodes) <= 64
-       or any(not isinstance(n,dict) or set(n) != {'nodeId','subject'}
-              or not isinstance(n['nodeId'],str) or not 1 <= len(n['nodeId']) <= 64
-              or not isinstance(n['subject'],str) or not 1 <= len(n['subject']) <= 128 for n in nodes)
-       or len({n['nodeId'] for n in nodes}) != len(nodes)):
+   if not isinstance(nodes,list) or not 1 <= len(nodes) <= 64:
     raise ValueError()
+   # Detailed tenant/grant/delegation schemas belong to the application.
   except (ValueError,TypeError):
-   raise ValueError('Relay nodes require explicit distinct nodeId and verified subject pairs') from None
+   raise ValueError('Relay nodes require an explicit operator JSON array') from None
  else:
   import re
   if (get(node[0]) != ISSUER or get(node[1]) != audience
@@ -144,6 +178,14 @@ def validate_relay(values):
 
 
 def slot_values(environment, service):
+ if service == 'proxx':
+  row = proxx_slot(environment)
+  return {'PROXX_PUBLIC_HOST':row['hostname'], 'PROXX_LISTEN_PORT':str(row['host_port'])}
+ if environment == 'production' and service == 'knoxx':
+  return {'KNOXX_PUBLIC_BASE_URL':'https://knoxx.promethean.rest', 'KNOXX_LISTEN_PORT':'8080',
+          'KNOXX_AXXIUM_ORIGIN':'https://axxium.promethean.rest'}
+ if environment == 'production' and service == 'axxium':
+  return {'AXXIUM_PUBLIC_BASE_URL':'https://axxium.promethean.rest', 'AXXIUM_LISTEN_PORT':'8787'}
  if environment not in ('testing', 'staging') or service not in SERVICES:
   raise ValueError('Unsupported receiver slot')
  index = int(environment == 'staging')
@@ -153,7 +195,7 @@ def slot_values(environment, service):
  if service == 'knoxx':
   return {'KNOXX_PUBLIC_BASE_URL':origin, 'KNOXX_LISTEN_PORT':str(18881+index),
           'KNOXX_AXXIUM_ORIGIN':f'https://{environment}.axxium.promethean.rest'}
- raise ValueError('Proxx publication blocked: no declared slot mapping')
+ raise ValueError('Unsupported receiver slot')
 
 
 def preflight(slot, service):
@@ -161,11 +203,12 @@ def preflight(slot, service):
   raise ValueError('Unsupported service')
  if slot.is_symlink():
   raise ValueError('Deployment slot may not be a symlink')
- if service == 'proxx' and slot.parent.name not in PROXX_SLOTS:
-  raise ValueError('Proxx publication blocked: no declared slot mapping')
  private_file(slot/'.env', os.getuid())
  expected = slot_values(slot.parent.name, service)
- projection = {key: '${'+key+'-}' for key in set(KEYS[service]) | set(expected)}
+ keys=set(KEYS[service]) | set(expected)
+ if service=='proxx' and slot.parent.name in ('production','stealth','yoga'):
+  keys.update(('PROXY_AUTH_TOKEN','PROXY_TOKEN_PEPPER','PROXX_SESSION_SECRET'))
+ projection = {key: '${'+key+'-}' for key in keys}
  model = {'services': {'preflight': {'image': 'scratch', 'environment': projection}}}
  try:
   result = subprocess.run(['docker', 'compose', '--project-name', 'config-preflight',
@@ -177,13 +220,32 @@ def preflight(slot, service):
   if any(values.get(key) != value for key, value in expected.items()):
    raise ValueError('Operator slot hostname or listen port differs from declared slot')
   mounted = validate(service, values)
+  if service in ('proxx','knoxx'):
+   origin_key='AXXIUM_OIDC_PUBLIC_ORIGIN' if service=='proxx' else 'KNOXX_PUBLIC_BASE_URL'
+   enabled=bool(values.get('AXXIUM_OIDC_CLIENT_ID')) if service=='proxx' else values.get('KNOXX_AXXIUM_OIDC_ENABLED')=='true'
+   if enabled and values.get(origin_key)!='https://'+hostname(slot.parent.name,service):
+    raise ValueError('Consumer origin differs from selected slot')
+  if service == 'proxx' and slot.parent.name in ('production','stealth','yoga'):
+   from protected_receiver import existing_state
+   existing_state(slot, values)
  except (subprocess.SubprocessError, OSError, KeyError, TypeError, ValueError):
   raise ValueError('Operator configuration preflight refused; inspect private configuration locally') from None
+ authority_directory=slot/'oidc'
+ if service=='axxium' and slot.parent.name=='production':
+  from protected_receiver import enrollment
+  admitted=enrollment(slot,'production','axxium')
+  state=values.get('AXXIUM_STATE_PATH')
+  if not state or not Path(state).is_absolute() or state!=admitted['migration']['data']:
+   raise ValueError('Production authority state path differs from enrolled existing state')
+  authority_directory=Path(state)/'oidc'
+ if not mounted and service=='axxium' and (authority_directory.exists() or authority_directory.is_symlink()):
+  raise ValueError('Private authority directory requires explicit activation')
  if mounted:
-  private_file(slot/'oidc-authority.json', 1000)
+  private_authority(authority_directory, 1000)
   return [str(slot/'axxium-oidc.compose.yaml')]
+ overlays=[]
  if service == 'proxx':
+  if slot.parent.name=='production':overlays.append(str(slot/'proxx-production-network.compose.yaml'))
   role = validate_relay(values)
-  if role:
-   return [str(slot/f'proxx-relay-{role}.compose.yaml')]
- return []
+  if role:overlays.append(str(slot/f'proxx-relay-{role}.compose.yaml'))
+ return overlays

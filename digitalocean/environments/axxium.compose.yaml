@@ -1,5 +1,6 @@
 services:
   axxium:
+    user: 1000:1000
     image: ${AXXIUM_IMAGE:?Set an immutable built Axxium image}
     restart: unless-stopped
     ports:

@@ -20,10 +20,7 @@ def timestamp(value: str) -> datetime:
     return result.astimezone(timezone.utc)
 
 
-def hostname(environment: str, service: str) -> str:
-    if environment not in {"testing", "staging", "production", "stealth", "yoga"} or service not in {"knoxx", "axxium", "proxx"}:
-        raise ValueError("Unsupported environment or service")
-    return f"{environment}.{service}.promethean.rest"
+from service_slots import hostname
 
 
 def testing_admission(candidate: dict, others: list[dict], *, now: datetime) -> dict:
@@ -118,31 +115,73 @@ def clean_receipt_markers(receipt: dict) -> bool:
 
 def production_admission(source_sha: str, integration: dict, e2e: dict, batches: list[dict]) -> dict:
     """Never count stale, duplicated, planned, invalid, timed-out or untested mutants as proof."""
-    if not SHA.fullmatch(source_sha):
+    if not isinstance(source_sha,str) or not SHA.fullmatch(source_sha):
         return {"admitted": False, "reason": "production requires an immutable source SHA"}
     for name, receipt in [("integration", integration), ("e2e", e2e)]:
-        if (receipt.get("source_sha") != source_sha or receipt.get("status") != "passed"
-                or receipt.get("assertions", 0) <= 0 or not clean_receipt_markers(receipt)):
+        if (not isinstance(receipt,dict) or receipt.get("source_sha") != source_sha or receipt.get("status") != "passed"
+                or type(receipt.get("assertions")) is not int or receipt["assertions"] <= 0 or not clean_receipt_markers(receipt)):
             return {"admitted": False, "reason": f"{name} evidence missing, invalid or for a different revision"}
-    if len(batches) != MUTATION_BATCHES:
+    if not isinstance(batches,list) or len(batches) != MUTATION_BATCHES:
         return {"admitted": False, "reason": "four completed mutation batches are required"}
     seen = set()
     indexes = set()
     for batch in batches:
-        if (batch.get("source_sha") != source_sha or batch.get("status") != "passed"
+        if (not isinstance(batch,dict) or batch.get("source_sha") != source_sha or batch.get("status") != "passed"
                 or batch.get("baseline") != "passed" or not clean_receipt_markers(batch)):
             return {"admitted": False, "reason": "mutation batch baseline, status or revision is invalid"}
         index = batch.get("batch_index")
-        if index not in range(MUTATION_BATCHES) or index in indexes:
+        if type(index) is not int or index not in range(MUTATION_BATCHES) or index in indexes:
             return {"admitted": False, "reason": "mutation batch indexes are incomplete or duplicated"}
         indexes.add(index)
         mutants = batch.get("mutants", [])
-        if len(mutants) < MUTANTS_PER_BATCH:
+        if not isinstance(mutants,list) or len(mutants) < MUTANTS_PER_BATCH:
             return {"admitted": False, "reason": "each mutation batch requires at least 250 evaluated source mutations"}
         for mutant in mutants:
+            if not isinstance(mutant,dict):
+                return {"admitted":False,"reason":"malformed mutation"}
             key = mutant.get("fingerprint")
-            if (not key or key in seen or mutant.get("status") != "killed"
+            if (not isinstance(key,str) or not key.strip() or key in seen or mutant.get("status") != "killed"
                     or mutant.get("phase") != "test" or not clean_receipt_markers(mutant)):
                 return {"admitted": False, "reason": "survived, duplicate, invalid or unevaluated mutation"}
             seen.add(key)
     return {"admitted": True, "source_sha": source_sha, "environment": "production", "evaluated_mutations": len(seen)}
+
+
+def deployment_authorization(reviews, *, source_sha, controller_sha, image_sha256,
+                             environment, service, now):
+    """Native current-head owner intent; collector proves current main ownership.
+
+    No PR label or approval is reinterpreted as deployment intent. The body binds
+    the archive bytes, fixed destination and both immutable source identities.
+    """
+    if (environment not in ('production', 'stealth', 'yoga')
+            or service not in ('axxium', 'knoxx', 'proxx')
+            or not isinstance(source_sha,str) or not SHA.fullmatch(source_sha)
+            or not isinstance(controller_sha,str) or not SHA.fullmatch(controller_sha)
+            or not isinstance(image_sha256,str) or not re.fullmatch('[0-9a-f]{64}', image_sha256)):
+        return None
+    host = environment if environment in ('stealth', 'yoga') else 'droplet'
+    body = (f'Authorize {environment} deployment of {service} {source_sha} '
+            f'with Services {controller_sha} image sha256:{image_sha256} on {host}.')
+    if not isinstance(reviews,list):return None
+    for review in reversed(reviews):
+        if not isinstance(review,dict):continue
+        user = review.get('user') or {}
+        if not isinstance(user,dict):continue
+        if (review.get('body') != body or review.get('commit_id') != source_sha
+                or review.get('state') != 'COMMENTED' or user.get('type') != 'User'
+                or type(user.get('id')) is not int or user['id'] <= 0
+                or not isinstance(user.get('login'), str) or not user['login']
+                or type(review.get('id')) is not int or review['id'] <= 0):
+            continue
+        try:
+            age = (now - timestamp(review['submitted_at'])).total_seconds()
+            if not 0 <= age <= LEASE_SECONDS:
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        return {'review_id': review['id'], 'user_id': user['id'], 'login': user['login'],
+                'source_sha': source_sha, 'controller_sha': controller_sha,
+                'image_sha256': image_sha256, 'environment': environment,
+                'host': host, 'service': service, 'submitted_at': review['submitted_at']}
+    return None

@@ -55,6 +55,13 @@ on:
         type: boolean
     secrets:
       DIGITALOCEAN_SSH_PRIVATE_KEY: { required: true }
+      OPTIONAL_LOGIN_CONFIGURATION: { required: false }
+      AXXIUM_DB_PASSWORD: { required: false }
+      AXXIUM_JWT_SECRET: { required: false }
+      AXXIUM_BOOTSTRAP_ADMIN_EMAIL: { required: false }
+      PDS_JWT_SECRET: { required: false }
+      PDS_ADMIN_PASSWORD: { required: false }
+      PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: { required: false }
       MONGODB_URI: { required: false }
       REQUESTY_API_KEY: { required: false }
       DO_INFERENCE_API_KEY: { required: false }
@@ -247,6 +254,13 @@ jobs:
           # unknowable credential so the routes remain closed by default.
           DEV_BASIC_AUTH_USER: ${{ secrets.DEV_BASIC_AUTH_USER }}
           DEV_BASIC_AUTH_HASH: ${{ secrets.DEV_BASIC_AUTH_HASH }}
+          OPTIONAL_LOGIN_CONFIGURATION: ${{ secrets.OPTIONAL_LOGIN_CONFIGURATION }}
+          AXXIUM_DB_PASSWORD: ${{ secrets.AXXIUM_DB_PASSWORD }}
+          AXXIUM_JWT_SECRET: ${{ secrets.AXXIUM_JWT_SECRET }}
+          AXXIUM_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.AXXIUM_BOOTSTRAP_ADMIN_EMAIL }}
+          PDS_JWT_SECRET: ${{ secrets.PDS_JWT_SECRET }}
+          PDS_ADMIN_PASSWORD: ${{ secrets.PDS_ADMIN_PASSWORD }}
+          PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: ${{ secrets.PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX }}
           EXTRA_ENV: ${{ inputs.extra_env }}
         run: |
           set -euo pipefail
@@ -283,6 +297,10 @@ jobs:
           while IFS='=' read -r key value; do
             [ -n "$key" ] || continue
             case "$key" in
+              AXXIUM_*|KNOXX_AXXIUM_OIDC_*|PROXX_SCOPED_RELAY_ROLE|FEDERATION_BRIDGE_RELAY_URL|COMPOSE_FILE)
+                echo "::error::optional identity configuration requires the protected configuration interface" >&2
+                exit 2
+                ;;
               KNOXX_MCP_LOOPBACK_TOKEN)
                 echo "::error::extra_env may not set ${key}; it is supplied only by the protected environment secret" >&2
                 exit 2
@@ -320,6 +338,12 @@ jobs:
           fi
 
           chmod 600 rendered.env
+          python3 scripts/preserve_service_login.py render "$render_session_secret_service" rendered.env
+          if [[ "$render_session_secret_service" =~ ^(axxium|knoxx|proxx)$ ]]; then
+            # These are controller helpers, shipped by the existing definition lane.
+            cp scripts/preserve_service_login.py scripts/service_environment_config.py \
+              scripts/service_slots.py scripts/service_slots.json "$SERVICE_DIR/"
+          fi
           echo "rendered $(grep -cE '^[A-Z0-9_]+=' rendered.env) variables"
 
       - name: Authenticate the host to GHCR
@@ -516,6 +540,9 @@ jobs:
             # A new checkout's mtimes must not recreate unchanged staging.
             definition_rsync=(--checksum)
           fi
+          if [ "$SERVICE" = axxium ]; then
+            ssh open-hax-target "test -f '${STATE_PATH}/google-client.json' && test ! -L '${STATE_PATH}/google-client.json' && test \"\$(stat -c %u:%a '${STATE_PATH}/google-client.json')\" = 1000:600"
+          fi
           ssh open-hax-target "mkdir -p '${RUNTIME_PATH}' '${STATE_PATH}'"
 
           # Did an --itemize-changes log move anything? Transfers are itemized
@@ -569,7 +596,14 @@ jobs:
           fi
           # .env is written separately so --delete never removes it and it
           # never travels through the repo.
-          scp rendered.env "open-hax-target:${RUNTIME_PATH}/.env"
+          scp rendered.env "open-hax-target:${RUNTIME_PATH}/.env.candidate"
+          ssh open-hax-target "chmod 600 '${RUNTIME_PATH}/.env.candidate'"
+          # Fixed controller helper preserves effective optional values before replacement.
+          # No private configuration is returned to the runner or printed.
+          if [[ "$SERVICE" =~ ^(axxium|knoxx|proxx)$ ]]; then
+            ssh open-hax-target "cd '${RUNTIME_PATH}' && python3 preserve_service_login.py preserve '$SERVICE' .env .env.candidate '${STATE_PATH}'"
+          fi
+          ssh open-hax-target "mv '${RUNTIME_PATH}/.env.candidate' '${RUNTIME_PATH}/.env'"
           ssh open-hax-target "chmod 600 '${RUNTIME_PATH}/.env' && chmod +x '${RUNTIME_PATH}/verify.sh'"
           if [ "$SERVICE" = knoxx ]; then
             ssh open-hax-target "chmod +x '${RUNTIME_PATH}/post-deploy.sh'"
@@ -675,6 +709,10 @@ jobs:
           # docker-managed; both are skipped.
           set -a; . ./.env; set +a
           project=$service
+          if [ "$service" = axxium ] && [ -n "${AXXIUM_OIDC_CONFIG_FILE:-}" ]; then
+            # Dedicated directory already verified before replacing effective env.
+            export COMPOSE_FILE=compose.yaml:axxium-oidc.compose.yaml
+          fi
           if [ "$service" = website ]; then project=${WEBSITE_PROJECT:-website}; fi
           # BEGIN PUBLICATION SHARED ROOT
           # The backend writes as UID 1000; the reader binds this root directly

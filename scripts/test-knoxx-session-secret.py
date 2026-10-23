@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -40,6 +41,7 @@ class SessionSecretDeploymentTests(unittest.TestCase):
         self.fixture = Path(self.directory.name)
         self.bin = self.fixture / 'bin'
         self.bin.mkdir()
+        (self.fixture/'scripts').symlink_to(ROOT/'scripts',target_is_directory=True)
         # Rendering and Docker are effects, not the decision under test. These
         # sentinels record whether the actual authored shell admitted an input;
         # they never parse or validate a key and never invoke the Docker daemon.
@@ -69,7 +71,9 @@ class SessionSecretDeploymentTests(unittest.TestCase):
         env = dict(self.env)
         env.update({key: 'synthetic-nonsecret-value'
                     for key in re.findall(r'\$\{([A-Z][A-Z0-9_]*)\}', template.read_text())})
-        env.update({'SERVICE': service, 'SERVICE_DIR': str(template.parent),
+        service_fixture=self.fixture/service
+        if not service_fixture.exists():shutil.copytree(template.parent,service_fixture)
+        env.update({'SERVICE': service, 'SERVICE_DIR': str(service_fixture),
                     'EXTRA_ENV': raw_overlay if raw_overlay is not None else json.dumps(overlay or {}),
                     'KNOXX_MCP_LOOPBACK_TOKEN': 'synthetic-mcp-token'})
         if base is None:

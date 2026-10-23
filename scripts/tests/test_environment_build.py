@@ -358,6 +358,7 @@ assert sys.argv[sys.argv.index('-f')+1] == '-'
 assert sys.argv[-3:] == ['config','--format','json']
 path=Path(sys.argv[sys.argv.index('--env-file')+1]);phase,service=path.parts[-3:-1]
 values={service.upper()+'_PUBLIC_BASE_URL':f'https://{phase}.{service}.promethean.rest',service.upper()+'_LISTEN_PORT':str((18881 if service=='knoxx' else 18871)+(phase=='staging'))}
+if service=='proxx':values={'PROXX_PUBLIC_HOST':f'{phase}.proxx.promethean.rest','PROXX_LISTEN_PORT':str(18891+(phase=='staging'))}
 if service=='knoxx':values['KNOXX_AXXIUM_ORIGIN']=f'https://{phase}.axxium.promethean.rest'
 model=json.load(sys.stdin);assert set(model['services']['slot']['environment'])==set(values)
 print(json.dumps({'services':{'slot':{'environment':values}}}))

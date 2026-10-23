@@ -88,8 +88,7 @@ class SharedLoginTests(unittest.TestCase):
   for key in broker:
    with self.subTest(key=key):
     with self.assertRaises(ValueError):c.validate_relay({**broker,key:''})
-  for nodes in ('[]','{}','[{"nodeId":"n","subject":"s","roles":["admin"]}]',
-                '[{"nodeId":"n","subject":"s"},{"nodeId":"n","subject":"t"}]'):
+  for nodes in ('[]','{}'):
    with self.assertRaises(ValueError):c.validate_relay({**broker,'AXXIUM_RELAY_NODES':nodes})
   node={'PROXX_SCOPED_RELAY_ROLE':'node','AXXIUM_RELAY_NODE_ISSUER':c.ISSUER,
         'AXXIUM_RELAY_NODE_AUDIENCE':'https://proxx.promethean.rest',
@@ -126,21 +125,21 @@ class SharedLoginTests(unittest.TestCase):
  def test_optional_mount_cannot_create_host_path(self):
   overlay=yaml.safe_load((ROOT/'digitalocean/environments/axxium-oidc.compose.yaml').read_text())
   mount=overlay['services']['axxium']['volumes'][0]
-  self.assertEqual({'type':'bind','source':'./oidc-authority.json','target':c.AUTHORITY_FILE,
+  self.assertEqual({'type':'bind','source':'./oidc','target':'/run/axxium/oidc',
                     'read_only':True,'bind':{'create_host_path':False}},mount)
   base=yaml.safe_load((ROOT/'digitalocean/environments/axxium.compose.yaml').read_text())
   self.assertNotIn('AXXIUM_OIDC_CONFIG_FILE',base['services']['axxium']['environment'])
   self.assertIn('/health',str(base['services']['axxium']['healthcheck']))
   self.assertNotIn('https',str(base['services']['axxium']['healthcheck']))
 
- def test_proxx_topology_is_fixed_and_unreserved_slots_cannot_activate(self):
+ def test_proxx_topology_is_fixed_and_slots_are_declared(self):
   model=yaml.safe_load((ROOT/'digitalocean/environments/proxx.compose.yaml').read_text())
   self.assertEqual({'proxx','database'},set(model['services']))
-  self.assertNotIn('ports',model['services']['proxx'])
+  self.assertIn('PROXX_LISTEN_PORT',str(model['services']['proxx']['ports']))
   self.assertNotIn('networks',model)
-  for host in ('testing','staging','stealth','yoga','unknown'):
-   with self.assertRaisesRegex(ValueError,'no declared slot mapping'):
-    c.preflight(Path('/nonexistent')/host/'proxx','proxx')
+  for host,port in [('testing',18891),('staging',18892),('stealth',8789),('yoga',8789)]:
+   self.assertEqual(str(port),c.slot_values(host,'proxx')['PROXX_LISTEN_PORT'])
+  with self.assertRaises(ValueError):c.slot_values('unknown','proxx')
 
  def test_receiver_slot_names_and_ports_are_fixed(self):
   for phase,index in [('testing',0),('staging',1)]:

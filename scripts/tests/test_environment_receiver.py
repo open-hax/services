@@ -83,6 +83,7 @@ if a[:1]==['compose']:
   slot=Path(a[a.index('--env-file')+1]).parent;phase=slot.parent.name;service=slot.name
   values[service.upper()+'_PUBLIC_BASE_URL']=f'https://{phase}.{service}.promethean.rest'
   values[service.upper()+'_LISTEN_PORT']=str((18871 if service=='axxium' else 18881)+(phase=='staging'))
+  if service=='proxx':values={'PROXX_PUBLIC_HOST':f'{phase}.proxx.promethean.rest','PROXX_LISTEN_PORT':str(18891+(phase=='staging'))}
   if service=='knoxx':values['KNOXX_AXXIUM_ORIGIN']=f'https://{phase}.axxium.promethean.rest'
   finish(text=json.dumps({'services':{'preflight':{'environment':values}}}))
  if 'up' in a:
@@ -104,7 +105,7 @@ class ReceiverHarness:
   self.state=self.root/'docker.json'
   self.save({'images':{},'containers':{},'calls':[],'health':[],'removed':[],'removal_attempts':[]})
   for env in ('testing','staging'):
-   for service in ('knoxx','axxium'):
+   for service in ('knoxx','axxium','proxx'):
     slot=self.slot(env,service);slot.mkdir(parents=True);(slot/'.env').write_text('# synthetic disabled configuration\n');(slot/'.env').chmod(0o600);(slot/'compose.yaml').write_text('services: {}\n')
  def slot(self,env='testing',service='axxium'):return self.root/env/service
  def data(self):return json.loads(self.state.read_text())

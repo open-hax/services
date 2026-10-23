@@ -1,10 +1,12 @@
 # Fixed single-node environment topology. No global stack network/aliases.
-# Slot publication remains blocked until the declared Proxx port law is supplied.
+# Port values are checked against Services service_slots.json before image intake.
 services:
   proxx:
     image: ${PROXX_IMAGE:?Set an admitted immutable Proxx image ID}
     user: 1000:1000
     restart: unless-stopped
+    ports:
+      - 127.0.0.1:${PROXX_LISTEN_PORT:?Declared slot port required}:8789
     environment:
       NODE_ENV: production
       PROXY_HOST: 0.0.0.0

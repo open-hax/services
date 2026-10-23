@@ -2,11 +2,11 @@
 services:
   axxium:
     environment:
-      AXXIUM_OIDC_CONFIG_FILE: /run/axxium/oidc-authority.json
+      AXXIUM_OIDC_CONFIG_FILE: /run/axxium/oidc/authority.json
     volumes:
       - type: bind
-        source: ./oidc-authority.json
-        target: /run/axxium/oidc-authority.json
+        source: ./oidc
+        target: /run/axxium/oidc
         read_only: true
         bind:
           create_host_path: false

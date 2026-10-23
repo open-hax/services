@@ -10,6 +10,7 @@ from pathlib import Path
 # Install this reviewed helper alongside receive.py.
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from service_environment_config import SERVICES, preflight
+from protected_receiver import enrollment, authorize
 
 ROOT=Path('/srv/open-hax/environments')
 MAX_ARCHIVE=4*1024**3
@@ -82,16 +83,35 @@ def admitted_selection(slot,environment,service):
   return previous
  except (ValueError,OSError):raise RetentionBlocked('Active selection lacks matching last healthy evidence')
 
+def runtime_environment():
+ # Preflight and execution must resolve identical fixed dotenv values.
+ # Native operator/SSH ambient Compose or Docker options cannot redirect them.
+ return {'PATH':os.environ.get('PATH',os.defpath)}
+
 def docker_output(args):
- try:return subprocess.check_output(['docker']+args,text=True,stderr=subprocess.PIPE,timeout=30)
+ try:return subprocess.check_output(['docker']+args,text=True,stderr=subprocess.PIPE,timeout=30,env=runtime_environment())
  except (subprocess.SubprocessError,OSError):raise RetentionBlocked('Docker reference inventory unavailable')
 
 def reference_inventory():
  """Read IDs/tags only: never inspect container configuration or slot secrets."""
  protected=set()
- for environment in ('testing','staging'):
-  for service in SERVICES:
+ # A laptop has its own Docker daemon and enrolled slot, not droplet slots.
+ # Derive scope only from a root-installed, freshly validated enrollment.
+ local=[]
+ for environment in ('stealth','yoga'):
+  slot=ROOT/environment/'proxx'
+  if slot.exists() or slot.is_symlink():
+   try:enrollment(slot,environment,'proxx')
+   except ValueError:raise RetentionBlocked('Laptop receiver enrollment unavailable') from None
+   local.append(environment)
+ if len(local)>1 or local and any((ROOT/env).exists() for env in ('testing','staging','production')):
+  raise RetentionBlocked('Mixed droplet and laptop receiver inventory')
+ environments=local or ('testing','staging','production')
+ for environment in environments:
+  for service in (('proxx',) if environment in ('stealth','yoga') else SERVICES):
    slot=ROOT/environment/service
+   if environment in ('production','stealth','yoga') and not slot.exists() and not slot.is_symlink():
+    continue
    if service=='proxx' and not slot.exists() and not slot.is_symlink():
     if any(tag.startswith('promethean-proxx:') for tag in read_ownership()['owned_tags']):
      raise RetentionBlocked('Owned Proxx slot inventory unavailable')
@@ -172,7 +192,7 @@ def cleanup_owned_images(catalog,candidates):
    result['refused'].append({'tag':tag,'reason':'Removal was not attempted: refusal barrier could not be persisted'})
    return result
   try:
-   subprocess.run(['docker','image','rm',tag],check=True,timeout=30,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+   subprocess.run(['docker','image','rm',tag],check=True,timeout=30,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=runtime_environment())
   except (subprocess.SubprocessError,OSError):return refuse(candidates[index:],'Removal failed or outcome uncertain','failed')
   result['removed'].append(tag);del catalog['owned_tags'][tag];del catalog['refused_tags'][tag]
   if not persist():return result
@@ -247,7 +267,7 @@ def load_images(path,environment,service,sha):
   if tag is not None:operation.update(tag=tag,image_id=image)
   journal['operations'].append(operation);save()
   try:
-   subprocess.run(['docker']+args,check=True,timeout=timeout,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+   subprocess.run(['docker']+args,check=True,timeout=timeout,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=runtime_environment())
   except (subprocess.SubprocessError,OSError) as error:
    uncertain=isinstance(error,(subprocess.TimeoutExpired,OSError))
    operation['status']='uncertain' if uncertain else 'failed'
@@ -302,7 +322,8 @@ def load_images(path,environment,service,sha):
 
 def main():
  environment,service=sys.argv[1:]
- if environment not in {'testing','staging'} or service not in SERVICES:raise ValueError('Unsupported slot')
+ if environment not in {'testing','staging','production','stealth','yoga'} or service not in SERVICES:raise ValueError('Unsupported slot')
+ if environment in ('stealth','yoga') and service!='proxx':raise ValueError('Unsupported slot')
  command=shlex.split(os.environ.get('SSH_ORIGINAL_COMMAND',''))
  if len(command)!=4 or command[:3]!=['receive',environment,service] or not re.fullmatch('[0-9a-f]{40}',command[3]):
   raise ValueError('This key only accepts an image archive for its fixed deployment slot')
@@ -315,6 +336,10 @@ def main():
   # Refuse unknown/crash residue before loading images, changing a selection,
   # attempting health or considering cleanup. Recovery is an operator decision.
   previous=admitted_selection(slot,environment,service)
+  protected=environment in ('production','stealth','yoga')
+  if protected:
+   enrollment(slot,environment,service)
+   if previous is None:raise ValueError('Protected receiver requires an admitted existing stack; foreign runtime cutover needs parent enrollment')
   overlays=preflight(slot,service)
   with tempfile.TemporaryDirectory(prefix='incoming-',dir=ROOT) as scratch:
    image_file=Path(scratch)/'images.tar';total=0
@@ -324,22 +349,23 @@ def main():
      if total>MAX_ARCHIVE:raise ValueError('Image archive exceeds 4 GiB budget')
      output.write(chunk)
    validate_archive(image_file,service,sha)
+   project=authorize(slot,environment,service,sha,image_file) if protected else f'{service}-{environment}'
    values=load_images(image_file,environment,service,sha)
    images=ordered_tags(service,sha)
    # Pin verified IDs only after the complete import transaction succeeds.
    release=slot/'release.env'
    atomic_write(release,''.join(f'{key}={value}\n' for key,value in values.items()))
-   compose=['docker','compose','--project-name',f'{service}-{environment}','--env-file',str(slot/'.env'),'--env-file',str(release),'-f',str(slot/'compose.yaml')]
+   compose=['docker','compose','--project-name',project,'--env-file',str(slot/'.env'),'--env-file',str(release),'-f',str(slot/'compose.yaml')]
    for overlay in overlays:compose+=['-f',overlay]
    try:
-    subprocess.run(compose+['up','-d','--wait','--wait-timeout','180','--pull','never'],cwd=slot,check=True,timeout=240)
+    subprocess.run(compose+['up','-d','--wait','--wait-timeout','180','--pull','never'],cwd=slot,check=True,timeout=240,env=runtime_environment())
    except Exception:
     if previous is not None:
      atomic_write(release,previous.decode())
-     subprocess.run(compose+['up','-d','--wait','--wait-timeout','180','--pull','never'],cwd=slot,check=True,timeout=240)
+     subprocess.run(compose+['up','-d','--wait','--wait-timeout','180','--pull','never'],cwd=slot,check=True,timeout=240,env=runtime_environment())
     else:
      # Preserve database volumes and its state on a first failed application start.
-     try:subprocess.run(compose+['stop']+({'axxium':['axxium'],'proxx':['proxx'],'knoxx':['backend','frontend']}[service]),cwd=slot,check=True,timeout=120)
+     try:subprocess.run(compose+['stop']+({'axxium':['axxium'],'proxx':['proxx'],'knoxx':['backend','frontend']}[service]),cwd=slot,check=True,timeout=120,env=runtime_environment())
      finally:
       # No healthy generation existed before this attempt. Do not let the
       # failed selection become a later deployment's purported rollback.

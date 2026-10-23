@@ -40,6 +40,10 @@ fi
 while IFS='=' read -r key value; do
 [ -n "$key" ] || continue
 case "$key" in
+AXXIUM_*|KNOXX_AXXIUM_OIDC_*|PROXX_SCOPED_RELAY_ROLE|FEDERATION_BRIDGE_RELAY_URL|COMPOSE_FILE)
+echo "::error::optional identity configuration requires the protected configuration interface" >&2
+exit 2
+;;
 KNOXX_MCP_LOOPBACK_TOKEN)
 echo "::error::extra_env may not set ${key}; it is supplied only by the protected environment secret" >&2
 exit 2

@@ -100,7 +100,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
 
     def test_matching_native_identity_emits_only_validated_immutable_sha(self):
         for service in ("knoxx", "axxium", "proxx"):
-            for environment in ("testing", "staging"):
+            for environment in (("testing", "staging", "production", "stealth", "yoga") if service=="proxx" else ("testing", "staging", "production")):
                 with self.subTest(service=service, environment=environment):
                     result, output = self.run_controller(SERVICE=service,
                         SOURCE_REPOSITORY="open-hax/"+service, ENVIRONMENT=environment)
@@ -132,7 +132,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                 self.assertNotIn("sensitive-native-input", result.stdout+result.stderr)
 
     def test_native_binding_preserves_service_repository_and_pr_validation(self):
-        for invalid in ({"SERVICE": "other"}, {"ENVIRONMENT": "production"},
+        for invalid in ({"SERVICE": "other"}, {"ENVIRONMENT": "unknown"},
                 {"SOURCE_REPOSITORY": "other/knoxx"}, {"PR_NUMBER": "0"},
                 {"PR_NUMBER": "1; echo bad"}):
             with self.subTest(invalid=invalid):
@@ -167,7 +167,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
 
     def test_actual_ssh_transfer_has_liveness_bounds_and_retains_receiver_input(self):
         for service in ("knoxx", "axxium", "proxx"):
-            for environment in ("testing", "staging"):
+            for environment in (("testing", "staging", "production", "stealth", "yoga") if service=="proxx" else ("testing", "staging", "production")):
                 with self.subTest(service=service, environment=environment):
                     result, record = self.run_deployment(service, environment, 0)
                     self.assertEqual(0, result.returncode, result.stderr)
@@ -187,7 +187,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
 
     def test_ssh_failure_propagates_and_removes_owned_key(self):
         for service in ("knoxx", "axxium", "proxx"):
-            for environment in ("testing", "staging"):
+            for environment in (("testing", "staging", "production", "stealth", "yoga") if service=="proxx" else ("testing", "staging", "production")):
                 with self.subTest(service=service, environment=environment):
                     result, record = self.run_deployment(service, environment, 255)
                     self.assertEqual(255, result.returncode, result.stderr)
@@ -213,13 +213,13 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                 env={"HOME": str(root), "PATH": str(binary) + os.pathsep + os.defpath,
                      "SERVICE": service, "ENVIRONMENT": environment,
                      "CURL_CALLS": str(calls), "CURL_EXIT": str(exit_code), "CURL_BODY": body},
-                capture_output=True, text=True, timeout=10, check=False,
+                cwd=WORKFLOW.parents[2], capture_output=True, text=True, timeout=10, check=False,
             )
             return result, json.loads(calls.read_text())
 
     def test_both_service_slots_bound_connect_and_complete_request(self):
         for service in ("knoxx", "axxium", "proxx"):
-            for environment in ("testing", "staging"):
+            for environment in (("testing", "staging", "production", "stealth", "yoga") if service=="proxx" else ("testing", "staging", "production")):
                 with self.subTest(service=service, environment=environment):
                     result, args = self.run_readiness(service, environment)
                     self.assertEqual(0, result.returncode, result.stderr)
@@ -234,7 +234,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                     self.assertEqual("5", args[args.index("--retry-delay") + 1])
                     self.assertIn("--retry-all-errors", args)
                     self.assertIn("--fail", args)
-                    self.assertEqual(f"https://{environment}.{service}.promethean.rest" + ("/health" if service == "proxx" else "/api/auth/config"), args[-1])
+                    self.assertEqual((f"https://{service}.promethean.rest" if environment=="production" else f"https://{environment}.{service}.promethean.rest") + ("/health" if service == "proxx" else "/api/auth/config"), args[-1])
                     self.assertEqual("promethean-${{ inputs.service }}-${{ inputs.environment }}",
                                      self.workflow["jobs"]["deploy"]["concurrency"]["group"])
                     self.assertEqual("false", self.workflow["jobs"]["deploy"]["concurrency"]["cancel-in-progress"])
