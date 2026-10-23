@@ -1,0 +1,84 @@
+{:contract/id :services/antigravity-review-worker
+ :contract/version 1
+ :contract/document "docs/antigravity-review-workers.md"
+ :authorization {:source :explicit-session-user-direction
+                 :purpose :local-advisory-review-worker
+                 :existing-machine? true
+                 :existing-login? true
+                 :production-digitalocean-lane? false
+                 :production-deployment-authority? false}
+ :runtime {:repository "open-hax/eta-mu"
+           :revision "3bcf27bef296f9349fdf4997df256a617da5f120"
+           :path "/home/err/.local/share/antigravity-review/runtime-3bcf27bef296f9349fdf4997df256a617da5f120"
+           :require-clean-source? true
+           :nbb "/home/err/.volta/tools/image/packages/nbb/bin/nbb"
+           :model "gemini-3.8-flash-high"
+           :model-fallback? false
+           :cli {:path "/home/err/.local/share/antigravity-review/bin/agy-1.4.6"
+                 :version "1.4.6"
+                 :sha256 "128780f5776959ba6a991bde1f0a8b699eee37a59ed30deb9926147fedfa56c4"}
+           :bubblewrap {:path "/usr/bin/bwrap" :version "0.9.0"
+                        :sha256 "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71"}
+           :settings :runtime-owned-read-only-strict-deny-overlay}
+ :workflow {:path ".github/workflows/antigravity-code-review.yml"
+            :open-hax-revision "6461caabbe4eefbd1615036936863d06ee69d68d"
+            :octave-commons-revision "5bc9a8543ceb8afb04d3fd7e92ba0e1d9c2a03dd"
+            :shared-bytes-sha256 "f6c5f07015846b14a27f03bd8a59cd5445cd06ec10f5613413c92d12ca35d82b"
+            :source "/tmp/antigravity-current-pins.json"}
+ :runner {:version "2.338.1"
+          :archive "/home/err/.local/share/antigravity-review/dist/actions-runner-linux-x64-2.338.1.tar.gz"
+          :archive-sha256 "08e9ccb3604d2462c24b5e33604dc30810296ca15cc65f23cffd4317eb144c37"
+          :labels ["self-hosted" "Linux" "X64" "antigravity-review"]
+          :entrypoint "bin/runsvc.sh"
+          :host-root "/home/err/.local/share/antigravity-review"
+          :organizations
+          {"open-hax"
+           {:group-id 3 :group-name "antigravity-review" :visibility :selected
+            :allows-public-repositories? true :restricted-to-workflows? true
+            :selected-workflows ["open-hax/eta-mu/.github/workflows/antigravity-code-review.yml@6461caabbe4eefbd1615036936863d06ee69d68d"]
+            :repositories {"open-hax/axxium" 1255522717 "open-hax/chat-ui" 1368140241
+                           "open-hax/clio" 1368140178 "open-hax/eta-mu" 1189985055
+                           "open-hax/foresight" 1333057084 "open-hax/kanban-orchestrator" 1368140110
+                           "open-hax/katamorph" 1298809079 "open-hax/knoxx" 1199983316
+                           "open-hax/opencode" 1333065759 "open-hax/osmos" 1368140884
+                           "open-hax/proxx" 1178288746 "open-hax/receipt-river" 1368209876
+                           "open-hax/rheos" 1368140308 "open-hax/services" 1256602077
+                           "open-hax/session-mycology" 1368140377 "open-hax/sol" 1368140442
+                           "open-hax/uxx" 1200863516}}
+           "octave-commons"
+           {:group-id 3 :group-name "antigravity-review" :visibility :selected
+            :allows-public-repositories? true :restricted-to-workflows? true
+            :selected-workflows ["octave-commons/muse/.github/workflows/antigravity-code-review.yml@5bc9a8543ceb8afb04d3fd7e92ba0e1d9c2a03dd"]
+            :repositories {"octave-commons/bitch-tracker" 1245904542
+                           "octave-commons/calliope" 1313243914
+                           "octave-commons/epiphany" 1297369890
+                           "octave-commons/muse" 1297877610
+                           "octave-commons/shx" 1329348163
+                           "octave-commons/Truth" 1278648681}}}}
+ :service {:manager :systemd-user :user "err" :home "/home/err"
+           :linger? true :enabled? true
+           :units ["antigravity-review-open-hax.service" "antigravity-review-octave-commons.service"]
+           :environment-entrypoint :env-i :umask "0077" :kill-mode :control-group
+           :restart :on-failure
+           :path "/home/err/.volta/tools/image/node/24.11.0/bin:/usr/bin:/bin"
+           :operator-environment-file "/home/err/.local/share/antigravity-review/host/worker.env"
+           :operator-environment-mode "0600"
+           :templates "contracts/antigravity-review-worker/"}
+ :credentials {:authentication :explicitly-approved-existing-local-login
+               :copy-login? false :inherited-github-token? false
+               :signing-and-deployment-secrets? false
+               :registration-state :host-local-only
+               :repository-secret-material? false}
+ :evidence {:observed-on "2026-10-23"
+            :group-readback :verified
+            :selected-repository-readback :verified
+            :services :active-running-enabled
+            :hosted-end-to-end-probe :pending
+            :native-github-approval? false
+            :merge-or-production-qualification? false}
+ :rotation {:quiesce-before-change? true :disable-readiness-before-change? true
+            :immutable-workflow-and-runtime-pins? true
+            :patch-visibility-selected-may-reset-repositories? true
+            :restore-repositories-with :put-selected-repositories
+            :require-fresh-group-and-repository-readback? true
+            :require-hosted-probe-before-readiness? true}}
