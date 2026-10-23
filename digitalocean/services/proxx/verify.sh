@@ -21,6 +21,45 @@ if [ "$(printf '%s' "$health" | jq -r '.ok')" != "true" ]; then
   exit 1
 fi
 
+# Confirm the selected immutable image is actually running before probing its
+# compiled policy API. These fixtures read contracts only; no provider is called
+# and no account state is changed.
+: "${PROXX_IMAGE:?PROXX_IMAGE missing from the rendered environment}"
+[[ "$PROXX_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]] || {
+  echo "proxx: release image must be pinned by digest" >&2
+  exit 1
+}
+container=$(docker compose --project-name proxx --env-file .env ps -q proxx)
+[ -n "$container" ] || { echo "proxx: no running service container" >&2; exit 1; }
+running_image=$(docker inspect --format '{{.Config.Image}}' "$container")
+[ "$running_image" = "$PROXX_IMAGE" ] || {
+  echo "proxx: running image differs from the selected release" >&2
+  exit 1
+}
+docker compose --project-name proxx --env-file .env exec -T proxx   node --input-type=module <<'POLICY_PROBE'
+import assert from 'node:assert/strict';
+const runtime = await import('./dist/cljs/proxx-runtime.js');
+const manifest = process.env.PROXX_CLJS_POLICY_MANIFEST || 'resources/policies/runtime/00-manifest.edn';
+assert.equal(typeof runtime.classifyCredentialFailure, 'function', 'credential classifier export missing');
+for (const [provider, status, message] of [
+  ['kimi-for-coding', 403, "You've reached your 5-hour usage limit."],
+  ['zen', 402, 'Insufficient account funds'],
+  ['requesty', 412, 'Reached monthly spend limit for API key'],
+  ['openrouter', 403, 'Key limit exceeded (total limit).'],
+]) {
+  const verdict = runtime.classifyCredentialFailure(manifest, provider, status, message);
+  assert.equal(verdict.status, 'ok', `${provider}: policy load failed`);
+  assert.equal(verdict.result, 'quota-exhausted', `${provider}: quota classification missing`);
+  assert.equal(verdict.disable, false, `${provider}: quota must not disable the account`);
+  assert.ok(verdict.cooldownMs > 0, `${provider}: bounded cooldown missing`);
+}
+const compiled = runtime.resolveModelAlias(manifest, 'gemma4:31b', 'gemini');
+assert.equal(compiled.status, 'ok', 'model alias API failed');
+assert.equal(compiled.alias, 'gemma-4-31b-it', 'provider-specific alias contract missing');
+console.log('proxx: compiled credential-failure policy verified for Kimi Code, Zen, Requesty and OpenRouter');
+POLICY_PROBE
+echo "proxx: running release image verified: $running_image"
+
 # 2. Register providers. With DATABASE_URL set, Proxx serves credentials from
 #    the SQL store and ignores the environment, so this is the only path that
 #    gets the Requesty key in. accountId is pinned, making reruns upserts.

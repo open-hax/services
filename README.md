@@ -100,7 +100,8 @@ full immutable source SHA. No Knoxx candidate is required for this scope.
 
 The existing production-host lock covers image build, host verification,
 digest-pinned deployment, provider provisioning and the real inference health
-gate. This scope verifies the existing host and leaves Knoxx and ingress alone.
+gate. The gate inspects the running container image and probes the compiled
+credential-failure classifier for all four providers without changing accounts. This scope verifies the existing host and leaves Knoxx and ingress alone.
 Provider credentials remain in the protected production environment and Proxx
 SQL store. Local Stealth policy files and credentials are not copied to production.
 A production provider error is a failed health gate, not evidence of a release.
