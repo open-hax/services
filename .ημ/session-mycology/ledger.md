@@ -271,3 +271,13 @@
   spore: none
   receipt-refs: "receipts.edn#sha256:40ca012cd2eff3fe71de6ef5eeab09271e36f50c8df81ad65fbc5ea7226010bc"
   note: "Use the child canonical card and receipt locations; preserve every old ledger byte and keep generated caller syntax distinct from hosted worker/model qualification. Runtime ownership stays in eta-mu; existing checks and approval policy remain authoritative. No new spore or promotion."
+
+- ts: "2026-10-23T08:05:13.400Z"
+  session: "/home/err/.local/share/foresight-worktrees/antigravity-members-20261023/services"
+  task: "Persist qualified local Antigravity worker deployment sources"
+  p-efficiency: 0.9
+  p-friction: 0.2
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: "receipts.edn#sha256:bbd0791081a8e010737376bf73ca66bc22f0e0675332bba7d40e0ebe9aa9c26b"
+  note: "Separate live service availability, locally qualified native cases, hosted workflow proof, and inconclusive negative enforcement. Preserve exact reviewed privileged source bytes and immutable runtime/workflow provenance. No spore or promotion."
