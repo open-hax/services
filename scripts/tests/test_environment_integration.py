@@ -207,6 +207,22 @@ class OwnerTests(unittest.TestCase):
 
 
 class PreservationTests(unittest.TestCase):
+ def test_native_volume_preparation_preserves_existing_file_binds(self):
+  import subprocess
+  workflow=(ROOT/'.github/workflows/deploy-digitalocean.yml').read_text()
+  start=workflow.index('          sed -nE ',workflow.index('# A non-mount alias'))
+  end=workflow.index('\n\n          # BEGIN KNOXX PUBLICATION WORKSPACE',start)
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d)
+   credential=root/'google-client.json'
+   credential.write_text('synthetic private fixture')
+   (root/'compose.yaml').write_text('services:\n  app:\n    volumes:\n      - ${AXXIUM_STATE_PATH}/google-client.json:/run/client.json:ro\n      - ${AXXIUM_STATE_PATH}/data:/app/data\n')
+   result=subprocess.run(['bash','-eu','-c',workflow[start:end]],cwd=root,
+    env={'PATH':os.defpath,'AXXIUM_STATE_PATH':str(root)},capture_output=True,text=True,timeout=5)
+   self.assertEqual(0,result.returncode,result.stderr)
+   self.assertEqual('synthetic private fixture',credential.read_text())
+   self.assertTrue((root/'data').is_dir())
+
  def test_effective_optional_values_survive_legacy_render_without_secret_output(self):
   with tempfile.TemporaryDirectory() as d:
    root=Path(d);old=root/'.env';new=root/'.env.candidate'

@@ -761,7 +761,14 @@ jobs:
           sed -nE 's/^[[:space:]]+- (\$\{[^}]*\}[^:"[:space:]]*|[^$:"[:space:]][^:"[:space:]]*):.*/\1/p' compose.yaml \
             | while IFS= read -r src; do
                 case "$src" in
-                  /*|\$\{*) mkdir -p "$(eval echo "$src")" ;;
+                  /*|\$\{*)
+                    mount_source=$(eval echo "$src")
+                    # Existing file binds (for example Google credentials)
+                    # are provisioned separately and must remain files.
+                    if [ ! -f "$mount_source" ]; then
+                      mkdir -p "$mount_source"
+                    fi
+                    ;;
                 esac
               done
 
