@@ -1,7 +1,13 @@
 # Per-service environments
 
-Public names are `<environment>.<service>.promethean.rest`. The initial services
-are `knoxx` and `axxium`; environments are `stealth`, `yoga`, `testing`, `staging`,
+The current shared-login source candidate extends this lane to protected
+production/Stealth/Yoga admission; see [candidate enrollment and qualification](shared-login-and-relays.md).
+The extension does not enroll any current host or supply production proof.
+
+Nonproduction public names are `<environment>.<service>.promethean.rest`;
+production uses the canonical `<service>.promethean.rest`. The controller builds
+`knoxx`, `axxium` and `proxx`. Proxx candidate slot reservations and protected
+host enrollment are declared in [the integration contract](shared-login-and-relays.md). Environments are `stealth`, `yoga`, `testing`, `staging`,
 and `production`. Stealth is 192.168.12.128; Yoga is 192.168.12.68. Public DNS points
 to Knoxx ingress, which forwards only the named application ports.
 

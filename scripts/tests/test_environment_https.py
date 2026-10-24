@@ -106,7 +106,9 @@ class EnvironmentIngressSocketTests(unittest.TestCase):
         """
         installer = Path(__file__).resolve().parents[1] / "install-environment-ingress.py"
         slots = (("testing-axxium", 19071, 18871), ("staging-axxium", 19072, 18872),
-                 ("testing-knoxx", 19082, 18881), ("staging-knoxx", 19083, 18882))
+                 ("testing-knoxx", 19082, 18881), ("staging-knoxx", 19083, 18882),
+                 ("testing-proxx",19091,18891),("staging-proxx",19092,18892),
+                 ("stealth-proxx",19089,19789),("yoga-proxx",19090,19790))
         nonlocal_address = "198.51.100.254"
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as baseline:
             with self.assertRaises(OSError) as refused:

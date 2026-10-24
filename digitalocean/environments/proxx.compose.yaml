@@ -1,0 +1,69 @@
+# Fixed single-node environment topology. No global stack network/aliases.
+# Port values are checked against Services service_slots.json before image intake.
+services:
+  proxx:
+    image: ${PROXX_IMAGE:?Set an admitted immutable Proxx image ID}
+    user: 1000:1000
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:${PROXX_LISTEN_PORT:?Declared slot port required}:8789
+    environment:
+      NODE_ENV: production
+      PROXY_HOST: 0.0.0.0
+      PROXY_PORT: '8789'
+      PROXY_AUTH_TOKEN: ${PROXY_AUTH_TOKEN:?Instance-local operator token required}
+      PROXY_TOKEN_PEPPER: ${PROXY_TOKEN_PEPPER:?Persistent token pepper required}
+      SESSION_SECRET: ${PROXX_SESSION_SECRET:?Persistent session secret required}
+      DATABASE_URL: postgresql://openai_proxy:${PROXX_POSTGRES_PASSWORD:?Database password required}@database:5432/openai_proxy
+      PROXX_CLJS_RUNTIME_REQUIRED: 'true'
+      PROXX_CLJS_POLICY_AUTHORITATIVE: 'true'
+      PROXY_REQUEST_LOGS_FILE: /app/data/request-logs.jsonl
+      PROXY_PROMPT_AFFINITY_FILE: /app/data/prompt-affinity.json
+      PROXY_SETTINGS_FILE: /app/data/proxy-settings.json
+      VITE_ALLOWED_HOSTS: ${PROXX_PUBLIC_HOST:?Declared slot hostname required}
+      AXXIUM_OIDC_ISSUER: ${AXXIUM_OIDC_ISSUER:-https://axxium.promethean.rest/oidc}
+      AXXIUM_OIDC_PUBLIC_ORIGIN: ${AXXIUM_OIDC_PUBLIC_ORIGIN:-}
+      AXXIUM_OIDC_CLIENT_ID: ${AXXIUM_OIDC_CLIENT_ID:-}
+      AXXIUM_OIDC_CLIENT_SECRET: ${AXXIUM_OIDC_CLIENT_SECRET:-}
+      AXXIUM_OIDC_ACCOUNT_LINKS: ${AXXIUM_OIDC_ACCOUNT_LINKS:-[]}
+    volumes:
+      - ./state/data:/app/data
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8789/health').then(r=>{if(!r.ok)throw Error();return r.json()}).then(b=>process.exit(b.ok===true?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+    mem_limit: 512m
+    cpus: '1.0'
+    pids_limit: 160
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+  database:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: openai_proxy
+      POSTGRES_USER: openai_proxy
+      POSTGRES_PASSWORD: ${PROXX_POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U openai_proxy -d openai_proxy]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+    mem_limit: 192m
+    cpus: '1.0'
+    pids_limit: 160
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+volumes:
+  postgres-data: null

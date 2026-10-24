@@ -6,10 +6,12 @@ from functools import cache
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError
 from urllib.parse import quote
-from environment_policy import testing_admission,staging_admission,testing_authorization,timestamp
+from environment_policy import testing_admission,staging_admission,testing_authorization,timestamp,production_admission,deployment_authorization
 
 def api(path,*,accept='application/vnd.github+json'):
- req=Request('https://api.github.com/'+path,headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'Accept':accept,'X-GitHub-Api-Version':'2022-11-28'})
+ headers={'Accept':accept,'X-GitHub-Api-Version':'2022-11-28'}
+ if os.environ.get('GITHUB_TOKEN'):headers['Authorization']='Bearer '+os.environ['GITHUB_TOKEN']
+ req=Request('https://api.github.com/'+path,headers=headers)
  with urlopen(req,timeout=30) as response:return json.load(response)
 def pages(path):
  result=[]
@@ -90,8 +92,12 @@ def owns_files(repo,login,files):
    if matches(pattern,path):owners=values
   if not any(owner_matches(owner) for owner in owners):return False
  return bool(files)
-def admit(repo,number,environment):
+def admit(repo,number,environment,*,controller_sha=None,image_sha256=None):
+ if environment in ('stealth','yoga') and repo!='open-hax/proxx':
+  return {'admitted':False,'reason':'laptop receiver enrollment is Proxx-only'}
  pr=api(f'repos/{repo}/pulls/{number}')
+ if environment in ('production','stealth','yoga'):
+  return protected_admission(repo,number,environment,pr,controller_sha,image_sha256)
  if environment=='staging':
   result=staging_admission({'merged':pr['merged'],'base':pr['base']['ref'],'merge_sha':pr['merge_commit_sha']})
   if result['admitted'] and api(f'repos/{repo}/branches/main')['commit']['sha']!=result['source_sha']:
@@ -140,10 +146,59 @@ def admit(repo,number,environment):
  if not result['admitted']:return result
  result['testing_authorization']=authorization
  return result
+def qualification(repo, source_sha, controller_sha):
+ # Receipts are immutable accepted-main source, never caller JSON or PR fixtures.
+ if not isinstance(controller_sha,str) or re.fullmatch('[0-9a-f]{40}',controller_sha) is None:
+  raise ValueError('Immutable controller qualification required')
+ service=repo.split('/')[1]
+ path=f'repos/open-hax/services/contents/digitalocean/qualifications/{service}/{source_sha}.json?ref={controller_sha}'
+ receipt=api(path)
+ if receipt.get('encoding')!='base64' or receipt.get('type')!='file' or not isinstance(receipt.get('content'),str):
+  raise ValueError('Qualification must be a native immutable file')
+ # GitHub's native contents response wraps base64 at newline boundaries.
+ data=json.loads(base64.b64decode(receipt['content'].replace('\n',''),validate=True))
+ if data.get('repository')!=repo or data.get('source_sha')!=source_sha:
+  raise ValueError('Qualification source binding mismatch')
+ return production_admission(source_sha,data['integration'],data['e2e'],data['mutation_batches'])
+
+
+def protected_admission(repo,number,environment,pr,controller_sha,image_sha256):
+ result=staging_admission({'merged':pr['merged'],'base':pr['base']['ref'],'merge_sha':pr['merge_commit_sha']})
+ if not result['admitted']:return result
+ source=result['source_sha']
+ if api(f'repos/{repo}/branches/main')['commit']['sha']!=source:
+  return {'admitted':False,'reason':'qualified deployment requires exact current main'}
+ try:
+  proof=qualification(repo,source,controller_sha)
+ except (KeyError,TypeError,ValueError,HTTPError):
+  return {'admitted':False,'reason':'immutable source qualification unavailable'}
+ if not proof['admitted']:return proof
+ # Initial admission builds without secrets. Fresh owner intent can only bind
+ # bytes once that isolated image artifact exists; deploy rechecks everything.
+ if image_sha256 is None:
+  return {**result,'environment':environment,'qualification':proof}
+ auth=deployment_authorization(pages(f'repos/{repo}/pulls/{number}/reviews'),
+  source_sha=source,controller_sha=controller_sha or '',image_sha256=image_sha256 or '',
+  environment=environment,service=repo.split('/')[1],now=datetime.now(timezone.utc))
+ if not auth:
+  return {'admitted':False,'reason':'fresh exact image/source/host native main code-owner authorization required'}
+ # Require all current main files, not a PR candidate's modified CODEOWNERS.
+ tree=api(f'repos/{repo}/git/trees/{source}?recursive=1')
+ paths=[row['path'] for row in tree.get('tree',[]) if row.get('type')=='blob']
+ if tree.get('truncated') is not False or not owns_files(repo,auth['login'],paths):
+  return {'admitted':False,'reason':'complete current-main owner coverage required'}
+ current=api(f'repos/{repo}/pulls/{number}')
+ if (current['merged'] is not True or current['base']['ref']!='main' or current['merge_commit_sha']!=source
+     or api(f'repos/{repo}/branches/main')['commit']['sha']!=source):
+  return {'admitted':False,'reason':'main changed during protected admission'}
+ return {**result,'environment':environment,'qualification':proof,'deployment_authorization':auth}
+
+
 if __name__=='__main__':
  repo,number,environment=sys.argv[1:]
- if repo not in {'open-hax/knoxx','open-hax/axxium'}:raise SystemExit('Service repository not enabled')
- result=admit(repo,int(number),environment)
+ if repo not in {'open-hax/knoxx','open-hax/axxium','open-hax/proxx'}:raise SystemExit('Service repository not enabled')
+ result=admit(repo,int(number),environment,controller_sha=os.environ.get('ADMITTED_CONTROLLER_SHA'),
+              image_sha256=os.environ.get('ADMITTED_IMAGE_SHA256'))
  print(json.dumps(result))
  if not result['admitted']:raise SystemExit(1)
  if output:=os.environ.get('GITHUB_OUTPUT'):

@@ -26,8 +26,11 @@ class ReceiverTests(unittest.TestCase):
 DOCKER_DOUBLE = r'''#!/usr/bin/env python3
 import hashlib,json,os,sys,tarfile
 from pathlib import Path
-p=Path(os.environ['RECEIVER_TEST_DOCKER_STATE']);s=json.loads(p.read_text());a=sys.argv[1:]
-s['calls'].append(a)
+p=Path(os.environ.get('RECEIVER_TEST_DOCKER_STATE',str(Path(__file__).resolve().parents[1]/'docker.json')));s=json.loads(p.read_text());a=sys.argv[1:]
+# Track the config-only projection separately from the existing image/runtime
+# transaction trace; this command cannot load, tag, start or remove anything.
+if a[:1]==['compose'] and 'config' in a:s.setdefault('preflight_calls',[]).append(a)
+else:s['calls'].append(a)
 s['known_ids']=sorted(set(s.get('known_ids',[]))|set(s['images'].values()))
 def finish(code=0,text=''):
  p.write_text(json.dumps(s));print(text,end='');sys.exit(code)
@@ -75,6 +78,14 @@ if a[:2]==['image','rm']:
  if s.get('fail_remove') or tag not in s['images'] or s['images'][tag] in s['containers'].values():finish(1)
  del s['images'][tag];s['removed'].append(tag);finish()
 if a[:1]==['compose']:
+ if 'config' in a:
+  model=json.load(sys.stdin);values={key:'' for key in model['services']['preflight']['environment']}
+  slot=Path(a[a.index('--env-file')+1]).parent;phase=slot.parent.name;service=slot.name
+  values[service.upper()+'_PUBLIC_BASE_URL']=f'https://{phase}.{service}.promethean.rest'
+  values[service.upper()+'_LISTEN_PORT']=str((18871 if service=='axxium' else 18881)+(phase=='staging'))
+  if service=='proxx':values={'PROXX_PUBLIC_HOST':f'{phase}.proxx.promethean.rest','PROXX_LISTEN_PORT':str(18891+(phase=='staging'))}
+  if service=='knoxx':values['KNOXX_AXXIUM_ORIGIN']=f'https://{phase}.axxium.promethean.rest'
+  finish(text=json.dumps({'services':{'preflight':{'environment':values}}}))
  if 'up' in a:
   release=Path(a[[i for i,x in enumerate(a) if x=='--env-file'][-1]+1])
   values=[x.split('=',1)[1] for x in release.read_text().splitlines()]
@@ -94,8 +105,8 @@ class ReceiverHarness:
   self.state=self.root/'docker.json'
   self.save({'images':{},'containers':{},'calls':[],'health':[],'removed':[],'removal_attempts':[]})
   for env in ('testing','staging'):
-   for service in ('knoxx','axxium'):
-    slot=self.slot(env,service);slot.mkdir(parents=True);(slot/'.env').write_text('');(slot/'compose.yaml').write_text('services: {}\n')
+   for service in ('knoxx','axxium','proxx'):
+    slot=self.slot(env,service);slot.mkdir(parents=True);(slot/'.env').write_text('# synthetic disabled configuration\n');(slot/'.env').chmod(0o600);(slot/'compose.yaml').write_text('services: {}\n')
  def slot(self,env='testing',service='axxium'):return self.root/env/service
  def data(self):return json.loads(self.state.read_text())
  def save(self,data):self.state.write_text(json.dumps(data))

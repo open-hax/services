@@ -62,6 +62,12 @@ services:
         required: false
     environment:
       NODE_ENV: production
+      KNOXX_AXXIUM_OIDC_ENABLED: ${KNOXX_AXXIUM_OIDC_ENABLED:-false}
+      KNOXX_AXXIUM_OIDC_ISSUER: ${KNOXX_AXXIUM_OIDC_ISSUER:-https://axxium.promethean.rest/oidc}
+      KNOXX_AXXIUM_OIDC_CLIENT_ID: ${KNOXX_AXXIUM_OIDC_CLIENT_ID:-}
+      KNOXX_AXXIUM_OIDC_CLIENT_SECRET: ${KNOXX_AXXIUM_OIDC_CLIENT_SECRET:-}
+      KNOXX_AXXIUM_OIDC_LINKS: ${KNOXX_AXXIUM_OIDC_LINKS:-[]}
+
       HOST: 0.0.0.0
       PORT: "8000"
 

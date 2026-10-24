@@ -36,6 +36,12 @@ services:
       - ${CADDY_STATE_PATH}/data:/data
       - ${CADDY_STATE_PATH}/config:/config
       - ${CADDY_STATE_PATH}/managed:/etc/caddy/managed:ro
+      - type: bind
+        source: ./axxium-did.json
+        target: /etc/caddy/axxium-identity/did.json
+        read_only: true
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
       interval: 30s

@@ -1,0 +1,11 @@
+# Preserve the existing production ingress alias on the existing external network.
+# Never install this overlay for isolated or laptop slots.
+services:
+  proxx:
+    networks:
+      default:
+        aliases: [proxx]
+networks:
+  default:
+    name: open-hax
+    external: true

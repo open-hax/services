@@ -261,3 +261,9 @@
   spore: none
   receipt-refs: 334fbdaf3c079eeba7348a51f95f0fc913834aaa,sha256:e1727b923d219219d57b1b4e0c48eb71d18c7cae64faa9e52047b531a7426bf6
   note: Use the exact current callable workflow in local actionlint fixtures to prove the real undeclared-name failure and optional-interface compatibility; preserve the entire old callee outside the declaration. Run the actual registered suite, retain genuine expected failure versus helper refusal separately, and keep source/provenance commits distinct. An optional-interface bridge enables source ordering but does not repair the old chained shell preflight, settle a future caller promise or authorize deployment. Keep existing owner state and complete ledger prefixes; new source still needs personal review/adoption and final required-secret safeguards. Candidate0/no spore.
+
+- context: shared-login Services normalized Compose follow-up
+  p-friction: 0.3
+  p-skill-candidate: 0.1
+  spore: none
+  note: Source YAML and normalized Compose JSON expose different default representations; retain explicit source contract while accepting omitted false projection. First local suite omitted required Caddy tool setting; retained failed output and reran the complete affected module with verified 2.8.4. Test child created one bytecode cache, removed only that owned artifact. Existing harness guidance suffices; no spore or promotion.

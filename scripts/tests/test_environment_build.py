@@ -68,6 +68,13 @@ elif tool == "pnpm":
         for name in ("app.css", "cljs/app.js", "bridge/style.css"):
             if name != os.environ.get("OMIT_FRONTEND"):
                 put(root / "dist" / name)
+    elif command == ["build:runtime"]:
+        if os.environ.get("OMIT_PROXX") != "runtime":
+            put(root / "dist/cljs/proxx-runtime.js")
+        put(root / "dist/main.js")
+    elif command == ["web:build"]:
+        if os.environ.get("OMIT_PROXX") != "web":
+            put(root / "web/dist/index.html")
     elif "deploy" in command:
         put(Path(command[-1]) / "dist/index.js")
     elif not ("install" in command or command in (["typecheck"], ["test"])
@@ -206,6 +213,29 @@ class EnvironmentBuildTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual([call["tool"] for call in self.calls()], ["git"])
 
+    def test_proxx_uses_controller_recipe_and_exact_image_revision(self):
+        result = self.run_builder(service="proxx")
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = self.calls("docker")
+        self.assertEqual(["build", "-f", str(self.controller / "digitalocean/environments/Dockerfile.proxx"),
+                          "-t", "promethean-proxx:"+SOURCE_SHA, str(self.source)], calls[0]["args"])
+        self.assertEqual(["save", "promethean-proxx:"+SOURCE_SHA], calls[1]["args"])
+        self.assertEqual([], self.calls("npm"))
+
+    def test_proxx_missing_runtime_or_ui_cannot_package(self):
+        for output in ("runtime", "web"):
+            with self.subTest(output=output):
+                shutil.rmtree(self.source/"dist",ignore_errors=True)
+                shutil.rmtree(self.source/"web",ignore_errors=True)
+                result = self.run_builder(service="proxx", OMIT_PROXX=output)
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual([], self.calls("docker"))
+
+    def test_unknown_service_stops_before_tools(self):
+        result = self.run_builder(service="unknown")
+        self.assertNotEqual(0,result.returncode)
+        self.assertEqual([],self.calls())
+
     def test_axxium_keeps_its_own_build_path(self):
         result = self.run_builder(service="axxium")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -328,6 +358,7 @@ assert sys.argv[sys.argv.index('-f')+1] == '-'
 assert sys.argv[-3:] == ['config','--format','json']
 path=Path(sys.argv[sys.argv.index('--env-file')+1]);phase,service=path.parts[-3:-1]
 values={service.upper()+'_PUBLIC_BASE_URL':f'https://{phase}.{service}.promethean.rest',service.upper()+'_LISTEN_PORT':str((18881 if service=='knoxx' else 18871)+(phase=='staging'))}
+if service=='proxx':values={'PROXX_PUBLIC_HOST':f'{phase}.proxx.promethean.rest','PROXX_LISTEN_PORT':str(18891+(phase=='staging'))}
 if service=='knoxx':values['KNOXX_AXXIUM_ORIGIN']=f'https://{phase}.axxium.promethean.rest'
 model=json.load(sys.stdin);assert set(model['services']['slot']['environment'])==set(values)
 print(json.dumps({'services':{'slot':{'environment':values}}}))
