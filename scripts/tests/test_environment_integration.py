@@ -207,6 +207,21 @@ class OwnerTests(unittest.TestCase):
 
 
 class PreservationTests(unittest.TestCase):
+ def test_optional_render_replaces_template_assignments_idempotently(self):
+  with tempfile.TemporaryDirectory() as d:
+   candidate=Path(d)/'.env.candidate'
+   candidate.write_text('AXXIUM_PUBLIC_BASE_URL=https://old.invalid\nUNRELATED=value\n')
+   candidate.chmod(0o600)
+   values={'AXXIUM_PUBLIC_BASE_URL':config.ISSUER.removesuffix('/oidc'),
+    'AXXIUM_TRUST_PROXY':'172.18.0.0/16','AXXIUM_OIDC_CONFIG_FILE':config.AUTHORITY_FILE}
+   for _ in range(2):
+    preserve.render('axxium',candidate,json.dumps(values))
+   text=candidate.read_text()
+   for key,value in values.items():
+    self.assertEqual(1,text.count(key+'='))
+    self.assertIn(key+"='"+value+"'",text)
+   self.assertIn('UNRELATED=value\n',text)
+
  def test_native_volume_preparation_preserves_existing_file_binds(self):
   import subprocess
   workflow=(ROOT/'.github/workflows/deploy-digitalocean.yml').read_text()

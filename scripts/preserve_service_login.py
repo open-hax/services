@@ -24,12 +24,16 @@ def projection(service, path):
     return json.loads(result.stdout)['services']['optional']['environment']
 
 
-def append_values(path, values):
+def assignment_text(values):
     if any(not isinstance(v,str) or any(ord(c)<32 for c in v) or "'" in v for v in values.values()):
         raise ValueError('Optional values must be single-line shell-safe strings')
+    return ''.join(f"{key}='{value}'\n" for key,value in values.items())
+
+
+def append_values(path, values):
+    text=assignment_text(values)
     with path.open('a') as target:
-        for key,value in values.items():
-            target.write(f"{key}='{value}'\n")
+        target.write(text)
 
 
 def render(service, path, raw):
@@ -41,7 +45,12 @@ def render(service, path, raw):
         raise ValueError('Unknown protected optional configuration key')
     if values:
         validate(service,values)
-        append_values(path,values)
+        replacement=assignment_text(values)
+        # Candidate assignments are emitted by our fixed renderer as KEY=... .
+        # Select names only; Compose remains the effective-value parser.
+        retained=''.join(line for line in path.read_text().splitlines(keepends=True)
+                         if line.partition('=')[0] not in values)
+        path.write_text(retained+('\n' if retained and not retained.endswith('\n') else '')+replacement)
 
 
 def preserve(service, existing, candidate, state):
