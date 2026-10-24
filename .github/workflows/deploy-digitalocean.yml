@@ -601,7 +601,7 @@ jobs:
           # Fixed controller helper preserves effective optional values before replacement.
           # No private configuration is returned to the runner or printed.
           if [[ "$SERVICE" =~ ^(axxium|knoxx|proxx)$ ]]; then
-            ssh open-hax-target "cd '${RUNTIME_PATH}' && python3 preserve_service_login.py preserve '$SERVICE' .env .env.candidate '${STATE_PATH}'"
+            ssh open-hax-target "cd '${RUNTIME_PATH}' && python3 -B preserve_service_login.py preserve '$SERVICE' .env .env.candidate '${STATE_PATH}'"
           fi
           ssh open-hax-target "mv '${RUNTIME_PATH}/.env.candidate' '${RUNTIME_PATH}/.env'"
           ssh open-hax-target "chmod 600 '${RUNTIME_PATH}/.env' && chmod +x '${RUNTIME_PATH}/verify.sh'"

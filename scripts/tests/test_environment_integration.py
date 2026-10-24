@@ -259,7 +259,9 @@ class NativeComposeTests(unittest.TestCase):
    'AXXIUM_IMAGE':'sha256:'+'d'*64,'AXXIUM_PUBLIC_BASE_URL':'https://axxium.promethean.rest','DB_PASSWORD':'synthetic','JWT_SECRET':'synthetic'})
   app=model['services']['axxium'];mount=next(v for v in app['volumes'] if v['target']=='/run/axxium/oidc')
   self.assertEqual('oidc',Path(mount['source']).name)
-  self.assertTrue(mount['read_only']);self.assertFalse(mount['bind']['create_host_path'])
+  self.assertTrue(mount['read_only'])
+  # Compose may omit default false; the raw-YAML test requires explicit false.
+  self.assertFalse(mount.get('bind',{}).get('create_host_path',False))
   self.assertEqual(config.AUTHORITY_FILE,app['environment']['AXXIUM_OIDC_CONFIG_FILE'])
  def test_production_keeps_existing_external_ingress_alias(self):
   with tempfile.TemporaryDirectory() as d:
