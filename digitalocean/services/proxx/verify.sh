@@ -92,6 +92,11 @@ for (const model of ['google/gemma-4-31b-it', 'deepinfra/google/gemma-4-31B-it']
     {providerId: 'requesty', model, mode: 'chat_completions', transport: 'direct', payload: {}}).status,
     'denied', 'managed SDK execution must not bypass wrapped transport admission');
 }
+for (const [model, billing] of [['google/gemma-4-31b-it', 'free'], ['deepinfra/google/gemma-4-31B-it', 'paid']]) {
+  assert.equal(runtime.inspectBudgetAttempt(manifest, bot,
+    {providerId: 'requesty', model, mode: 'chat_completions', transport: 'fetch', payload: {}}).status,
+    billing, `${model}: Requesty fetch billing admission drift`);
+}
 for (const [providerId, model] of [['ollama-host', 'gemma4:e4b'], ['ollama-lan', 'gemma4:e4b-128k']]) {
   const attempt = runtime.inspectBudgetAttempt(manifest, bot,
     {providerId, model, mode: 'chat_completions', payload: {max_tokens: 100000}});
@@ -99,6 +104,10 @@ for (const [providerId, model] of [['ollama-host', 'gemma4:e4b'], ['ollama-lan',
   assert.equal(attempt.outputBound, 8192, `${providerId}: local output cap missing`);
   assert.equal(attempt.payload.max_tokens, 8192, `${providerId}: decoder cap missing`);
 }
+const refusal = {providerId: 'requesty', model: 'deepinfra/google/gemma-4-31B-it', status: 402, body: {error: 'insufficient balance'}};
+assert.equal(runtime.zeroChargeBudgetRefusal(manifest, bot, refusal), true);
+assert.equal(runtime.zeroChargeBudgetRefusal(manifest, bot, {...refusal, bodyComplete: false}), false,
+  'truncated provider refusal must retain its unresolved hold');
 const pricing = await import('./dist/lib/model-pricing.js');
 pricing.setPolicyModelPricingOverrides(runtime.loadModelPricingOverrides(manifest));
 const paidPrice = pricing.getModelPricing('requesty', 'deepinfra/google/gemma-4-31B-it');
