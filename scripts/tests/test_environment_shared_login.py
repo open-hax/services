@@ -179,7 +179,7 @@ class SharedLoginTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as directory:
    slot=Path(directory)/'testing'/'knoxx';slot.mkdir(parents=True)
    env=slot/'.env';env.write_text('# synthetic');env.chmod(0o600)
-   valid={**{key:'' for key in c.KEYS['knoxx']},**c.slot_values('testing','knoxx')}
+   valid={**{key:'' for key in c.KEYS['knoxx']},**c.slot_values('testing','knoxx'),c.COMPOSE_DOLLAR_SENTINEL:'$'}
    for key in ('KNOXX_PUBLIC_BASE_URL','KNOXX_LISTEN_PORT','KNOXX_AXXIUM_ORIGIN'):
     result=type('Result',(),{'stdout':json.dumps({'services':{'preflight':{'environment':{**valid,key:'wrong'}}}})})()
     with patch.object(c.subprocess,'run',return_value=result):

@@ -28,6 +28,31 @@ KEYS = {
            'PROXX_EXISTING_BIND_ADDRESS','PROXX_DATABASE_URL','PROXX_DATA_PATH','PROXX_OPERATOR_ENV_FILE'),
 }
 
+COMPOSE_DOLLAR_SENTINEL = 'SERVICES_COMPOSE_DOLLAR_SENTINEL'
+
+
+def compose_projection_model(service, projection):
+ """Fixed JSON renderer canary; Compose still owns all dotenv semantics."""
+ if COMPOSE_DOLLAR_SENTINEL in projection:
+  raise ValueError('Reserved Compose projection key')
+ return {'services':{service:{'image':'scratch',
+         'environment':{**projection,COMPOSE_DOLLAR_SENTINEL:'$$'}}}}
+
+
+def compose_projection_values(text, service, keys):
+ """Decode only the literal-dollar rendering observed in this same model."""
+ rendered=json.loads(text)['services'][service]['environment']
+ if not isinstance(rendered,dict):
+  raise ValueError('Unsupported Compose value rendering')
+ marker=rendered.pop(COMPOSE_DOLLAR_SENTINEL,None)
+ if marker not in ('$', '$$') or set(rendered)!=set(keys) or any(not isinstance(v,str) for v in rendered.values()):
+  raise ValueError('Unsupported Compose value rendering')
+ if marker=='$$':
+  if any('$' in v.replace('$$','') for v in rendered.values()):
+   raise ValueError('Inconsistent Compose value escaping')
+  return {k:v.replace('$$','$') for k,v in rendered.items()}
+ return rendered
+
 
 def open_no_symlinks(path, flags):
  """Walk every component with directory descriptors, including parent components."""
@@ -209,14 +234,14 @@ def preflight(slot, service):
  if service=='proxx' and slot.parent.name in ('production','stealth','yoga'):
   keys.update(('PROXY_AUTH_TOKEN','PROXY_TOKEN_PEPPER','PROXX_SESSION_SECRET'))
  projection = {key: '${'+key+'-}' for key in keys}
- model = {'services': {'preflight': {'image': 'scratch', 'environment': projection}}}
+ model = compose_projection_model('preflight',projection)
  try:
   result = subprocess.run(['docker', 'compose', '--project-name', 'config-preflight',
      '--project-directory', str(slot), '--env-file', str(slot/'.env'), '-f', '-',
      'config', '--format', 'json'], input=json.dumps(model), text=True,
      stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
      env={'PATH': os.environ.get('PATH', '/usr/bin:/bin')}, check=True)
-  values = json.loads(result.stdout)['services']['preflight']['environment']
+  values = compose_projection_values(result.stdout,'preflight',projection)
   if any(values.get(key) != value for key, value in expected.items()):
    raise ValueError('Operator slot hostname or listen port differs from declared slot')
   mounted = validate(service, values)

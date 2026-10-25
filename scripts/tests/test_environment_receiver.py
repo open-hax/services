@@ -81,10 +81,13 @@ if a[:1]==['compose']:
  if 'config' in a:
   model=json.load(sys.stdin);values={key:'' for key in model['services']['preflight']['environment']}
   slot=Path(a[a.index('--env-file')+1]).parent;phase=slot.parent.name;service=slot.name
-  values[service.upper()+'_PUBLIC_BASE_URL']=f'https://{phase}.{service}.promethean.rest'
-  values[service.upper()+'_LISTEN_PORT']=str((18871 if service=='axxium' else 18881)+(phase=='staging'))
-  if service=='proxx':values={'PROXX_PUBLIC_HOST':f'{phase}.proxx.promethean.rest','PROXX_LISTEN_PORT':str(18891+(phase=='staging'))}
+  if service=='proxx':
+   values.update({'PROXX_PUBLIC_HOST':f'{phase}.proxx.promethean.rest','PROXX_LISTEN_PORT':str(18891+(phase=='staging'))})
+  else:
+   values[service.upper()+'_PUBLIC_BASE_URL']=f'https://{phase}.{service}.promethean.rest'
+   values[service.upper()+'_LISTEN_PORT']=str((18871 if service=='axxium' else 18881)+(phase=='staging'))
   if service=='knoxx':values['KNOXX_AXXIUM_ORIGIN']=f'https://{phase}.axxium.promethean.rest'
+  values['SERVICES_COMPOSE_DOLLAR_SENTINEL']='$'
   finish(text=json.dumps({'services':{'preflight':{'environment':values}}}))
  if 'up' in a:
   release=Path(a[[i for i,x in enumerate(a) if x=='--env-file'][-1]+1])

@@ -40,6 +40,11 @@ socket proxies on the droplet, with FreeBind, Caddy source allowlisting and
 loopback-only targets. It does not create SSH forwards or change laptop binds.
 Parent must separately qualify those forwards and firewall boundaries.
 
+Optional login preservation and protected preflight use the same observed
+Compose JSON dollar-rendering protocol before comparing credentials, database
+URLs and existing resource paths. The original operator files stay unchanged;
+missing, partial or inconsistent projections refuse instead of rewriting them.
+
 ## Dedicated authority directory and hot revocation
 
 The only shared issuer is `https://axxium.promethean.rest/oidc`.

@@ -10,33 +10,19 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from service_environment_config import KEYS, validate, private_file, private_authority
+from service_environment_config import KEYS, validate, private_file, private_authority, compose_projection_model, compose_projection_values
 
 OPTIONAL={service:tuple(k for k in keys if k not in ('AXXIUM_STATE_PATH','PROXX_DATA_PATH','PROXX_DATABASE_URL','PROXX_EXISTING_BIND_ADDRESS','PROXX_OPERATOR_ENV_FILE')) for service,keys in KEYS.items()}
 
 
 def projection(service, path):
     environment={k:'${'+k+'-}' for k in OPTIONAL[service]}
-    # Compose owns dotenv parsing. Observe its JSON rendering with a fixed
-    # literal dollar, instead of assuming every version re-escapes its output.
-    sentinel='SERVICES_COMPOSE_DOLLAR_SENTINEL'
-    environment[sentinel]='$$'
-    model={'services':{'optional':{'image':'scratch','environment':environment}}}
+    model=compose_projection_model('optional',environment)
     result=subprocess.run(['docker','compose','--project-name','optional-login-preflight',
         '--project-directory',str(path.parent),'--env-file',str(path),'-f','-',
         'config','--format','json'],input=json.dumps(model),text=True,capture_output=True,
         timeout=10,check=True,env={'PATH':os.environ.get('PATH',os.defpath)})
-    rendered=json.loads(result.stdout)['services']['optional']['environment']
-    marker=rendered.pop(sentinel, None)
-    if marker not in ('$', '$$') or set(rendered)!=set(OPTIONAL[service]) or any(not isinstance(v,str) for v in rendered.values()):
-        raise ValueError('Unsupported Compose optional-value rendering')
-    if marker=='$$':
-        # In this observed form every literal dollar is escaped exactly once.
-        # An unmatched dollar contradicts that protocol and refuses before writes.
-        if any('$' in v.replace('$$','') for v in rendered.values()):
-            raise ValueError('Inconsistent Compose optional-value escaping')
-        return {k:v.replace('$$','$') for k,v in rendered.items()}
-    return rendered
+    return compose_projection_values(result.stdout,'optional',environment)
 
 
 def assignment_text(values):

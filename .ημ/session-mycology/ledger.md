@@ -334,3 +334,10 @@
 - A real Compose projection disproved the assumption that config JSON contained already-raw credential values: literal dollars were doubled and then doubled again on preservation. Keep Compose as the dotenv owner and use a fixed literal-dollar canary to observe the JSON protocol; decode exactly one confirmed escape layer and refuse unknown/inconsistent forms. Unconditional replacement would corrupt a renderer that emits raw values.
 - Native local Compose5.6.1 exact owner roundtrips and Yoga5.6.0 synthetic parser observations cover four single/double/interpolation-shaped literal cases. Full199environment testsPASS with pinned Caddy parser; UID0/1001/unavailable cases refuse before writes, while fixture operator identity remains explicit and independent of CI UID. Scoped workflow lint/contracts/checksPASS.
 - Source fixes and local synthetic evidence do not install the controller or qualify native authorization, immutable release, account links, shared login, federation or actor memory across the fleet.
+
+
+## 2026-10-25T15:26:49.062405+00:00 — normalize a renderer consistently across every preservation check
+
+- Efficiency0.85, friction0.31, skill-candidate0.32. Evidence: REDff64593 and latest protected-preflight scoped test-run receipt. No spore/promotion.
+- Repairing dotenv preservation alone did not make protected enrollment work: preflight and existing operator checks still compared escaped Compose JSON against literal enrolled resources. Real Compose rejected unchanged valid values containing dollars. Reuse the existing observed-rendering adapter at all three projections; do not add another dotenv parser or weaken equality.
+- New native regression accepts unchanged database/path/token/pepper/session/client values, rejects four changed credentials and preserves both source files. Full200 environment testsPASS with pinned Caddy/native Compose, contracts/diffPASS. Fixtures explicitly emit the complete observed projection protocol. Native CI/current-head reviews and operational qualification remain required.

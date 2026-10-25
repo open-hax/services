@@ -108,7 +108,8 @@ class SlotConsumerTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as d:
    slot=Path(d)/'testing'/'proxx';slot.mkdir(parents=True)
    (slot/'.env').write_text('synthetic');(slot/'.env').chmod(0o600)
-   values={**config.slot_values('testing','proxx'),'AXXIUM_OIDC_ISSUER':config.ISSUER,
+   values={**{key:'' for key in config.KEYS['proxx']},**config.slot_values('testing','proxx'),
+    config.COMPOSE_DOLLAR_SENTINEL:'$','AXXIUM_OIDC_ISSUER':config.ISSUER,
     'AXXIUM_OIDC_PUBLIC_ORIGIN':'https://staging.proxx.promethean.rest','AXXIUM_OIDC_CLIENT_ID':'synthetic',
     'AXXIUM_OIDC_CLIENT_SECRET':'synthetic','AXXIUM_OIDC_ACCOUNT_LINKS':'[]'}
    result=SimpleNamespace(stdout=json.dumps({'services':{'preflight':{'environment':values}}}))
@@ -508,7 +509,10 @@ class ProtectedReceiverTests(unittest.TestCase):
    values={'PROXX_DATABASE_URL':migration['database'],'PROXX_DATA_PATH':str(slot),
     'PROXX_EXISTING_BIND_ADDRESS':'0.0.0.0','PROXX_OPERATOR_ENV_FILE':str(operator),
     'PROXY_AUTH_TOKEN':'synthetic-token','PROXY_TOKEN_PEPPER':'synthetic-pepper','PROXX_SESSION_SECRET':'synthetic-session'}
-   original={'PROXY_AUTH_TOKEN':'synthetic-token','PROXY_TOKEN_PEPPER':'synthetic-pepper','SESSION_SECRET':'synthetic-session'}
+   original={key:'__SERVICES_UNSET__' for key in config.KEYS['proxx']
+    if key.startswith('AXXIUM_') or key in ('PROXX_SCOPED_RELAY_ROLE','FEDERATION_BRIDGE_RELAY_URL')}
+   original.update({'PROXY_AUTH_TOKEN':'synthetic-token','PROXY_TOKEN_PEPPER':'synthetic-pepper',
+    'SESSION_SECRET':'synthetic-session',config.COMPOSE_DOLLAR_SENTINEL:'$'})
    result=SimpleNamespace(stdout=json.dumps({'services':{'preserve':{'environment':original}}}))
    with patch.object(protected,'enrollment',return_value={'migration':migration}),patch.object(protected.subprocess,'run',return_value=result) as run:
     protected.existing_state(slot,values)

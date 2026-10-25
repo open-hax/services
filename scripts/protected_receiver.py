@@ -106,19 +106,19 @@ def existing_state(slot, values):
 
     # Preserve the current operator token, API-key pepper and session secret.
     # Compose parses the original env; no fallback or generated replacement.
-    from service_environment_config import KEYS
+    from service_environment_config import KEYS, compose_projection_model, compose_projection_values
     fields=('PROXY_AUTH_TOKEN','PROXY_TOKEN_PEPPER','SESSION_SECRET')
     identity=tuple(key for key in KEYS['proxx'] if key.startswith('AXXIUM_') or key in ('PROXX_SCOPED_RELAY_ROLE','FEDERATION_BRIDGE_RELAY_URL'))
     absent='__SERVICES_UNSET__'
     projection={key:'${'+key+'-}' for key in fields}
     projection.update({key:'${'+key+'-'+absent+'}' for key in identity})
-    model={'services':{'preserve':{'image':'scratch','environment':projection}}}
+    model=compose_projection_model('preserve',projection)
     try:
         result=subprocess.run(['docker','compose','--project-name','existing-secret-preflight',
             '--project-directory',str(slot),'--env-file',migration['operator_env_file'],
             '-f','-','config','--format','json'],input=json.dumps(model),text=True,
             capture_output=True,timeout=10,check=True,env={'PATH':os.environ.get('PATH',os.defpath)})
-        original=json.loads(result.stdout)['services']['preserve']['environment']
+        original=compose_projection_values(result.stdout,'preserve',projection)
         for key in identity:
             value=original.get(key,absent)
             if value!=absent and ((key.startswith('AXXIUM_RELAY_') and not value)
