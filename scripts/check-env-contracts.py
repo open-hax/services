@@ -40,7 +40,7 @@ fi
 while IFS='=' read -r key value; do
 [ -n "$key" ] || continue
 case "$key" in
-AXXIUM_*|KNOXX_AXXIUM_OIDC_*|PROXX_SCOPED_RELAY_ROLE|FEDERATION_BRIDGE_RELAY_URL|COMPOSE_FILE)
+AXXIUM_*|KNOXX_AXXIUM_OIDC_*|PROXX_SCOPED_RELAY_ROLE|FEDERATION_BRIDGE_RELAY_URL|COMPOSE_FILE|PDS_JWT_SECRET|PDS_ADMIN_PASSWORD|PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX)
 echo "::error::optional identity configuration requires the protected configuration interface" >&2
 exit 2
 ;;

@@ -294,3 +294,11 @@
   spore: none
   receipt-refs: open-hax/services#105,4369630073,4369700446
   note: Root-controlled is not equivalent to root-only-readable: qualify actual UID/GID access instead of fstat mocks. An inherited shared secret must not break unrelated stack services. Native ownership/write-refusal and full190-test suite pass; no spore.
+
+- ts: 2026-10-25T07:47:42.732459+00:00
+  origin: shared-login-pds-overlay-boundary
+  p-efficiency: 0.85
+  p-friction: 0.2
+  p-skill-candidate: 0.3
+  receipt-refs: shared-login-and-federation; native-finding4369910271
+  note: A non-secret reusable environment overlay must refuse protected credential names before env substitution. Test the authored workflow execution with synthetic credentials and effect sentinels, then align its source contract.

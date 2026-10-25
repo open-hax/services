@@ -195,6 +195,18 @@ class SessionSecretDeploymentTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertTrue((self.fixture / 'render-called.json').exists())
 
+    def test_pds_credentials_cannot_be_replaced_by_extra_env(self):
+        for key in ('PDS_JWT_SECRET', 'PDS_ADMIN_PASSWORD',
+                    'PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX'):
+            with self.subTest(key=key):
+                self.reset_markers()
+                value = 'synthetic-overridden-pds-credential'
+                result = self.run_render(None, {key: value}, service='axxium')
+                self.assertEqual(2, result.returncode)
+                self.assertFalse((self.fixture / 'render-called.json').exists())
+                self.assertFalse((self.fixture / 'docker-called.json').exists())
+                self.assertNotIn(value, result.stdout + result.stderr)
+
     def test_verifier_rejects_bad_key_before_any_docker_probe(self):
         for label, value in INVALID.items():
             with self.subTest(label=label):
