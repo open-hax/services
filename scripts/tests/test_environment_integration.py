@@ -207,6 +207,12 @@ class OwnerTests(unittest.TestCase):
 
 
 class PreservationTests(unittest.TestCase):
+ def test_shared_optional_secret_does_not_block_unrelated_services(self):
+  with tempfile.TemporaryDirectory() as d:
+   candidate=Path(d)/'rendered.env';original="EXISTING='synthetic'\n";candidate.write_text(original)
+   for service in ('caddy','website','backend'):
+    preserve.render(service,candidate,'{"AXXIUM_OIDC_CLIENT_SECRET":"synthetic-shared-secret"}')
+    self.assertEqual(original,candidate.read_text())
  def test_optional_render_replaces_template_assignments_idempotently(self):
   with tempfile.TemporaryDirectory() as d:
    candidate=Path(d)/'.env.candidate'
@@ -365,6 +371,34 @@ class ProtectedReceiverTests(unittest.TestCase):
    for bad in ({**good,'source_sha':'d'*40},{**good,'admitted':False},{**good,'deployment_authorization':{'host':'stealth'}},{}):
     with patch.object(protected,'enrollment',return_value=data),patch.object(protected,'admit',return_value=bad):
      with self.assertRaises(ValueError):protected.authorize(slot,'yoga','proxx',SHA,archive)
+ def test_real_root_owned_enrollment_is_readable_but_not_writable_by_operator(self):
+  import subprocess
+  self.assertNotEqual(0,os.getuid(),'Run enrollment permission qualification as the non-root receiver operator')
+  subprocess.run(['sudo','-n','true'],check=True,capture_output=True)
+  with tempfile.TemporaryDirectory() as d:
+   slot=Path(d)/'production'/'axxium';slot.mkdir(parents=True)
+   (slot/'.env').write_text('synthetic')
+   names=['compose.yaml','axxium-oidc.compose.yaml']
+   for name in names:(slot/name).write_text('fixed-reviewed-synthetic')
+   data={'version':1,'environment':'production','service':'axxium','host':'droplet','native_hostname':socket.gethostname(),
+    'operator_uid':os.getuid(),'controller_sha':CONTROLLER,'pull_request':12,'project':'axxium',
+    'topology_sha256':{name:hashlib.sha256((slot/name).read_bytes()).hexdigest() for name in names},
+    'migration':{'runtime':'existing-receiver-compose','database':'synthetic-existing','data':str(slot),'bind_address':'127.0.0.1',
+     'operator_env_file':str(slot/'.env'),'operator_env_sha256':hashlib.sha256((slot/'.env').read_bytes()).hexdigest(),
+     'effective_env_sha256':hashlib.sha256((slot/'.env').read_bytes()).hexdigest(),
+     'backup':'synthetic-backup','rollback':'synthetic-restore','client_access':'synthetic-proof','review':'synthetic-review'}}
+   path=slot/'protected-receiver.json';path.write_text(json.dumps(data))
+   subprocess.run(['sudo','-n','chown','0:'+str(os.getgid()),str(path)],check=True)
+   try:
+    subprocess.run(['sudo','-n','chmod','0640',str(path)],check=True)
+    self.assertEqual(data,protected.enrollment(slot,'production','axxium'))
+    with self.assertRaises(PermissionError):path.open('w')
+    for mode in ('0600','0660','0644'):
+     subprocess.run(['sudo','-n','chmod',mode,str(path)],check=True)
+     with self.assertRaises(ValueError):protected.enrollment(slot,'production','axxium')
+   finally:
+    subprocess.run(['sudo','-n','chown',str(os.getuid())+':'+str(os.getgid()),str(path)],check=True)
+    path.chmod(0o600)
  def test_wrong_host_uid_effective_state_or_topology_cannot_enroll(self):
   from types import SimpleNamespace
   with tempfile.TemporaryDirectory() as d:
@@ -381,8 +415,8 @@ class ProtectedReceiverTests(unittest.TestCase):
      'backup':'synthetic-backup-evidence','rollback':'synthetic-restore-evidence',
      'client_access':'synthetic-host.docker.internal:8789-proof','review':'synthetic-reviewed-plan'}}
    enrollment=slot/'protected-receiver.json'
-   # Root metadata is modeled; the sandbox cannot create a root-owned file.
-   meta=SimpleNamespace(st_mode=0o100600,st_uid=0,st_size=2048)
+   # Metadata doubles exercise malformed records; real ownership is tested separately.
+   meta=SimpleNamespace(st_mode=0o100640,st_uid=0,st_gid=os.getegid(),st_size=2048)
    def check(value):
     enrollment.write_text(json.dumps(value))
     with patch.object(protected.os,'fstat',return_value=meta):return protected.enrollment(slot,'yoga','proxx')

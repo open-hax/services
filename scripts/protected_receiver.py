@@ -38,7 +38,9 @@ def enrollment(slot, environment, service):
         with os.fdopen(fd) as source:
             meta = os.fstat(source.fileno())
             if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != 0
-                    or stat.S_IMODE(meta.st_mode) != 0o600 or meta.st_size > 65536):
+                    or stat.S_IMODE(meta.st_mode) != 0o640
+                    or meta.st_gid not in set(os.getgroups()) | {os.getegid()}
+                    or meta.st_size > 65536):
                 raise ValueError()
             data = json.load(source)
         expected = {'version','environment','service','host','native_hostname','operator_uid',

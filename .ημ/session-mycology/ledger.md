@@ -285,3 +285,12 @@
   spore: none
   receipt-refs: 0863db5,82c4819d898b95730700037d301755d6565d25f6,sha256:7f02a50dc8a71d586bd4cc797cd21000a0095634f1eaf72920da335d14cb73db,sha256:0c7a3fa8ecd2706d40fb7ea3888a582bdffd71cf86eecdefb662ccf8d62b400e
   note: Append-only clarification of the earlier undated shared-login Services normalized Compose follow-up entry. Initial setup failure is retained in task services-ci-normalization.log with first hash above; successful185-test rerun is task services-current-all-final.log with second hash above, recorded with82c4819. Later188-test verification belongs to4006de3 and does not replace those historical runs. Earlier entry and receipts remain unchanged.
+- ts: 2026-10-25T05:19:17.938622815Z
+  session: /home/err/.local/share/codex-work/axxium-sso/services-current
+  task: Qualify non-root enrollment and inherited secret isolation
+  p-efficiency: 0.9
+  p-friction: 0.2
+  p-skill-candidate: 0.1
+  spore: none
+  receipt-refs: open-hax/services#105,4369630073,4369700446
+  note: Root-controlled is not equivalent to root-only-readable: qualify actual UID/GID access instead of fstat mocks. An inherited shared secret must not break unrelated stack services. Native ownership/write-refusal and full190-test suite pass; no spore.

@@ -37,9 +37,9 @@ def append_values(path, values):
 
 
 def render(service, path, raw):
-    if service not in KEYS:
-        if raw:raise ValueError('Optional configuration unsupported for this service')
-        return
+    # The protected secret is inherited by the whole stack, including ingress.
+    # Only its owning login services interpret it; unrelated renders stay intact.
+    if service not in KEYS:return
     values=json.loads(raw) if raw else {}
     if not isinstance(values,dict) or set(values)-(set(KEYS[service])-{'AXXIUM_STATE_PATH','PROXX_DATA_PATH','PROXX_DATABASE_URL','PROXX_EXISTING_BIND_ADDRESS','PROXX_OPERATOR_ENV_FILE'}):
         raise ValueError('Unknown protected optional configuration key')

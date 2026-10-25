@@ -131,7 +131,12 @@ qualified in this sandbox.
 ## Enrollment and existing-runtime preservation
 
 `protected_receiver.py` requires `SLOT/protected-receiver.json`: root-owned,
-mode0600, regular, no final symlink, bounded 64 KiB. The closed record binds:
+mode0640 with a root-controlled operator-readable group, regular, no final
+symlink, bounded 64 KiB. Root owns write access; the enrolled non-root operator
+must belong to the read group. World-readable or group-writable records refuse.
+The real filesystem qualification checks root ownership, operator read admission
+and operator write refusal; field-validation tests do not substitute for it.
+The closed record binds:
 `version:1`, environment/service, declared host, exact native hostname, operator
 UID, immutable controller SHA, positive native PR number, fixed Compose project,
 and `topology_sha256`, a map of every fixed base/role/authority Compose filename
