@@ -46,6 +46,7 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     if (proxx_verify.get("if") != "inputs.scope == 'proxx'"
         or proxx_verify.get("uses") != "./.github/workflows/digitalocean-host.yml"
         or proxx_verify.get("with", {}).get("operation") != "verify"
+        or proxx_verify.get("with", {}).get("verification_profile") != "proxx"
         or proxx_verify.get("with", {}).get("caller_holds_production_host_lock") != "true"):
         errors.append("Proxx-only release must verify the existing host under the production lock")
     if (proxx_deploy.get("if") != "inputs.scope == 'proxx'"

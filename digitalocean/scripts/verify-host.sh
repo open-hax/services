@@ -6,6 +6,8 @@ RUNTIME_ROOT=${RUNTIME_ROOT:-/srv/open-hax}
 REPORT=${REPORT:-host-verification.json}
 FIREWALL_VERIFIER=${FIREWALL_VERIFIER:-/usr/local/sbin/open-hax-verify-dev-ingress-firewall}
 OLLAMA_PROVISIONER=${OLLAMA_PROVISIONER:-/usr/local/sbin/open-hax-provision-ollama}
+VERIFY_PROFILE=${VERIFY_PROFILE:-stack}
+case "$VERIFY_PROFILE" in stack|proxx) ;; *) echo "invalid verification profile" >&2; exit 2 ;; esac
 status=passed
 
 # A fail-closed gate that discards its own reason costs a host round trip to
@@ -55,7 +57,9 @@ results=$(mktemp)
 trap 'rm -f "$results"' EXIT
 check docker command -v docker >> "$results"
 check compose docker compose version >> "$results"
-check java command -v java >> "$results"
+if [ "$VERIFY_PROFILE" = stack ]; then
+  check java command -v java >> "$results"
+fi
 check git command -v git >> "$results"
 check jq command -v jq >> "$results"
 check deploy-user id "$DEPLOY_USER" >> "$results"
@@ -66,9 +70,11 @@ for directory in services state config reports; do
 done
 check firewall-active firewall_active >> "$results"
 check firewall-dev-ingress-scoped firewall_dev_ingress_scoped >> "$results"
-check ollama-host-runtime ollama_ready >> "$results"
+if [ "$VERIFY_PROFILE" = stack ]; then
+  check ollama-host-runtime ollama_ready >> "$results"
+fi
 
-python3 - "$results" "$REPORT" "$status" <<'PY'
+python3 - "$results" "$REPORT" "$status" "$VERIFY_PROFILE" <<'PY'
 import json, platform, socket, sys
 from pathlib import Path
 rows=[]
@@ -79,6 +85,7 @@ report={
   'host': socket.gethostname(),
   'platform': platform.platform(),
   'result': sys.argv[3],
+  'profile': sys.argv[4],
   'checks': rows,
 }
 Path(sys.argv[2]).write_text(json.dumps(report, indent=2) + '\n')
