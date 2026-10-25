@@ -320,6 +320,38 @@ class NativeComposeTests(unittest.TestCase):
       projected=preserve.projection('proxx',candidate)
      self.assertEqual(literal,projected['AXXIUM_OIDC_CLIENT_SECRET'])
      self.assertEqual(before,old.read_bytes())
+
+ def test_protected_preflight_preserves_literal_dollars_in_enrolled_resources(self):
+  import subprocess
+  original=subprocess.run
+  def parser_only(command,**kwargs):
+   self.assertEqual(['docker','compose'],command[:2])
+   return original([str(self.parser),*command[2:]],**kwargs)
+  with tempfile.TemporaryDirectory(prefix='synthetic-dollar-$-') as d:
+   root=Path(d);slot=root/'yoga'/'proxx';slot.mkdir(parents=True)
+   operator=slot/'operator.env';database='postgresql://synthetic:pass$literal@localhost/existing'
+   original_values={'PROXY_AUTH_TOKEN':'token$literal','PROXY_TOKEN_PEPPER':'pepper$$literal',
+    'SESSION_SECRET':'session${LITERAL}','AXXIUM_OIDC_ISSUER':config.ISSUER,
+    'AXXIUM_OIDC_PUBLIC_ORIGIN':'https://yoga.proxx.promethean.rest','AXXIUM_OIDC_CLIENT_ID':'synthetic-client',
+    'AXXIUM_OIDC_CLIENT_SECRET':'client$$literal','AXXIUM_OIDC_ACCOUNT_LINKS':'[]'}
+   operator.write_text(preserve.assignment_text(original_values));operator.chmod(0o600)
+   migration={'database':database,'data':str(slot),'bind_address':'0.0.0.0',
+    'operator_env_file':str(operator),'operator_env_sha256':hashlib.sha256(operator.read_bytes()).hexdigest()}
+   values={**config.slot_values('yoga','proxx'),**original_values,'PROXX_DATABASE_URL':database,
+    'PROXX_DATA_PATH':str(slot),'PROXX_EXISTING_BIND_ADDRESS':'0.0.0.0',
+    'PROXX_OPERATOR_ENV_FILE':str(operator),'PROXX_SESSION_SECRET':original_values['SESSION_SECRET']}
+   del values['SESSION_SECRET']
+   candidate=slot/'.env';candidate.write_text(preserve.assignment_text(values));candidate.chmod(0o600)
+   before={path:path.read_bytes() for path in [operator,candidate]}
+   with patch.object(protected,'enrollment',return_value={'migration':migration}), \
+        patch.object(config.subprocess,'run',side_effect=parser_only):
+    self.assertEqual([],config.preflight(slot,'proxx'))
+    for key in ['PROXY_AUTH_TOKEN','PROXY_TOKEN_PEPPER','PROXX_SESSION_SECRET','AXXIUM_OIDC_CLIENT_SECRET']:
+     changed={**values,key:values[key]+'changed'}
+     candidate.write_text(preserve.assignment_text(changed))
+     with self.assertRaisesRegex(ValueError,'preflight refused'):config.preflight(slot,'proxx')
+    candidate.write_bytes(before[candidate])
+   self.assertEqual(before,{path:path.read_bytes() for path in before})
  def test_real_proxx_config_uses_each_declared_port_and_fixed_image(self):
   for phase in ('testing','staging'):
    row=slots.proxx_slot(phase)
