@@ -429,6 +429,10 @@ class WebsiteDeploymentTests(unittest.TestCase):
             shutil.copytree(ROOT / "digitalocean/services/website", source)
             remote = directory / "remote"
             remote.mkdir()
+            backup = remote / "backups/recovery/snapshot"
+            backup.parent.mkdir(parents=True)
+            backup.write_bytes(b"preserve exact recovery bytes")
+            (remote / "obsolete.conf").write_text("obsolete definition")
             binary = directory / "bin"
             binary.mkdir()
             self.write(binary / "ssh", "#!/usr/bin/env bash\nexit 0\n")
@@ -460,6 +464,8 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertEqual("definition_changed=" + ("1" if attempt == 0 else "0"), output.read_text().strip())
                 self.assertEqual((source / "compose.staging.yaml").read_bytes(), (remote / "compose.yaml").read_bytes())
+                self.assertEqual(b"preserve exact recovery bytes", backup.read_bytes())
+                self.assertFalse((remote / "obsolete.conf").exists())
 
     def test_observed_receipt_rejects_failed_health_or_any_candidate_mismatch(self):
         image = "ghcr.io/open-hax/website:" + "a" * 40 + "@sha256:" + "b" * 64
