@@ -87,6 +87,11 @@ for (const model of ['gemma4:e4b', 'gemma4:e4b-128k']) {
 assert.equal(runtime.authorizeBudgetHttpRequest(manifest, bot, 'POST', '/v1/embeddings').status, 'denied');
 assert.equal(runtime.authorizeBudgetHttpRequest(manifest, bot, 'GET', '/api/v1/paid-budgets').status, 'allowed');
 assert.equal(runtime.authorizeBudgetHttpRequest(manifest, {...bot, keyId: 'unbound'}, 'POST', '/v1/chat/completions').status, 'unavailable');
+for (const model of ['google/gemma-4-31b-it', 'deepinfra/google/gemma-4-31B-it']) {
+  assert.equal(runtime.inspectBudgetAttempt(manifest, bot,
+    {providerId: 'requesty', model, mode: 'chat_completions', transport: 'direct', payload: {}}).status,
+    'denied', 'managed SDK execution must not bypass wrapped transport admission');
+}
 for (const [providerId, model] of [['ollama-host', 'gemma4:e4b'], ['ollama-lan', 'gemma4:e4b-128k']]) {
   const attempt = runtime.inspectBudgetAttempt(manifest, bot,
     {providerId, model, mode: 'chat_completions', payload: {max_tokens: 100000}});
