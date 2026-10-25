@@ -341,3 +341,10 @@
 - Efficiency0.85, friction0.31, skill-candidate0.32. Evidence: REDff64593 and latest protected-preflight scoped test-run receipt. No spore/promotion.
 - Repairing dotenv preservation alone did not make protected enrollment work: preflight and existing operator checks still compared escaped Compose JSON against literal enrolled resources. Real Compose rejected unchanged valid values containing dollars. Reuse the existing observed-rendering adapter at all three projections; do not add another dotenv parser or weaken equality.
 - New native regression accepts unchanged database/path/token/pepper/session/client values, rejects four changed credentials and preserves both source files. Full200 environment testsPASS with pinned Caddy/native Compose, contracts/diffPASS. Fixtures explicitly emit the complete observed projection protocol. Native CI/current-head reviews and operational qualification remain required.
+
+
+## 2026-10-25T15:33:00.888401+00:00 — an isolated template is not an existing-instance migration
+
+- Efficiency0.84, friction0.28, skill-candidate0.29; latest precise Knoxx laptop planning observation receipt. No spore/promotion.
+- Existing receiver allows Proxx only on laptops; the isolated Knoxx template creates a fresh database and supplies test actor defaults. Explicitly scope topology/state enrollment before paired image delivery instead of just removing the service guard. Preserve separate public/social-local stores and bind selected product identity; shared login does not itself replicate memory.
+- Native Rheos created/read back an explicit13point epic and5/8point children/dependency, allincoming. Planning document carries full acceptance for review; no board transition, new deployment engine, implementation or operational qualification. Local links/diff checks pass; no executable test credit.
