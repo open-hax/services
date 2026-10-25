@@ -321,3 +321,12 @@
   spore: none
   receipt-refs: "receipts.edn#sha256:567ee07bf08918cb337d5653372f64ad5bc659b3e4f300bb04370a58a899a83a"
   note: "Separate successful native processes from admitted reviews. Bind each runtime rotation to fresh exact service evidence; preserve original refusal and incomplete provider outcomes. Optional progress-preview handling remains deterministic coverage until hosted observation. No spore or promotion."
+
+
+## 2026-10-25T09:13:44.143264Z — Antigravity member code-review repair
+
+Friction2/5; reuse4/5; no spore. Shared admission defects needed a renderer fix
+and bounded propagation, while local documentation needed repository-specific
+corrections. Preserve earlier receipt bytes and independent ownership. Native
+qualification and default adoption remain pending. Receipt: receipts.edn newest
+record, origin antigravity-caller-review-repairs.

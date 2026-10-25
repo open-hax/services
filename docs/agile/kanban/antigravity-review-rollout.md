@@ -22,8 +22,9 @@ recorded separately from this incoming planning card.
 
 ## Outcome
 
-This repository consumes the shared advisory reviewer with the exact requested
-`gemini-3.8-flash-high` model through its existing review and qualification process.
+This repository proposes consuming the shared advisory reviewer with the exact
+requested `gemini-3.8-flash-high` model after its existing review and qualification
+criteria pass.
 
 ## Scope
 
@@ -60,9 +61,9 @@ This repository consumes the shared advisory reviewer with the exact requested
 
 ## Verification
 
-Run `actionlint .github/workflows/antigravity-review.yml` and `git diff --check`,
+Run `actionlint .github/workflows/antigravity-review.yml` and `git diff --check "$PR_BASE_SHA" "$PR_HEAD_SHA"`,
 then the root rollout tool's exact mapped `check` documented in
-[Foresight rollout notes](https://github.com/open-hax/foresight/pull/145/files).
+[Foresight rollout notes](https://github.com/open-hax/foresight/blob/0762e0d749c6bb6f2e76cf1611e1f63366e14801/docs/notes/antigravity-review-rollout.md).
 Those local source checks do not establish hosted runner or model availability.
 Existing deterministic repository checks and required review remain necessary.
 
@@ -73,3 +74,27 @@ Rheos admission, transition, write-id or engine event asserted. Shared worker
 registration has been observed; this repository's final source adoption,
 exact-head review/CI and hosted qualification remain pending. No merge, deployment, credential copying, branch-policy change,
 new board engine, or application/runtime implementation is authorized here.
+
+
+## Caller review acceptance supplement (2026-10-25)
+
+- Verify opened, synchronize, reopened, ready_for_review and base-retarget events
+  share the per-PR review group. Title/body edits use distinct run groups.
+- Verify converted_to_draft cancels that group and skips model execution.
+- Verify fork or missing-repository heads skip before reusable-workflow admission.
+- Before giving an artifact qualification credit, compare its recorded base and
+  head to the live PR. Base advances require a fresh review; this caller does not
+  automatically dispatch on base-branch pushes. Existing merge-candidate and
+  deterministic gates remain required; a green historical check is insufficient.
+
+
+## Worker adapter review repair plan (2026-10-25)
+
+CodeRabbit review5642356341 requests that launch `--check` validate the runner
+`.path` before returning success, and that rollback continue removing the pinned
+files when unloading an absent profile fails. Preserve every digest, ownership,
+credential and runtime check. Verify the launch control in a read-only Bubblewrap
+mount with a mismatched `.path`; exercise rollback with destructive commands
+stubbed. RED: launch incorrectly exits0; rollback exits1 before file cleanup.
+No host installation, service restart, profile removal or credential change is
+authorized by these source repairs.

@@ -39,11 +39,6 @@ bwrap_digest="$(sha256sum -- "$ANTIGRAVITY_REVIEW_BWRAP")"
 [[ "${bwrap_digest%% *}" == "$ANTIGRAVITY_REVIEW_BWRAP_SHA256" ]]
 [[ -x "$ANTIGRAVITY_REVIEW_NBB" && -x "$ANTIGRAVITY_REVIEW_CLI" && -x "$ANTIGRAVITY_REVIEW_BWRAP" ]]
 [[ -d "$ANTIGRAVITY_REVIEW_WORKER_HOME" && -x "$runner_root/bin/runsvc.sh" ]]
-if "$check_only"; then
-  printf 'Configuration checks passed for %s; listener not started.\n' "$organization"
-  exit 0
-fi
-
 # Refuse stale inherited PATH snapshots: the official runsvc.sh reloads .path.
 if [[ -f "$runner_root/.path" ]]; then
   [[ "$(cat "$runner_root/.path")" == "$PATH" ]] || {
@@ -51,5 +46,10 @@ if [[ -f "$runner_root/.path" ]]; then
     exit 66
   }
 fi
+if "$check_only"; then
+  printf 'Configuration checks passed for %s; listener not started.\n' "$organization"
+  exit 0
+fi
+
 cd -- "$runner_root"
 exec /bin/bash "$runner_root/bin/runsvc.sh"
