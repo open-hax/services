@@ -15,7 +15,7 @@ jobs:
     with:
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       opencode_version: '1.18.31'
-      review_timeout_minutes: 120
+      review_timeout_minutes: 180
       muse_revision: c1369c223cf3c57e3e31934a6d746bfcdfe73f5a
       setup_eta_mu_toolchain: false
       evidence_gates_script: |

@@ -302,3 +302,11 @@
   p-skill-candidate: 0.3
   receipt-refs: shared-login-and-federation; native-finding4369910271
   note: A non-secret reusable environment overlay must refuse protected credential names before env substitution. Test the authored workflow execution with synthetic credentials and effect sentinels, then align its source contract.
+
+- ts: 2026-10-25T08:52:51.164348+00:00
+  origin: shared-login-services-review-capacity
+  p-efficiency: 0.8
+  p-friction: 0.6
+  p-skill-candidate: 0.4
+  receipt-refs: shared-login-and-federation; native40174128788
+  note: Job budget and per-invocation deadline differ. Inspect the accepted derivation before retrying a complete-input review; a bounded capacity increase preserves full-input gates and still requires actual native completion.
