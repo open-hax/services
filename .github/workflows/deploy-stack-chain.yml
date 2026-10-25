@@ -135,6 +135,7 @@ jobs:
     uses: ./.github/workflows/digitalocean-host.yml
     with:
       operation: verify
+      verification_profile: proxx
       caller_holds_production_host_lock: true
     secrets: inherit
 

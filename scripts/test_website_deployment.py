@@ -39,6 +39,43 @@ class WebsiteDeploymentTests(unittest.TestCase):
         self.chain = workflow("deploy-stack-chain.yml")
         self.phases = workflow("deploy-website-phases.yml")
 
+    def test_host_profiles_retain_shared_checks_without_ollama_for_proxx(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            commands = root / "bin"
+            commands.mkdir()
+            for name, body in {
+                "docker": "exit 0", "git": "exit 0", "jq": "exit 0",
+                "id": "exit 0", "runuser": "exit 0",
+                "ufw": "echo 'Status: active'", "firewall": "exit 0",
+                "ollama": "exit 1",
+            }.items():
+                target = commands / name
+                target.write_text("#!/bin/sh\n" + body + "\n")
+                target.chmod(0o755)
+            for name in ("services", "state", "config", "reports"):
+                (root / name).mkdir()
+            environment = {**os.environ, "PATH": str(commands) + ":" + os.environ["PATH"],
+                           "RUNTIME_ROOT": str(root), "REPORT": str(root / "report.json"),
+                           "FIREWALL_VERIFIER": str(commands / "firewall"),
+                           "OLLAMA_PROVISIONER": str(commands / "ollama")}
+            for profile, expected in (("proxx", 0), ("stack", 1), ("unknown", 2)):
+                result = subprocess.run(["bash", str(ROOT / "digitalocean/scripts/verify-host.sh")],
+                                        env={**environment, "VERIFY_PROFILE": profile}, capture_output=True)
+                self.assertEqual(expected, result.returncode, result.stderr)
+                if profile == "unknown":
+                    continue
+                report = json.loads((root / "report.json").read_text())
+                checks = {row["name"]: row["result"] for row in report["checks"]}
+                self.assertEqual(profile, report["profile"])
+                self.assertEqual(profile == "stack", "ollama-host-runtime" in checks)
+                for name in ("docker", "compose", "deploy-user", "runtime-state", "firewall-active", "firewall-dev-ingress-scoped"):
+                    self.assertEqual("passed", checks[name])
+            (commands / "docker").write_text("#!/bin/sh\nexit 1\n")
+            result = subprocess.run(["bash", str(ROOT / "digitalocean/scripts/verify-host.sh")],
+                                    env={**environment, "VERIFY_PROFILE": "proxx"}, capture_output=True)
+            self.assertEqual(1, result.returncode)
+
     def test_current_graph_is_scoped_and_closed(self):
         self.assertEqual([], chain_guard.website_path_errors(self.entry, self.chain, self.phases))
         self.assertEqual("digitalocean-production-host", self.entry["jobs"]["deploy"]["concurrency"]["group"])
@@ -118,7 +155,8 @@ class WebsiteDeploymentTests(unittest.TestCase):
             broken["jobs"][job][field] = value
             self.assertTrue(chain_guard.website_path_errors(self.entry, broken, self.phases))
         for job, field, value in (("deploy-proxx-only", "image", "ghcr.io/open-hax/proxx:main"),
-                                   ("verify-proxx-host", "operation", "bootstrap")):
+                                   ("verify-proxx-host", "operation", "bootstrap"),
+                                   ("verify-proxx-host", "verification_profile", "stack")):
             broken = copy.deepcopy(self.chain)
             broken["jobs"][job]["with"][field] = value
             self.assertTrue(chain_guard.website_path_errors(self.entry, broken, self.phases))

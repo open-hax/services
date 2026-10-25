@@ -92,6 +92,9 @@ host files at runtime.
 ## Proxx-only production release
 
 Run **Deploy Stack** on the reviewed Services revision with `scope: proxx`.
+The proxx host profile verifies Docker/Compose, deploy access to runtime directories,
+and firewall isolation. Java and the host Ollama provisioner remain stack-only
+requirements; proxx uses its Compose PostgreSQL service and configured remote providers.
 The default Proxx source is pinned to `3ed25eec53a5bed6dc224f108323ea5d20420a22`
 ([proxx#455](https://github.com/open-hax/proxx/pull/455)). This includes quota
 and spend-limit cooldowns, provider-specific model aliases in catalogue filtering,
