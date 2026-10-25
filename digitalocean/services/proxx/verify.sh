@@ -94,7 +94,17 @@ for (const [providerId, model] of [['ollama-host', 'gemma4:e4b'], ['ollama-lan',
   assert.equal(attempt.outputBound, 8192, `${providerId}: local output cap missing`);
   assert.equal(attempt.payload.max_tokens, 8192, `${providerId}: decoder cap missing`);
 }
-assert.equal(runtime.quotePaidBudget(262144, 8192, 0.13, 0.38), 37192);
+const pricing = await import('./dist/lib/model-pricing.js');
+pricing.setPolicyModelPricingOverrides(runtime.loadModelPricingOverrides(manifest));
+const paidPrice = pricing.getModelPricing('requesty', 'deepinfra/google/gemma-4-31B-it');
+assert.equal(paidPrice.pricingFound, true);
+assert.equal(paidPrice.inputPer1MTokens, 0.13, 'paid input price must not inherit the free alias');
+assert.equal(paidPrice.outputPer1MTokens, 0.38, 'paid output price must not inherit the free alias');
+const freePrice = pricing.getModelPricing('requesty', 'google/gemma-4-31b-it');
+assert.equal(freePrice.pricingFound, true);
+assert.equal(freePrice.inputPer1MTokens, 0);
+assert.equal(freePrice.outputPer1MTokens, 0);
+assert.equal(runtime.quotePaidBudget(262144, 8192, paidPrice.inputPer1MTokens, paidPrice.outputPer1MTokens), 37192);
 assert.equal(runtime.quotePaidBudget(1, 0, 0.01, 0), 1, 'fractional reservations must round up');
 console.log('proxx: compiled bot budget verified: $0.50/day, $5/month, free-first12s/20s, bounded local output and mandatory identity');
 
