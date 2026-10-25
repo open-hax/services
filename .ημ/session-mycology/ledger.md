@@ -261,3 +261,72 @@
   spore: none
   receipt-refs: 334fbdaf3c079eeba7348a51f95f0fc913834aaa,sha256:e1727b923d219219d57b1b4e0c48eb71d18c7cae64faa9e52047b531a7426bf6
   note: Use the exact current callable workflow in local actionlint fixtures to prove the real undeclared-name failure and optional-interface compatibility; preserve the entire old callee outside the declaration. Run the actual registered suite, retain genuine expected failure versus helper refusal separately, and keep source/provenance commits distinct. An optional-interface bridge enables source ordering but does not repair the old chained shell preflight, settle a future caller promise or authorize deployment. Keep existing owner state and complete ledger prefixes; new source still needs personal review/adoption and final required-secret safeguards. Candidate0/no spore.
+
+- ts: "2026-10-23T06:58:32.752Z"
+  session: "/home/err/.local/share/foresight-worktrees/antigravity-members-20261023/services"
+  task: "Prepare incoming pinned Antigravity reviewer adoption provenance"
+  p-efficiency: 0.9
+  p-friction: 0.2
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: "receipts.edn#sha256:40ca012cd2eff3fe71de6ef5eeab09271e36f50c8df81ad65fbc5ea7226010bc"
+  note: "Use the child canonical card and receipt locations; preserve every old ledger byte and keep generated caller syntax distinct from hosted worker/model qualification. Runtime ownership stays in eta-mu; existing checks and approval policy remain authoritative. No new spore or promotion."
+
+- ts: "2026-10-23T08:05:13.400Z"
+  session: "/home/err/.local/share/foresight-worktrees/antigravity-members-20261023/services"
+  task: "Persist qualified local Antigravity worker deployment sources"
+  p-efficiency: 0.9
+  p-friction: 0.2
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: "receipts.edn#sha256:bbd0791081a8e010737376bf73ca66bc22f0e0675332bba7d40e0ebe9aa9c26b"
+  note: "Separate live service availability, locally qualified native cases, hosted workflow proof, and inconclusive negative enforcement. Preserve exact reviewed privileged source bytes and immutable runtime/workflow provenance. No spore or promotion."
+
+- ts: "2026-10-23T08:39:45.366618953Z"
+  session: "/home/err/.local/share/foresight-worktrees/antigravity-members-20261023/services"
+  task: "Rotate Services advisory worker deployment to independently qualified R4"
+  p-efficiency: 0.9
+  p-friction: 0.1
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: "receipts.edn#sha256:67cb4dcb389186379b7f17b6f5936008c881b9812977acce92bd5e284abb0309"
+  note: "Bind service evidence to its runtime revision; keep prior hosted successes historical when rotating only the runtime. Compare exact deployed templates and qualify new native cases before restoring readiness. Hosted R4 and negative enforcement remain separate obligations. No spore or promotion."
+
+- ts: "2026-10-23T08:53:53.442260315Z"
+  session: "/home/err/.local/share/foresight-worktrees/antigravity-members-20261023/services"
+  task: "Persist exact R4 hosted advisory qualification observations"
+  p-efficiency: 0.95
+  p-friction: 0.05
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: "receipts.edn#sha256:01220d590eadf48505859ccefa6faf4afe8d6e663d43ea2ea5217d379e38fd9c"
+  note: "Promote pending hosted evidence only after exact source/runtime/artifact bindings and current-law validation agree. Keep historical runtime proofs, native approval, default adoption and negative enforcement as distinct facts. No spore or promotion."
+
+- ts: "2026-10-23T09:38:25.165213906Z"
+  session: "/home/err/.local/share/foresight-worktrees/antigravity-members-20261023/services"
+  task: "Rotate Services deployment to public R5 and fresh native service qualification"
+  p-efficiency: 0.9
+  p-friction: 0.1
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: "receipts.edn#sha256:debc31a8187d30c1cbeefff44584a2260ee1c40b8cdab66eda065797c88df3b6"
+  note: "Separate immutable runtime publication from pending proof publication. Retain complete raw custody while compacting current evidence below unchanged input limits, and bind fresh service cases before restoring readiness. Historical R4 and pending hosted R5 remain separate facts. No spore or promotion."
+
+- ts: "2026-10-23T10:21:39.142007Z"
+  session: "/home/err/.local/share/foresight-worktrees/antigravity-members-20261023/services"
+  task: "Rotate Services to published R6 with native service proof and preserved refusal history"
+  p-efficiency: 0.9
+  p-friction: 0.1
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: "receipts.edn#sha256:567ee07bf08918cb337d5653372f64ad5bc659b3e4f300bb04370a58a899a83a"
+  note: "Separate successful native processes from admitted reviews. Bind each runtime rotation to fresh exact service evidence; preserve original refusal and incomplete provider outcomes. Optional progress-preview handling remains deterministic coverage until hosted observation. No spore or promotion."
+
+
+## 2026-10-25T09:13:44.143264Z — Antigravity member code-review repair
+
+Friction2/5; reuse4/5; no spore. Shared admission defects needed a renderer fix
+and bounded propagation, while local documentation needed repository-specific
+corrections. Preserve earlier receipt bytes and independent ownership. Native
+qualification and default adoption remain pending. Receipt: receipts.edn newest
+record, origin antigravity-caller-review-repairs.

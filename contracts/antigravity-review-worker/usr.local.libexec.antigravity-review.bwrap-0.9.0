@@ -1,0 +1,7 @@
+# Dedicated attachment for the checksum-pinned, root-owned review sandbox.
+# The strict settings overlay remains the separate model-tool confinement layer.
+abi <abi/4.0>,
+
+profile antigravity-review-bwrap "/usr/local/libexec/antigravity-review/bwrap-0.9.0" flags=(unconfined) {
+  userns,
+}

@@ -1,0 +1,19 @@
+[Unit]
+Description=Restricted Antigravity review runner for open-hax
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/err/.local/share/antigravity-review/runner-open-hax
+EnvironmentFile=/home/err/.local/share/antigravity-review/host/worker.env
+# Clear the user manager's ambient environment; launcher reloads only fixed operator pins.
+ExecStart=/usr/bin/env -i HOME=/home/err USER=err LOGNAME=err SHELL=/bin/bash PATH=/home/err/.volta/tools/image/node/24.11.0/bin:/usr/bin:/bin LANG=C.UTF-8 LC_ALL=C.UTF-8 /bin/bash /home/err/.local/share/antigravity-review/host/launch-worker.sh open-hax
+UMask=0077
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
