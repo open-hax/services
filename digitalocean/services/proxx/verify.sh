@@ -57,6 +57,35 @@ const compiled = runtime.resolveModelAlias(manifest, 'gemma4:31b', 'gemini');
 assert.equal(compiled.status, 'ok', 'model alias API failed');
 assert.equal(compiled.alias, 'gemma-4-31b-it', 'provider-specific alias contract missing');
 console.log('proxx: compiled credential-failure policy verified for Kimi Code, Zen, Requesty and OpenRouter');
+
+// The release must include the bot budget policy, not only credential failover.
+for (const name of ['loadPaidBudgetPolicy', 'resolveBudgetRoutePlan', 'authorizeBudgetHttpRequest',
+                    'inspectBudgetAttempt', 'quotePaidBudget', 'reservePaidBudget', 'settlePaidBudget'])
+  assert.equal(typeof runtime[name], 'function', `${name}: compiled budget API missing`);
+const bot = {kind: 'tenant_api_key', keyId: '71a0813f-dbe3-45ad-a7ae-16555463e716',
+             scopes: ['proxy:use', 'budget:required']};
+const budget = runtime.loadPaidBudgetPolicy(manifest, ':paid-budget/knoxx-social');
+assert.equal(budget.dailyMicrousd, 500000, 'daily paid ceiling drifted');
+assert.equal(budget.monthlyMicrousd, 5000000, 'monthly paid ceiling drifted');
+assert.equal(budget.calendar, 'utc');
+const plan = runtime.resolveBudgetRoutePlan(manifest, bot, 'gemma4:31b');
+assert.equal(plan.totalFirstUsableMs, 20000);
+assert.deepEqual(plan.orderedRoutes.map(r => [r.providerId, r.upstreamModel, r.firstUsableOffsetMs]), [
+  ['requesty', 'google/gemma-4-31b-it', 12000],
+  ['requesty', 'deepinfra/google/gemma-4-31B-it', 20000],
+]);
+for (const model of ['gemma4:e4b', 'gemma4:e4b-128k']) {
+  const local = runtime.resolveBudgetRoutePlan(manifest, bot, model);
+  assert.equal(local.totalFirstUsableMs, 20000);
+  assert.ok(local.orderedRoutes.length > 0);
+  assert.ok(local.orderedRoutes.every(r => r.firstUsableOffsetMs === 20000 && r.upstreamModel === model));
+}
+assert.equal(runtime.authorizeBudgetHttpRequest(manifest, bot, 'POST', '/v1/embeddings').status, 'denied');
+assert.equal(runtime.authorizeBudgetHttpRequest(manifest, bot, 'GET', '/api/v1/paid-budgets').status, 'allowed');
+assert.equal(runtime.authorizeBudgetHttpRequest(manifest, {...bot, keyId: 'unbound'}, 'POST', '/v1/chat/completions').status, 'unavailable');
+assert.equal(runtime.quotePaidBudget(262144, 8192, 0.13, 0.38), 37192);
+console.log('proxx: compiled bot budget verified: $0.50/day, $5/month, free-first12s/20s, bounded local output and mandatory identity');
+
 POLICY_PROBE
 )
 timeout --kill-after=5s 60s docker compose --project-name proxx --env-file .env exec -T proxx \
