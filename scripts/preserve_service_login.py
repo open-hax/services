@@ -16,12 +16,27 @@ OPTIONAL={service:tuple(k for k in keys if k not in ('AXXIUM_STATE_PATH','PROXX_
 
 
 def projection(service, path):
-    model={'services':{'optional':{'image':'scratch','environment':{k:'${'+k+'-}' for k in OPTIONAL[service]}}}}
+    environment={k:'${'+k+'-}' for k in OPTIONAL[service]}
+    # Compose owns dotenv parsing. Observe its JSON rendering with a fixed
+    # literal dollar, instead of assuming every version re-escapes its output.
+    sentinel='SERVICES_COMPOSE_DOLLAR_SENTINEL'
+    environment[sentinel]='$$'
+    model={'services':{'optional':{'image':'scratch','environment':environment}}}
     result=subprocess.run(['docker','compose','--project-name','optional-login-preflight',
         '--project-directory',str(path.parent),'--env-file',str(path),'-f','-',
         'config','--format','json'],input=json.dumps(model),text=True,capture_output=True,
         timeout=10,check=True,env={'PATH':os.environ.get('PATH',os.defpath)})
-    return json.loads(result.stdout)['services']['optional']['environment']
+    rendered=json.loads(result.stdout)['services']['optional']['environment']
+    marker=rendered.pop(sentinel, None)
+    if marker not in ('$', '$$') or set(rendered)!=set(OPTIONAL[service]) or any(not isinstance(v,str) for v in rendered.values()):
+        raise ValueError('Unsupported Compose optional-value rendering')
+    if marker=='$$':
+        # In this observed form every literal dollar is escaped exactly once.
+        # An unmatched dollar contradicts that protocol and refuses before writes.
+        if any('$' in v.replace('$$','') for v in rendered.values()):
+            raise ValueError('Inconsistent Compose optional-value escaping')
+        return {k:v.replace('$$','$') for k,v in rendered.items()}
+    return rendered
 
 
 def assignment_text(values):

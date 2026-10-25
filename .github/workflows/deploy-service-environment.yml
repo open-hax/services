@@ -162,7 +162,7 @@ jobs:
           image_sha256=$(sha256sum artifact/images.tar | cut -d' ' -f1)
           test "$image_sha256" = "$(cat artifact/images.sha256)"
           # Fresh native owner intent is checked only in this protected job.
-          ADMITTED_CONTROLLER_SHA='${{ needs.admit.outputs.controller_sha }}' ADMITTED_IMAGE_SHA256="$image_sha256" \
+          ADMITTED_IMAGE_SHA256="$image_sha256" \
             python3 scripts/github_environment_admission.py "$SOURCE_REPOSITORY" "$PR_NUMBER" "$ENVIRONMENT" > admission.json
           test "$(python3 -c 'import json; print(json.load(open("admission.json"))["source_sha"])')" = "$BUILT_SHA"
       - name: Deploy through the restricted environment receiver

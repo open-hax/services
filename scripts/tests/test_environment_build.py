@@ -256,11 +256,16 @@ class EnvironmentPreparationTest(unittest.TestCase):
         self.script = BUILDER.with_name("prepare-service-environments.mjs")
         self.templates = BUILDER.parents[1] / "digitalocean/environments"
         self.environment = {"PATH": os.environ["PATH"], "TMPDIR": str(self.root)}
+        # Functional projection fixtures use an explicit synthetic operator
+        # identity, independently of the CI runner's UID. The guard test below
+        # supplies wrong/missing identities and observes refusal before writes.
+        self.operator = self.root / "synthetic-operator.mjs"
+        self.operator.write_text("process.getuid=()=>1000;\n")
         result = self.prepare()
         self.assertEqual(0, result.returncode, result.stderr)
 
     def prepare(self, **environment):
-        return subprocess.run(["node", str(self.script), str(self.slots), str(self.templates)],
+        return subprocess.run(["node", "--import", str(self.operator), str(self.script), str(self.slots), str(self.templates)],
                               env={**self.environment, **environment}, text=True,
                               capture_output=True, timeout=20)
 

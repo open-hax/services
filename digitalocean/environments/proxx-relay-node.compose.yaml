@@ -2,6 +2,7 @@
 services:
   proxx:
     environment:
+      PROXX_SCOPED_RELAY_ROLE: node
       AXXIUM_RELAY_NODE_ISSUER: ${AXXIUM_RELAY_NODE_ISSUER:?Fixed shared issuer required}
       AXXIUM_RELAY_NODE_AUDIENCE: ${AXXIUM_RELAY_NODE_AUDIENCE:?Exact broker origin required}
       AXXIUM_RELAY_NODE_ID: ${AXXIUM_RELAY_NODE_ID:?Distinct operator node ID required}

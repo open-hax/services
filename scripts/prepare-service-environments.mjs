@@ -46,6 +46,8 @@ for(const [name,row] of Object.entries(rows)){
 }
 const [rootArg,templateArg]=process.argv.slice(2);
 if(!rootArg||!templateArg)throw Error('Usage: prepare-service-environments.mjs ROOT TEMPLATES');
+if(typeof process.getuid!=='function'||process.getuid()!==1000)
+ throw Error('prepare-service-environments.mjs must run as UID 1000');
 const root=resolve(rootArg),templates=resolve(templateArg);
 for(const [environment,index] of [['testing',0],['staging',1]])for(const service of ['knoxx','axxium','proxx']){
  const slot=`${root}/${environment}/${service}`;mkdirSync(slot,{recursive:true,mode:0o700});

@@ -326,3 +326,11 @@
   p-skill-candidate: 0.4
   receipt-refs: heartbeat4-services-main-custody.json; heartbeat4-services-main-environment.log
   note: Fresh base changes can add a second application entry path after a retirement fix. Compose the actual accepted base, preserve backup protection and deployed policy checks, and qualify every newly introduced path before claiming ownership exclusion. Recent explicit power-off is distinct from an unexplained network outage and needs owner-intent clarification before reversing it. No spore promoted.
+
+
+## 2026-10-25T14:56:28.484267+00:00 — observe a renderer before decoding its output
+
+- Efficiency0.83, friction0.41, skill-candidate0.35. Evidence: latest scoped Services test-run receipt; REDf53825e and8c4ca1e. No spore/promotion.
+- A real Compose projection disproved the assumption that config JSON contained already-raw credential values: literal dollars were doubled and then doubled again on preservation. Keep Compose as the dotenv owner and use a fixed literal-dollar canary to observe the JSON protocol; decode exactly one confirmed escape layer and refuse unknown/inconsistent forms. Unconditional replacement would corrupt a renderer that emits raw values.
+- Native local Compose5.6.1 exact owner roundtrips and Yoga5.6.0 synthetic parser observations cover four single/double/interpolation-shaped literal cases. Full199environment testsPASS with pinned Caddy parser; UID0/1001/unavailable cases refuse before writes, while fixture operator identity remains explicit and independent of CI UID. Scoped workflow lint/contracts/checksPASS.
+- Source fixes and local synthetic evidence do not install the controller or qualify native authorization, immutable release, account links, shared login, federation or actor memory across the fleet.

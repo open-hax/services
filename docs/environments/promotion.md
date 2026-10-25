@@ -183,7 +183,7 @@ workflow commits reach main. Until an admitted build reaches a slot, its HTTPS
 route returns a service-unavailable placeholder. Axxium should be deployed before
 Knoxx in the same environment when local identity sign-in is needed.
 
-Install reviewed templates with `prepare-service-environments.mjs ROOT TEMPLATES`;
+Install reviewed templates as UID 1000 with `prepare-service-environments.mjs ROOT TEMPLATES`;
 install the receiver root-owned, then attach only `restrict,command=...` keys.
 `install-environment-ingress.py` configures the four private Caddy relays on Knoxx.
 The Caddyfile owns exact hostnames and automatic certificate renewal.
