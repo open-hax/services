@@ -65,6 +65,7 @@ for (const name of ['loadPaidBudgetPolicy', 'resolveBudgetRoutePlan', 'authorize
 const bot = {kind: 'tenant_api_key', keyId: '71a0813f-dbe3-45ad-a7ae-16555463e716',
              scopes: ['proxy:use', 'budget:required']};
 const budget = runtime.loadPaidBudgetPolicy(manifest, ':paid-budget/knoxx-social');
+assert.equal(budget.scopeId, 'knoxx-social-deepinfra', 'scope migration would orphan existing charges and holds');
 assert.equal(budget.dailyMicrousd, 500000, 'daily paid ceiling drifted');
 assert.equal(budget.monthlyMicrousd, 5000000, 'monthly paid ceiling drifted');
 assert.equal(budget.calendar, 'utc');
@@ -78,12 +79,23 @@ for (const model of ['gemma4:e4b', 'gemma4:e4b-128k']) {
   const local = runtime.resolveBudgetRoutePlan(manifest, bot, model);
   assert.equal(local.totalFirstUsableMs, 20000);
   assert.ok(local.orderedRoutes.length > 0);
-  assert.ok(local.orderedRoutes.every(r => r.firstUsableOffsetMs === 20000 && r.upstreamModel === model));
+  assert.ok(local.orderedRoutes.every(r => r.firstUsableOffsetMs === 20000));
+  assert.deepEqual(local.orderedRoutes.map(r => [r.providerId, r.upstreamModel]),
+    model === 'gemma4:e4b' ? [['ollama-host', 'gemma4:e4b'], ['ollama-lan', 'gemma4:e4b-128k']]
+                          : [['ollama-lan', 'gemma4:e4b-128k']]);
 }
 assert.equal(runtime.authorizeBudgetHttpRequest(manifest, bot, 'POST', '/v1/embeddings').status, 'denied');
 assert.equal(runtime.authorizeBudgetHttpRequest(manifest, bot, 'GET', '/api/v1/paid-budgets').status, 'allowed');
 assert.equal(runtime.authorizeBudgetHttpRequest(manifest, {...bot, keyId: 'unbound'}, 'POST', '/v1/chat/completions').status, 'unavailable');
+for (const [providerId, model] of [['ollama-host', 'gemma4:e4b'], ['ollama-lan', 'gemma4:e4b-128k']]) {
+  const attempt = runtime.inspectBudgetAttempt(manifest, bot,
+    {providerId, model, mode: 'chat_completions', payload: {max_tokens: 100000}});
+  assert.equal(attempt.status, 'free');
+  assert.equal(attempt.outputBound, 8192, `${providerId}: local output cap missing`);
+  assert.equal(attempt.payload.max_tokens, 8192, `${providerId}: decoder cap missing`);
+}
 assert.equal(runtime.quotePaidBudget(262144, 8192, 0.13, 0.38), 37192);
+assert.equal(runtime.quotePaidBudget(1, 0, 0.01, 0), 1, 'fractional reservations must round up');
 console.log('proxx: compiled bot budget verified: $0.50/day, $5/month, free-first12s/20s, bounded local output and mandatory identity');
 
 POLICY_PROBE
