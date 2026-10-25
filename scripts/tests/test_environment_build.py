@@ -267,6 +267,20 @@ class EnvironmentPreparationTest(unittest.TestCase):
     def env_file(self, phase="testing", service="knoxx"):
         return self.slots / phase / service / ".env"
 
+    def test_wrong_or_unavailable_uid_refuses_before_creating_any_slot(self):
+        for name, definition in (("root", "()=>0"), ("other", "()=>1001"),
+                                 ("unavailable", "undefined")):
+            with self.subTest(identity=name):
+                preload = self.root / (name + ".mjs")
+                preload.write_text("process.getuid=" + definition + ";\n")
+                target = self.root / ("refused-" + name)
+                result = subprocess.run(
+                    ["node", "--import", str(preload), str(self.script), str(target), str(self.templates)],
+                    env=self.environment, text=True, capture_output=True, timeout=20)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("must run as UID 1000", result.stderr)
+                self.assertFalse(target.exists(), "Refusal must precede directory, key and secret creation")
+
     def assert_refused_unchanged(self, path, **environment):
         before = path.read_bytes()
         result = self.prepare(**environment)

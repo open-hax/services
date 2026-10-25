@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -20,6 +21,32 @@ ROOT = SCRIPTS.parent
 
 
 class SharedLoginTests(unittest.TestCase):
+ def test_real_compose_relay_overlays_emit_complete_separate_runtime_roles(self):
+  templates=ROOT/'digitalocean/environments'
+  values={'PATH':os.environ['PATH'],'PROXX_IMAGE':'synthetic-proxx:fixture',
+          'PROXX_LISTEN_PORT':'18891','PROXX_PUBLIC_HOST':'testing.proxx.promethean.rest',
+          'PROXY_AUTH_TOKEN':'synthetic-token','PROXY_TOKEN_PEPPER':'synthetic-pepper',
+          'PROXX_SESSION_SECRET':'synthetic-session','PROXX_POSTGRES_PASSWORD':'synthetic-password'}
+  def rendered(extra=None, role=None):
+   command=['docker','compose','--project-name','synthetic-relay-roles','-f',str(templates/'proxx.compose.yaml')]
+   if role:command+=['-f',str(templates/f'proxx-relay-{role}.compose.yaml')]
+   result=subprocess.run(command+['config','--format','json'],env={**values,**(extra or {})},
+                         text=True,capture_output=True,timeout=15)
+   self.assertEqual(0,result.returncode,result.stderr)
+   return json.loads(result.stdout)['services']['proxx']['environment']
+  self.assertIsNone(c.validate_relay(rendered()))
+  broker={'AXXIUM_RELAY_ISSUER':c.ISSUER,'AXXIUM_RELAY_AUDIENCE':'https://proxx.promethean.rest',
+          'AXXIUM_RELAY_NODES':'[{"node_id":"synthetic-node","subject":"synthetic-owner"}]'}
+  node={'AXXIUM_RELAY_NODE_ISSUER':c.ISSUER,'AXXIUM_RELAY_NODE_AUDIENCE':'https://proxx.promethean.rest',
+        'AXXIUM_RELAY_NODE_ID':'synthetic-node','AXXIUM_RELAY_NODE_SECRET':'x'*32,
+        'AXXIUM_RELAY_NODE_SUBJECT':'synthetic-owner'}
+  for role,extra in [('broker',broker),('node',node)]:
+   with self.subTest(role=role):
+    runtime=rendered(extra,role)
+    self.assertEqual(role,c.validate_relay(runtime))
+    opposite=node if role=='broker' else broker
+    self.assertTrue(all(not runtime.get(key) for key in opposite))
+
  def test_exact_roster_and_revision_tags(self):
   self.assertEqual(('knoxx', 'axxium', 'proxx'), c.SERVICES)
   for service in c.SERVICES:
