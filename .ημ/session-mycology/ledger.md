@@ -276,3 +276,12 @@
   spore: none
   receipt-refs: none
   note: Test the native receiver across separate deployments with a slot moved out of inventory. Persist custody outside that slot; never infer absence from directory discovery. Temporary verification tools can vanish across continuation; use vendor-checksummed durable task tools. Final188 environment tests pass. No spore.
+- ts: 2026-10-25T04:21:22.362702877Z
+  session: /home/err/.local/share/codex-work/axxium-sso/services-current
+  task: Dated clarification of normalized Compose verification entry
+  p-efficiency: 0.9
+  p-friction: 0.1
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: 0863db5,82c4819d898b95730700037d301755d6565d25f6,sha256:7f02a50dc8a71d586bd4cc797cd21000a0095634f1eaf72920da335d14cb73db,sha256:0c7a3fa8ecd2706d40fb7ea3888a582bdffd71cf86eecdefb662ccf8d62b400e
+  note: Append-only clarification of the earlier undated shared-login Services normalized Compose follow-up entry. Initial setup failure is retained in task services-ci-normalization.log with first hash above; successful185-test rerun is task services-current-all-final.log with second hash above, recorded with82c4819. Later188-test verification belongs to4006de3 and does not replace those historical runs. Earlier entry and receipts remain unchanged.
