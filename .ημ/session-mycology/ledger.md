@@ -318,3 +318,11 @@
   p-skill-candidate: 0.44
   receipt-refs: shared-login-and-federation; heartbeat4-services-legacy-final.log
   note: A new deployment controller cannot own production safely while an old workflow can mutate the same Compose project. Guard all current-source entry paths before effects, preserve isolated website qualification, and distinguish source retirement from actual old-key revocation and queue drain on the host. No spore promoted.
+
+- ts: 2026-10-25T11:00:11.486625+00:00
+  origin: shared-login-controller-base-composition
+  p-efficiency: 0.72
+  p-friction: 0.61
+  p-skill-candidate: 0.4
+  receipt-refs: heartbeat4-services-main-custody.json; heartbeat4-services-main-environment.log
+  note: Fresh base changes can add a second application entry path after a retirement fix. Compose the actual accepted base, preserve backup protection and deployed policy checks, and qualify every newly introduced path before claiming ownership exclusion. Recent explicit power-off is distinct from an unexplained network outage and needs owner-intent clarification before reversing it. No spore promoted.

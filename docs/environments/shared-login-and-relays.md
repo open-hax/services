@@ -159,7 +159,7 @@ prior healthy selection refuse before image import or runtime change.
 The old Deploy Stack chain uses the same `proxx`, `knoxx` and `axxium` Compose
 project names as the production receiver. Its `up --remove-orphans` must never
 run against an enrolled receiver project. The reviewed source therefore refuses
-`scope=stack` in the manual authorization step, before qualification, builds or
+`scope=stack` and `scope=proxx` in the manual authorization step, before qualification, builds or
 host bootstrap. The reusable stack chain has its own scope guard before source
 resolution, application builds and host bootstrap, including direct calls that
 bypass the manual entry point. The reusable DigitalOcean service helper refuses

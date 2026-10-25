@@ -80,7 +80,7 @@ jobs:
           set -euo pipefail
           case "$DEPLOY_SCOPE" in
             website) ;;
-            stack)
+            stack|proxx)
               echo '::error::Legacy stack deployment is retired. Use the protected environment receiver.' >&2
               exit 2
               ;;
@@ -132,7 +132,7 @@ jobs:
 
   build-proxx:
     needs: admit-legacy-scope
-    if: inputs.scope == 'stack'
+    if: inputs.scope == 'stack' || inputs.scope == 'proxx'
     uses: ./.github/workflows/build-images.yml
     with:
       service: proxx
@@ -143,7 +143,30 @@ jobs:
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: proxx
-      image: ${{ needs.build-proxx.outputs.image }}
+      image: ${{ needs.build-proxx.outputs.image }}@${{ needs.build-proxx.outputs.digest }}
+      source_sha: ${{ needs.build-proxx.outputs.source_sha }}
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
+  # Proxx-only releases verify the existing host without bootstrapping or
+  # qualifying/redeploying Knoxx. The caller still holds the production lock.
+  verify-proxx-host:
+    needs: admit-legacy-scope
+    if: inputs.scope == 'proxx'
+    uses: ./.github/workflows/digitalocean-host.yml
+    with:
+      operation: verify
+      verification_profile: proxx
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
+  deploy-proxx-only:
+    needs: [verify-proxx-host, build-proxx]
+    if: inputs.scope == 'proxx'
+    uses: ./.github/workflows/deploy-digitalocean.yml
+    with:
+      service: proxx
+      image: ${{ needs.build-proxx.outputs.image }}@${{ needs.build-proxx.outputs.digest }}
       source_sha: ${{ needs.build-proxx.outputs.source_sha }}
       caller_holds_production_host_lock: true
     secrets: inherit

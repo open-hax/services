@@ -51,13 +51,13 @@ class LegacyLaneTest(unittest.TestCase):
         self.assertNotIn('needs', guard)
         self.assertEqual(1, len(guard['steps']))
         self.assertNotIn('uses', guard['steps'][0])
-        for scope in ('stack', 'unknown', ''):
+        for scope in ('stack', 'proxx', 'unknown', ''):
             result, output = self.run_guard(guard['steps'][0]['run'], DEPLOY_SCOPE=scope)
             self.assertNotEqual(0, result.returncode)
             self.assertEqual('preserved=value\n', output)
         result, _ = self.run_guard(guard['steps'][0]['run'], DEPLOY_SCOPE='website')
         self.assertEqual(0, result.returncode, result.stderr)
-        for name in ('resolve-knoxx', 'build-proxx'):
+        for name in ('resolve-knoxx', 'build-proxx', 'verify-proxx-host'):
             self.assertEqual('admit-legacy-scope', jobs[name]['needs'])
         self.assertEqual('resolve-knoxx', jobs['knoxx-preflight']['needs'])
         self.assertEqual('knoxx-preflight', jobs['provision-host']['needs'])

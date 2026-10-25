@@ -12,6 +12,11 @@ on:
         description: Host operation required before a stack deployment
         required: true
         type: string
+      verification_profile:
+        description: Required host capabilities (stack or proxx)
+        required: false
+        default: stack
+        type: string
       caller_holds_production_host_lock:
         description: Caller owns the production-host lock for this entire invocation
         required: true
@@ -97,6 +102,7 @@ jobs:
         env:
           INPUT_HOST: ${{ inputs.host || '' }}
           INPUT_OPERATION: ${{ inputs.operation || 'verify' }}
+          VERIFY_PROFILE: ${{ inputs.verification_profile || 'stack' }}
           CALLER_HOLDS_PRODUCTION_HOST_LOCK: ${{ inputs.caller_holds_production_host_lock || false }}
         run: |
           host="$INPUT_HOST"
@@ -110,6 +116,9 @@ jobs:
               raise SystemExit('host must be a global unicast IPv4 address')
           PY
           case "$INPUT_OPERATION" in bootstrap|verify) ;; *) exit 2 ;; esac
+          case "$VERIFY_PROFILE" in stack|proxx) ;; *) exit 2 ;; esac
+          if [ "$INPUT_OPERATION" = bootstrap ] && [ "$VERIFY_PROFILE" != stack ]; then exit 2; fi
+          echo "profile=$VERIFY_PROFILE" >> "$GITHUB_OUTPUT"
           if [ "$INPUT_OPERATION" = bootstrap ] \
             && [ "$CALLER_HOLDS_PRODUCTION_HOST_LOCK" != true ]; then
             echo "host bootstrap requires the Deploy Stack production lock" >&2
@@ -157,19 +166,21 @@ jobs:
           REMOTE_VERIFY_SCRIPT: /tmp/verify-open-hax-host-${{ github.run_id }}-${{ github.run_attempt }}.sh
           REMOTE_VERIFY_REPORT: /tmp/host-verification-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: |
-          expected_provisioner_sha=$(sha256sum digitalocean/scripts/provision-ollama.sh | awk '{print $1}')
-          installed_provisioner_sha=$(ssh production-droplet \
-            'sha256sum /usr/local/sbin/open-hax-provision-ollama 2>/dev/null' || true)
-          installed_provisioner_sha=${installed_provisioner_sha%% *}
-          if [ "$installed_provisioner_sha" != "$expected_provisioner_sha" ]; then
-            echo "installed Ollama provisioner is absent or stale" >&2
-            exit 1
+          if [ "${{ steps.target.outputs.profile }}" = stack ]; then
+            expected_provisioner_sha=$(sha256sum digitalocean/scripts/provision-ollama.sh | awk '{print $1}')
+            installed_provisioner_sha=$(ssh production-droplet \
+              'sha256sum /usr/local/sbin/open-hax-provision-ollama 2>/dev/null' || true)
+            installed_provisioner_sha=${installed_provisioner_sha%% *}
+            if [ "$installed_provisioner_sha" != "$expected_provisioner_sha" ]; then
+              echo "installed Ollama provisioner is absent or stale" >&2
+              exit 1
+            fi
           fi
           scp digitalocean/scripts/verify-host.sh \
             "production-droplet:${REMOTE_VERIFY_SCRIPT}"
           set +e
           ssh production-droplet \
-            "chmod 700 '${REMOTE_VERIFY_SCRIPT}' && REPORT='${REMOTE_VERIFY_REPORT}' '${REMOTE_VERIFY_SCRIPT}'"
+            "chmod 700 '${REMOTE_VERIFY_SCRIPT}' && REPORT='${REMOTE_VERIFY_REPORT}' VERIFY_PROFILE='${{ steps.target.outputs.profile }}' '${REMOTE_VERIFY_SCRIPT}'"
           status=$?
           set -e
           scp "production-droplet:${REMOTE_VERIFY_REPORT}" host-verification.json || true

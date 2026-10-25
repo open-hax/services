@@ -575,7 +575,9 @@ jobs:
           # definition actually moved. compose hashes the image and the
           # environment, never the contents of a bind mount, so without this a
           # changed config file leaves the old container running untouched.
-          rsync -az "${definition_rsync[@]}" --delete --itemize-changes --exclude '.env' --exclude 'contracts' -e ssh \
+          # Host-local recovery snapshots are not Services-owned definitions.
+          # Exclusion also protects them from --delete without traversing them.
+          rsync -az "${definition_rsync[@]}" --delete --itemize-changes --exclude "/backups/" --exclude '.env' --exclude 'contracts' -e ssh \
             "${definition_dir}/" "open-hax-target:${RUNTIME_PATH}/" | tee rsync.out
           # Accumulated, then written once at the end of this step. Two writes
           # to the same GITHUB_OUTPUT key would resolve by last-write-wins,
@@ -915,6 +917,10 @@ jobs:
           # credential cleanup even when one verifier consumes most of a retry.
           if [ "$service" = knoxx ]; then
             attempts=5
+            health_budget_seconds=900
+          fi
+          if [ "$service" = proxx ]; then
+            # Reserve time for diagnostics and reporting after stalled probes.
             health_budget_seconds=900
           fi
           health_deadline=0
