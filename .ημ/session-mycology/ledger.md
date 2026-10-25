@@ -310,3 +310,11 @@
   p-skill-candidate: 0.4
   receipt-refs: shared-login-and-federation; native40174128788
   note: Job budget and per-invocation deadline differ. Inspect the accepted derivation before retrying a complete-input review; a bounded capacity increase preserves full-input gates and still requires actual native completion.
+
+- ts: 2026-10-25T10:51:37.309304+00:00
+  origin: shared-login-legacy-owner-retirement
+  p-efficiency: 0.72
+  p-friction: 0.58
+  p-skill-candidate: 0.44
+  receipt-refs: shared-login-and-federation; heartbeat4-services-legacy-final.log
+  note: A new deployment controller cannot own production safely while an old workflow can mutate the same Compose project. Guard all current-source entry paths before effects, preserve isolated website qualification, and distinguish source retirement from actual old-key revocation and queue drain on the host. No spore promoted.

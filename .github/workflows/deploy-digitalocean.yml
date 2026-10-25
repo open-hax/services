@@ -1,7 +1,8 @@
 name: Deploy to DigitalOcean
 
-# Reusable implementation that deploys one service to the DigitalOcean
-# production host. It has no direct mutation entrypoint: Deploy Stack holds the
+# Legacy website/ingress helper. Application deployments are refused before
+# checkout and SSH: only the protected environment receiver may own their projects.
+# It has no direct mutation entrypoint: Deploy Stack holds the
 # single production-host lock and its workflow_call-only chain attests that lock
 # on every invocation.
 #
@@ -92,6 +93,20 @@ jobs:
     outputs:
       receipt: ${{ steps.report.outputs.receipt }}
     steps:
+      - name: Refuse retired application deployment
+        env:
+          SERVICE: ${{ inputs.service }}
+        run: |
+          set -euo pipefail
+          case "$SERVICE" in
+            proxx|knoxx|axxium)
+              echo '::error::Legacy application deployment is retired. Use the protected environment receiver; the old Compose projects must not compete with an enrolled owner.' >&2
+              exit 2
+              ;;
+            website|caddy) ;;
+            *) echo '::error::Unsupported legacy deployment service.' >&2; exit 2 ;;
+          esac
+
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false

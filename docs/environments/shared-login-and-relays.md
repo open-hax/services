@@ -154,6 +154,34 @@ reviewed controller and the matching fixed topology; app uploads contain only
 images. Missing/changed enrollment, env bytes, topology, native hostname, UID or
 prior healthy selection refuse before image import or runtime change.
 
+### Retire the competing production deployment lane before enrollment
+
+The old Deploy Stack chain uses the same `proxx`, `knoxx` and `axxium` Compose
+project names as the production receiver. Its `up --remove-orphans` must never
+run against an enrolled receiver project. The reviewed source therefore refuses
+`scope=stack` in the manual authorization step, before qualification, builds or
+host bootstrap. The reusable stack chain has its own scope guard before source
+resolution, application builds and host bootstrap, including direct calls that
+bypass the manual entry point. The reusable DigitalOcean service helper refuses
+all three application names as its first step, before checkout or SSH. No input,
+environment flag or caller lock attestation re-enables that lane. The existing
+isolated Website and ingress helper paths retain their own admission gates.
+
+These source refusals do not revoke credentials or constrain workflows at older
+Git refs. Before root enrolls a production receiver, the operator must drain or
+cancel every outstanding legacy host mutation, revoke the old unrestricted CI
+host key on the host, and verify that its fingerprint can no longer authenticate.
+Retain the independent harness/operator access for rollback; do not remove keys
+by username or replace the entire authorized-keys file. Install only the reviewed
+slot-bound forced-command receiver keys for application CI. Record actual key
+revocation, queue drain and rollback-access evidence with the migration review;
+neither this document nor a successful workflow test proves host retirement.
+Any retained Website/ingress CI access needs a separately reviewed restricted
+command boundary before that old key is revoked; it must not retain an
+unrestricted route to the receiver-owned application projects. Enrollment and
+credential retirement remain parent cutover operations, not effects of these
+source changes.
+
 `proxx-existing.compose.yaml` deliberately has **no database service or named
 Postgres volume**. It requires the exact existing database URL, existing data
 bind (`create_host_path:false`), and preserved operator env file. That private
