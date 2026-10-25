@@ -207,6 +207,23 @@ class OwnerTests(unittest.TestCase):
 
 
 class PreservationTests(unittest.TestCase):
+ def test_projection_uses_observed_dollar_rendering_and_refuses_unknown_protocol(self):
+  from types import SimpleNamespace
+  key='AXXIUM_OIDC_CLIENT_SECRET'
+  for sentinel,encoded,expected in [('$','a$$b','a$$b'),('$$','a$$$$b','a$$b'),
+                                    ('unknown','a$$b',None),('$$','a$b',None)]:
+   with self.subTest(sentinel=sentinel,encoded=encoded):
+    values={name:'' for name in preserve.OPTIONAL['proxx']}
+    values.update({key:encoded,'SERVICES_COMPOSE_DOLLAR_SENTINEL':sentinel})
+    result=SimpleNamespace(stdout=json.dumps({'services':{'optional':{'environment':values}}}))
+    with patch.object(preserve.subprocess,'run',return_value=result):
+     if expected is None:
+      with self.assertRaises(ValueError):preserve.projection('proxx',Path('/synthetic/.env'))
+     else:
+      observed=preserve.projection('proxx',Path('/synthetic/.env'))
+      self.assertEqual(expected,observed[key])
+      self.assertNotIn('SERVICES_COMPOSE_DOLLAR_SENTINEL',observed)
+
  def test_shared_optional_secret_does_not_block_unrelated_services(self):
   with tempfile.TemporaryDirectory() as d:
    candidate=Path(d)/'rendered.env';original="EXISTING='synthetic'\n";candidate.write_text(original)
@@ -281,6 +298,28 @@ class NativeComposeTests(unittest.TestCase):
   args+=['config','--format','json']
   result=subprocess.run(args,env={'PATH':os.defpath,**env},capture_output=True,text=True,timeout=15,check=True)
   return json.loads(result.stdout)
+ def test_real_literal_dollars_survive_preservation_and_reprojection(self):
+  import subprocess
+  original=subprocess.run
+  def parser_only(command,**kwargs):
+   self.assertEqual(['docker','compose'],command[:2])
+   return original([str(self.parser),*command[2:]],**kwargs)
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);old=root/'.env';candidate=root/'candidate'
+   for literal in ['a$b','a$$b','${UNKNOWN}','cost$5$$end']:
+    with self.subTest(literal=literal):
+     old.write_text(preserve.assignment_text({
+      'AXXIUM_OIDC_ISSUER':config.ISSUER,'AXXIUM_OIDC_PUBLIC_ORIGIN':'https://proxx.promethean.rest',
+      'AXXIUM_OIDC_CLIENT_ID':'synthetic-client','AXXIUM_OIDC_CLIENT_SECRET':literal,
+      'AXXIUM_OIDC_ACCOUNT_LINKS':'[]'}))
+     candidate.write_text("PROXX_IMAGE='sha256:synthetic'\n")
+     for path in (old,candidate):path.chmod(0o600)
+     before=old.read_bytes()
+     with patch.object(preserve.subprocess,'run',side_effect=parser_only):
+      preserve.preserve('proxx',old,candidate,root)
+      projected=preserve.projection('proxx',candidate)
+     self.assertEqual(literal,projected['AXXIUM_OIDC_CLIENT_SECRET'])
+     self.assertEqual(before,old.read_bytes())
  def test_real_proxx_config_uses_each_declared_port_and_fixed_image(self):
   for phase in ('testing','staging'):
    row=slots.proxx_slot(phase)
