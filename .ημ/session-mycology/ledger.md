@@ -267,3 +267,12 @@
   p-skill-candidate: 0.1
   spore: none
   note: Source YAML and normalized Compose JSON expose different default representations; retain explicit source contract while accepting omitted false projection. First local suite omitted required Caddy tool setting; retained failed output and reran the complete affected module with verified 2.8.4. Test child created one bytecode cache, removed only that owned artifact. Existing harness guidance suffices; no spore or promotion.
+- ts: 2026-10-25T04:16:24.139865767Z
+  session: /home/err/.local/share/codex-work/axxium-sso/services-current
+  task: Retain custody when production slot disappears
+  p-efficiency: 0.8
+  p-friction: 0.3
+  p-skill-candidate: 0.1
+  spore: none
+  receipt-refs: none
+  note: Test the native receiver across separate deployments with a slot moved out of inventory. Persist custody outside that slot; never infer absence from directory discovery. Temporary verification tools can vanish across continuation; use vendor-checksummed durable task tools. Final188 environment tests pass. No spore.

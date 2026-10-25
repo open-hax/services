@@ -49,6 +49,10 @@ def read_ownership():
   raise RetentionBlocked('Malformed owned image reference')
  if any(tag not in data['owned_tags'] or not isinstance(reason,str) or not reason for tag,reason in data['refused_tags'].items()):
   raise RetentionBlocked('Malformed refused image reference')
+ observed=data.get('observed_slots',[])
+ allowed={environment+'/'+service for environment in ('testing','staging','production') for service in SERVICES}|{'stealth/proxx','yoga/proxx'}
+ if not isinstance(observed,list) or any(not isinstance(slot,str) or slot not in allowed for slot in observed) or len(observed)!=len(set(observed)):
+  raise RetentionBlocked('Malformed observed slot inventory')
  return data
 
 def save_ownership(data):atomic_write(ROOT/'receiver-images.json',json.dumps(data,indent=2)+'\n')
@@ -92,8 +96,9 @@ def docker_output(args):
  try:return subprocess.check_output(['docker']+args,text=True,stderr=subprocess.PIPE,timeout=30,env=runtime_environment())
  except (subprocess.SubprocessError,OSError):raise RetentionBlocked('Docker reference inventory unavailable')
 
-def reference_inventory():
+def reference_inventory(catalog=None):
  """Read IDs/tags only: never inspect container configuration or slot secrets."""
+ if catalog is None:catalog=read_ownership()
  protected=set()
  # A laptop has its own Docker daemon and enrolled slot, not droplet slots.
  # Derive scope only from a root-installed, freshly validated enrollment.
@@ -106,6 +111,18 @@ def reference_inventory():
    local.append(environment)
  if len(local)>1 or local and any((ROOT/env).exists() for env in ('testing','staging','production')):
   raise RetentionBlocked('Mixed droplet and laptop receiver inventory')
+ # Keep custody outside slot directories. Losing a previously observed slot
+ # must never turn its active/rollback images into unreferenced candidates.
+ observed=set(catalog.get('observed_slots',[]))
+ for environment in ('testing','staging','production','stealth','yoga'):
+  for service in (('proxx',) if environment in ('stealth','yoga') else SERVICES):
+   slot=ROOT/environment/service
+   if slot.exists() or slot.is_symlink():observed.add(environment+'/'+service)
+ catalog['observed_slots']=sorted(observed)
+ save_ownership(catalog)
+ for identity in observed:
+  slot=ROOT/identity
+  if not slot.exists() and not slot.is_symlink():raise RetentionBlocked('Previously observed deployment slot unavailable')
  environments=local or ('testing','staging','production')
  for environment in environments:
   for service in (('proxx',) if environment in ('stealth','yoga') else SERVICES):
@@ -175,7 +192,7 @@ def cleanup_owned_images(catalog,candidates):
   return refuse(candidates,'Prior cleanup refusal requires operator review')
  for index,tag in enumerate(candidates):
   try:
-   protected,used,aliases,tags=reference_inventory();image=catalog['owned_tags'][tag]
+   protected,used,aliases,tags=reference_inventory(catalog);image=catalog['owned_tags'][tag]
    if tags.get(tag)!=image:raise RetentionBlocked('Owned tag is missing or rebound')
    reason=('active_or_rollback' if image in protected else 'container_reference' if image in used else
            'nonreceiver_alias' if any(alias not in catalog['owned_tags'] or catalog['owned_tags'][alias]!=image for alias in aliases.get(image,set())) else None)
@@ -212,6 +229,7 @@ def retain_after_health(slot,previous,loaded):
    if not OWNED_TAG.fullmatch(tag) or not IMAGE_ID.fullmatch(image):raise RetentionBlocked('Invalid loaded image reference')
    if tag in catalog['owned_tags'] and catalog['owned_tags'][tag]!=image:raise RetentionBlocked('Recorded source-SHA tag changed image ID')
   catalog['owned_tags'].update(loaded);save_ownership(catalog)
+  reference_inventory(catalog)
   result=cleanup_owned_images(catalog,candidates)
   result['retained'].extend({'tag':tag,'image_id':image,'reason':'active_healthy'} for tag,image in loaded.items())
   return result

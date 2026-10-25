@@ -415,6 +415,22 @@ class ReceiverLifecycleTests(unittest.TestCase):
  def test_missing_slot_refuses_cleanup(self):
   h=self.harness();self.generations(h);slot=h.slot('staging','knoxx');(slot/'.env').unlink();(slot/'compose.yaml').unlink();slot.rmdir()
   self.assertEqual(3,h.receive('c').returncode);self.assertEqual([],h.data()['removal_attempts'])
+ def test_disappearing_observed_production_slot_blocks_image_cleanup(self):
+  h=self.harness();self.healthy(h,'a');production=h.slot('production','axxium');production.mkdir(parents=True)
+  (production/'release.env').write_text('AXXIUM_IMAGE='+h.image_id(h.tag('a'))+'\n')
+  self.healthy(h,'b');production.rename(production.with_name('axxium-unavailable'))
+  self.assertEqual(3,h.receive('c').returncode)
+  self.assertEqual([],h.data()['removal_attempts'])
+  self.assertIn(h.tag('a'),h.data()['images'])
+ def test_never_configured_production_does_not_block_cleanup(self):
+  h=self.harness();self.generations(h);self.healthy(h,'c')
+  self.assertEqual([h.tag('a')],h.data()['removed'])
+ def test_invalid_observed_slot_inventory_refuses_before_runtime_changes(self):
+  for observed in (None,{},['production/unknown'],['production/axxium','production/axxium'],[False]):
+   with self.subTest(observed=observed):
+    h=self.harness();self.generations(h);path=h.root/'receiver-images.json';catalog=json.loads(path.read_text());catalog['observed_slots']=observed;path.write_text(json.dumps(catalog))
+    calls=h.data()['calls'];self.assertNotEqual(0,h.receive('c').returncode)
+    self.assertEqual(calls,h.data()['calls']);self.assertEqual([],h.data()['removal_attempts'])
  def test_malformed_ownership_catalog_does_not_turn_into_legacy_sweep(self):
   h=self.harness();self.generations(h);(h.root/'receiver-images.json').write_text('{broken');before=self.protected_bytes(h);calls=h.data()['calls']
   self.assertNotEqual(0,h.receive('c').returncode);self.assertEqual(before,self.protected_bytes(h));self.assertEqual(calls,h.data()['calls']);self.assertEqual([],h.data()['removal_attempts'])

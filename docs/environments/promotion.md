@@ -143,6 +143,15 @@ tags it admitted successfully in `receiver-images.json`; it never adopts old
 tags by scanning for a matching name. Initial installation therefore preserves
 unrecorded historical images for separate operator review.
 
+The same catalog retains a monotonic `observed_slots` inventory outside the slot
+directories. Before cleanup it records every existing fixed slot, including
+production, and refuses cleanup when any previously observed slot disappears.
+A production slot that has never existed remains optional. Older catalogs acquire
+this inventory on their next successful observation; they cannot reconstruct a
+slot that was already lost before this controller first observed it. Initial
+adoption must therefore inventory and preserve all existing production selections
+before permitting retention. Do not delete catalog entries to hide a missing slot.
+
 Retention removes only superseded, recorded source-SHA tags. It conserves image
 IDs selected by every testing/staging active or rollback file, all Docker
 containers including stopped production containers, and images carrying an
