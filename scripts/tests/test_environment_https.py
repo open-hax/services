@@ -119,8 +119,8 @@ class EnvironmentIngressSocketTests(unittest.TestCase):
             root = Path(directory)
 
             def isolated_path(path):
-                self.assertEqual("/etc/systemd/system", path)
-                return root
+                # Module imports (service_slots evaluates Path(__file__)) keep real paths.
+                return root if path == "/etc/systemd/system" else Path(path)
 
             with patch("pathlib.Path", side_effect=isolated_path), \
                     patch("subprocess.run") as commands, patch("builtins.print"):
