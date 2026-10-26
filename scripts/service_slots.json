@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "reserved_caddy_ports": [
+    19071,
+    19072,
+    19077,
+    19078,
+    19080,
+    19081,
+    19082,
+    19083
+  ],
+  "proxx": {
+    "testing": {
+      "host": "droplet",
+      "hostname": "testing.proxx.promethean.rest",
+      "app_port": 8789,
+      "host_port": 18891,
+      "droplet_target": 18891,
+      "caddy_port": 19091,
+      "role": "isolated",
+      "project": "proxx-testing"
+    },
+    "staging": {
+      "host": "droplet",
+      "hostname": "staging.proxx.promethean.rest",
+      "app_port": 8789,
+      "host_port": 18892,
+      "droplet_target": 18892,
+      "caddy_port": 19092,
+      "role": "isolated",
+      "project": "proxx-staging"
+    },
+    "stealth": {
+      "host": "stealth",
+      "hostname": "stealth.proxx.promethean.rest",
+      "app_port": 8789,
+      "host_port": 8789,
+      "droplet_target": 19789,
+      "caddy_port": 19089,
+      "role": "existing-stack",
+      "project": "proxx-local"
+    },
+    "yoga": {
+      "host": "yoga",
+      "hostname": "yoga.proxx.promethean.rest",
+      "app_port": 8789,
+      "host_port": 8789,
+      "droplet_target": 19790,
+      "caddy_port": 19090,
+      "role": "existing-stack",
+      "project": "proxx-yoga"
+    },
+    "production": {
+      "host": "droplet",
+      "hostname": "proxx.promethean.rest",
+      "app_port": 8789,
+      "host_port": 8789,
+      "droplet_target": null,
+      "caddy_port": null,
+      "role": "existing-stack",
+      "project": "proxx"
+    }
+  }
+}

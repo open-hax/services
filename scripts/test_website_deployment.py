@@ -116,10 +116,10 @@ class WebsiteDeploymentTests(unittest.TestCase):
             with self.subTest(trigger=trigger, pin="release default"):
                 self.assertEqual(production_pin, default, "manual SDK default drifted from the release pin")
 
-    def test_authorize_rejects_stack_website_optin_before_deployment(self):
+    def test_authorize_rejects_retired_stack_with_either_website_option(self):
         decide = self.entry["jobs"]["authorize"]["steps"][0]
         self.assertEqual("${{ inputs.include_website }}", decide["env"]["INCLUDE_WEBSITE"])
-        for scope, include, status in (("stack", "true", 2), ("stack", "false", 0), ("website", "false", 0)):
+        for scope, include, status in (("stack", "true", 2), ("stack", "false", 2), ("website", "false", 0)):
             with self.subTest(scope=scope, include=include), tempfile.TemporaryDirectory() as temporary:
                 output = Path(temporary) / "outputs"
                 result = subprocess.run(["bash", "-c", decide["run"]], cwd=ROOT,
@@ -129,13 +129,13 @@ class WebsiteDeploymentTests(unittest.TestCase):
                 self.assertEqual(status, result.returncode, result.stdout + result.stderr)
                 if status:
                     self.assertFalse(output.exists(), "rejected opt-in must emit no deploy authorization")
-                    self.assertIn("production qualification is unsupported", result.stderr)
+                    self.assertIn("protected environment receiver", result.stderr)
                 else:
                     self.assertEqual("should_deploy=true", output.read_text().strip())
 
-    def test_proxx_scope_admits_only_immutable_sources_without_knoxx(self):
+    def test_proxx_scope_refuses_all_sources_after_legacy_retirement(self):
         command = self.entry["jobs"]["authorize"]["steps"][0]["run"]
-        for source, website, expected in (("", "false", 0), ("a" * 40, "false", 0),
+        for source, website, expected in (("", "false", 2), ("a" * 40, "false", 2),
                                            ("main", "false", 2), ("a" * 39, "false", 2),
                                            ("g" * 40, "false", 2), ("a" * 40, "true", 2)):
             with self.subTest(source=source, website=website), tempfile.TemporaryDirectory() as temporary:
@@ -161,13 +161,13 @@ class WebsiteDeploymentTests(unittest.TestCase):
             broken["jobs"][job]["with"][field] = value
             self.assertTrue(chain_guard.website_path_errors(self.entry, broken, self.phases))
 
-    def test_manual_stack_candidate_is_immutable_without_widening_website_scope(self):
+    def test_manual_stack_candidates_all_refuse_without_widening_website_scope(self):
         """Run the actual entry script: denied candidates emit no deployment coordinates."""
         self.assertEqual({"workflow_dispatch"}, set(self.entry["on"]))
         command = self.entry["jobs"]["authorize"]["steps"][0]["run"]
         cases = [("stack", "", 2), ("stack", "main", 2),
                  ("stack", "a" * 39, 2), ("stack", "g" * 40, 2),
-                 ("stack", "a" * 40, 0), ("website", "", 0)]
+                 ("stack", "a" * 40, 2), ("website", "", 0)]
         for scope, candidate, expected in cases:
             with self.subTest(scope=scope, candidate=candidate), tempfile.TemporaryDirectory() as temporary:
                 output = Path(temporary) / "outputs"

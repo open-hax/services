@@ -261,3 +261,108 @@
   spore: none
   receipt-refs: 334fbdaf3c079eeba7348a51f95f0fc913834aaa,sha256:e1727b923d219219d57b1b4e0c48eb71d18c7cae64faa9e52047b531a7426bf6
   note: Use the exact current callable workflow in local actionlint fixtures to prove the real undeclared-name failure and optional-interface compatibility; preserve the entire old callee outside the declaration. Run the actual registered suite, retain genuine expected failure versus helper refusal separately, and keep source/provenance commits distinct. An optional-interface bridge enables source ordering but does not repair the old chained shell preflight, settle a future caller promise or authorize deployment. Keep existing owner state and complete ledger prefixes; new source still needs personal review/adoption and final required-secret safeguards. Candidate0/no spore.
+
+- context: shared-login Services normalized Compose follow-up
+  p-friction: 0.3
+  p-skill-candidate: 0.1
+  spore: none
+  note: Source YAML and normalized Compose JSON expose different default representations; retain explicit source contract while accepting omitted false projection. First local suite omitted required Caddy tool setting; retained failed output and reran the complete affected module with verified 2.8.4. Test child created one bytecode cache, removed only that owned artifact. Existing harness guidance suffices; no spore or promotion.
+- ts: 2026-10-25T04:16:24.139865767Z
+  session: /home/err/.local/share/codex-work/axxium-sso/services-current
+  task: Retain custody when production slot disappears
+  p-efficiency: 0.8
+  p-friction: 0.3
+  p-skill-candidate: 0.1
+  spore: none
+  receipt-refs: none
+  note: Test the native receiver across separate deployments with a slot moved out of inventory. Persist custody outside that slot; never infer absence from directory discovery. Temporary verification tools can vanish across continuation; use vendor-checksummed durable task tools. Final188 environment tests pass. No spore.
+- ts: 2026-10-25T04:21:22.362702877Z
+  session: /home/err/.local/share/codex-work/axxium-sso/services-current
+  task: Dated clarification of normalized Compose verification entry
+  p-efficiency: 0.9
+  p-friction: 0.1
+  p-skill-candidate: 0
+  spore: none
+  receipt-refs: 0863db5,82c4819d898b95730700037d301755d6565d25f6,sha256:7f02a50dc8a71d586bd4cc797cd21000a0095634f1eaf72920da335d14cb73db,sha256:0c7a3fa8ecd2706d40fb7ea3888a582bdffd71cf86eecdefb662ccf8d62b400e
+  note: Append-only clarification of the earlier undated shared-login Services normalized Compose follow-up entry. Initial setup failure is retained in task services-ci-normalization.log with first hash above; successful185-test rerun is task services-current-all-final.log with second hash above, recorded with82c4819. Later188-test verification belongs to4006de3 and does not replace those historical runs. Earlier entry and receipts remain unchanged.
+- ts: 2026-10-25T05:19:17.938622815Z
+  session: /home/err/.local/share/codex-work/axxium-sso/services-current
+  task: Qualify non-root enrollment and inherited secret isolation
+  p-efficiency: 0.9
+  p-friction: 0.2
+  p-skill-candidate: 0.1
+  spore: none
+  receipt-refs: open-hax/services#105,4369630073,4369700446
+  note: Root-controlled is not equivalent to root-only-readable: qualify actual UID/GID access instead of fstat mocks. An inherited shared secret must not break unrelated stack services. Native ownership/write-refusal and full190-test suite pass; no spore.
+
+- ts: 2026-10-25T07:47:42.732459+00:00
+  origin: shared-login-pds-overlay-boundary
+  p-efficiency: 0.85
+  p-friction: 0.2
+  p-skill-candidate: 0.3
+  receipt-refs: shared-login-and-federation; native-finding4369910271
+  note: A non-secret reusable environment overlay must refuse protected credential names before env substitution. Test the authored workflow execution with synthetic credentials and effect sentinels, then align its source contract.
+
+- ts: 2026-10-25T08:52:51.164348+00:00
+  origin: shared-login-services-review-capacity
+  p-efficiency: 0.8
+  p-friction: 0.6
+  p-skill-candidate: 0.4
+  receipt-refs: shared-login-and-federation; native40174128788
+  note: Job budget and per-invocation deadline differ. Inspect the accepted derivation before retrying a complete-input review; a bounded capacity increase preserves full-input gates and still requires actual native completion.
+
+- ts: 2026-10-25T10:51:37.309304+00:00
+  origin: shared-login-legacy-owner-retirement
+  p-efficiency: 0.72
+  p-friction: 0.58
+  p-skill-candidate: 0.44
+  receipt-refs: shared-login-and-federation; heartbeat4-services-legacy-final.log
+  note: A new deployment controller cannot own production safely while an old workflow can mutate the same Compose project. Guard all current-source entry paths before effects, preserve isolated website qualification, and distinguish source retirement from actual old-key revocation and queue drain on the host. No spore promoted.
+
+- ts: 2026-10-25T11:00:11.486625+00:00
+  origin: shared-login-controller-base-composition
+  p-efficiency: 0.72
+  p-friction: 0.61
+  p-skill-candidate: 0.4
+  receipt-refs: heartbeat4-services-main-custody.json; heartbeat4-services-main-environment.log
+  note: Fresh base changes can add a second application entry path after a retirement fix. Compose the actual accepted base, preserve backup protection and deployed policy checks, and qualify every newly introduced path before claiming ownership exclusion. Recent explicit power-off is distinct from an unexplained network outage and needs owner-intent clarification before reversing it. No spore promoted.
+
+
+## 2026-10-25T14:56:28.484267+00:00 — observe a renderer before decoding its output
+
+- Efficiency0.83, friction0.41, skill-candidate0.35. Evidence: latest scoped Services test-run receipt; REDf53825e and8c4ca1e. No spore/promotion.
+- A real Compose projection disproved the assumption that config JSON contained already-raw credential values: literal dollars were doubled and then doubled again on preservation. Keep Compose as the dotenv owner and use a fixed literal-dollar canary to observe the JSON protocol; decode exactly one confirmed escape layer and refuse unknown/inconsistent forms. Unconditional replacement would corrupt a renderer that emits raw values.
+- Native local Compose5.6.1 exact owner roundtrips and Yoga5.6.0 synthetic parser observations cover four single/double/interpolation-shaped literal cases. Full199environment testsPASS with pinned Caddy parser; UID0/1001/unavailable cases refuse before writes, while fixture operator identity remains explicit and independent of CI UID. Scoped workflow lint/contracts/checksPASS.
+- Source fixes and local synthetic evidence do not install the controller or qualify native authorization, immutable release, account links, shared login, federation or actor memory across the fleet.
+
+
+## 2026-10-25T15:26:49.062405+00:00 — normalize a renderer consistently across every preservation check
+
+- Efficiency0.85, friction0.31, skill-candidate0.32. Evidence: REDff64593 and latest protected-preflight scoped test-run receipt. No spore/promotion.
+- Repairing dotenv preservation alone did not make protected enrollment work: preflight and existing operator checks still compared escaped Compose JSON against literal enrolled resources. Real Compose rejected unchanged valid values containing dollars. Reuse the existing observed-rendering adapter at all three projections; do not add another dotenv parser or weaken equality.
+- New native regression accepts unchanged database/path/token/pepper/session/client values, rejects four changed credentials and preserves both source files. Full200 environment testsPASS with pinned Caddy/native Compose, contracts/diffPASS. Fixtures explicitly emit the complete observed projection protocol. Native CI/current-head reviews and operational qualification remain required.
+
+
+## 2026-10-25T15:33:00.888401+00:00 — an isolated template is not an existing-instance migration
+
+- Efficiency0.84, friction0.28, skill-candidate0.29; latest precise Knoxx laptop planning observation receipt. No spore/promotion.
+- Existing receiver allows Proxx only on laptops; the isolated Knoxx template creates a fresh database and supplies test actor defaults. Explicitly scope topology/state enrollment before paired image delivery instead of just removing the service guard. Preserve separate public/social-local stores and bind selected product identity; shared login does not itself replicate memory.
+- Native Rheos created/read back an explicit13point epic and5/8point children/dependency, allincoming. Planning document carries full acceptance for review; no board transition, new deployment engine, implementation or operational qualification. Local links/diff checks pass; no executable test credit.
+
+- ts: 2026-10-26T03:59:32.187110+00:00
+  agent: codex
+  p-efficiency: 0.94
+  p-friction: 0.08
+  p-skill-candidate: 0.15
+  spore: none
+  receipt-refs: CodeRabbit4373111067
+  note: Installation documentation must name transitive source and slot-data dependencies, not only direct imports. Verified static source without invoking privileged installers. Six testing/staging keys are distinct from fleet key inventory; declared relay count is not proof of live deployment.
+
+- ts: 2026-10-26T05:36:24.147843+00:00
+  agent: codex
+  p-efficiency: 0.85
+  p-friction: 0.20
+  p-skill-candidate: 0.28
+  spore: none
+  receipt-refs: CodeRabbit4373867980;220c555
+  note: Admission must precede every registry-writing builder, including optional sibling jobs of a rejected reusable chain. Real guard regression exposed the missing Website dependency. A full test invocation without mandatory pinned Caddy produced setup errors; preserved the attempt, verified the exact release archive checksum, then passed all200 tests. No live rejected workflow or registry mutation was run to demonstrate this structural defect.

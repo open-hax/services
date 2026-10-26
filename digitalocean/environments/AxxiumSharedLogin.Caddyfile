@@ -1,0 +1,13 @@
+# Integration snippet for the separately reviewed production Axxium/PDS site.
+# Import INSIDE its apex site, before the PDS fallback. No /.well-known catchall.
+(axxium_shared_login) {
+    @axxium_shared_login {
+        host axxium.promethean.rest
+        path /oidc/* /api/federation/relay-lease
+    }
+    handle @axxium_shared_login {
+        reverse_proxy axxium:8787 {
+            header_up -x-open-hax-bridge-auth
+        }
+    }
+}

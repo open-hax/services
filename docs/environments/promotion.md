@@ -1,7 +1,13 @@
 # Per-service environments
 
-Public names are `<environment>.<service>.promethean.rest`. The initial services
-are `knoxx` and `axxium`; environments are `stealth`, `yoga`, `testing`, `staging`,
+The current shared-login source candidate extends this lane to protected
+production/Stealth/Yoga admission; see [candidate enrollment and qualification](shared-login-and-relays.md).
+The extension does not enroll any current host or supply production proof.
+
+Nonproduction public names are `<environment>.<service>.promethean.rest`;
+production uses the canonical `<service>.promethean.rest`. The controller builds
+`knoxx`, `axxium` and `proxx`. Proxx candidate slot reservations and protected
+host enrollment are declared in [the integration contract](shared-login-and-relays.md). Environments are `stealth`, `yoga`, `testing`, `staging`,
 and `production`. Stealth is 192.168.12.128; Yoga is 192.168.12.68. Public DNS points
 to Knoxx ingress, which forwards only the named application ports.
 
@@ -67,7 +73,9 @@ job, or let a candidate PR redefine the controller or its policy.
 
 Knoxx stores isolated slots under `/srv/open-hax/environments/<env>/<service>`.
 The root-owned `/usr/local/lib/promethean-environments/receive.py` is the forced
-command for four separate SSH keys; each key names exactly one service and slot.
+command for six restricted testing/staging SSH keys: Axxium, Knoxx and Proxx in
+each environment. Each key names exactly one service and slot. This count does
+not include production, Stealth or Yoga keys.
 It checks OCI archive tags, pins image IDs, serializes changes, waits for health,
 and restores the previous image selection after a failed upgrade. Databases and
 secrets remain in the slot. Fixed compose templates cap memory, CPU, process
@@ -137,6 +145,15 @@ tags it admitted successfully in `receiver-images.json`; it never adopts old
 tags by scanning for a matching name. Initial installation therefore preserves
 unrecorded historical images for separate operator review.
 
+The same catalog retains a monotonic `observed_slots` inventory outside the slot
+directories. Before cleanup it records every existing fixed slot, including
+production, and refuses cleanup when any previously observed slot disappears.
+A production slot that has never existed remains optional. Older catalogs acquire
+this inventory on their next successful observation; they cannot reconstruct a
+slot that was already lost before this controller first observed it. Initial
+adoption must therefore inventory and preserve all existing production selections
+before permitting retention. Do not delete catalog entries to hide a missing slot.
+
 Retention removes only superseded, recorded source-SHA tags. It conserves image
 IDs selected by every testing/staging active or rollback file, all Docker
 containers including stopped production containers, and images carrying an
@@ -168,7 +185,15 @@ workflow commits reach main. Until an admitted build reaches a slot, its HTTPS
 route returns a service-unavailable placeholder. Axxium should be deployed before
 Knoxx in the same environment when local identity sign-in is needed.
 
-Install reviewed templates with `prepare-service-environments.mjs ROOT TEMPLATES`;
+Keep `prepare-service-environments.mjs` beside `service_slots.json`.
+Keep `install-environment-ingress.py` beside `service_slots.py` and
+`service_slots.json`. Keep the root-owned receiver beside
+`service_environment_config.py`, `protected_receiver.py`,
+`github_environment_admission.py`, `environment_policy.py`, `service_slots.py`
+and `service_slots.json`; these include the receiver's transitive dependencies.
+Install reviewed templates as UID 1000 with `prepare-service-environments.mjs ROOT TEMPLATES`;
 install the receiver root-owned, then attach only `restrict,command=...` keys.
-`install-environment-ingress.py` configures the four private Caddy relays on Knoxx.
+`install-environment-ingress.py` declares eight private Caddy relays on Knoxx:
+four for Axxium/Knoxx testing/staging and four for Proxx testing/staging/Stealth/Yoga.
+Production Proxx uses direct Caddy routing.
 The Caddyfile owns exact hostnames and automatic certificate renewal.

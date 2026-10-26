@@ -218,5 +218,85 @@ class ManagedAxxiumCaddyTest(unittest.TestCase):
                     self.assertEqual([{"Cache-Control": ["no-store"]}], headers)
 
 
+class SharedLoginProductionRoutingTest(unittest.TestCase):
+    """Adapt the integration snippet with synthetic PR92-shaped owners, no listener."""
+    def test_only_shared_login_paths_reach_authority_and_pds_discovery_stays_pds(self):
+        binary=Path(os.environ['CADDY_TEST_BINARY']).resolve(strict=True)
+        snippet=(CONFIG.parent/'AxxiumSharedLogin.Caddyfile').read_text()
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'Caddyfile'
+            path.write_text(snippet + """
+axxium.promethean.rest {
+    import axxium_shared_login
+    handle {
+        reverse_proxy axxium-pds:3000
+    }
+}
+""")
+            result=subprocess.run([str(binary),'adapt','--config',str(path),'--adapter','caddyfile'],
+                                  env={'PATH':os.defpath,'HOME':directory},capture_output=True,text=True,check=True,timeout=10)
+            objects=list(ManagedAxxiumCaddyTest.objects(json.loads(result.stdout)))
+            paths=[item['path'] for item in objects if 'path' in item and isinstance(item['path'],list)]
+            self.assertEqual([['/oidc/*','/api/federation/relay-lease']],paths)
+            proxies=[item for item in objects if item.get('handler')=='reverse_proxy']
+            self.assertEqual([[{'dial':'axxium:8787'}],[{'dial':'axxium-pds:3000'}]],
+                             [item['upstreams'] for item in proxies])
+            self.assertNotIn('path /.well-known',snippet)
+
+
+
+class IntegratedProductionCaddyTest(unittest.TestCase):
+    """Adapt the integrated site, including PDS fallback, without starting Caddy."""
+    @classmethod
+    def setUpClass(cls):
+        source=(CONFIG.parents[1]/'services/caddy/Caddyfile').read_text()
+        common=source[source.index('(common) {'):source.index('(knoxx_mcp_backend) {')]
+        production=source[source.index('# Axxium is the actor authority'):source.index('# ── Dev instances')]
+        proxx=source[source.index('# BEGIN managed Proxx environments'):source.index('# END managed Proxx environments')]
+        cls.source=source
+        temporary=tempfile.TemporaryDirectory();cls.addClassCleanup(temporary.cleanup)
+        path=Path(temporary.name)/'Caddyfile';path.write_text(common+production+proxx)
+        result=subprocess.run([os.environ['CADDY_TEST_BINARY'],'adapt','--config',str(path),'--adapter','caddyfile'],
+            env={'HOME':temporary.name,'PATH':os.defpath},capture_output=True,text=True,timeout=10,check=True)
+        cls.model=json.loads(result.stdout)
+    def test_authority_routes_remain_narrow_and_pds_owns_discovery_and_oauth(self):
+        objects=list(ManagedAxxiumCaddyTest.objects(self.model))
+        matchers=[entry for entry in objects if entry.get('host')==['axxium.promethean.rest'] and '/oidc/*' in entry.get('path',[])]
+        self.assertEqual(1,len(matchers))
+        paths=matchers[0]['path']
+        self.assertIn('/api/federation/relay-lease',paths)
+        self.assertNotIn('/oauth/*',paths);self.assertNotIn('/xrpc/*',paths)
+        self.assertFalse(any(path.startswith('/.well-known') for path in paths))
+        proxies=[entry for entry in objects if entry.get('handler')=='reverse_proxy']
+        self.assertTrue(any(p['upstreams']==[{'dial':'axxium-pds:3000'}] for p in proxies))
+        self.assertTrue(any(p['upstreams']==[{'dial':'axxium:8787'}] for p in proxies))
+        self.assertIn('ask http://axxium-pds:3000/tls-check',self.source)
+        self.assertIn('/etc/caddy/axxium-identity',self.source)
+    def test_declared_proxx_routes_have_acme_streaming_stripping_and_uncached_errors(self):
+        import service_slots
+        objects=list(ManagedAxxiumCaddyTest.objects(self.model))
+        for name,row in service_slots.load_slots().items():
+            if name=='production':continue
+            host=row['hostname']
+            routes=[obj for obj in objects if obj.get('match')==[{'host':[host]}] and 'handle' in obj]
+            nested=[obj for route in routes for obj in ManagedAxxiumCaddyTest.objects(route)]
+            proxies=[obj for obj in nested if obj.get('handler')=='reverse_proxy']
+            self.assertEqual(1,len(proxies),host)
+            proxy=proxies[0]
+            self.assertEqual([{'dial':f"172.31.255.1:{row['caddy_port']}"}],proxy['upstreams'])
+            self.assertEqual(-1,proxy['flush_interval'])
+            self.assertIn('x-open-hax-bridge-auth',[name.lower() for name in proxy['headers']['request']['delete']])
+            self.assertTrue(any(host in policy.get('subjects',[]) and policy['issuers']==[{'module':'acme'}]
+                for policy in self.model['apps']['tls']['automation']['policies']))
+            self.assertEqual(3600*10**9,proxy['transport']['read_timeout'])
+            self.assertEqual(3600*10**9,proxy['transport']['write_timeout'])
+            errors=[route for server in self.model['apps']['http']['servers'].values()
+                    for route in server.get('errors',{}).get('routes',[])
+                    if route.get('match')==[{'host':[host]}]]
+            self.assertEqual(1,len(errors),host)
+            handlers=list(ManagedAxxiumCaddyTest.objects(errors[0]))
+            self.assertTrue(any(obj.get('status_code')==503 and obj.get('body')=='Service not configured or unavailable.' for obj in handlers))
+            self.assertTrue(any(obj.get('set',{}).get('Cache-Control')==['no-store'] for obj in handlers))
+
 if __name__ == "__main__":
     unittest.main()

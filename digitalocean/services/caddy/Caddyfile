@@ -6,6 +6,9 @@
 # placeholder syntax, resolved at Caddy startup.
 {
 	email {$CADDY_ACME_EMAIL}
+	on_demand_tls {
+		ask http://axxium-pds:3000/tls-check
+	}
 	# Uncomment to exercise issuance without burning Let's Encrypt rate limits:
 	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
 }
@@ -96,6 +99,45 @@
 		transport http {
 			read_timeout 3600s
 			write_timeout 3600s
+		}
+	}
+}
+
+# Axxium is the actor authority and AT OAuth client; the official PDS owns
+# protocol discovery, DID service identity, repositories, and account handles.
+# The PDS's /tls-check gate constrains on-demand TLS for handle subdomains.
+axxium.promethean.rest, *.axxium.promethean.rest {
+	import common
+	tls {
+		on_demand
+	}
+
+	# The PDS advertises this service DID but does not publish its DID document.
+	# It is a service identity; account DIDs and signing keys remain PDS-owned.
+	@axxium_service_did {
+		host axxium.promethean.rest
+		path /.well-known/did.json
+	}
+	handle @axxium_service_did {
+		root * /etc/caddy/axxium-identity
+		rewrite * /did.json
+		header Content-Type application/did+json
+		file_server
+	}
+
+	@axxium_api {
+		host axxium.promethean.rest
+		path / /health /portal/* /api/auth/* /api/actors* /api/entities* /api/atproto/* /oidc/* /api/federation/relay-lease
+	}
+	handle @axxium_api {
+		reverse_proxy axxium:8787 {
+			header_up -x-open-hax-bridge-auth
+		}
+	}
+
+	handle {
+		reverse_proxy axxium-pds:3000 {
+			header_up -x-open-hax-bridge-auth
 		}
 	}
 }
@@ -314,5 +356,79 @@ yoga.knoxx.promethean.rest {
     }
 }
 # END managed Knoxx host environments
+# BEGIN managed Proxx environments
+testing.proxx.promethean.rest {
+    import common
+    tls {
+        issuer acme
+    }
+    reverse_proxy 172.31.255.1:19091 {
+        header_up -x-open-hax-bridge-auth
+        flush_interval -1
+        transport http {
+            read_timeout 3600s
+            write_timeout 3600s
+        }
+    }
+    handle_errors {
+        header Cache-Control "no-store"
+        respond "Service not configured or unavailable." 503
+    }
+}
+staging.proxx.promethean.rest {
+    import common
+    tls {
+        issuer acme
+    }
+    reverse_proxy 172.31.255.1:19092 {
+        header_up -x-open-hax-bridge-auth
+        flush_interval -1
+        transport http {
+            read_timeout 3600s
+            write_timeout 3600s
+        }
+    }
+    handle_errors {
+        header Cache-Control "no-store"
+        respond "Service not configured or unavailable." 503
+    }
+}
+stealth.proxx.promethean.rest {
+    import common
+    tls {
+        issuer acme
+    }
+    reverse_proxy 172.31.255.1:19089 {
+        header_up -x-open-hax-bridge-auth
+        flush_interval -1
+        transport http {
+            read_timeout 3600s
+            write_timeout 3600s
+        }
+    }
+    handle_errors {
+        header Cache-Control "no-store"
+        respond "Service not configured or unavailable." 503
+    }
+}
+yoga.proxx.promethean.rest {
+    import common
+    tls {
+        issuer acme
+    }
+    reverse_proxy 172.31.255.1:19090 {
+        header_up -x-open-hax-bridge-auth
+        flush_interval -1
+        transport http {
+            read_timeout 3600s
+            write_timeout 3600s
+        }
+    }
+    handle_errors {
+        header Cache-Control "no-store"
+        respond "Service not configured or unavailable." 503
+    }
+}
+# END managed Proxx environments
 # Durable separately managed environment routes survive normal ingress deploys.
 import /etc/caddy/managed/*.caddy

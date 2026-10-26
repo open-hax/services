@@ -1,7 +1,8 @@
 name: Deploy Stack
 
-# Manual production promotion. Stack scope requires an immutable Knoxx candidate
-# and completed qualification before any host mutation. Website scope remains
+# Application stack promotion is retired in favor of the protected environment
+# receiver. Keep the old input for an explicit refusal of existing callers.
+# Website scope remains
 # isolated behind its exact-candidate selector, staging proof and qualification.
 # One production-host lock covers either complete scope.
 
@@ -76,7 +77,11 @@ jobs:
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             case "$DEPLOY_SCOPE" in
-              stack|website|proxx) ;;
+              stack|proxx)
+                echo '::error::Legacy stack deployment is retired. Use the protected environment receiver with exact source/image qualification and reviewed host enrollment.' >&2
+                exit 2
+                ;;
+              website) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
             esac
             if [ -n "$WEBSITE_IMAGE" ] && [ "$DEPLOY_SCOPE" != website ]; then

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -40,6 +41,7 @@ class SessionSecretDeploymentTests(unittest.TestCase):
         self.fixture = Path(self.directory.name)
         self.bin = self.fixture / 'bin'
         self.bin.mkdir()
+        (self.fixture/'scripts').symlink_to(ROOT/'scripts',target_is_directory=True)
         # Rendering and Docker are effects, not the decision under test. These
         # sentinels record whether the actual authored shell admitted an input;
         # they never parse or validate a key and never invoke the Docker daemon.
@@ -69,7 +71,9 @@ class SessionSecretDeploymentTests(unittest.TestCase):
         env = dict(self.env)
         env.update({key: 'synthetic-nonsecret-value'
                     for key in re.findall(r'\$\{([A-Z][A-Z0-9_]*)\}', template.read_text())})
-        env.update({'SERVICE': service, 'SERVICE_DIR': str(template.parent),
+        service_fixture=self.fixture/service
+        if not service_fixture.exists():shutil.copytree(template.parent,service_fixture)
+        env.update({'SERVICE': service, 'SERVICE_DIR': str(service_fixture),
                     'EXTRA_ENV': raw_overlay if raw_overlay is not None else json.dumps(overlay or {}),
                     'KNOXX_MCP_LOOPBACK_TOKEN': 'synthetic-mcp-token'})
         if base is None:
@@ -190,6 +194,18 @@ class SessionSecretDeploymentTests(unittest.TestCase):
         result = self.run_render(None, service='smoke')
         self.assertEqual(result.returncode, 0)
         self.assertTrue((self.fixture / 'render-called.json').exists())
+
+    def test_pds_credentials_cannot_be_replaced_by_extra_env(self):
+        for key in ('PDS_JWT_SECRET', 'PDS_ADMIN_PASSWORD',
+                    'PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX'):
+            with self.subTest(key=key):
+                self.reset_markers()
+                value = 'synthetic-overridden-pds-credential'
+                result = self.run_render(None, {key: value}, service='axxium')
+                self.assertEqual(2, result.returncode)
+                self.assertFalse((self.fixture / 'render-called.json').exists())
+                self.assertFalse((self.fixture / 'docker-called.json').exists())
+                self.assertNotIn(value, result.stdout + result.stderr)
 
     def test_verifier_rejects_bad_key_before_any_docker_probe(self):
         for label, value in INVALID.items():

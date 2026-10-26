@@ -37,6 +37,11 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      AXXIUM_OIDC_ISSUER: ${AXXIUM_OIDC_ISSUER:-https://axxium.promethean.rest/oidc}
+      AXXIUM_OIDC_PUBLIC_ORIGIN: ${AXXIUM_OIDC_PUBLIC_ORIGIN:-}
+      AXXIUM_OIDC_CLIENT_ID: ${AXXIUM_OIDC_CLIENT_ID:-}
+      AXXIUM_OIDC_CLIENT_SECRET: ${AXXIUM_OIDC_CLIENT_SECRET:-}
+      AXXIUM_OIDC_ACCOUNT_LINKS: ${AXXIUM_OIDC_ACCOUNT_LINKS:-[]}
       PROXY_HOST: 0.0.0.0
       PROXY_PORT: "8789"
       PORT: "8789"

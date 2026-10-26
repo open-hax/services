@@ -31,17 +31,18 @@ Production is declared under [`digitalocean/`](digitalocean/README.md):
 - GitHub's protected `production` environment supplies deployment credentials
   and runtime secrets.
 
-Start a production stack deployment with **Run workflow** on `Deploy Stack`
-(`workflow_dispatch`), selecting `scope: stack` and supplying `knoxx_ref` as the
-full 40-character lowercase hexadecimal commit SHA of the merged Knoxx
-candidate. The locked deployment chain requires that exact candidate's
-qualification before any host mutation. A Services PR merge or `deploy` label
-does not start this production workflow.
+Application deployment through the legacy stack chain is retired. Manual
+`scope: stack` and `scope: proxx`, direct application-chain calls, and the
+individual legacy application helper refuse before host mutation. Use the
+[protected environment receiver](docs/environments/shared-login-and-relays.md)
+with exact source/image qualification and reviewed host enrollment. Before
+cutover, drain old workflow runs and revoke their unrestricted host key while
+preserving independent rollback access; current-source guards do not constrain
+older Git revisions. A Services PR merge or `deploy` label does not deploy.
 
 Manual dispatch also accepts `scope: website` for the isolated staging and
 production handoff in [the website runbook](docs/website-staging-deployment.md).
-Stack dispatches leave the website unchanged. Stack website opt-in is rejected
-before host mutation; website staging uses its explicit scope.
+Application scopes are refused; website staging uses its explicit scope.
 Its receipt binds application source, image digest and serving configuration.
 Production stops at an explicit unsupported website mutation-qualification
 gate; a healthy stage does not satisfy that policy.
@@ -89,17 +90,21 @@ file belongs here. Commit only variable names, schemas, pinned public host keys,
 and scripts that read secrets from protected GitHub environments or root-owned
 host files at runtime.
 
-## Proxx-only production release
+## Historical Proxx-only production release
 
-Run **Deploy Stack** on the reviewed Services revision with `scope: proxx`.
+The old `scope: proxx` application lane is retained as source provenance and
+is refused by the current entry and reusable-chain guards. Its host profile
+and production policy checks below remain available for reviewed verification;
+they do not re-enable legacy deployment.
 The proxx host profile verifies Docker/Compose, deploy access to runtime directories,
 and firewall isolation. Java and the host Ollama provisioner remain stack-only
 requirements; proxx uses its Compose PostgreSQL service and configured remote providers.
 The default Proxx source is pinned to `3ed25eec53a5bed6dc224f108323ea5d20420a22`
 ([proxx#455](https://github.com/open-hax/proxx/pull/455)). This includes quota
 and spend-limit cooldowns, provider-specific model aliases in catalogue filtering,
-and explicit account re-enable clearing an old cooldown. An override must be a
-full immutable source SHA. No Knoxx candidate is required for this scope.
+and explicit account re-enable clearing an old cooldown. The protected receiver
+release must preserve this policy in its exact qualified source; it must not
+silently fall back to the older default.
 
 The existing production-host lock covers image build, host verification,
 digest-pinned deployment, provider provisioning and the real inference health

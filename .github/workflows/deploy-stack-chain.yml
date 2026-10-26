@@ -69,6 +69,24 @@ permissions:
   packages: write
 
 jobs:
+  admit-legacy-scope:
+    name: Refuse the retired application stack
+    runs-on: ubuntu-latest
+    steps:
+      - name: Admit only the isolated website chain
+        env:
+          DEPLOY_SCOPE: ${{ inputs.scope }}
+        run: |
+          set -euo pipefail
+          case "$DEPLOY_SCOPE" in
+            website) ;;
+            stack|proxx)
+              echo '::error::Legacy stack deployment is retired. Use the protected environment receiver.' >&2
+              exit 2
+              ;;
+            *) echo '::error::Unsupported legacy deployment scope.' >&2; exit 2 ;;
+          esac
+
   # Build jobs may run while the host is prepared, but no production service
   # deploy starts until this exact checkout has installed and verified the
   # provisioner it expects. deploy-stack.yml holds the production-host lock
@@ -87,6 +105,7 @@ jobs:
   # gate. This keeps application validation in Knoxx while making it an actual
   # prerequisite of every stack production deployment before host changes.
   resolve-knoxx:
+    needs: admit-legacy-scope
     if: inputs.scope == 'stack'
     runs-on: ubuntu-latest
     outputs:
@@ -112,6 +131,7 @@ jobs:
       source_ref: ${{ needs.resolve-knoxx.outputs.source_sha }}
 
   build-proxx:
+    needs: admit-legacy-scope
     if: inputs.scope == 'stack' || inputs.scope == 'proxx'
     uses: ./.github/workflows/build-images.yml
     with:
@@ -131,6 +151,7 @@ jobs:
   # Proxx-only releases verify the existing host without bootstrapping or
   # qualifying/redeploying Knoxx. The caller still holds the production lock.
   verify-proxx-host:
+    needs: admit-legacy-scope
     if: inputs.scope == 'proxx'
     uses: ./.github/workflows/digitalocean-host.yml
     with:
@@ -202,8 +223,9 @@ jobs:
       caller_holds_production_host_lock: true
     secrets: inherit
 
-  # Builds alongside the rest of the chain; deploys last.
+  # A refused reusable scope must never reach the registry-writing builder.
   build-website:
+    needs: admit-legacy-scope
     if: inputs.website_image == '' && (inputs.include_website || inputs.scope == 'website')
     uses: ./.github/workflows/build-images.yml
     with:

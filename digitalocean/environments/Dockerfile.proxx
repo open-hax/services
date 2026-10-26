@@ -1,0 +1,13 @@
+# Controller-owned runtime recipe. Candidate Dockerfiles and deploy/ are ignored.
+FROM node:22-trixie-slim
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --chown=1000:1000 package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN corepack enable && corepack prepare pnpm@10.20.0 --activate \
+    && pnpm install --prod --frozen-lockfile --ignore-scripts
+COPY --chown=1000:1000 dist/ ./dist/
+COPY --chown=1000:1000 web/dist/ ./web/dist/
+COPY --chown=1000:1000 resources/ ./resources/
+USER 1000:1000
+EXPOSE 8789
+CMD ["node", "dist/main.js"]
