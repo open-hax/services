@@ -85,7 +85,9 @@ jobs:
           python scripts/test-knoxx-publication-mounts.py
 
       - name: Enforce service environment contracts
-        run: python scripts/check-env-contracts.py
+        run: |
+          python scripts/check-env-contracts.py
+          node --test scripts/test-translation-trigger-gate.mjs
 
       - name: Enforce disabled Compose profile retirements
         run: |
