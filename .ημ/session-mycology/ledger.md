@@ -357,3 +357,12 @@
   spore: none
   receipt-refs: CodeRabbit4373111067
   note: Installation documentation must name transitive source and slot-data dependencies, not only direct imports. Verified static source without invoking privileged installers. Six testing/staging keys are distinct from fleet key inventory; declared relay count is not proof of live deployment.
+
+- ts: 2026-10-26T05:36:24.147843+00:00
+  agent: codex
+  p-efficiency: 0.85
+  p-friction: 0.20
+  p-skill-candidate: 0.28
+  spore: none
+  receipt-refs: CodeRabbit4373867980;220c555
+  note: Admission must precede every registry-writing builder, including optional sibling jobs of a rejected reusable chain. Real guard regression exposed the missing Website dependency. A full test invocation without mandatory pinned Caddy produced setup errors; preserved the attempt, verified the exact release archive checksum, then passed all200 tests. No live rejected workflow or registry mutation was run to demonstrate this structural defect.

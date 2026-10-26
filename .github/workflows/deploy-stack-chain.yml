@@ -223,8 +223,9 @@ jobs:
       caller_holds_production_host_lock: true
     secrets: inherit
 
-  # Builds alongside the rest of the chain; deploys last.
+  # A refused reusable scope must never reach the registry-writing builder.
   build-website:
+    needs: admit-legacy-scope
     if: inputs.website_image == '' && (inputs.include_website || inputs.scope == 'website')
     uses: ./.github/workflows/build-images.yml
     with:
