@@ -57,8 +57,9 @@ class LegacyLaneTest(unittest.TestCase):
             self.assertEqual('preserved=value\n', output)
         result, _ = self.run_guard(guard['steps'][0]['run'], DEPLOY_SCOPE='website')
         self.assertEqual(0, result.returncode, result.stderr)
-        for name in ('resolve-knoxx', 'build-proxx', 'verify-proxx-host'):
-            self.assertEqual('admit-legacy-scope', jobs[name]['needs'])
+        for name in ('resolve-knoxx', 'build-proxx', 'verify-proxx-host', 'build-website'):
+            self.assertEqual('admit-legacy-scope', jobs[name].get('needs'),
+                             name + ' must not build or mutate a registry after scope refusal')
         self.assertEqual('resolve-knoxx', jobs['knoxx-preflight']['needs'])
         self.assertEqual('knoxx-preflight', jobs['provision-host']['needs'])
 
