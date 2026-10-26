@@ -60,8 +60,18 @@ console.log('proxx: compiled credential-failure policy verified for Kimi Code, Z
 
 // The release must include the bot budget policy, not only credential failover.
 for (const name of ['loadPaidBudgetPolicy', 'resolveBudgetRoutePlan', 'authorizeBudgetHttpRequest',
-                    'inspectBudgetAttempt', 'quotePaidBudget', 'reservePaidBudget', 'settlePaidBudget'])
+                    'inspectBudgetAttempt', 'quotePaidBudget', 'reservePaidBudget', 'settlePaidBudget', 'advanceFirstUsable'])
   assert.equal(typeof runtime[name], 'function', `${name}: compiled budget API missing`);
+// Exercise the exported incremental probe, not merely its symbol presence.
+const reasoning = runtime.advanceFirstUsable('data: {"choices":[{"delta":{"reasoning_content":"thinking"}}]}\n\n', 'sse', [], undefined, false);
+assert.equal(reasoning.ready, false, 'reasoning is not usable output');
+const partial = runtime.advanceFirstUsable('data: {"choices":[{"delta":{"content":"answer', 'sse', [], reasoning.state, false);
+assert.equal(partial.ready, false, 'partial SSE event must stay staged');
+const usable = runtime.advanceFirstUsable('"}}]}\n\n', 'sse', [], partial.state, false);
+assert.equal(usable.ready, true, 'split answer must become usable across probe calls');
+const fatal = runtime.advanceFirstUsable('data: {"error":{"message":"quota"}}\n\n', 'sse', [], usable.state, false);
+assert.equal(fatal.fatal, true, 'upstream stream errors must remain visible');
+console.log('proxx: compiled incremental first-usable probe verified');
 const bot = {kind: 'tenant_api_key', keyId: '71a0813f-dbe3-45ad-a7ae-16555463e716',
              scopes: ['proxy:use', 'budget:required']};
 const budget = runtime.loadPaidBudgetPolicy(manifest, ':paid-budget/knoxx-social');
