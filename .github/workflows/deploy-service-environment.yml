@@ -17,7 +17,7 @@ on:
     secrets:
       PROMETHEAN_ENVIRONMENT_SSH_KEY:
         description: Restricted receiver key from the selected testing or staging environment.
-        required: false
+        required: true
 permissions:
   contents: read
   pull-requests: read
@@ -167,7 +167,9 @@ jobs:
           DEPLOY_TARGET: ${{ vars.PROMETHEAN_ENVIRONMENT_SSH_TARGET }}
         run: |
           set -euo pipefail
-          test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS" && test -n "$DEPLOY_TARGET"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          test -n "$DEPLOY_TARGET"
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/environment_key"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
