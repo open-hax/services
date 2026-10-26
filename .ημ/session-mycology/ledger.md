@@ -348,3 +348,12 @@
 - Efficiency0.84, friction0.28, skill-candidate0.29; latest precise Knoxx laptop planning observation receipt. No spore/promotion.
 - Existing receiver allows Proxx only on laptops; the isolated Knoxx template creates a fresh database and supplies test actor defaults. Explicitly scope topology/state enrollment before paired image delivery instead of just removing the service guard. Preserve separate public/social-local stores and bind selected product identity; shared login does not itself replicate memory.
 - Native Rheos created/read back an explicit13point epic and5/8point children/dependency, allincoming. Planning document carries full acceptance for review; no board transition, new deployment engine, implementation or operational qualification. Local links/diff checks pass; no executable test credit.
+
+- ts: 2026-10-26T03:59:32.187110+00:00
+  agent: codex
+  p-efficiency: 0.94
+  p-friction: 0.08
+  p-skill-candidate: 0.15
+  spore: none
+  receipt-refs: CodeRabbit4373111067
+  note: Installation documentation must name transitive source and slot-data dependencies, not only direct imports. Verified static source without invoking privileged installers. Six testing/staging keys are distinct from fleet key inventory; declared relay count is not proof of live deployment.

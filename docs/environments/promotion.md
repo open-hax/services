@@ -73,7 +73,9 @@ job, or let a candidate PR redefine the controller or its policy.
 
 Knoxx stores isolated slots under `/srv/open-hax/environments/<env>/<service>`.
 The root-owned `/usr/local/lib/promethean-environments/receive.py` is the forced
-command for four separate SSH keys; each key names exactly one service and slot.
+command for six restricted testing/staging SSH keys: Axxium, Knoxx and Proxx in
+each environment. Each key names exactly one service and slot. This count does
+not include production, Stealth or Yoga keys.
 It checks OCI archive tags, pins image IDs, serializes changes, waits for health,
 and restores the previous image selection after a failed upgrade. Databases and
 secrets remain in the slot. Fixed compose templates cap memory, CPU, process
@@ -183,7 +185,15 @@ workflow commits reach main. Until an admitted build reaches a slot, its HTTPS
 route returns a service-unavailable placeholder. Axxium should be deployed before
 Knoxx in the same environment when local identity sign-in is needed.
 
+Keep `prepare-service-environments.mjs` beside `service_slots.json`.
+Keep `install-environment-ingress.py` beside `service_slots.py` and
+`service_slots.json`. Keep the root-owned receiver beside
+`service_environment_config.py`, `protected_receiver.py`,
+`github_environment_admission.py`, `environment_policy.py`, `service_slots.py`
+and `service_slots.json`; these include the receiver's transitive dependencies.
 Install reviewed templates as UID 1000 with `prepare-service-environments.mjs ROOT TEMPLATES`;
 install the receiver root-owned, then attach only `restrict,command=...` keys.
-`install-environment-ingress.py` configures the four private Caddy relays on Knoxx.
+`install-environment-ingress.py` declares eight private Caddy relays on Knoxx:
+four for Axxium/Knoxx testing/staging and four for Proxx testing/staging/Stealth/Yoga.
+Production Proxx uses direct Caddy routing.
 The Caddyfile owns exact hostnames and automatic certificate renewal.
