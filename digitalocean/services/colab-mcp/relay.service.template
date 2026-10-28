@@ -1,0 +1,15 @@
+[Unit]
+Description=Knoxx Colab private reverse SSH relay
+After=network-online.target knoxx-colab-bridge.service
+Requires=knoxx-colab-bridge.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -NT -o BatchMode=yes -o IdentitiesOnly=yes -o ForwardAgent=no -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 127.0.0.1:18023:172.17.0.1:8023 -R 127.0.0.1:18025:172.17.0.1:8025 knoxx-agent-codex
+Restart=always
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=Knoxx official Google Colab CLI compute adapter
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=COLAB_MCP_TOKEN_FILE=@STATE@/bridge-token
+Environment=COLAB_COMPUTE_STATE_DIR=@STATE@/compute
+Environment=GOOGLE_APPLICATION_CREDENTIALS=@STATE@/gcloud/application_default_credentials.json
+Environment=COLAB_CLI_EXECUTABLE=/home/err/.local/bin/colab
+Environment=FASTMCP_CHECK_FOR_UPDATES=off
+ExecStart=@PACKAGE@/.venv/bin/python -m knoxx_colab_mcp.compute --host 172.17.0.1 --port 8025
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=65
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

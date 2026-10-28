@@ -1,0 +1,16 @@
+[Unit]
+Description=Knoxx official Google Colab browser bridge
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=COLAB_MCP_TOKEN_FILE=@STATE@/bridge-token
+Environment=FASTMCP_CHECK_FOR_UPDATES=off
+ExecStart=@PACKAGE@/.venv/bin/knoxx-colab-mcp bridge --host 172.17.0.1 --port 8023
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
