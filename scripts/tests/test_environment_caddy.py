@@ -218,6 +218,56 @@ class ManagedAxxiumCaddyTest(unittest.TestCase):
                     self.assertEqual([{"Cache-Control": ["no-store"]}], headers)
 
 
+class ManagedImportCollisionTest(unittest.TestCase):
+    """Adapt the complete source with observed separately managed host routes."""
+    def test_live_collision_is_detected_and_staged_removal_keeps_other_routes(self):
+        source = (CONFIG.parents[1] / "services/caddy/Caddyfile").read_text()
+        fixture = Path(__file__).parent / "fixtures/live-host-routes-2026-10-28.caddy"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            managed = root / "managed"
+            managed.mkdir()
+            (managed / "live-host-routes.caddy").write_text(fixture.read_text())
+            (managed / "unrelated.caddy").write_text(
+                "orbit.example.test {\n respond 200\n}\n"
+                "staging.website.example.test {\n respond 200\n}\n")
+            old_import = "import /etc/caddy/managed/*.caddy"
+            self.assertEqual(1, source.count(old_import))
+            source = source.replace(old_import, f"import {managed}/*.caddy")
+            config = root / "Caddyfile"
+            config.write_text(source)
+            environment = {"HOME": directory, "PATH": os.defpath,
+                           "CADDY_ACME_EMAIL": "operator@example.test",
+                           "CADDY_KNOXX_HOST": "knoxx.example.test",
+                           "CADDY_PROXX_HOST": "proxx.example.test",
+                           "CADDY_KNOXX_DEV_HOST": "dev-knoxx.example.test",
+                           "CADDY_OPENCODE_DEV_HOST": "dev-opencode.example.test",
+                           "CADDY_SHADOW_DEV_HOST": "dev-shadow.example.test",
+                           "CADDY_WEBSITE_HOST": "website.example.test"}
+            result = subprocess.run([os.environ["CADDY_TEST_BINARY"], "adapt", "--config", str(config),
+                                     "--adapter", "caddyfile"], env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(0, result.returncode, "Observed host collision must be detected")
+            self.assertIn("ambiguous site definition: testing.axxium.promethean.rest", result.stderr)
+            # The captured file contains only the eight sites in the main source.
+            # Removing their imported copy in this isolated fixture models a staged
+            # migration; it does not edit or validate a live host migration.
+            (managed / "live-host-routes.caddy").write_text("# staged host routes\n")
+            result = subprocess.run([os.environ["CADDY_TEST_BINARY"], "adapt", "--config", str(config),
+                                     "--adapter", "caddyfile"], env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(0, result.returncode, result.stderr)
+            model = json.loads(result.stdout)
+            objects = list(ManagedAxxiumCaddyTest.objects(model))
+            for host in ("testing.axxium.promethean.rest", "staging.axxium.promethean.rest",
+                         "stealth.axxium.promethean.rest", "yoga.axxium.promethean.rest",
+                         "testing.knoxx.promethean.rest", "staging.knoxx.promethean.rest",
+                         "stealth.knoxx.promethean.rest", "yoga.knoxx.promethean.rest",
+                         "orbit.example.test", "staging.website.example.test",
+                         "testing.proxx.promethean.rest"):
+                self.assertTrue(any(host in obj.get("host", []) for obj in objects), host)
+
+
 class SharedLoginProductionRoutingTest(unittest.TestCase):
     """Adapt the integration snippet with synthetic PR92-shaped owners, no listener."""
     def test_only_shared_login_paths_reach_authority_and_pds_discovery_stays_pds(self):
