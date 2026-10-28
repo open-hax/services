@@ -1,0 +1,160 @@
+name: Protected Axxium production
+
+# Only Deploy Stack's reusable chain calls this workflow. Its enclosing job owns
+# digitalocean-production-host; there is no independent dispatch or lock.
+on:
+  workflow_call:
+    inputs:
+      pull_request: { required: true, type: string }
+      image_run_id: { required: false, type: string, default: '' }
+      caller_holds_production_host_lock: { required: true, type: boolean }
+    secrets:
+      PROMETHEAN_ENVIRONMENT_SSH_KEY: { required: false }
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  admit:
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.admission.outputs.source_sha }}
+      controller_sha: ${{ steps.controller.outputs.controller_sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Require the locked current-main Services caller
+        id: controller
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOST_LOCK: ${{ inputs.caller_holds_production_host_lock }}
+          PR_NUMBER: ${{ inputs.pull_request }}
+          IMAGE_RUN_ID: ${{ inputs.image_run_id }}
+        run: |
+          set -euo pipefail
+          test "$HOST_LOCK" = true
+          test "$GITHUB_REPOSITORY" = open-hax/services
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          if [ -n "$IMAGE_RUN_ID" ]; then [[ "$IMAGE_RUN_ID" =~ ^[1-9][0-9]*$ ]]; fi
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(gh api repos/open-hax/services/branches/main --jq .commit.sha)" = "$GITHUB_SHA"
+          echo "controller_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Admit exact current Axxium merge and immutable qualification
+        id: admission
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pull_request }}
+          ADMITTED_CONTROLLER_SHA: ${{ steps.controller.outputs.controller_sha }}
+        run: python3 scripts/github_environment_admission.py open-hax/axxium "$PR_NUMBER" production
+  build:
+    needs: admit
+    if: inputs.image_run_id == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/services
+          ref: ${{ needs.admit.outputs.controller_sha }}
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/axxium
+          ref: ${{ needs.admit.outputs.source_sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Build the admitted application without deployment credentials
+        env:
+          SOURCE_SHA: ${{ needs.admit.outputs.source_sha }}
+          CONTROLLER_SHA: ${{ needs.admit.outputs.controller_sha }}
+        run: |
+          set -euo pipefail
+          bash controller/scripts/build-service-environment.sh axxium "$SOURCE_SHA" "$GITHUB_WORKSPACE/source" "$GITHUB_WORKSPACE/artifact"
+          printf '%s\n' "$SOURCE_SHA" > artifact/source.sha
+          printf '%s\n' "$CONTROLLER_SHA" > artifact/controller.sha
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: axxium-production-image
+          path: |
+            artifact/images.tar
+            artifact/images.sha256
+            artifact/source.sha
+            artifact/controller.sha
+          if-no-files-found: error
+          retention-days: 3
+  deploy:
+    needs: admit
+    if: inputs.image_run_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/services
+          ref: ${{ needs.admit.outputs.controller_sha }}
+          persist-credentials: false
+      - name: Validate the producing run before downloading its artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_RUN_ID: ${{ inputs.image_run_id }}
+          CONTROLLER_SHA: ${{ needs.admit.outputs.controller_sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/open-hax/services/actions/runs/$IMAGE_RUN_ID" > producing-run.json
+          jq -e --arg sha "$CONTROLLER_SHA" '.event == "workflow_dispatch" and .path == ".github/workflows/deploy-stack.yml" and .head_sha == $sha and .head_branch == "main" and .status == "completed" and .conclusion == "success"' producing-run.json >/dev/null
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: axxium-production-image
+          path: artifact
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.image_run_id }}
+      - name: Recheck exact source, controller, archive and owner intent
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pull_request }}
+          SOURCE_SHA: ${{ needs.admit.outputs.source_sha }}
+          ADMITTED_CONTROLLER_SHA: ${{ needs.admit.outputs.controller_sha }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/open-hax/services/branches/main --jq .commit.sha)" = "$ADMITTED_CONTROLLER_SHA"
+          test "$(cat artifact/source.sha)" = "$SOURCE_SHA"
+          test "$(cat artifact/controller.sha)" = "$ADMITTED_CONTROLLER_SHA"
+          archive_sha=$(sha256sum artifact/images.tar | cut -d' ' -f1)
+          test "$archive_sha" = "$(cat artifact/images.sha256)"
+          ADMITTED_IMAGE_SHA256="$archive_sha" python3 scripts/github_environment_admission.py open-hax/axxium "$PR_NUMBER" production > admission.json
+          test "$(python3 -c 'import json; print(json.load(open("admission.json"))["source_sha"])')" = "$SOURCE_SHA"
+      - name: Send only the admitted image archive to the enrolled receiver
+        env:
+          SOURCE_SHA: ${{ needs.admit.outputs.source_sha }}
+          DEPLOY_SSH_KEY: ${{ secrets.PROMETHEAN_ENVIRONMENT_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.PROMETHEAN_ENVIRONMENT_KNOWN_HOSTS }}
+          DEPLOY_TARGET: ${{ vars.PROMETHEAN_ENVIRONMENT_SSH_TARGET }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS" && test -n "$DEPLOY_TARGET"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/environment_key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/environment_key"
+          trap 'rm -f "$HOME/.ssh/environment_key"' EXIT
+          ssh -i "$HOME/.ssh/environment_key" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes "$DEPLOY_TARGET" "receive production axxium $SOURCE_SHA" < artifact/images.tar
+      - name: Verify public authority discovery
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 20 https://axxium.promethean.rest/oidc/.well-known/openid-configuration |
+            jq -e '.issuer == "https://axxium.promethean.rest/oidc" and (.code_challenge_methods_supported | index("S256") != null)' >/dev/null

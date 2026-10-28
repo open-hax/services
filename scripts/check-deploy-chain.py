@@ -30,13 +30,14 @@ STACK_WORKFLOW = (
     / "deploy-stack.yml"
 )
 WEBSITE_PHASE_WORKFLOW = STACK_WORKFLOW.parent / "deploy-website-phases.yml"
+AXXIUM_PHASE_WORKFLOW = STACK_WORKFLOW.parent / "deploy-axxium-production.yml"
 
 
 def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     """Keep the isolated phase graph fail closed without authorizing new callers."""
     errors = []
     scope = entry["on"]["workflow_dispatch"]["inputs"].get("scope", {})
-    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx"]:
+    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx", "axxium"]:
         errors.append("manual scope must retain stack as default and offer website")
     jobs = chain["jobs"]
     if chain["jobs"]["build-proxx"].get("if") != "inputs.scope == 'stack' || inputs.scope == 'proxx'":
@@ -132,6 +133,61 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
         errors.append("production proof must follow the actual production deployment")
     return errors
 
+
+
+def axxium_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
+    """Require the locked, qualified two-run archive handoff before host effects."""
+    errors = []
+    if entry.get("jobs", {}).get("deploy", {}).get("concurrency", {}).get("group") != "digitalocean-production-host":
+        errors.append("Axxium requires the Services production lock")
+    call = chain.get("jobs", {}).get("deploy-axxium", {})
+    if (call.get("if") != "inputs.scope == 'axxium'"
+            or call.get("uses") != "./.github/workflows/deploy-axxium-production.yml"
+            or call.get("with") != {"pull_request": "${{ inputs.axxium_pull_request }}",
+                                     "image_run_id": "${{ inputs.axxium_image_run_id }}",
+                                     "caller_holds_production_host_lock": "true"}):
+        errors.append("Axxium must use the isolated locked chain with exact inputs")
+    if set(phases.get("on", {})) != {"workflow_call"} or phases.get("concurrency") is not None:
+        errors.append("Axxium phases cannot have a separate entrypoint or lock")
+    lock = phases.get("on", {}).get("workflow_call", {}).get("inputs", {}).get("caller_holds_production_host_lock", {})
+    if lock.get("required") != "true" or "default" in lock:
+        errors.append("Axxium requires enclosing production lock")
+    jobs = phases.get("jobs", {})
+    admit, build, deploy = jobs.get("admit", {}), jobs.get("build", {}), jobs.get("deploy", {})
+    if build.get("needs") != "admit" or build.get("if") != "inputs.image_run_id == ''":
+        errors.append("Axxium build must follow admission and only prepare a new archive")
+    if (deploy.get("needs") != "admit" or deploy.get("if") != "inputs.image_run_id != ''"
+            or deploy.get("environment") != "production"):
+        errors.append("Axxium deployment must follow admission and select a prior archive")
+    if 'secrets.' in json.dumps(build) or 'environment' in build:
+        errors.append("Axxium image build cannot access deployment credentials")
+    admission_steps = admit.get("steps", [])
+    admission = next((step for step in admission_steps if step.get("id") == "admission"), {})
+    controller = next((step for step in admission_steps if step.get("id") == "controller"), {})
+    for value in ('test "$HOST_LOCK" = true', 'refs/heads/main', 'branches/main', '"$GITHUB_SHA"'):
+        if value not in controller.get("run", ""):
+            errors.append("Axxium controller must verify lock and current Services main")
+            break
+    if 'github_environment_admission.py open-hax/axxium' not in admission.get("run", ""):
+        errors.append("Axxium must use native source qualification")
+    steps = deploy.get("steps", [])
+    names = [step.get("name") for step in steps]
+    required = ("Validate the producing run before downloading its artifact",
+                "Recheck exact source, controller, archive and owner intent",
+                "Send only the admitted image archive to the enrolled receiver")
+    if any(name not in names for name in required) or not (names.index(required[0]) < names.index(required[1]) < names.index(required[2])):
+        errors.append("Axxium must verify producer and admission before host effects")
+    else:
+        producer = steps[names.index(required[0])].get("run", "")
+        recheck = steps[names.index(required[1])].get("run", "")
+        effect = steps[names.index(required[2])].get("run", "")
+        for value in ('.github/workflows/deploy-stack.yml', '.head_sha == $sha', '.conclusion == "success"'):
+            if value not in producer: errors.append("Axxium artifact producer binding missing")
+        for value in ('branches/main', 'artifact/source.sha', 'artifact/controller.sha', 'artifact/images.sha256', 'ADMITTED_IMAGE_SHA256', 'github_environment_admission.py'):
+            if value not in recheck: errors.append("Axxium archive or owner recheck missing")
+        if 'receive production axxium $SOURCE_SHA' not in effect or 'artifact/images.tar' not in effect:
+            errors.append("Axxium receiver must accept only the selected archive")
+    return errors
 
 def main() -> int:
     document = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
@@ -235,6 +291,7 @@ def main() -> int:
     chain_callers = []
     service_deploy_callers = []
     website_phase_callers = []
+    axxium_phase_callers = []
     workflow_paths = sorted(
         set(HOST_WORKFLOW.parent.glob("*.yml"))
         | set(HOST_WORKFLOW.parent.glob("*.yaml"))
@@ -264,12 +321,20 @@ def main() -> int:
                         ),
                     )
                 )
+            if (job.get("uses") == "./.github/workflows/deploy-axxium-production.yml"
+                    or str(job.get("uses", "")).startswith("open-hax/services/.github/workflows/deploy-axxium-production.yml@")):
+                axxium_phase_callers.append((workflow_path.name, job_name,
+                    job.get("with", {}).get("caller_holds_production_host_lock")))
             if job.get("uses") == "./.github/workflows/deploy-website-phases.yml":
                 website_phase_callers.append((workflow_path.name, job_name,
                     job.get("with", {}).get("caller_holds_production_host_lock")))
     stack_workflow = yaml.load(STACK_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     phases = yaml.load(WEBSITE_PHASE_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     phase_errors = website_path_errors(stack_workflow, document, phases)
+    axxium_phases = yaml.load(AXXIUM_PHASE_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    phase_errors.extend(axxium_path_errors(stack_workflow, document, axxium_phases))
+    if axxium_phase_callers != [("deploy-stack-chain.yml", "deploy-axxium", "true")]:
+        phase_errors.append("Axxium phase body has a caller outside the locked chain")
     if website_phase_callers != [("deploy-stack-chain.yml", "deploy-website", "true")]:
         phase_errors.append("website phase body has a caller outside the locked chain")
     if phase_errors:

@@ -13,7 +13,15 @@ on:
         required: false
         default: stack
         type: choice
-        options: [stack, website, proxx]
+        options: [stack, website, proxx, axxium]
+      axxium_pull_request:
+        description: Merged Axxium PR whose merge commit is current main
+        required: false
+        type: string
+      axxium_image_run_id:
+        description: Completed build-only Deploy Stack run; omit to build an archive
+        required: false
+        type: string
       proxx_ref:
         description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
@@ -51,8 +59,10 @@ on:
 # workflow's jobs can never hold more than the caller's top-level permissions,
 # and GitHub refuses to start the run on the mismatch.
 permissions:
+  actions: read
   contents: read
   packages: write
+  pull-requests: read
 
 jobs:
   authorize:
@@ -65,6 +75,8 @@ jobs:
       - name: Admit the manual scope and immutable stack candidate
         id: decide
         env:
+          AXXIUM_PR: ${{ inputs.axxium_pull_request }}
+          AXXIUM_IMAGE_RUN_ID: ${{ inputs.axxium_image_run_id }}
           PROXX_SHA: ${{ inputs.proxx_ref }}
           KNOXX_SHA: ${{ inputs.knoxx_ref }}
           EVENT_NAME: ${{ github.event_name }}
@@ -76,7 +88,7 @@ jobs:
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             case "$DEPLOY_SCOPE" in
-              stack|website|proxx) ;;
+              stack|website|proxx|axxium) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
             esac
             if [ -n "$WEBSITE_IMAGE" ] && [ "$DEPLOY_SCOPE" != website ]; then
@@ -90,6 +102,16 @@ jobs:
             if [ "$DEPLOY_SCOPE" = stack ] && ! [[ "${KNOXX_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
               echo '::error::Stack deployment requires an immutable Knoxx candidate.' >&2
               exit 2
+            fi
+            if [ "$DEPLOY_SCOPE" != axxium ] && { [ -n "${AXXIUM_PR:-}" ] || [ -n "${AXXIUM_IMAGE_RUN_ID:-}" ]; }; then
+              echo '::error::Axxium inputs require the isolated axxium scope.' >&2
+              exit 2
+            fi
+            if [ "$DEPLOY_SCOPE" = axxium ]; then
+              if [ "$GITHUB_REF" != refs/heads/main ] || ! [[ "${AXXIUM_PR:-}" =~ ^[1-9][0-9]*$ ]] || [ "$INCLUDE_WEBSITE" = true ] || { [ -n "${AXXIUM_IMAGE_RUN_ID:-}" ] && ! [[ "$AXXIUM_IMAGE_RUN_ID" =~ ^[1-9][0-9]*$ ]]; }; then
+                echo '::error::Axxium requires trusted Services main, a merged PR number and no website opt-in.' >&2
+                exit 2
+              fi
             fi
             if [ "$DEPLOY_SCOPE" = proxx ]; then
               if [ "$INCLUDE_WEBSITE" = true ]; then
@@ -122,6 +144,8 @@ jobs:
       cancel-in-progress: false
     uses: ./.github/workflows/deploy-stack-chain.yml
     with:
+      axxium_pull_request: ${{ inputs.axxium_pull_request }}
+      axxium_image_run_id: ${{ inputs.axxium_image_run_id }}
       scope: ${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'stack' }}
       # Pin the release source at the production entry point. A manual
       # dispatch may deliberately override this reviewed immutable default.
