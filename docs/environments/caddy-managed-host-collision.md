@@ -60,3 +60,50 @@ container or writer was modified here. Until the controller establishes that
 coordination and a verified restart/rollback plan, no executable migration is
 qualified; a script that only renames files and calls `caddy reload` would give a
 false guarantee.
+
+## Concrete controller-owned transaction
+
+The existing legacy workflow cannot safely wrap its Caddy writer with a short
+lock: its `Sync service definition` step runs `rsync --delete` over the Caddy
+runtime directory in one SSH invocation, and its later `Deploy` step recreates
+the container in another. The website-staging ingress step is a second writer.
+A future controller must own one serialized transaction covering all of the
+following, including verification and rollback, with every ingress writer using
+the same lock and no legacy unrestricted writer remaining active:
+
+1. A host administrator provisions a fixed root-owned, non-group-writable lock
+   directory and stable lock inode; do not unlink or replace the lock. Each
+   writer verifies file type, ownership, inode identity and directory ownership,
+   then holds the same exclusive OS file lock until its transaction exits. Drain
+   older deployments and revoke their unrestricted host key or otherwise prove
+   they cannot bypass the lock. A lock added only to new workflows cannot do so.
+2. Under the lock, read and hash the mounted base file, Compose definition,
+   complete managed `*.caddy` inventory, and current container mount identities.
+   Reject symlinks, unexpected ownership or modes, unexpected files, duplicate
+   sites, mismatched expected hashes and any mismatch with the operator-approved
+   inventory. Preserve an exact, private, durable copy of every affected file and
+   the old image/configuration identity before touching the live paths.
+3. Build a complete candidate tree in a separate private transaction directory.
+   Its managed snapshot removes exactly the approved colliding entries and keeps
+   all other imported routes byte-for-byte; its base file contains the approved
+   source definitions. Validate that tree with the same Caddy binary, effective
+   environment, full wildcard imports and relevant mounted resources. Check both
+   expected host-to-upstream mappings and that all previously observed unrelated
+   routes are still present. A parser success alone does not prove this mapping.
+4. Make the candidate persistent paths active only inside the same held lock,
+   then recreate the Caddy container from the approved Compose configuration so
+   the file bind references the new inode. Verify mount identity, live process
+   configuration, container health and real routes. Preserve ACME state and do
+   not use an image, env file or host configuration from the candidate app.
+5. If installation, recreation, validation or any acceptance probe fails,
+   restore both exact saved trees, recreate with the old Compose configuration,
+   validate the mounted effective config and verify restoration before releasing
+   the lock. If rollback cannot be verified, retain the lock until the controller
+   stops and emit an explicit operator-visible failure with the backup location.
+   Crash recovery needs a durable transaction journal and must reconcile before
+   any subsequent writer enters; a shell trap alone does not cover power loss.
+
+The required host lock provisioning, workflow consolidation, old-writer
+retirement, backup/recovery controller and real container lifecycle regression
+are not implemented here. The current test is an adapter-level diagnostic, not a
+safe-to-run migration controller.
