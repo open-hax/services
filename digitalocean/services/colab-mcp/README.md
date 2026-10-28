@@ -1,6 +1,6 @@
 # Colab browser MCP placement
 
-Source: [`open-hax/cloud-cuckoo`](https://github.com/open-hax/cloud-cuckoo), extracted from the uncommitted `open-hax/knoxx` `integrations/colab-mcp/` source. Initial source revision: `335ca46fb6fc96e23faed6e979a6eb024358a2aa`. The running gateway Python modules matched that extraction on 2026-10-28; this is not proof the image was built from that Git revision. This directory owns only
+Source: [`open-hax/cloud-cuckoo`](https://github.com/open-hax/cloud-cuckoo), extracted from the uncommitted `open-hax/knoxx` `integrations/colab-mcp/` source. Initial source revision: `335ca46fb6fc96e23faed6e979a6eb024358a2aa`. The running gateway Python modules matched that extraction on 2026-10-28; this is not proof the image was built from that Git revision. Cloud Cuckoo subsequently merged optional exact harness callback support in `5a2d2054e9214828915d10396f7a82b5b0fa0b0b`; that change is not yet deployed. This directory owns only
 placement, process definitions and activation/rollback. The package wraps the
 pinned official Google bridge; the browser must run on Stealth.
 
