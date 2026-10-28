@@ -1,8 +1,33 @@
 # Colab browser MCP placement
 
-Source: [`open-hax/cloud-cuckoo`](https://github.com/open-hax/cloud-cuckoo), extracted from the uncommitted `open-hax/knoxx` `integrations/colab-mcp/` source. Initial source revision: `335ca46fb6fc96e23faed6e979a6eb024358a2aa`. The running gateway Python modules matched that extraction on 2026-10-28; this is not proof the image was built from that Git revision. Cloud Cuckoo subsequently merged optional exact harness callback support in `5a2d2054e9214828915d10396f7a82b5b0fa0b0b`; that change is not yet deployed. This directory owns only
-placement, process definitions and activation/rollback. The package wraps the
-pinned official Google bridge; the browser must run on Stealth.
+Source: [`open-hax/cloud-cuckoo`](https://github.com/open-hax/cloud-cuckoo),
+extracted from the uncommitted `open-hax/knoxx` `integrations/colab-mcp/`
+source. The existing production gateway's Python modules matched the initial
+extraction `335ca46fb6fc96e23faed6e979a6eb024358a2aa` on 2026-10-28; this is
+not proof its image was built from that Git revision. Later Cloud Cuckoo changes,
+including exact harness callbacks and the upstream resource-boundary fix merged
+as `000064ebf337e86292aa95bf200e4e0ca27c30a9`, are not yet deployed to the
+production gateway.
+
+This directory describes placement, processes and rollback; the package wraps
+the pinned official Google bridge, and the browser must run on Stealth.
+
+## Current deployment evidence (2026-10-28)
+
+Production's `https://knoxx.promethean.rest/colab/mcp` returns HTTP 401 to an
+anonymous request. The Axxium production OIDC discovery endpoint returns 404,
+and the Colab authorization endpoint returns 503; production harness login is
+not established.
+
+A separate Axxium staging authority is active at
+`https://staging.axxium.promethean.rest/oidc`. An isolated Cloud Cuckoo staging
+probe listens on the droplet's loopback interface with staging-only credentials
+and an inert Colab fixture. At Cloud Cuckoo PR #3 head `3b9139d11299f645fce7475461a9784d37de9993`,
+an automated staging account completed consent and resource-aware PKCE, MCP
+initialize and tool discovery, and an inert `colab_status` call; Axxium logout
+made that gateway token return 401. This proves the isolated staging path only:
+it is not a public staging gateway, a human login, a real Colab session or a
+production release.
 
 | Surface | Placement |
 | --- | --- |
@@ -29,8 +54,8 @@ page; anonymous and bearer MCP requests return 401. Local Knoxx still connects
 to private browser/compute bridges using their existing service credentials.
 
 Axxium owns human identity, actors, root sessions and consent. The prepared
-FastMCP OAuth proxy requires S256 PKCE, exact ChatGPT callback matching, explicit
-stable Axxium actor IDs, encrypted persistent state, and central grant
+FastMCP OAuth proxy requires S256 PKCE, explicit exact harness callbacks, stable
+Axxium actor IDs, encrypted persistent state, and central grant
 introspection on each request. Colab owns no replacement human authenticator.
 The registered upstream client must be `knoxx-colab`, with callback
 `https://knoxx.promethean.rest/colab/auth/callback` and `client_secret_post`.
@@ -38,8 +63,8 @@ Google credentials stay on Stealth.
 
 `COLAB_AXXIUM_CLIENT_FILE=/run/colab/axxium-client.json` names a regular private
 0600 file with `issuer`, `client_id`, `client_secret`, and `allowed_subjects`.
-No live client file is created while central identity is unqualified. Absence
-selects the pending state; invalid configuration or unavailable configured issuer
+The production client file is not configured while production identity is pending.
+Absence selects the pending state; invalid configuration or unavailable configured issuer
 fails startup. Do not generate a substitute issuer or sign a human actor locally.
 Use the Axxium owner's qualified Services release process for central activation.
 The existing 0700 writable OAuth mount holds encrypted proxy state once enabled.
