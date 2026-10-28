@@ -107,3 +107,22 @@ The required host lock provisioning, workflow consolidation, old-writer
 retirement, backup/recovery controller and real container lifecycle regression
 are not implemented here. The current test is an adapter-level diagnostic, not a
 safe-to-run migration controller.
+
+## Shared lock primitive, source-only
+
+`scripts/ingress_lock.py` supplies a nonblocking exclusive `flock` over the
+pre-provisioned root-owned `/run/open-hax/ingress/transaction.lock` inode.
+It rejects absent or symlinked paths, unsafe directory or file ownership and
+permissions, hardlinked lock files and inode replacement; the lock file is never
+created or removed by the primitive. Callers recheck the held inode before
+each effect. Ancestors must be administrator-controlled. The injectable owner
+and directory arguments are for tests only; production callers use the defaults.
+
+This source is not wired into either existing writer. `flock` is advisory and
+cannot stop a legacy workflow, an existing root key, an administrator or any
+other non-cooperating writer. Root provisioning, shared writer integration,
+durable transaction journaling and rollback, actual container lifecycle tests,
+and prior-writer retirement remain required before the primitive has any live
+coordination effect. The five isolated lock tests include real cross-process
+exclusion; they do not exercise host enrollment, Docker, crash recovery or live
+traffic.
