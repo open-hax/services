@@ -1,5 +1,9 @@
 import copy
+import hashlib
 import json
+import os
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -31,11 +35,20 @@ class FakeDocker:
             'Mounts': [{'Destination': d, 'Source': s, 'RW': rw} for d, s, rw in mounts],
             'NetworkSettings': {'Networks': {}}, 'State': {'Running': True}}
         self.calls = []
+        self.validation = None
 
     def __call__(self, args, *, allow_missing=False):
         self.calls.append(args)
         if args[:2] == ['docker', 'inspect']:
-            x = self.original if args[2] == self.original['Id'] else self.candidate
+            if args[2] == 'axxium-axxium-1':
+                x = {'Config': {'Env': ['AXXIUM_TRUST_PROXY=172.30.115.2']},
+                     'NetworkSettings': {'Networks': {'axxium-identity-ingress': {'IPAddress': '172.30.115.3'}}}}
+            elif args[2] == recovery.VALIDATION:
+                if self.validation is None:
+                    return SimpleNamespace(returncode=1, stdout=b'')
+                x = self.validation
+            else:
+                x = self.original if args[2] == self.original['Id'] else self.candidate
             return SimpleNamespace(returncode=0, stdout=json.dumps([x]).encode())
         if args[:3] == ['docker', 'rm', '-f']:
             self.candidate = None
@@ -47,6 +60,9 @@ class FakeDocker:
                 'Aliases': ['caddy', 'caddy-caddy-1']}
         if args[:2] == ['docker', 'start']:
             self.original['State']['Running'] = True
+        if args[0] == 'curl' and args[-1].endswith('/openid-configuration'):
+            return SimpleNamespace(returncode=0, stdout=json.dumps({'issuer': 'https://axxium.promethean.rest/oidc',
+                'jwks_uri': 'https://axxium.promethean.rest/oidc/jwks'}).encode())
         return SimpleNamespace(returncode=0, stdout=b'')
 
 
@@ -75,8 +91,37 @@ class HostRecoveryTest(unittest.TestCase):
         self.assertNotIn('--ip', open_connect)
         self.assertEqual(dev_connect[dev_connect.index('--ip') + 1], '172.31.255.2')
         self.assertIn('caddy', open_connect)
-        with self.assertRaisesRegex(IngressTransactionError, 'route verification is not qualified'):
+        with patch.object(self.driver, 'verify_route_baseline') as routes, \
+             patch.object(self.driver, 'baseline_caddy_sha', return_value=hashlib.sha256(b'').hexdigest()):
             self.driver.verify_incumbent_tls_routes_and_identity(self.plan)
+        routes.assert_called_once()
+
+    def test_adoption_checks_fixed_peers_trust_routes_and_oidc(self):
+        self.docker.candidate['NetworkSettings']['Networks'] = {
+            'open-hax': {'Aliases': ['caddy'], 'IPAddress': '172.18.0.25'},
+            'caddy-dev-ingress': {'IPAddress': '172.31.255.2'},
+            'axxium-identity-ingress': {'IPAddress': '172.30.115.2'}}
+        with patch.object(self.driver, 'verify_route_baseline') as routes, \
+             patch.object(self.driver, 'baseline_caddy_sha', return_value=hashlib.sha256(b'').hexdigest()):
+            self.driver.verify_adoption_and_retained_incumbent(self.plan)
+        routes.assert_called_once()
+        self.assertTrue(any(x[0] == 'curl' and x[-1].endswith('/openid-configuration') for x in self.docker.calls))
+
+    def test_adoption_rejects_untrusted_proxy_before_route_probe(self):
+        self.docker.candidate['NetworkSettings']['Networks'] = {
+            'open-hax': {'Aliases': ['caddy'], 'IPAddress': '172.18.0.25'},
+            'caddy-dev-ingress': {'IPAddress': '172.31.255.2'},
+            'axxium-identity-ingress': {'IPAddress': '172.30.115.2'}}
+        original_inspect = self.driver.inspect
+        def inspect(name, **kwargs):
+            if name == 'axxium-axxium-1':
+                return {'Config': {'Env': []}, 'NetworkSettings': {'Networks': {}}}
+            return original_inspect(name, **kwargs)
+        with patch.object(self.driver, 'inspect', side_effect=inspect), patch.object(self.driver, 'verify_route_baseline') as routes, \
+             patch.object(self.driver, 'baseline_caddy_sha', return_value=hashlib.sha256(b'').hexdigest()):
+            with self.assertRaisesRegex(IngressTransactionError, 'trust differs'):
+                self.driver.verify_adoption_and_retained_incumbent(self.plan)
+        routes.assert_not_called()
 
     def test_candidate_label_or_mount_drift_refuses_before_removal(self):
         self.docker.candidate['Config']['Labels']['com.docker.compose.project'] = 'other'
@@ -90,6 +135,58 @@ class HostRecoveryTest(unittest.TestCase):
         with self.assertRaisesRegex(IngressTransactionError, 'configuration changed'):
             self.driver.rollback_to_same_incumbent(self.plan)
         self.assertFalse(any(x[:3] == ['docker', 'rm', '-f'] for x in self.docker.calls))
+
+    def test_recovery_removes_only_verified_owned_validation_orphan(self):
+        validation = copy.deepcopy(self.docker.candidate)
+        validation['Id'] = 'd'*64
+        validation['Config']['Entrypoint'] = ['caddy']
+        validation['Config']['Cmd'] = ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile']
+        validation['HostConfig'] = {'NetworkMode': 'none', 'PortBindings': {}}
+        self.docker.validation = validation
+        with patch.object(recovery, '_read_record', return_value={'version': 1, 'phase': 'stable', 'project': 'caddy'}):
+            self.driver.rollback_to_same_incumbent(self.plan)
+        self.assertIn(['docker', 'rm', '-f', 'd'*64], self.docker.calls)
+        self.assertIn(['docker', 'rm', '-f', 'c'*64], self.docker.calls)
+
+    def test_unrelated_validation_name_cannot_be_removed(self):
+        validation = copy.deepcopy(self.docker.candidate)
+        validation['Id'] = 'd'*64
+        validation['Config']['Entrypoint'] = ['caddy']
+        validation['Config']['Cmd'] = ['serve-unrelated']
+        validation['HostConfig'] = {'NetworkMode': 'none', 'PortBindings': {}}
+        self.docker.validation = validation
+        with self.assertRaisesRegex(IngressTransactionError, 'identity or isolation'):
+            self.driver.rollback_to_same_incumbent(self.plan)
+        self.assertFalse(any(x[:3] == ['docker', 'rm', '-f'] for x in self.docker.calls))
+
+    def test_route_comparison_preserves_preexisting_tls_failure_and_rejects_new_failure(self):
+        expected = {host: ('000' if host in ('opencode-dev.promethean.rest', 'shadow-dev.promethean.rest') else
+                           '401' if host == 'knoxx-dev.promethean.rest' else '200') for host in recovery.ROUTES}
+        with tempfile.TemporaryDirectory() as root:
+            journal = Path(root)
+            actual = dict(expected)
+            bodies = {host: b'fixture body' for host in recovery.ROUTES}
+            bodies['axxium.promethean.rest'] = b'{"service":"axxium","status":"ok","version":"old"}'
+            def runner(args, **_kwargs):
+                host = args[-1].split('/')[2]
+                code = actual[host]
+                body = b'' if code == '000' else bodies[host]
+                return SimpleNamespace(returncode=35 if code == '000' else 0,
+                    stdout=body + b'\n__INGRESS_META__' + code.encode() + b'\t\ttext/plain')
+            driver = recovery.HostRecoveryDriver(Lease(), execute=runner, journal=journal, journal_owner=os.getuid())
+            (journal / 'routes.json').write_text(json.dumps(driver.probe_routes()))
+            (journal / 'routes.json').chmod(0o600)
+            driver.verify_route_baseline()
+            # A planned Axxium version change is not a route regression.
+            bodies['axxium.promethean.rest'] = b'{"service":"axxium","status":"ok","version":"new"}'
+            driver.verify_route_baseline()
+            bodies['proxx.promethean.rest'] = b'unrelated upstream'
+            with self.assertRaisesRegex(IngressTransactionError, 'differs'):
+                driver.verify_route_baseline()
+            bodies['proxx.promethean.rest'] = b'fixture body'
+            actual['knoxx.promethean.rest'] = '000'
+            with self.assertRaisesRegex(IngressTransactionError, 'differs'):
+                driver.verify_route_baseline()
 
 
 if __name__ == '__main__':

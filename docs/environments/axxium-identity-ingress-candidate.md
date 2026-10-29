@@ -233,8 +233,27 @@ uninstalled boot unit. It validates the retained container's static Docker
 fingerprint and saved aliases, reconnects the daemon-assigned open network
 without trying to claim its old dynamic address, restores the fixed dev peer,
 and limits candidate removal to the expected image, owner, ports and mounts.
-The boundary verifier deliberately always refuses, and full incumbent-route and
-successful-adoption verification deliberately refuse. It cannot currently
+The boundary verifier deliberately always refuses. It cannot currently
 activate, automatically recover, or clear a production guard. Its Docker actions
 are unit-tested against a fake daemon, not a production host. The alternate-root
 tmpfiles fixture verifies that repeated provisioning preserves the lock inode.
+
+`caddy_host_bootstrap.py` supplies a fixed initial handoff driver without a CLI.
+Both the writer-boundary and deployment-qualification functions unconditionally
+refuse in production. It checks the pinned image, exact Compose model, inactive
+route candidate and incumbent environment; persists the incumbent and candidate
+configuration hashes and seven fixed route outcomes including response digests;
+and requires a fresh
+quiescent state copy before a nonroot, portless Compose validation. A recovered
+incumbent must match the saved configuration hash and route outcomes. A candidate
+must preserve those outcomes and show the fixed proxy peers, Axxium trust and
+OIDC discovery. Axxium health compares stable `service` and `status` semantics,
+allowing its version to change; other available routes compare status, redirect,
+content type and body digest. Two dev endpoints had existing TLS failures when
+the baseline was sampled and retain an explicit unavailable outcome.
+The fake-Docker command sequence and isolated fixtures do not qualify the full
+driver or identify the retired legacy deploy credential. The portless Compose
+validator has a fixed name and durable intent; recovery checks its exact image,
+owner, mounts, command, lack of ports and network isolation before removing an
+orphan. A real isolated Compose fixture confirms that container shape, but the
+host recovery workflow has not been qualified on production.
