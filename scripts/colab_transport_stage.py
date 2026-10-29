@@ -194,6 +194,13 @@ def protocol_checks():
         require(status == 401, 'Stage anonymous MCP denial failed')
 
 
+def validate_tmpfs(host_config):
+    value = host_config.get('Tmpfs')
+    require(isinstance(value, dict) and set(value) == {'/tmp'} and isinstance(value['/tmp'], str))
+    options = value['/tmp'].split(',')
+    require(len(options) == 2 and set(options) == {'size=32m', 'mode=1777'}, 'Stage tmpfs contract changed')
+
+
 def validate_containers(records, plan):
     require(isinstance(records, list) and len(records) == 3)
     seen = set()
@@ -214,6 +221,7 @@ def validate_containers(records, plan):
                 host.get('NetworkMode') == 'host' and host.get('ReadonlyRootfs') is True and
                 host.get('Memory') == 256 * 1024 * 1024 and host.get('NanoCpus') == 500000000 and
                 host.get('CapDrop') == ['ALL'] and 'no-new-privileges:true' in host.get('SecurityOpt', []))
+        validate_tmpfs(host)
         require(all(v.get('Type') == 'bind' for v in record.get('Mounts', [])))
         mounts = {(v.get('Source'), v.get('Destination'), v.get('RW')) for v in record.get('Mounts', [])}
         expected = {(str(STATE), '/run/colab-transport-stage', False)}

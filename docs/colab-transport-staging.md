@@ -100,6 +100,29 @@ existing selector or healthy receipt. Production gateway, private files, keys,
 Caddy and unrelated projects are not selected; their IDs/images/running state
 must match before a Stage receipt can pass.
 
+Code Quality also renders this same Compose definition into empty private
+temporary bind sources and a unique CI project, pulls the fixed public image,
+and calls Docker Compose `create --pull never --no-build`. It never starts an
+application. The canary inspects all three created containers and actual
+`HostConfig.Tmpfs`, then removes only its owned containers. This catches Docker
+create errors that `compose config --quiet` cannot catch, including a comma
+splitting an unquoted YAML tmpfs flow-list item into two mounts.
+
+The measured failed start from Services controller
+`79903f7d01e734ac0eb678f99d546f178f2b609a` has one narrowly reviewed recovery
+operation: `scripts/recover_colab_stage_empty_start.py --recover-empty-start`.
+Run it through the actual Codex SSH login and audited transition to deploy.
+Under the existing Stage lock it requires that exact pending source/image,
+selector and original plan/Compose hashes; zero Stage-labelled or Stage-named
+containers; all fixed ports free; no healthy receipt; and exactly the private
+client/token plus empty OAuth directory. It uses exclusive hard links and
+directory fsync to archive every selector byte first and pending byte last,
+rechecking emptiness and credential byte identity before releasing the hold.
+An existing archive or partial/unknown state refuses. The operation never
+starts/retries a deployment, removes a credential, repairs authority, or becomes
+a general hold clearer. Historical failed-start records remain private and
+inspectable before a fresh canonical deployment can run.
+
 The generic `colab-mcp` production renderer remains denied. A production scope
 must consume this authentic Stage record plus integration/e2e and all four
 normal mutation batches for the same application source via the existing

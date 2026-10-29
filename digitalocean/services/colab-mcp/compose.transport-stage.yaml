@@ -10,7 +10,7 @@ x-stage: &stage
   pids_limit: 128
   mem_limit: 256m
   cpus: 0.5
-  tmpfs: [/tmp:size=32m,mode=1777]
+  tmpfs: ["/tmp:size=32m,mode=1777"]
   environment:
     FASTMCP_CHECK_FOR_UPDATES: "off"
     COLAB_AUTH_PROFILE: transport-staging

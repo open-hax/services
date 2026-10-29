@@ -114,7 +114,8 @@ class StageTests(unittest.TestCase):
                         'com.docker.compose.project': m.PROJECT, 'com.docker.compose.service': role,
                         'org.opencontainers.image.revision': self.plan['source_sha']}},
                 'HostConfig': {'NetworkMode': 'host', 'ReadonlyRootfs': True, 'Memory': 268435456,
-                               'NanoCpus': 500000000, 'CapDrop': ['ALL'], 'SecurityOpt': ['no-new-privileges:true']}})
+                               'NanoCpus': 500000000, 'CapDrop': ['ALL'], 'SecurityOpt': ['no-new-privileges:true'],
+                               'Tmpfs': {'/tmp': 'mode=1777,size=32m'}}})
         return records
 
     def test_all_three_actual_containers_must_match_source_and_isolation(self):
@@ -124,6 +125,7 @@ class StageTests(unittest.TestCase):
                        lambda r: r[2]['Config'].update(Cmd=['knoxx-colab-mcp', 'gateway']),
                        lambda r: r[0]['HostConfig'].update(ReadonlyRootfs=False),
                        lambda r: r[1]['HostConfig'].update(Memory=0),
+                       lambda r: r[1]['HostConfig'].update(Tmpfs={'/tmp': 'size=32m', 'mode=1777': ''}),
                        lambda r: r[0]['Mounts'][0].update(Source='/srv/open-hax/state/colab-mcp'),
                        lambda r: r[2]['Mounts'][0].update(RW=True)]:
             with self.subTest(mutate=mutate):
@@ -279,6 +281,17 @@ class StageTests(unittest.TestCase):
             self.assertNotIn('--auth-profile', value['command'])
             self.assertIs(value['read_only'], True)
             self.assertEqual(value['network_mode'], 'host')
+            # A comma in an unquoted flow-list item becomes a second mount.
+            # This is the actual parsed shape Docker Compose must consume.
+            self.assertEqual(value['tmpfs'], ['/tmp:size=32m,mode=1777'])
+
+    def test_tmpfs_options_are_exact_but_order_independent(self):
+        for value in ('size=32m,mode=1777', 'mode=1777,size=32m'):
+            m.validate_tmpfs({'Tmpfs': {'/tmp': value}})
+        for value in ({'/tmp': 'size=32m'}, {'/tmp': 'size=32m,mode=777'},
+                      {'/tmp': 'size=32m,mode=1777,mode=1777'}, {'mode=1777': 'size=32m'}):
+            with self.subTest(value=value), self.assertRaises(m.Refused):
+                m.validate_tmpfs({'Tmpfs': value})
 
 
 if __name__ == '__main__':
