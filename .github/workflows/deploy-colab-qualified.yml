@@ -1,0 +1,154 @@
+name: Deploy qualified Cloud Cuckoo gateway
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      caller_holds_production_host_lock:
+        required: true
+        type: boolean
+    secrets:
+      DIGITALOCEAN_SSH_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  admit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      plan_sha256: ${{ steps.evidence.outputs.plan_sha256 }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Test fixed production boundaries without host capabilities
+        run: python3 -m unittest scripts.tests.test_colab_production_admission scripts.tests.test_colab_production_release scripts.tests.test_colab_production_workflow scripts.tests.test_colab_stage_admission
+      - name: Admit native image, exact Stage and all ordinary production qualification
+        id: evidence
+        env:
+          CALLER_LOCKED: ${{ inputs.caller_holds_production_host_lock }}
+          CALLER_WORKFLOW: ${{ github.workflow_ref }}
+          CALLER_REF: ${{ github.ref }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CONTROLLER_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$CALLER_LOCKED" = true
+          test "$CALLER_WORKFLOW" = open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main
+          test "$CALLER_REF" = refs/heads/main
+          plan=digitalocean/services/colab-mcp/production-plan.json
+          PYTHONPATH=scripts python3 -c 'import json; from colab_production_admission import validate_plan; validate_plan(json.load(open("digitalocean/services/colab-mcp/production-plan.json")))'
+          test "$(jq -er .candidate.source_sha "$plan")" = "$SOURCE_SHA"
+          publisher=$(jq -er .candidate.artifact_id "$plan")
+          stage=$(jq -er .stage.artifact_id "$plan")
+          timeout --kill-after=5s 120s gh api "repos/open-hax/cloud-cuckoo/actions/artifacts/${publisher}/zip" > publisher.zip
+          timeout --kill-after=5s 120s gh api "repos/open-hax/services/actions/artifacts/${stage}/zip" > stage.zip
+          python3 scripts/colab_production_admission.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --publisher-artifact publisher.zip --stage-artifact stage.zip > admission.json
+          jq -e '.admitted == true and .phase == "production" and .evaluated_mutations >= 1000' admission.json >/dev/null
+          printf 'plan_sha256=%s\n' "$(jq -er .plan_sha256 admission.json)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: admit
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Recheck all native evidence before receiving SSH capability
+        env:
+          CONTROLLER_SHA: ${{ github.sha }}
+          EXPECTED_PLAN: ${{ needs.admit.outputs.plan_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          plan=digitalocean/services/colab-mcp/production-plan.json
+          test "$(sha256sum "$plan" | cut -d' ' -f1)" = "$EXPECTED_PLAN"
+          publisher=$(jq -er .candidate.artifact_id "$plan")
+          stage=$(jq -er .stage.artifact_id "$plan")
+          timeout --kill-after=5s 120s gh api "repos/open-hax/cloud-cuckoo/actions/artifacts/${publisher}/zip" > publisher.zip
+          timeout --kill-after=5s 120s gh api "repos/open-hax/services/actions/artifacts/${stage}/zip" > stage.zip
+          python3 scripts/colab_production_admission.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --publisher-artifact publisher.zip --stage-artifact stage.zip > admission.json
+          jq -e '.admitted == true and .phase == "production"' admission.json >/dev/null
+      - name: Configure canonical pinned SSH trust
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          . digitalocean/lib/host-contract.sh
+          load_host_contract production
+          assert_pinned_host_key
+          test "$OPEN_HAX_SERVICES_ROOT" = /srv/open-hax/services
+          test -n "$SSH_PRIVATE_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/digitalocean
+          chmod 600 ~/.ssh/digitalocean
+          install -m 600 "$OPEN_HAX_KNOWN_HOSTS" ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<CONFIG
+          Host open-hax-target
+            HostName $OPEN_HAX_HOST
+            User $OPEN_HAX_SSH_USER
+            IdentityFile ~/.ssh/digitalocean
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            ConnectTimeout 10
+          CONFIG
+          chmod 600 ~/.ssh/config
+      - name: Refuse an unresolved canonical production transition
+        run: ssh open-hax-target 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
+      - name: Install accepted controller and replace only the fixed gateway
+        env:
+          CONTROLLER_SHA: ${{ github.sha }}
+          PLAN_SHA256: ${{ needs.admit.outputs.plan_sha256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PLAN_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          plan=digitalocean/services/colab-mcp/production-plan.json
+          source_sha=$(jq -er .candidate.source_sha "$plan")
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          controller="/srv/open-hax/services/colab-mcp/controllers/$CONTROLLER_SHA"
+          tar --mode=u=rw,go= -cf controller.tar \
+            scripts/colab_production_admission.py scripts/colab_production_release.py \
+            scripts/colab_stage_admission.py scripts/colab_transport_stage.py \
+            scripts/axxium_production_qualification.py scripts/environment_policy.py \
+            scripts/github_environment_admission.py scripts/provision_axxium_colab_identity.py \
+            digitalocean/services/axxium/minimal-production-plan.json \
+            digitalocean/services/colab-mcp/compose.yaml digitalocean/services/colab-mcp/verify.sh \
+            digitalocean/services/colab-mcp/production-plan.json \
+            "digitalocean/qualifications/colab-mcp/$source_sha.json"
+          # Fixed controller path and validated SHA intentionally expand locally.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "umask 077; mkdir -p /srv/open-hax/services/colab-mcp/controllers; mkdir -m 700 '$controller'; tar --no-same-owner -xf - -C '$controller'" < controller.tar
+          # shellcheck disable=SC2029
+          ssh open-hax-target "env PYTHONDONTWRITEBYTECODE=1 python3 '$controller/scripts/colab_production_release.py' --plan '$controller/digitalocean/services/colab-mcp/production-plan.json' --controller-sha '$CONTROLLER_SHA' --plan-sha256 '$PLAN_SHA256' --apply" </dev/null > production-receipt.json
+          jq -e '.health == "success" and .phase == "production" and .restore_copy_verified == true and .anonymous_and_legacy_key_denied == true and .unrelated_runtime_preserved == true and .human_login_verified == false and .google_execution_verified == false' production-receipt.json >/dev/null
+      - name: Retain sanitized production outcome
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: colab-qualified-production-${{ github.run_id }}-${{ github.run_attempt }}
+          path: production-receipt.json
+          if-no-files-found: ignore
+      - name: Remove only runner credential and artifact copies
+        if: always()
+        run: rm -f ~/.ssh/digitalocean controller.tar publisher.zip stage.zip

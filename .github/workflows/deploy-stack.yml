@@ -9,11 +9,11 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: Stack, website, Proxx, fixed Axxium adoption, or synthetic Colab stage
+        description: Stack, website, Proxx, Axxium, synthetic Colab Stage or qualified Colab gateway
         required: false
         default: stack
         type: choice
-        options: [stack, website, proxx, axxium, colab-stage]
+        options: [stack, website, proxx, axxium, colab-stage, colab]
       proxx_ref:
         description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
@@ -27,7 +27,7 @@ on:
         required: false
         type: string
       colab_ref:
-        description: Exact accepted Cloud Cuckoo source in the fixed transport-stage plan
+        description: Exact accepted Cloud Cuckoo source in its fixed Stage or production plan
         required: false
         type: string
       openplanner_ref:
@@ -89,7 +89,7 @@ jobs:
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             case "$DEPLOY_SCOPE" in
-              stack|website|proxx|axxium|colab-stage) ;;
+              stack|website|proxx|axxium|colab-stage|colab) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
             esac
             if [ -n "$WEBSITE_IMAGE" ] && [ "$DEPLOY_SCOPE" != website ]; then
@@ -120,7 +120,7 @@ jobs:
                 exit 2
               fi
             fi
-            if [ "$DEPLOY_SCOPE" = colab-stage ]; then
+            if [ "$DEPLOY_SCOPE" = colab-stage ] || [ "$DEPLOY_SCOPE" = colab ]; then
               if [ "$CALLER_REF" != refs/heads/main ] || [ "$INCLUDE_WEBSITE" = true ] || ! [[ "${COLAB_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
                 echo '::error::Cloud Cuckoo transport staging requires its immutable source, main controller and isolated scope.' >&2
                 exit 2

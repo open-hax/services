@@ -41,7 +41,7 @@ on:
         default: ''
         type: string
       colab_ref:
-        description: Fixed immutable Cloud Cuckoo source; colab-stage scope only
+        description: Fixed immutable Cloud Cuckoo source; isolated colab-stage or colab scope
         required: false
         default: ''
         type: string
@@ -81,6 +81,14 @@ permissions:
   packages: write
 
 jobs:
+  deploy-colab-production:
+    if: inputs.scope == 'colab'
+    uses: ./.github/workflows/deploy-colab-qualified.yml
+    with:
+      source_sha: ${{ inputs.colab_ref }}
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
   deploy-colab-stage:
     if: inputs.scope == 'colab-stage'
     uses: ./.github/workflows/deploy-colab-transport-stage.yml

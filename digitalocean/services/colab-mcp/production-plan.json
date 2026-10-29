@@ -1,0 +1,14 @@
+{
+  "schema": "colab-qualified-production/v1",
+  "host": "knoxx.promethean.rest",
+  "candidate": null,
+  "stage": null,
+  "predecessor": {
+    "container_id": "2d9bb92a96525b746ef21c914b8165e2e76b8fe1ee39a95c3362d2e6643ac687",
+    "image_id": "sha256:54afa62b1a2ec5fc10b299ded1ba830dc70f774a8bffe36f1c70af9c50104e72",
+    "image_reference": "knoxx-colab-mcp:candidate",
+    "environment_sha256": "3643163da21c683cb9a05264c722020a688921870d1a20b5fd9699d1b25e5d47",
+    "compose_sha256": "f721c5735b35d1b70cf8499d733f947e797fd5303099aa03390e2fa10ae24d20",
+    "environment_file_exists": false
+  }
+}

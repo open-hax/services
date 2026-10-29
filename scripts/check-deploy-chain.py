@@ -36,9 +36,14 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     """Keep the isolated phase graph fail closed without authorizing new callers."""
     errors = []
     scope = entry["on"]["workflow_dispatch"]["inputs"].get("scope", {})
-    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx", "axxium", "colab-stage"]:
+    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx", "axxium", "colab-stage", "colab"]:
         errors.append("manual scope must retain stack as default and only offer reviewed service scopes")
     jobs = chain["jobs"]
+    colab = jobs.get("deploy-colab-production", {})
+    if (colab.get("if") != "inputs.scope == 'colab'"
+        or colab.get("uses") != "./.github/workflows/deploy-colab-qualified.yml"
+        or colab.get("with", {}).get("caller_holds_production_host_lock") != "true"):
+        errors.append("qualified Colab must retain its isolated scope and the enclosing host queue")
     if chain["jobs"]["build-proxx"].get("if") != "inputs.scope == 'stack' || inputs.scope == 'proxx'":
         errors.append("Proxx builds must be limited to stack and proxx scopes")
     proxx_verify = chain["jobs"].get("verify-proxx-host", {})
