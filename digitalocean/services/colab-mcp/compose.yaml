@@ -1,0 +1,23 @@
+services:
+  gateway:
+    image: ${COLAB_MCP_IMAGE:?Qualified Cloud Cuckoo image digest required}
+    user: "1000:1000"
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    environment:
+      COLAB_BRIDGE_TOKEN_FILE: /run/colab/bridge-token
+      COLAB_BRIDGE_URL: http://127.0.0.1:18023/mcp
+      COLAB_COMPUTE_URL: http://127.0.0.1:18025/mcp
+      COLAB_OAUTH_BASE_URL: https://knoxx.promethean.rest/colab
+      COLAB_OAUTH_STATE_DIR: /var/lib/colab-oauth
+      COLAB_AXXIUM_CLIENT_FILE: /run/colab/axxium-client.json
+      FASTMCP_CHECK_FOR_UPDATES: "off"
+    volumes:
+      - ${COLAB_MCP_STATE_DIR:?Private state directory required}:/run/colab:ro
+      - ${COLAB_MCP_STATE_DIR:?Private state directory required}/oauth:/var/lib/colab-oauth:rw
+    command: ["knoxx-colab-mcp", "gateway", "--host", "172.31.255.1", "--port", "18024"]
