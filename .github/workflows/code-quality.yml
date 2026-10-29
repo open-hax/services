@@ -72,6 +72,10 @@ jobs:
 
       - name: Test service environment admission and receiver boundaries
         run: python3 -m unittest discover -s scripts/tests -p 'test_environment*.py'
+      - name: Test legacy deployment key comparison
+        run: python3 -m unittest discover -s scripts/tests -p 'test_legacy_deployment_key_match.py'
+      - name: Test Axxium staging authority and shutdown grace
+        run: python3 -m unittest scripts.tests.test_axxium_staging_oidc
       - name: Test website phase isolation and serving gates
         run: python scripts/test_website_deployment.py
 

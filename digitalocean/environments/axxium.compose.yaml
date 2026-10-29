@@ -2,6 +2,8 @@ services:
   axxium:
     image: ${AXXIUM_IMAGE:?Set an immutable built Axxium image}
     restart: unless-stopped
+    # Axxium startup shutdown can require twice the maximum schema timeout plus 5s.
+    stop_grace_period: 610s
     ports:
     - 127.0.0.1:${AXXIUM_LISTEN_PORT:-18877}:8787
     environment:
