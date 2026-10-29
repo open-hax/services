@@ -9,11 +9,11 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: Stack, website, Proxx, or the fixed qualified Axxium adoption
+        description: Stack, website, Proxx, fixed Axxium adoption, or synthetic Colab stage
         required: false
         default: stack
         type: choice
-        options: [stack, website, proxx, axxium]
+        options: [stack, website, proxx, axxium, colab-stage]
       proxx_ref:
         description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
@@ -24,6 +24,10 @@ on:
         type: string
       axxium_ref:
         description: Immutable staged Axxium source required for its fixed production adoption plan
+        required: false
+        type: string
+      colab_ref:
+        description: Exact accepted Cloud Cuckoo source in the fixed transport-stage plan
         required: false
         type: string
       openplanner_ref:
@@ -74,6 +78,7 @@ jobs:
           PROXX_SHA: ${{ inputs.proxx_ref }}
           KNOXX_SHA: ${{ inputs.knoxx_ref }}
           AXXIUM_SHA: ${{ inputs.axxium_ref }}
+          COLAB_SHA: ${{ inputs.colab_ref }}
           CALLER_REF: ${{ github.ref }}
           EVENT_NAME: ${{ github.event_name }}
           DEPLOY_SCOPE: ${{ inputs.scope || 'stack' }}
@@ -84,7 +89,7 @@ jobs:
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             case "$DEPLOY_SCOPE" in
-              stack|website|proxx|axxium) ;;
+              stack|website|proxx|axxium|colab-stage) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
             esac
             if [ -n "$WEBSITE_IMAGE" ] && [ "$DEPLOY_SCOPE" != website ]; then
@@ -115,6 +120,12 @@ jobs:
                 exit 2
               fi
             fi
+            if [ "$DEPLOY_SCOPE" = colab-stage ]; then
+              if [ "$CALLER_REF" != refs/heads/main ] || [ "$INCLUDE_WEBSITE" = true ] || ! [[ "${COLAB_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+                echo '::error::Cloud Cuckoo transport staging requires its immutable source, main controller and isolated scope.' >&2
+                exit 2
+              fi
+            fi
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "Manual dispatch; deploying the requested refs."
             exit 0
@@ -142,6 +153,7 @@ jobs:
       proxx_ref: ${{ inputs.proxx_ref || '3ed25eec53a5bed6dc224f108323ea5d20420a22' }}
       knoxx_ref: ${{ inputs.knoxx_ref }}
       axxium_ref: ${{ inputs.axxium_ref }}
+      colab_ref: ${{ inputs.colab_ref }}
       # Keep the production default in one place. Nested reusable workflows
       # require this input instead of carrying independent, drift-prone pins.
       openplanner_ref: ${{ inputs.openplanner_ref || '07085d6557b75834ce6f50e6c54b8ca47e1c7c08' }}

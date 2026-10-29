@@ -79,7 +79,10 @@ jobs:
           python3 -m unittest discover -s scripts/tests -p 'test_axxium*.py'
           python3 -m unittest scripts.tests.test_provision_axxium_colab_identity
       - name: Test Colab phase enrollment boundary
-        run: python3 -m unittest scripts.tests.test_colab_deployment_enrollment
+        run: |
+          python3 -m unittest scripts.tests.test_colab_deployment_enrollment
+          python3 -m unittest scripts.tests.test_colab_stage_admission scripts.tests.test_colab_transport_stage scripts.tests.test_colab_stage_oauth_smoke
+          python3 -m unittest scripts.tests.test_enroll_colab_transport_stage
       - name: Test Colab image, identity and discovery release gate
         run: python3 -m unittest scripts.tests.test_colab_mcp_verify
       - name: Test website phase isolation and serving gates

@@ -24,10 +24,18 @@ ingress:
   caddyHostVar: CADDY_KNOXX_HOST
   pathPrefix: /colab/
 
-# Phase-specific deployment slots and promotion records are not implemented by
-# this declaration. In particular, the inert staging probe is not a staging
-# record for this production gateway. Enroll phases through their owning flow.
-phases: []
+# The fixed Stage flow uses the real gateway/auth/forwarding implementation with
+# dedicated synthetic peers. The old inert probe receives no promotion credit.
+# Production remains unenrolled until ordinary qualification is admitted.
+phases: [staging]
+staging:
+  workflow: deploy-colab-transport-stage.yml
+  compose: compose.transport-stage.yaml
+  project: colab-mcp-transport-staging
+  state: /srv/open-hax/state/colab-transport-stage
+  gateway: http://127.0.0.1:18771
+  syntheticUpstreams: true
+  googleExecutionVerified: false
 
 verify:
   required: true
