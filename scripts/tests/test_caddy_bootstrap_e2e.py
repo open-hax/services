@@ -16,6 +16,7 @@ import ingress_owner as owner
 from caddy_bootstrap_candidate import bootstrap_under_lease, production_plan, recover_under_lease
 from identity_ingress_transaction import IngressTransactionError
 from ingress_pending import refuse_pending
+from caddy_runtime_security import HOST_PROFILE, MASKED_REQUIRED, READONLY_REQUIRED
 from scripts.tests.test_caddy_bootstrap_candidate import container
 from scripts.tests.test_caddy_host_bootstrap import models
 
@@ -109,22 +110,27 @@ class SyntheticDocker:
                         'Config': {'User': '1000:1000', 'Labels': {'com.docker.compose.project': 'caddy-validation',
                                   'com.docker.compose.service': 'caddy'}, 'Entrypoint': ['caddy'],
                                   'Cmd': ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile'],
-                                  'Env': ['FIXTURE=value']}, 'HostConfig': {'NetworkMode': 'none', 'PortBindings': {}},
+                                  'Env': ['FIXTURE=value']}, 'HostConfig': {**{k: v[0] for k, v in HOST_PROFILE.items()}, 'MaskedPaths': sorted(MASKED_REQUIRED), 'ReadonlyPaths': sorted(READONLY_REQUIRED), 'NetworkMode': 'none', 'PortBindings': {}},
                         'Mounts': mounts, 'State': {'Running': False, 'Status': 'created'}}
                     if self.fault == 'validator-drift':
                         self.validation['Config']['Cmd'] = ['unexpected']
+                    if self.fault == 'validator-privileged':
+                        self.validation['HostConfig']['Privileged'] = True
                     return self.result()
                 self.candidate = {'Id': 'c'*64, 'Image': self.plan.incumbent_image,
                     'Config': {'User': '1000:1000', 'Labels': {'com.docker.compose.project': 'caddy-identity',
                                                                'com.docker.compose.service': 'caddy'},
                                'Cmd': recovery.CANDIDATE_COMMAND, 'Entrypoint': None, 'Env': ['FIXTURE=value']},
-                    'HostConfig': {'PortBindings': copy.deepcopy(self.old['HostConfig']['PortBindings'])},
+                    'HostConfig': {**{k: v[0] for k, v in HOST_PROFILE.items()}, 'MaskedPaths': sorted(MASKED_REQUIRED), 'ReadonlyPaths': sorted(READONLY_REQUIRED), 'PortBindings': copy.deepcopy(self.old['HostConfig']['PortBindings'])},
                     'Mounts': mounts, 'State': {'Running': False, 'Status': 'created'}, 'NetworkSettings': {'Networks': {
                         'open-hax': {'IPAddress': '172.18.0.31', 'Aliases': ['caddy']},
                         'caddy-dev-ingress': {'IPAddress': '172.31.255.2'},
                         'axxium-identity-ingress': {'IPAddress': '172.30.115.2'}}}}
                 if self.fault == 'candidate-drift':
                     self.candidate['Config']['Cmd'] = ['unexpected']
+                    return self.result()
+                if self.fault == 'candidate-privileged':
+                    self.candidate['HostConfig']['Privileged'] = True
                     return self.result()
                 if self.fault == 'interrupt':
                     raise KeyboardInterrupt()
@@ -197,11 +203,11 @@ class BootstrapE2E(unittest.TestCase):
             stack.enter_context(patch.object(recovery, 'settle_transition', lambda lease, target, verify: owner.settle_transition(lease, target, verify, selector)))
             stack.enter_context(patch.object(recovery, 'clear_bootstrap_pending', lambda lease, ident, target: owner.clear_bootstrap_pending(lease, ident, target, selector)))
             driver = boot.HostBootstrapDriver(Lease(), journal, execute=fake, boundary=lambda: True, qualification=lambda: True)
-            if fault in ('validator-drift', 'candidate-drift'):
+            if fault in ('validator-drift', 'candidate-drift', 'validator-privileged', 'candidate-privileged'):
                 with self.assertRaisesRegex(IngressTransactionError, 'manual recovery'):
                     bootstrap_under_lease(driver.lease, journal, driver, plan, owner=0)
                 self.assertTrue(owner.bootstrap_guard_pending(selector / 'bootstrap-pending'))
-                blocked = 'd'*64 if fault == 'validator-drift' else 'c'*64
+                blocked = 'd'*64 if fault.startswith('validator-') else 'c'*64
                 self.assertFalse(any(call[:2] == ['docker', 'start'] and call[-1] == blocked for call in fake.calls))
                 return
             if fault == 'interrupt':
@@ -243,6 +249,12 @@ class BootstrapE2E(unittest.TestCase):
 
     def test_candidate_configuration_drift_never_executes(self):
         self.exercise('candidate-drift')
+
+    def test_privileged_validator_never_executes(self):
+        self.exercise('validator-privileged')
+
+    def test_privileged_candidate_never_executes(self):
+        self.exercise('candidate-privileged')
 
     def test_complete_synthetic_adoption(self):
         self.exercise(False)

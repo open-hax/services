@@ -306,3 +306,13 @@ verified stable selector project. A matching marker permits normal writers; an
 absent, invalid, or mismatched marker blocks them. The boot recovery entry
 point checks this state while holding the same lease. Bootstrap is one-shot:
 the retained guard prevents a second bootstrap using the same mechanism.
+
+The stopped-container security check rejects privileged execution, unexpected
+capabilities, devices, namespace sharing, security overrides and other
+unsupported runtime options. It also checks a conservative Docker security
+profile and required masked and read-only paths; unsupported Compose service
+options are refused before creating containers. The real isolated validator
+fixture exercises this profile. This is a restricted security contract, not a
+complete comparison of every Docker inspection field (for example healthcheck
+and restart-policy readback remain separate qualification work). Both production
+gates remain unconditionally false.

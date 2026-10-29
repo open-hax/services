@@ -96,6 +96,16 @@ class BootstrapDriverTest(unittest.TestCase):
             with self.assertRaises(IngressTransactionError):
                 bootstrap.validate_candidate_models(self.before, altered, self.plan)
 
+    def test_unmodeled_compose_security_options_are_refused_even_if_legacy_matches(self):
+        for key, value in (('privileged', True), ('cap_add', ['SYS_ADMIN']),
+                           ('devices', ['/dev/example']), ('security_opt', ['seccomp=unconfined']),
+                           ('pid', 'host'), ('read_only', True), ('arbitrary_future_option', True)):
+            before, after = copy.deepcopy(self.before), copy.deepcopy(self.after)
+            before['services']['caddy'][key] = value
+            after['services']['caddy'][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(IngressTransactionError, 'Unsupported Compose'):
+                bootstrap.validate_candidate_models(before, after, self.plan)
+
     def test_snapshot_verification_detects_post_validation_changes(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)

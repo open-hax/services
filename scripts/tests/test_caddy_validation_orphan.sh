@@ -43,9 +43,9 @@ docker compose -p "$project" -f "$root/compose.yaml" -f "$root/validation.yaml" 
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$repo_root/scripts" python3 -c 'import json,sys; import caddy_host_bootstrap as b; b.VALIDATION=sys.argv[3]; b.validate_isolated_model(json.load(open(sys.argv[1])),json.load(open(sys.argv[2])))' "$root/before.json" "$root/isolated.json" "$validator"
 docker compose -p "$project" -f "$root/compose.yaml" -f "$root/validation.yaml" create --no-build --pull never caddy >/dev/null
 id=$(docker inspect --format '{{.Id}}' "$validator")
-docker inspect "$id" | python3 -c 'import json,sys; x=json.load(sys.stdin)[0]; c=x["Config"]; h=x["HostConfig"]; assert x["State"]["Status"]=="created" and not x["State"]["Running"]; assert c["User"]=="1000:1000"; assert c["Entrypoint"]==["caddy"]; assert c["Cmd"]==["validate","--config","/etc/caddy/identity-ingress/Caddyfile","--adapter","caddyfile"]; assert c["Labels"]["com.docker.compose.service"]=="caddy"; assert h["NetworkMode"]=="none"; assert not h["PortBindings"]'
+docker inspect "$id" | PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$repo_root/scripts" python3 -c 'import json,sys; from caddy_runtime_security import check_inspected_security; x=json.load(sys.stdin)[0]; check_inspected_security(x); c=x["Config"]; h=x["HostConfig"]; assert x["State"]["Status"]=="created" and not x["State"]["Running"]; assert c["User"]=="1000:1000"; assert c["Entrypoint"]==["caddy"]; assert c["Cmd"]==["validate","--config","/etc/caddy/identity-ingress/Caddyfile","--adapter","caddyfile"]; assert c["Labels"]["com.docker.compose.service"]=="caddy"; assert h["NetworkMode"]=="none"; assert not h["PortBindings"]'
 docker start --attach "$id" >/dev/null
-docker inspect "$id" | python3 -c 'import json,sys; s=json.load(sys.stdin)[0]["State"]; assert s["Status"]=="exited" and s["ExitCode"]==0'
+docker inspect "$id" | PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$repo_root/scripts" python3 -c 'import json,sys; from caddy_runtime_security import check_inspected_security; s=json.load(sys.stdin)[0]["State"]; assert s["Status"]=="exited" and s["ExitCode"]==0'
 docker rm "$id" >/dev/null
 test -z "$(docker ps -aq --filter "name=^/$validator$")"
 echo 'PASS fixed validation container inspected before start by exact ID and exited successfully'

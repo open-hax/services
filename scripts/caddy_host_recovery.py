@@ -18,6 +18,7 @@ import sys
 from caddy_bootstrap_candidate import recover_under_lease, static_fingerprint
 from identity_ingress_transaction import IngressTransactionError
 from ingress_lock import ingress_lock
+from caddy_runtime_security import check_inspected_security
 from ingress_owner import DIRECTORY, _publish, _read_record, read_selection, settle_transition, clear_bootstrap_pending, bootstrap_guard_pending
 
 JOURNALS = Path('/var/lib/open-hax/ingress/bootstrap')
@@ -203,6 +204,7 @@ class HostRecoveryDriver:
             if names:
                 raise IngressTransactionError('Candidate inspection is ambiguous')
             return None
+        check_inspected_security(candidate)
         labels = (candidate.get('Config') or {}).get('Labels') or {}
         if (candidate.get('Id') == plan.incumbent_id or candidate.get('Image') != plan.incumbent_image or
                 (candidate.get('Config') or {}).get('User') not in ('1000', '1000:1000') or
@@ -251,6 +253,7 @@ class HostRecoveryDriver:
             if names:
                 raise IngressTransactionError('Validation container inspection is ambiguous')
             return None
+        check_inspected_security(validator)
         config = validator.get('Config') or {}
         labels = config.get('Labels') or {}
         host = validator.get('HostConfig') or {}

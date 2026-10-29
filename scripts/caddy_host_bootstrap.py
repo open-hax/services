@@ -15,6 +15,7 @@ from axxium_identity_candidate import candidate as identity_candidate
 from caddy_bootstrap_candidate import production_plan, _event
 from caddy_host_recovery import HostRecoveryDriver, command, boundary_proven, VALIDATION, CANDIDATE_COMMAND, environment_digest
 from caddy_state_candidate import copy_verified, inventory
+from caddy_runtime_security import check_compose_security
 from identity_ingress_transaction import IngressTransactionError
 from ingress_owner import DIRECTORY, read_selection, begin_transition, settle_transition, mark_bootstrap_pending
 from ingress_pending import refuse_pending
@@ -47,6 +48,8 @@ def validate_candidate_models(legacy, candidate, plan):
     if set(legacy.get('services', {})) != {'caddy'} or set(candidate.get('services', {})) != {'caddy'}:
         raise IngressTransactionError('Compose service ownership differs')
     before, after = legacy['services']['caddy'], candidate['services']['caddy']
+    check_compose_security(before)
+    check_compose_security(after)
     permitted = {'image', 'user', 'command', 'healthcheck', 'volumes', 'networks'}
     if {k: v for k, v in before.items() if k not in permitted} != {k: v for k, v in after.items() if k not in permitted}:
         raise IngressTransactionError('Compose changes unrelated service behavior')
@@ -98,6 +101,8 @@ def validate_isolated_model(candidate, isolated):
     if set(isolated.get('services', {})) != {'caddy'}:
         raise IngressTransactionError('Isolated validation service differs')
     before, after = candidate['services']['caddy'], isolated['services']['caddy']
+    check_compose_security(before)
+    check_compose_security(after)
     changed = {'networks', 'network_mode', 'ports', 'container_name', 'entrypoint', 'command', 'restart'}
     if (after.get('network_mode') != 'none' or after.get('networks') not in (None, {}) or
             after.get('ports') not in (None, []) or after.get('container_name') != VALIDATION or

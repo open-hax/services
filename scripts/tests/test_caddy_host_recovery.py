@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import caddy_host_recovery as recovery
+from caddy_runtime_security import HOST_PROFILE, MASKED_REQUIRED, READONLY_REQUIRED
 from caddy_bootstrap_candidate import production_plan
 from identity_ingress_transaction import IngressTransactionError
 from scripts.tests.test_caddy_bootstrap_candidate import container
@@ -32,7 +33,7 @@ class FakeDocker:
         self.candidate = {'Id': 'c'*64, 'Image': plan.incumbent_image,
             'Config': {'User': '1000:1000', 'Labels': {'com.docker.compose.project': 'caddy-identity', 'com.docker.compose.service': 'caddy'},
                        'Cmd': recovery.CANDIDATE_COMMAND, 'Entrypoint': None, 'Env': []},
-            'HostConfig': {'PortBindings': copy.deepcopy(original['HostConfig']['PortBindings'])},
+            'HostConfig': {**{k: v[0] for k, v in HOST_PROFILE.items()}, 'MaskedPaths': sorted(MASKED_REQUIRED), 'ReadonlyPaths': sorted(READONLY_REQUIRED), 'PortBindings': copy.deepcopy(original['HostConfig']['PortBindings'])},
             'Mounts': [{'Destination': d, 'Source': s, 'RW': rw} for d, s, rw in mounts],
             'NetworkSettings': {'Networks': {}}, 'State': {'Running': True}}
         self.calls = []
@@ -146,6 +147,35 @@ class HostRecoveryTest(unittest.TestCase):
             candidate[key] = before
         self.assertFalse(any(x[:3] == ['docker', 'rm', '-f'] for x in self.docker.calls))
 
+    def test_candidate_and_validator_reject_security_drift_before_any_effect(self):
+        validation = copy.deepcopy(self.docker.candidate)
+        validation['Id'] = 'd'*64
+        validation['Config']['Labels']['com.docker.compose.project'] = 'caddy-validation'
+        validation['Config']['Entrypoint'] = ['caddy']
+        validation['Config']['Cmd'] = ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile']
+        validation['HostConfig']['NetworkMode'] = 'none'
+        validation['HostConfig']['PortBindings'] = {}
+        self.docker.validation = validation
+        mutations = [('Privileged', True), ('CapAdd', ['SYS_ADMIN']),
+                     ('Devices', [{'PathOnHost': '/dev/example'}]), ('SecurityOpt', ['seccomp=unconfined']),
+                     ('PidMode', 'host'), ('IpcMode', 'host'), ('UsernsMode', 'host'),
+                     ('GroupAdd', ['0']), ('Runtime', 'unexpected'), ('AutoRemove', True),
+                     ('PublishAllPorts', True), ('MaskedPaths', []), ('ReadonlyPaths', []), ('Privileged', 0)]
+        for kind, obj, check in (('candidate', self.docker.candidate, self.driver.checked_candidate),
+                                  ('validator', validation, self.driver.checked_validation)):
+            for key, changed in mutations:
+                with self.subTest(kind=kind, key=key, changed=changed):
+                    before = obj['HostConfig'][key]
+                    obj['HostConfig'][key] = changed
+                    with self.assertRaisesRegex(IngressTransactionError, 'security setting differs'):
+                        check(self.plan)
+                    obj['HostConfig'][key] = before
+            before = obj['HostConfig'].pop('Privileged')
+            with self.assertRaisesRegex(IngressTransactionError, 'security setting differs'):
+                check(self.plan)
+            obj['HostConfig']['Privileged'] = before
+        self.assertFalse(any(x[:2] == ['docker', 'start'] or x[:2] == ['docker', 'rm'] for x in self.docker.calls))
+
     def test_incumbent_static_configuration_drift_refuses_before_removal(self):
         self.docker.original['Config']['Env'] = ['changed=fixture']
         with self.assertRaisesRegex(IngressTransactionError, 'configuration changed'):
@@ -158,7 +188,7 @@ class HostRecoveryTest(unittest.TestCase):
         validation['Config']['Labels']['com.docker.compose.project'] = 'caddy-validation'
         validation['Config']['Entrypoint'] = ['caddy']
         validation['Config']['Cmd'] = ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile']
-        validation['HostConfig'] = {'NetworkMode': 'none', 'PortBindings': {}}
+        validation['HostConfig'] = {**{k: v[0] for k, v in HOST_PROFILE.items()}, 'MaskedPaths': sorted(MASKED_REQUIRED), 'ReadonlyPaths': sorted(READONLY_REQUIRED), 'NetworkMode': 'none', 'PortBindings': {}}
         self.docker.validation = validation
         with patch.object(recovery, '_read_record', return_value={'version': 1, 'phase': 'stable', 'project': 'caddy'}):
             self.driver.rollback_to_same_incumbent(self.plan)
@@ -171,7 +201,7 @@ class HostRecoveryTest(unittest.TestCase):
         validation['Config']['Labels']['com.docker.compose.project'] = 'caddy-validation'
         validation['Config']['Entrypoint'] = ['caddy']
         validation['Config']['Cmd'] = ['serve-unrelated']
-        validation['HostConfig'] = {'NetworkMode': 'none', 'PortBindings': {}}
+        validation['HostConfig'] = {**{k: v[0] for k, v in HOST_PROFILE.items()}, 'MaskedPaths': sorted(MASKED_REQUIRED), 'ReadonlyPaths': sorted(READONLY_REQUIRED), 'NetworkMode': 'none', 'PortBindings': {}}
         self.docker.validation = validation
         with self.assertRaisesRegex(IngressTransactionError, 'identity or isolation'):
             self.driver.rollback_to_same_incumbent(self.plan)
@@ -184,7 +214,7 @@ class HostRecoveryTest(unittest.TestCase):
         validation['Config']['Entrypoint'] = ['caddy']
         validation['Config']['Cmd'] = ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile']
         validation['Config']['Env'] = ['UNEXPECTED=value']
-        validation['HostConfig'] = {'NetworkMode': 'none', 'PortBindings': {}}
+        validation['HostConfig'] = {**{k: v[0] for k, v in HOST_PROFILE.items()}, 'MaskedPaths': sorted(MASKED_REQUIRED), 'ReadonlyPaths': sorted(READONLY_REQUIRED), 'NetworkMode': 'none', 'PortBindings': {}}
         self.docker.validation = validation
         with self.assertRaisesRegex(IngressTransactionError, 'environment differs'):
             self.driver.rollback_to_same_incumbent(self.plan)
