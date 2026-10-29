@@ -15,6 +15,17 @@ when this first Stage adoption is dispatched. The host anonymously pulls the
 same immutable digest and independently verifies its image ID, source/revision,
 non-root user, GPL label and exact full license text hash.
 
+The publisher's classic-store `image_id` is the image configuration digest.
+This host's Docker29/containerd store exposes the registry manifest digest as
+its runtime image ID. Both identities remain explicit in the plan and receipt.
+The host verifies the Docker CLI's original manifest bytes by SHA256, its exact
+descriptor/ref/platform and parsed projection, and the manifest's configuration
+digest against the publisher ID. The pulled image descriptor/RepoDigest and all
+running container IDs must match the separately pinned `runtime_image_id`.
+The full-license probe uses that runtime ID with `--pull never`; neither ID is
+accepted as an arbitrary substitute for the other. See the owning
+[Moby containerd inspection implementation](https://github.com/moby/moby/blob/master/daemon/containerd/image_inspect.go).
+
 The compiled slot is:
 
 | Item | Fixed value |

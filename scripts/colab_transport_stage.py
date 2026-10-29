@@ -7,6 +7,7 @@ An uncertain or failed transaction leaves a private journal and cannot be retrie
 as a new deployment. The existing production host queue encloses this controller.
 """
 import argparse
+import base64
 from contextlib import contextmanager
 import fcntl
 import hashlib
@@ -88,12 +89,41 @@ def run(args, *, data=None, env=None, timeout=180):
     return result.stdout
 
 
-def inspect_image(value, plan):
+def verify_manifest(value, plan):
+    """Bind Docker CLI's original manifest bytes to both immutable identities."""
+    require(isinstance(value, dict) and value.get('Ref') == plan['image_reference'] and
+            isinstance(value.get('Raw'), str) and len(value['Raw']) <= 131072)
+    raw = base64.b64decode(value['Raw'], validate=True)
+    descriptor = value.get('Descriptor', {})
+    require(0 < len(raw) <= 65536 and
+            'sha256:' + hashlib.sha256(raw).hexdigest() == plan['runtime_image_id'] and
+            descriptor.get('digest') == plan['runtime_image_id'] and descriptor.get('size') == len(raw) and
+            descriptor.get('mediaType') == 'application/vnd.docker.distribution.manifest.v2+json' and
+            descriptor.get('platform') == {'architecture': 'amd64', 'os': 'linux'})
+    manifest = json.loads(raw)
+    require(manifest == value.get('SchemaV2Manifest') and manifest.get('schemaVersion') == 2 and
+            manifest.get('mediaType') == descriptor['mediaType'] and
+            manifest.get('config', {}).get('digest') == plan['image_id'] and
+            manifest['config'].get('mediaType') == 'application/vnd.docker.container.image.v1+json' and
+            type(manifest['config'].get('size')) is int and manifest['config']['size'] > 0 and
+            isinstance(manifest.get('layers'), list) and bool(manifest['layers']))
+    for layer in manifest['layers']:
+        require(isinstance(layer, dict) and layer.get('mediaType') == 'application/vnd.docker.image.rootfs.diff.tar.gzip' and
+                isinstance(layer.get('digest'), str) and re.fullmatch(r'sha256:[0-9a-f]{64}', layer['digest']) and
+                type(layer.get('size')) is int and layer['size'] > 0)
+    return len(raw)
+
+
+def inspect_image(value, plan, manifest_size):
     require(isinstance(value, list) and len(value) == 1)
     record = value[0]
     config = record.get('Config', {})
     labels = config.get('Labels', {})
-    require(record.get('Id') == plan['image_id'] and config.get('User') == '1000:1000' and
+    descriptor = record.get('Descriptor', {})
+    require(record.get('Id') == plan['runtime_image_id'] and
+            descriptor.get('digest') == plan['runtime_image_id'] and descriptor.get('size') == manifest_size and
+            descriptor.get('mediaType') == 'application/vnd.docker.distribution.manifest.v2+json' and
+            record.get('RepoDigests') == [plan['image_reference']] and config.get('User') == '1000:1000' and
             record.get('Os') == 'linux' and record.get('Architecture') == 'amd64' and
             labels.get('org.opencontainers.image.source') == 'https://github.com/open-hax/cloud-cuckoo' and
             labels.get('org.opencontainers.image.revision') == plan['source_sha'] and
@@ -177,7 +207,7 @@ def validate_containers(records, plan):
         require(role in SERVICES and role not in seen)
         seen.add(role)
         require(labels.get('com.docker.compose.project') == PROJECT and record.get('State', {}).get('Running') is True and
-                record.get('Image') == plan['image_id'] and config.get('Image') == plan['image_reference'] and
+                record.get('Image') == plan['runtime_image_id'] and config.get('Image') == plan['image_reference'] and
                 config.get('User') == '1000:1000' and config.get('Cmd') == expected_commands[role] and
                 'COLAB_AUTH_PROFILE=transport-staging' in config.get('Env', []) and
                 labels.get('org.opencontainers.image.revision') == plan['source_sha'] and
@@ -234,12 +264,15 @@ class Host:
         with tempfile.TemporaryDirectory(prefix='colab-anonymous-') as auth:
             env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': auth, 'DOCKER_CONFIG': auth}
             run(['docker', 'pull', self.plan['image_reference']], env=env, timeout=180)
-            inspect_image(json.loads(run(['docker', 'image', 'inspect', self.plan['image_reference']], env=env)), self.plan)
+            size = verify_manifest(json.loads(run(['docker', 'manifest', 'inspect', '--verbose',
+                                                   self.plan['image_reference']], env=env)), self.plan)
+            inspect_image(json.loads(run(['docker', 'image', 'inspect', self.plan['image_reference']], env=env)),
+                          self.plan, size)
             check = ("from pathlib import Path; import hashlib; "
                      "assert hashlib.sha256(Path('/usr/share/licenses/cloud-cuckoo/LICENSE').read_bytes()).hexdigest()==" + repr(LICENSE))
             run(['docker', 'run', '--rm', '-i', '--pull', 'never', '--network', 'none', '--read-only',
                  '--user', '1000:1000', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-                 '--pids-limit', '64', '--memory', '128m', self.plan['image_id'], 'python', '-'],
+                 '--pids-limit', '64', '--memory', '128m', self.plan['runtime_image_id'], 'python', '-'],
                 data=check.encode(), env=env)
 
     def claim(self):
@@ -303,6 +336,7 @@ class Host:
         receipt = {'schema': 'colab-transport-stage-receipt/v1', 'phase': 'staging', 'health': 'success',
                    'source_repository': 'open-hax/cloud-cuckoo', 'source_sha': self.plan['source_sha'],
                    'image_reference': self.plan['image_reference'], 'image_id': self.plan['image_id'],
+                   'runtime_image_id': self.plan['runtime_image_id'], 'manifest_config_binding_verified': True,
                    'services_sha': self.controller, 'compose_project': PROJECT,
                    'compose_sha256': hashlib.sha256(self.compose.read_bytes()).hexdigest(),
                    'plan_sha256': hashlib.sha256((self.checkout / 'digitalocean/services/colab-mcp/transport-stage-plan.json').read_bytes()).hexdigest(),
