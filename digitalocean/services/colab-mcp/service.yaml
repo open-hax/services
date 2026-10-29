@@ -1,0 +1,40 @@
+# Declaration under docs/deployment-model.md section 2. This records the
+# service contract; host-role enrollment and qualified phase promotion still
+# belong to the owning workflows and are not supplied by this descriptor.
+version: 1
+name: colab-mcp
+kind: bridge
+sourceRepo: open-hax/cloud-cuckoo
+sourceRef: main
+
+image:
+  name: ghcr.io/open-hax/cloud-cuckoo
+  build: cloud-cuckoo:Dockerfile
+  toolchain: [python3.13, uv, git]
+  command: uv sync --frozen --no-dev --no-editable
+  output: /app/.venv
+
+serve:
+  internalPort: 18024
+  bindAddress: 172.31.255.1
+  networkMode: host
+
+ingress:
+  hostname: knoxx.promethean.rest
+  caddyHostVar: CADDY_KNOXX_HOST
+  pathPrefix: /colab/
+
+# Phase-specific deployment slots and promotion records are not implemented by
+# this declaration. In particular, the inert staging probe is not a staging
+# record for this production gateway. Enroll phases through their owning flow.
+phases: []
+
+verify:
+  required: true
+  probes:
+    - deployed-image-and-source-revision
+    - local-and-public-identity-health
+    - protected-resource-discovery
+    - oauth-discovery-scopes-and-pkce
+    - pinned-axxium-issuer-availability
+    - anonymous-mcp-denial
