@@ -148,7 +148,7 @@ class HostBootstrapDriver(HostRecoveryDriver):
             raise IngressTransactionError('Legacy ingress is not the selected owner')
         refuse_pending(owner=1000)
         current = self.inspect(plan.incumbent_id)
-        if production_plan(current) != plan or not (current.get('State') or {}).get('Running'):
+        if production_plan(current, runtime=RUNTIME, state=STATE) != plan or not (current.get('State') or {}).get('Running'):
             raise IngressTransactionError('Incumbent changed before bootstrap')
         if self.checked_candidate(plan) is not None:
             raise IngressTransactionError('Candidate project already exists')

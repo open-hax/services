@@ -18,9 +18,7 @@ class Lease:
         pass
 
 
-def models(plan):
-    root = '/srv/open-hax/services/caddy'
-    state = '/srv/open-hax/state/caddy'
+def models(plan, root='/srv/open-hax/services/caddy', state='/srv/open-hax/state/caddy'):
     snapshot = state + '/nonroot-adoption-candidates/' + plan.incumbent_id
     def vol(source, target, ro):
         return {'type': 'bind', 'source': source, 'target': target, 'read_only': ro}

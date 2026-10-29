@@ -32,7 +32,7 @@ class BootstrapPlan:
     compose_service: str = 'caddy'
 
 
-def production_plan(container):
+def production_plan(container, *, runtime=Path('/srv/open-hax/services/caddy'), state=Path('/srv/open-hax/state/caddy')):
     """Recognize only the reviewed incumbent topology, with exact endpoints.
 
     No container fields, labels, mounts or values are printed. A new port,
@@ -83,11 +83,11 @@ def production_plan(container):
         raise IngressTransactionError('Dev-ingress fixed peer differs')
     mounts = container.get('Mounts', [])
     sources = {m.get('Destination'): (m.get('Source'), m.get('RW')) for m in mounts}
-    required = {'/etc/caddy/Caddyfile': ('/srv/open-hax/services/caddy/Caddyfile', False),
-                '/etc/caddy/axxium-identity/did.json': ('/srv/open-hax/services/caddy/axxium-did.json', False),
-                '/etc/caddy/managed': ('/srv/open-hax/state/caddy/managed', False),
-                '/data': ('/srv/open-hax/state/caddy/data', True),
-                '/config': ('/srv/open-hax/state/caddy/config', True)}
+    required = {'/etc/caddy/Caddyfile': (str(runtime / 'Caddyfile'), False),
+                '/etc/caddy/axxium-identity/did.json': (str(runtime / 'axxium-did.json'), False),
+                '/etc/caddy/managed': (str(state / 'managed'), False),
+                '/data': (str(state / 'data'), True),
+                '/config': (str(state / 'config'), True)}
     if sources != required or len(sources) != len(mounts):
         raise IngressTransactionError('Unexpected incumbent mounts')
     # Keep the complete original topology and environment bound to the plan

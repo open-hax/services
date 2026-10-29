@@ -92,6 +92,9 @@ jobs:
             scripts.tests.test_website_ingress_writer \
             scripts.tests.test_axxium_identity_candidate
 
+      - name: Exercise root-owned bootstrap journal with fake Docker
+        run: sudo -n env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts python3 -m unittest scripts.tests.test_caddy_bootstrap_e2e
+
       - name: Test exact Website owner-decision admission
         run: python scripts/test-website-owner-decision.py
 

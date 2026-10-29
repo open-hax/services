@@ -257,3 +257,12 @@ validator has a fixed name and durable intent; recovery checks its exact image,
 owner, mounts, command, lack of ports and network isolation before removing an
 orphan. A real isolated Compose fixture confirms that container shape, but the
 host recovery workflow has not been qualified on production.
+
+The synthetic end-to-end harness now drives the concrete bootstrap and
+recovery drivers with fake Docker, root-owned selector and journal files, a
+private fixture snapshot, route probes, candidate inspection and real selector
+transitions. It covers successful adoption, rollback after candidate creation,
+crash recovery, and a failed rollback that leaves the guard and evidence in
+place. The root test uses a temporary filesystem and never invokes real Docker.
+Separate nonroot Docker fixtures exercise network, TLS and one-off container
+behavior. These tests do not qualify the production boundary or source/image.

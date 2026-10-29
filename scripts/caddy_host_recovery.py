@@ -21,6 +21,8 @@ from ingress_lock import ingress_lock
 from ingress_owner import DIRECTORY, _publish, _read_record, read_selection, settle_transition, clear_bootstrap_pending
 
 JOURNALS = Path('/var/lib/open-hax/ingress/bootstrap')
+RUNTIME = Path('/srv/open-hax/services/caddy')
+STATE = Path('/srv/open-hax/state/caddy')
 GUARD = DIRECTORY / 'bootstrap-pending'
 NEW = 'caddy-identity-caddy-1'
 VALIDATION = 'caddy-identity-bootstrap-validation'
@@ -191,14 +193,14 @@ class HostRecoveryDriver:
         mounts = {m.get('Destination'): (m.get('Source'), m.get('RW')) for m in mount_entries}
         if len(mounts) != len(mount_entries):
             raise IngressTransactionError('Candidate mount destinations are ambiguous')
-        snapshot = '/srv/open-hax/state/caddy/nonroot-adoption-candidates/' + plan.incumbent_id
-        required = {'/etc/caddy/identity-ingress': ('/srv/open-hax/state/caddy/identity-ingress', False),
-                    '/etc/caddy/axxium-identity/did.json': ('/srv/open-hax/services/caddy/axxium-did.json', False),
-                    '/etc/caddy/managed': ('/srv/open-hax/state/caddy/managed', False),
-                    '/data': (snapshot + '/data', True), '/config': (snapshot + '/config', True)}
+        snapshot = STATE / 'nonroot-adoption-candidates' / plan.incumbent_id
+        required = {'/etc/caddy/identity-ingress': (str(STATE / 'identity-ingress'), False),
+                    '/etc/caddy/axxium-identity/did.json': (str(RUNTIME / 'axxium-did.json'), False),
+                    '/etc/caddy/managed': (str(STATE / 'managed'), False),
+                    '/data': (str(snapshot / 'data'), True), '/config': (str(snapshot / 'config'), True)}
         # The original Caddyfile bind may remain alongside the new directory.
         optional = mounts.pop('/etc/caddy/Caddyfile', None)
-        if optional not in (None, ('/srv/open-hax/services/caddy/Caddyfile', False)) or mounts != required:
+        if optional not in (None, (str(RUNTIME / 'Caddyfile'), False)) or mounts != required:
             raise IngressTransactionError('Candidate mounts differ from the approved recovery topology')
         networks = (candidate.get('NetworkSettings') or {}).get('Networks') or {}
         if set(networks) - {'open-hax', 'caddy-dev-ingress', 'axxium-identity-ingress'}:
@@ -232,13 +234,13 @@ class HostRecoveryDriver:
         mounts = {m.get('Destination'): (m.get('Source'), m.get('RW')) for m in mount_entries}
         if len(mounts) != len(mount_entries):
             raise IngressTransactionError('Validation container mount destinations are ambiguous')
-        snapshot = '/srv/open-hax/state/caddy/nonroot-adoption-candidates/' + plan.incumbent_id
-        required = {'/etc/caddy/identity-ingress': ('/srv/open-hax/state/caddy/identity-ingress', False),
-                    '/etc/caddy/axxium-identity/did.json': ('/srv/open-hax/services/caddy/axxium-did.json', False),
-                    '/etc/caddy/managed': ('/srv/open-hax/state/caddy/managed', False),
-                    '/data': (snapshot + '/data', True), '/config': (snapshot + '/config', True)}
+        snapshot = STATE / 'nonroot-adoption-candidates' / plan.incumbent_id
+        required = {'/etc/caddy/identity-ingress': (str(STATE / 'identity-ingress'), False),
+                    '/etc/caddy/axxium-identity/did.json': (str(RUNTIME / 'axxium-did.json'), False),
+                    '/etc/caddy/managed': (str(STATE / 'managed'), False),
+                    '/data': (str(snapshot / 'data'), True), '/config': (str(snapshot / 'config'), True)}
         optional = mounts.pop('/etc/caddy/Caddyfile', None)
-        if optional not in (None, ('/srv/open-hax/services/caddy/Caddyfile', False)) or mounts != required:
+        if optional not in (None, (str(RUNTIME / 'Caddyfile'), False)) or mounts != required:
             raise IngressTransactionError('Validation container mounts differ')
         return validator
 
