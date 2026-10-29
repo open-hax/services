@@ -29,7 +29,7 @@ DIGEST = r'sha256:[0-9a-f]{64}'
 def validate_plan(plan):
     keys = {'schema', 'source_sha', 'source_pr', 'publisher_run_id', 'publisher_attempt',
             'publisher_controller_sha', 'artifact_id', 'artifact_digest', 'image_reference',
-            'image_id', 'license_sha256', 'tests'}
+            'image_id', 'runtime_image_id', 'license_sha256', 'tests'}
     require(isinstance(plan, dict) and set(plan) == keys and plan['schema'] == 'colab-transport-stage/v1',
             'unreviewed transport-stage plan')
     require(plan['source_sha'] == SOURCE and plan['source_pr'] == 13 and plan['license_sha256'] == LICENSE,
@@ -42,6 +42,8 @@ def validate_plan(plan):
         'ghcr.io/open-hax/cloud-cuckoo@' + DIGEST, plan['image_reference']), 'immutable Cloud Cuckoo image required')
     for key in ('image_id', 'artifact_digest'):
         require(isinstance(plan[key], str) and re.fullmatch(DIGEST, plan[key]), 'native digest required')
+    require(plan['runtime_image_id'] == plan['image_reference'].split('@')[1],
+            'fixed containerd runtime identity must match the immutable registry manifest')
     return plan
 
 

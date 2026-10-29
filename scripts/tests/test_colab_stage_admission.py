@@ -19,7 +19,8 @@ class AdmissionTests(unittest.TestCase):
                      'publisher_run_id': 50, 'publisher_attempt': 1, 'publisher_controller_sha': m.SOURCE,
                      'artifact_id': 70, 'artifact_digest': 'sha256:' + '1' * 64,
                      'image_reference': 'ghcr.io/open-hax/cloud-cuckoo@sha256:' + '2' * 64,
-                     'image_id': 'sha256:' + '3' * 64, 'license_sha256': m.LICENSE, 'tests': 136}
+                     'image_id': 'sha256:' + '3' * 64, 'runtime_image_id': 'sha256:' + '2' * 64,
+                     'license_sha256': m.LICENSE, 'tests': 136}
         self.receipt = {'schema': 'cloud-cuckoo-image/v1', 'repository': m.REPOSITORY,
                         'source_sha': m.SOURCE, 'source_pr': 13, 'workflow_sha': m.SOURCE,
                         'run_id': 50, 'run_attempt': 1, 'image_reference': self.plan['image_reference'],
@@ -76,6 +77,7 @@ class AdmissionTests(unittest.TestCase):
     def test_plan_refuses_unowned_source_tag_or_extra_fields(self):
         for key, value in [('source_sha', 'a' * 40), ('source_pr', True), ('license_sha256', 'b' * 64),
                            ('image_reference', 'ghcr.io/open-hax/cloud-cuckoo:latest'),
+                           ('runtime_image_id', 'sha256:' + '3' * 64),
                            ('artifact_id', True), ('tests', 0), ('actor_override', 'synthetic')]:
             with self.subTest(key=key):
                 broken = {**self.plan, key: value}

@@ -1,6 +1,8 @@
 """The fixed Stage can neither select production nor hide a failed verification."""
 from contextlib import contextmanager
 import copy
+import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -45,7 +47,8 @@ class FakeHost:
 class StageTests(unittest.TestCase):
     def setUp(self):
         self.plan = {'image_reference': 'ghcr.io/open-hax/cloud-cuckoo@sha256:' + '2' * 64,
-                     'image_id': 'sha256:' + '3' * 64, 'source_sha': '4' * 40}
+                     'image_id': 'sha256:' + '3' * 64, 'runtime_image_id': 'sha256:' + '2' * 64,
+                     'source_sha': '4' * 40}
 
     def client(self):
         return {'issuer': m.ISSUER, 'client_id': 'knoxx-colab-transport-staging', 'client_secret': 's' * 48,
@@ -104,7 +107,7 @@ class StageTests(unittest.TestCase):
             if role == 'gateway-staging':
                 mounts.append({'Type': 'bind', 'Source': str(m.STATE / 'oauth'),
                                'Destination': '/var/lib/colab-transport-stage', 'RW': True})
-            records.append({'Image': self.plan['image_id'], 'State': {'Running': True}, 'Mounts': mounts,
+            records.append({'Image': self.plan['runtime_image_id'], 'State': {'Running': True}, 'Mounts': mounts,
                 'Config': {'Image': self.plan['image_reference'], 'User': '1000:1000',
                     'Cmd': ['knoxx-colab-mcp', mode, '--host', '127.0.0.1', '--port', port],
                     'Env': ['COLAB_AUTH_PROFILE=transport-staging'], 'Labels': {
@@ -130,18 +133,75 @@ class StageTests(unittest.TestCase):
                     m.validate_containers(records, self.plan)
 
     def test_selected_image_id_and_license_source_are_required(self):
-        image = [{'Id': self.plan['image_id'], 'Os': 'linux', 'Architecture': 'amd64',
+        image = [{'Id': self.plan['runtime_image_id'], 'Os': 'linux', 'Architecture': 'amd64',
+                  'RepoDigests': [self.plan['image_reference']], 'Descriptor': {
+                    'mediaType': 'application/vnd.docker.distribution.manifest.v2+json',
+                    'digest': self.plan['runtime_image_id'], 'size': 2835},
                   'Config': {'User': '1000:1000', 'Labels': {
                     'org.opencontainers.image.source': 'https://github.com/open-hax/cloud-cuckoo',
                     'org.opencontainers.image.revision': self.plan['source_sha'],
                     'org.opencontainers.image.licenses': 'GPL-3.0-or-later'}}}]
-        m.inspect_image(image, self.plan)
+        m.inspect_image(image, self.plan, 2835)
         for key in ('org.opencontainers.image.source', 'org.opencontainers.image.revision', 'org.opencontainers.image.licenses'):
             with self.subTest(key=key):
                 altered = copy.deepcopy(image)
                 altered[0]['Config']['Labels'][key] = 'wrong'
                 with self.assertRaises(m.Refused):
-                    m.inspect_image(altered, self.plan)
+                    m.inspect_image(altered, self.plan, 2835)
+
+    def manifest(self):
+        value = {'schemaVersion': 2, 'mediaType': 'application/vnd.docker.distribution.manifest.v2+json',
+                 'config': {'mediaType': 'application/vnd.docker.container.image.v1+json',
+                            'size': 9872, 'digest': self.plan['image_id']},
+                 'layers': [{'mediaType': 'application/vnd.docker.image.rootfs.diff.tar.gzip',
+                             'size': 200, 'digest': 'sha256:' + '5' * 64}]}
+        raw = json.dumps(value, indent=2).encode()
+        identity = 'sha256:' + hashlib.sha256(raw).hexdigest()
+        self.plan.update(runtime_image_id=identity, image_reference='ghcr.io/open-hax/cloud-cuckoo@' + identity)
+        return {'Ref': self.plan['image_reference'], 'Raw': base64.b64encode(raw).decode(),
+                'SchemaV2Manifest': value, 'Descriptor': {'digest': identity, 'size': len(raw),
+                    'mediaType': value['mediaType'], 'platform': {'architecture': 'amd64', 'os': 'linux'}}}
+
+    def test_containerd_manifest_rawbytes_bind_publisher_config_id(self):
+        manifest = self.manifest()
+        self.assertGreater(m.verify_manifest(manifest, self.plan), 0)
+        for mutate in [lambda x: x.update(Raw=base64.b64encode(b'changed').decode()),
+                       lambda x: x['Descriptor'].update(digest=self.plan['image_id']),
+                       lambda x: x['Descriptor'].update(platform={'architecture': 'arm64', 'os': 'linux'}),
+                       lambda x: x['SchemaV2Manifest']['config'].update(digest='sha256:' + 'a' * 64),
+                       lambda x: x.update(Ref='ghcr.io/elsewhere/cloud-cuckoo:latest')]:
+            with self.subTest(mutate=mutate):
+                value = copy.deepcopy(manifest)
+                mutate(value)
+                with self.assertRaises(Exception):
+                    m.verify_manifest(value, self.plan)
+        with self.assertRaises(Exception):
+            m.verify_manifest(manifest, {**self.plan, 'image_id': 'sha256:' + 'b' * 64})
+
+    def test_runtime_container_cannot_substitute_classic_publisher_config_id(self):
+        records = self.records()
+        for record in records:
+            record['Image'] = self.plan['image_id']
+        with self.assertRaises(m.Refused):
+            m.validate_containers(records, self.plan)
+
+    def test_host_license_probe_uses_exact_containerd_runtime_id_without_pull(self):
+        manifest = self.manifest()
+        host = m.Host(self.plan, 'a' * 40, ROOT)
+        calls = []
+        def command(args, **kwargs):
+            calls.append((args, kwargs))
+            if args[:3] == ['docker', 'manifest', 'inspect']:
+                return json.dumps(manifest).encode()
+            return b'[]'
+        with patch.object(m, 'run', side_effect=command), patch.object(m, 'inspect_image'):
+            host.image()
+        probe = next(args for args, _ in calls if args[:2] == ['docker', 'run'])
+        self.assertIn(self.plan['runtime_image_id'], probe)
+        self.assertNotIn(self.plan['image_id'], probe)
+        self.assertEqual(probe[probe.index('--pull') + 1], 'never')
+        for _, kwargs in calls:
+            self.assertEqual(set(kwargs['env']), {'PATH', 'HOME', 'DOCKER_CONFIG'})
 
     def test_unlabelled_unrelated_runtime_is_preserved_in_inventory(self):
         with patch.object(m, 'run', side_effect=[b'a\nb\n', json.dumps([
