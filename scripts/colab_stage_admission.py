@@ -73,15 +73,13 @@ def artifact_receipt(raw, artifact, plan):
     return receipt
 
 
-def admit(plan_bytes, controller_sha, artifact_bytes):
-    plan = validate_plan(strict_json(plan_bytes))
-    require(re.fullmatch(SHA, controller_sha or ''), 'immutable Services controller required')
-    main_ancestor(SERVICES, controller_sha)
-    require(native_file(SERVICES, PLAN, controller_sha) == plan_bytes, 'controller plan bytes changed')
+def verify_publisher(plan, artifact_bytes, *, current_main=False):
+    """Shared native publication custody; callers first admit their closed plan."""
     main_ancestor(REPOSITORY, plan['source_sha'])
     main_ancestor(REPOSITORY, plan['publisher_controller_sha'])
-    source_main = api(f'repos/{REPOSITORY}/commits/main')
-    require(source_main.get('sha') == plan['source_sha'], 'staging requires the current accepted source main')
+    if current_main:
+        source_main = api(f'repos/{REPOSITORY}/commits/main')
+        require(source_main.get('sha') == plan['source_sha'], 'staging requires the current accepted source main')
     pr = api(f'repos/{REPOSITORY}/pulls/{plan["source_pr"]}')
     decision = staging_admission({'merged': pr.get('merged'), 'base': pr.get('base', {}).get('ref'),
                                   'merge_sha': pr.get('merge_commit_sha')})
@@ -104,6 +102,15 @@ def admit(plan_bytes, controller_sha, artifact_bytes):
             type(artifact.get('size_in_bytes')) is int and artifact['size_in_bytes'] == len(artifact_bytes),
             'native publisher artifact identity mismatch')
     artifact_receipt(artifact_bytes, artifact, plan)
+    return artifact
+
+
+def admit(plan_bytes, controller_sha, artifact_bytes):
+    plan = validate_plan(strict_json(plan_bytes))
+    require(re.fullmatch(SHA, controller_sha or ''), 'immutable Services controller required')
+    main_ancestor(SERVICES, controller_sha)
+    require(native_file(SERVICES, PLAN, controller_sha) == plan_bytes, 'controller plan bytes changed')
+    verify_publisher(plan, artifact_bytes, current_main=True)
     return {'admitted': True, 'phase': 'staging', 'source_sha': plan['source_sha'],
             'image_reference': plan['image_reference'], 'image_id': plan['image_id'],
             'plan_sha256': hashlib.sha256(plan_bytes).hexdigest(), 'synthetic_upstreams': True,

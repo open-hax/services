@@ -7,9 +7,13 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
     tmpfs:
-      - /tmp:size=32m,mode=1777
+      - "/tmp:size=32m,mode=1777"
     environment:
+      COLAB_AUTH_PROFILE: production
       COLAB_BRIDGE_TOKEN_FILE: /run/colab/bridge-token
       COLAB_BRIDGE_URL: http://127.0.0.1:18023/mcp
       COLAB_COMPUTE_URL: http://127.0.0.1:18025/mcp

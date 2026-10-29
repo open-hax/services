@@ -77,6 +77,15 @@ transport/authentication staging; it supplies no Google execution, human login,
 production qualification or credit for the older inert identity probe. See
 `docs/colab-transport-staging.md` for the closed tuple and refusal/recovery rules.
 
+The prepared fixed Cloud Cuckoo production scope uses that same Deploy Stack
+queue and public immutable image delivery. It admits the exact candidate's
+native publisher/Stage custody and ordinary integration/e2e/four-batch mutation
+qualification before host credentials. It replaces only the existing gateway,
+preserves its quiesced private state and verified restore copy, and retains an
+operational hold on uncertainty. Candidate pins are currently unresolved, so
+this route refuses activation. It grants no legacy-image restart or new auth
+store; see `docs/colab-qualified-production.md`.
+
 ## 2. The service descriptor
 
 A service is one directory under `digitalocean/services/<name>/`, one entry in
