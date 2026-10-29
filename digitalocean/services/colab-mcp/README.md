@@ -135,12 +135,20 @@ handle_path /colab/* {
 ```
 
 This is a routing example for the source-owned ingress transition, not an
-instruction to edit the live Caddyfile from this inventory. It belongs before
-the site's catch-all `handle`, preserving its existing `/mcp` and OAuth routes.
+instruction to edit the live Caddyfile from this inventory. Place the
+`@colab_oauth_discovery` matcher and its `handle` block above the site's existing
+`handle /.well-known/oauth-*` block: that wildcard also matches both Colab
+discovery paths, so placing this example only before the catch-all `handle`
+would send Colab discovery to Knoxx. Place `handle_path /colab/*` before the
+catch-all, preserving the existing `/mcp` and root Knoxx OAuth routes.
 The shared Caddyfile is unchanged by this PR because the existing managed-site
 imports collide with it. Do not add a second site block for the same hostname. Allow only
 Caddy source `172.31.255.2` to the gateway's TCP 18024. Validate candidate Caddy
-configuration before reload and retain the original bytes as rollback. Keep
+configuration before reload and retain the original bytes as rollback. After
+adapting the configuration, verify that both
+`/.well-known/oauth-protected-resource/colab/mcp` and
+`/.well-known/oauth-authorization-server/colab` reach the Colab gateway and
+advertise its pinned resource and issuer; HTTP 200 alone is insufficient. Keep
 production activation subject to the service promotion contract or an explicit
 user override for this candidate. A private running candidate is not deployment
 qualification.
