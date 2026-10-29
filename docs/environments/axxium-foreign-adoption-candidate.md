@@ -4,7 +4,7 @@ This document and `scripts/foreign_axxium_adoption.py` are source-level
 preparation only. They do not install a controller, replace the receiver's
 existing-stack enrollment, provide a host executable, or authorize production
 cutover. The module has no CLI and no production backend. Its test backend and
-test journal are not acceptable operational adapters.
+test lock are not acceptable operational adapters.
 
 ## Fixed plan and evidence
 
@@ -51,8 +51,9 @@ must not authorize a retry or fabricate a successful rollback or receipt.
 
 ## Blocking native work
 
-- Implement and test a root-controlled immutable journal and global lock with
-  durability, one-use and symlink/ownership protections, including crash recovery.
+- Install and independently verify a root-controlled journal and global lock
+  shared by the actual receiver, ingress and retired legacy writer boundaries.
+  The storage implementation below does not establish that installation.
 - Implement the actual host backend with source and image admission, observed
   runtime and secret-safe comparison, independently verified quiescent backups,
   database compatibility proof, exact image handling, dependency preservation,
@@ -71,3 +72,31 @@ must not authorize a retry or fabricate a successful rollback or receipt.
 The deterministic tests exercise transaction ordering and failure handling with
 doubles. They do not prove backups, host exclusion, OS durability, Docker
 behavior, native authorization, rollback compatibility, or a deployment.
+
+## Native journal storage
+
+`scripts/foreign_axxium_journal.py` now supplies a filesystem-backed journal
+for the transition interface. Root must pre-provision a private directory under
+administrator-controlled, non-writable ancestors. Every path component is opened
+without following links, and ownership, modes and the held directory identity
+are rechecked. The exact canonical plan is created exclusively and synced before
+claim succeeds. Every phase gets a new exclusively created private file; file
+and directory sync must complete before the transition proceeds. Existing,
+partial or malformed claims are never repaired, overwritten or interpreted as
+permission to replay. Plan content, file identity and hard-link count are
+rechecked before each phase; nonregular plan replacements fail without waiting
+on them.
+
+The constructor requires an explicit trusted lock factory. It has no default
+host lock or operational entry point: that factory must yield a recheckable lease
+which really serializes every enrolled receiver and ingress writer. A test
+`flock` only establishes exclusion among the isolated test processes; it does
+not retire the legacy unrestricted host writer identified by Services #113.
+
+The storage tests exercise actual files and child processes, including a crash
+after a simulated external effect, retained pending records, replay refusal,
+directory and plan replacement, symlinks, hard links, FIFO replacement, unsafe
+ownership/modes and failed syncs. They establish the implementation's refusal
+and ordering behavior under those observations, not storage guarantees after
+power loss or an authorized production adoption. An interrupted journal has no
+automatic resume or clear command; retain it for independently reviewed recovery.
