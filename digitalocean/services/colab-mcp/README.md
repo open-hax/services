@@ -118,6 +118,13 @@ command in the graphical session. The bridge and relay are independent of Knoxx.
 The source change for the existing Knoxx Caddy site is:
 
 ```caddyfile
+@colab_oauth_discovery path /.well-known/oauth-protected-resource/colab/mcp /.well-known/oauth-authorization-server/colab
+handle @colab_oauth_discovery {
+    reverse_proxy 172.31.255.1:18024 {
+        header_up -x-open-hax-bridge-auth
+    }
+}
+
 handle_path /colab/* {
     request_body { max_size 512KB }
     reverse_proxy 172.31.255.1:18024 {
@@ -157,8 +164,14 @@ an unrelated agent while installing the independent Colab bridge.
 
 ## Rollback
 
-Stop the dedicated Colab gateway/relay/bridge, restore the original Caddyfile
-bytes, validate and reload. Remove only the Colab override and new resources or
+For full transport rollback, first enumerate this installation's owned
+`knoxx-mcp-*` compute jobs, stop each active owned job, and verify release with
+server assignment readback. Never cancel another installation's work based on
+the shared name prefix. Unknown ownership or uncertain release blocks teardown
+and further allocations; preserve the compute/relay access needed for recovery.
+After owned cleanup is verified, stop the independent compute service and
+verify it is inactive before stopping the dedicated gateway/relay/bridge.
+Restore the original Caddyfile bytes, validate and reload. Remove only the Colab override and new resources or
 actor-role additions; preserve other task changes. Retain secret backups under
 private state until revocation/recovery is confirmed. Stop/restart only named
 Colab units; rolling back Colab must not stop Knoxx, Proxx or Axxium.
