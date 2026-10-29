@@ -56,8 +56,14 @@ jobs:
           plan=digitalocean/services/axxium/minimal-production-plan.json
           artifact_id=$(jq -er '.artifact_id | select(type == "number" and . > 0 and floor == .)' "$plan")
           timeout --kill-after=5s 120s gh api "repos/open-hax/axxium/actions/artifacts/${artifact_id}/zip" > stage.zip
-          python3 scripts/axxium_production_qualification.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --archive stage.zip > admission.json
-          jq -e '.admitted == true' admission.json >/dev/null
+          if ! python3 scripts/axxium_production_qualification.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --archive stage.zip > admission.json ||
+             ! jq -e '.admitted == true' admission.json >/dev/null 2>&1; then
+            # The collector exposes only static refusal reasons. Project those
+            # fields; never print an API body or a malformed response.
+            jq -ce 'select(type == "object" and .admitted == false and (.reason | type == "string")) | {admitted,reason}' admission.json 2>/dev/null ||
+              printf '%s\n' '{"admitted":false,"reason":"production evidence unavailable or malformed"}'
+            exit 1
+          fi
           jq -r '"admitted=true", "plan_sha256=" + .plan_sha256' admission.json >> "$GITHUB_OUTPUT"
 
   deploy:
@@ -83,8 +89,12 @@ jobs:
           test "$(sha256sum "$plan" | cut -d' ' -f1)" = "$EXPECTED_PLAN"
           artifact_id=$(jq -er '.artifact_id | select(type == "number" and . > 0 and floor == .)' "$plan")
           timeout --kill-after=5s 120s gh api "repos/open-hax/axxium/actions/artifacts/${artifact_id}/zip" > stage.zip
-          python3 scripts/axxium_production_qualification.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --archive stage.zip > admission.json
-          jq -e '.admitted == true' admission.json >/dev/null
+          if ! python3 scripts/axxium_production_qualification.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --archive stage.zip > admission.json ||
+             ! jq -e '.admitted == true' admission.json >/dev/null 2>&1; then
+            jq -ce 'select(type == "object" and .admitted == false and (.reason | type == "string")) | {admitted,reason}' admission.json 2>/dev/null ||
+              printf '%s\n' '{"admitted":false,"reason":"production evidence unavailable or malformed"}'
+            exit 1
+          fi
       - name: Configure canonical pinned SSH trust
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
