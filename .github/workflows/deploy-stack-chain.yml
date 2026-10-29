@@ -35,6 +35,11 @@ on:
         description: Immutable merged open-hax/knoxx commit to qualify
         required: true
         type: string
+      axxium_ref:
+        description: Fixed immutable staged Axxium source; isolated axxium scope only
+        required: false
+        default: ''
+        type: string
       openplanner_ref:
         description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
         required: true
@@ -66,9 +71,21 @@ on:
 # and GitHub refuses to start the run on the mismatch.
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
   packages: write
 
 jobs:
+  # The caller retains the existing production-host queue throughout admission
+  # and this fixed service transaction. No new dispatch or host queue is added.
+  deploy-axxium:
+    if: inputs.scope == 'axxium'
+    uses: ./.github/workflows/deploy-axxium-minimal.yml
+    with:
+      source_sha: ${{ inputs.axxium_ref }}
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
   # Build jobs may run while the host is prepared, but no production service
   # deploy starts until this exact checkout has installed and verified the
   # provisioner it expects. deploy-stack.yml holds the production-host lock

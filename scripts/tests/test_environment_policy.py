@@ -106,6 +106,23 @@ class EnvironmentPolicyTest(unittest.TestCase):
             value=batches();mutate(value)
             self.assertFalse(p.production_admission(SHA,evidence,evidence,value)["admitted"])
 
+    def test_production_refuses_malformed_receipts_and_boolean_counts(self):
+        proof = dict(source_sha=SHA, status="passed", assertions=1)
+        for value in (None, True, [], {}, "passed"):
+            self.assertFalse(p.production_admission(SHA, value, proof, batches())["admitted"])
+        for value in (None, True, "1", 1.5, 0):
+            self.assertFalse(p.production_admission(SHA, {**proof, "assertions": value}, proof, batches())["admitted"])
+        for value in (None, True, {}, "batches"):
+            self.assertFalse(p.production_admission(SHA, proof, proof, value)["admitted"])
+        for field, value in (("batch_index", True), ("mutants", None)):
+            rows = batches(); rows[0][field] = value
+            self.assertFalse(p.production_admission(SHA, proof, proof, rows)["admitted"])
+        for value in (None, True, " ", [], {}):
+            rows = batches(); rows[0]["mutants"][0]["fingerprint"] = value
+            self.assertFalse(p.production_admission(SHA, proof, proof, rows)["admitted"])
+        rows = batches(); rows[0]["mutants"][0] = None
+        self.assertFalse(p.production_admission(SHA, proof, proof, rows)["admitted"])
+
     def test_production_accepts_explicit_clean_optional_markers_at_every_level(self):
         evidence=dict(source_sha=SHA,status="passed",assertions=1,timed_out=False,warnings=[])
         values=batches()

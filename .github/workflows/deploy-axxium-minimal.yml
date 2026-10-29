@@ -1,0 +1,162 @@
+name: Deploy fixed Axxium production candidate
+
+# Called only inside Deploy Stack's existing production-host concurrency slot.
+# Qualification precedes the production environment and every SSH capability.
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      caller_holds_production_host_lock:
+        required: true
+        type: boolean
+    secrets:
+      DIGITALOCEAN_SSH_PRIVATE_KEY:
+        required: true
+      AXXIUM_COLAB_BINDING_JSON:
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  admit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      admitted: ${{ steps.evidence.outputs.admitted }}
+      plan_sha256: ${{ steps.evidence.outputs.plan_sha256 }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Verify sole caller and fixed candidate
+        env:
+          CALLER_LOCKED: ${{ inputs.caller_holds_production_host_lock }}
+          CALLER_WORKFLOW: ${{ github.workflow_ref }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$CALLER_LOCKED" = true
+          test "$CALLER_WORKFLOW" = 'open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main'
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$SOURCE_SHA" = "$(jq -er .source_sha digitalocean/services/axxium/minimal-production-plan.json)"
+      - name: Read native staging image and canonical qualification
+        id: evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTROLLER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          plan=digitalocean/services/axxium/minimal-production-plan.json
+          artifact_id=$(jq -er '.artifact_id | select(type == "number" and . > 0 and floor == .)' "$plan")
+          timeout --kill-after=5s 120s gh api "repos/open-hax/axxium/actions/artifacts/${artifact_id}/zip" > stage.zip
+          python3 scripts/axxium_production_qualification.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --archive stage.zip > admission.json
+          jq -e '.admitted == true' admission.json >/dev/null
+          jq -r '"admitted=true", "plan_sha256=" + .plan_sha256' admission.json >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: admit
+    if: needs.admit.outputs.admitted == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Recheck native custody before receiving host credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTROLLER_SHA: ${{ github.sha }}
+          EXPECTED_PLAN: ${{ needs.admit.outputs.plan_sha256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          plan=digitalocean/services/axxium/minimal-production-plan.json
+          test "$(sha256sum "$plan" | cut -d' ' -f1)" = "$EXPECTED_PLAN"
+          artifact_id=$(jq -er '.artifact_id | select(type == "number" and . > 0 and floor == .)' "$plan")
+          timeout --kill-after=5s 120s gh api "repos/open-hax/axxium/actions/artifacts/${artifact_id}/zip" > stage.zip
+          python3 scripts/axxium_production_qualification.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --archive stage.zip > admission.json
+          jq -e '.admitted == true' admission.json >/dev/null
+      - name: Configure canonical pinned SSH trust
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          . digitalocean/lib/host-contract.sh
+          load_host_contract production
+          assert_pinned_host_key
+          test -n "$SSH_PRIVATE_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/digitalocean
+          chmod 600 ~/.ssh/digitalocean
+          install -m 600 "$OPEN_HAX_KNOWN_HOSTS" ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<CONFIG
+          Host open-hax-target
+            HostName $OPEN_HAX_HOST
+            User $OPEN_HAX_SSH_USER
+            IdentityFile ~/.ssh/digitalocean
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            ConnectTimeout 10
+          CONFIG
+          chmod 600 ~/.ssh/config
+      - name: Refuse an unresolved previous Axxium transition
+        run: ssh open-hax-target 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
+      - name: Install reviewed controller and execute fixed app transaction
+        env:
+          CONTROLLER_SHA: ${{ github.sha }}
+          PLAN_SHA256: ${{ needs.admit.outputs.plan_sha256 }}
+          BINDING_JSON: ${{ secrets.AXXIUM_COLAB_BINDING_JSON }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PLAN_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test -n "$BINDING_JSON"
+          . digitalocean/lib/host-contract.sh
+          load_host_contract production
+          controller="$OPEN_HAX_SERVICES_ROOT/axxium/controllers/$CONTROLLER_SHA"
+          printf '%s' "$BINDING_JSON" > production-binding.json
+          tar --mode=u=rw,go= -cf controller.tar \
+            scripts/axxium_minimal_release.py \
+            scripts/axxium_oidc_ingress.py \
+            scripts/provision_axxium_colab_identity.py \
+            digitalocean/services/axxium/minimal-production-plan.json \
+            digitalocean/services/axxium/compose.yaml \
+            digitalocean/services/axxium/env.template \
+            digitalocean/services/axxium/service.yaml \
+            digitalocean/services/axxium/verify.sh \
+            production-binding.json
+          # The archive contains only accepted controller code, a fixed public
+          # plan and the protected identity binding; never application source.
+          # Declared host paths and validated hexadecimal IDs intentionally expand locally.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "umask 077; mkdir -p '$OPEN_HAX_SERVICES_ROOT/axxium/controllers'; mkdir -m 700 '$controller'; tar --no-same-owner -xf - -C '$controller'" < controller.tar
+          # Declared host paths and validated hexadecimal IDs intentionally expand locally.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "env PYTHONDONTWRITEBYTECODE=1 python3 '$controller/scripts/provision_axxium_colab_identity.py' --provision --binding-input '$controller/production-binding.json'" </dev/null
+          # Declared host paths and validated hexadecimal IDs intentionally expand locally.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "env PYTHONDONTWRITEBYTECODE=1 python3 '$controller/scripts/axxium_minimal_release.py' --plan '$controller/digitalocean/services/axxium/minimal-production-plan.json' --plan-sha256 '$PLAN_SHA256' --apply" </dev/null > release-receipt.json
+          jq -e '.status == "healthy"' release-receipt.json >/dev/null
+      - name: Preserve sanitized deployment receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: axxium-minimal-production-receipt
+          path: release-receipt.json
+          if-no-files-found: ignore
+      - name: Remove runner credential copies
+        if: always()
+        run: rm -f ~/.ssh/digitalocean production-binding.json controller.tar stage.zip
