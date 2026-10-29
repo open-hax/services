@@ -30,7 +30,8 @@ jobs:
           trap 'rm -rf -- "$key_dir"' EXIT
           printf '%s\n' "$SSH_PRIVATE_KEY" > "$key_dir/key"
           unset SSH_PRIVATE_KEY
-          # The public key flows only through a pipe; log neither key nor fingerprint.
+          # Do not print the derived key or fingerprint. Actions can echo this
+          # script, including the hard-coded public expected fingerprint below.
           if ! fingerprint=$(timeout 10s ssh-keygen -y -P '' -f "$key_dir/key" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | awk 'NF >= 2 {print $2}'); then
             echo 'Fingerprint derivation failed.' >&2
             exit 2
