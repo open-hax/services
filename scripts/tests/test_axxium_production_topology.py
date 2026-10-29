@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE = ROOT / 'digitalocean/services/axxium'
@@ -39,6 +40,14 @@ class AxxiumProductionTopologyTest(unittest.TestCase):
         self.assertEqual(old['services']['axxium'], app)
 
     def test_oidc_overlay_is_read_only_and_preserves_other_services(self):
+        # Some Compose versions omit false-valued bind fields from JSON. Check
+        # the authored safety contract directly as well as the resolved mount;
+        # an omitted JSON field alone is not proof of host enforcement.
+        source = yaml.safe_load((SERVICE / 'axxium-oidc.compose.yaml').read_text())
+        source_mounts = [v for v in source['services']['axxium']['volumes']
+                         if v['target'] == '/run/axxium/oidc']
+        self.assertEqual(len(source_mounts), 1)
+        self.assertIs(source_mounts[0]['bind']['create_host_path'], False)
         base = self.render([SERVICE / 'compose.yaml'])
         overlay = self.render([SERVICE / 'compose.yaml', SERVICE / 'axxium-oidc.compose.yaml'])
         self.assertEqual(base['services']['axxium-db'], overlay['services']['axxium-db'])
@@ -48,7 +57,7 @@ class AxxiumProductionTopologyTest(unittest.TestCase):
         mounts = [v for v in app['volumes'] if v['target'] == '/run/axxium/oidc']
         self.assertEqual(len(mounts), 1)
         self.assertTrue(mounts[0]['read_only'])
-        self.assertFalse(mounts[0]['bind']['create_host_path'])
+        self.assertIs(mounts[0]['bind'].get('create_host_path', False), False)
 
     def test_oidc_verification_requires_issuer_and_s256(self):
         with tempfile.TemporaryDirectory() as directory:
