@@ -95,7 +95,8 @@ class SyntheticDocker:
                           for v in self.after['services']['caddy']['volumes']]
                 self.candidate = {'Id': 'c'*64, 'Image': self.plan.incumbent_image,
                     'Config': {'User': '1000:1000', 'Labels': {'com.docker.compose.project': 'caddy-identity',
-                                                               'com.docker.compose.service': 'caddy'}},
+                                                               'com.docker.compose.service': 'caddy'},
+                               'Cmd': recovery.CANDIDATE_COMMAND, 'Entrypoint': None, 'Env': ['FIXTURE=value']},
                     'HostConfig': {'PortBindings': copy.deepcopy(self.old['HostConfig']['PortBindings'])},
                     'Mounts': mounts, 'State': {'Running': True}, 'NetworkSettings': {'Networks': {
                         'open-hax': {'IPAddress': '172.18.0.31', 'Aliases': ['caddy']},

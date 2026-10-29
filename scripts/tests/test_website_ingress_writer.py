@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from ingress_lock import ingress_lock
 from identity_ingress_transaction import IngressTransactionError
@@ -31,6 +32,7 @@ class WebsiteWriterTest(unittest.TestCase):
         self.target.chmod(0o644)
         self.expected = hashlib.sha256(b"new site\n").hexdigest()
         self.calls = []
+        self.journal_counter = 0
         self.fail_first_validate = False
         self.inside_mismatch = False
         self.missing_import = False
@@ -59,9 +61,11 @@ class WebsiteWriterTest(unittest.TestCase):
         raise AssertionError("Unexpected Docker command " + repr(args))
 
     def run_writer(self, expected=None):
+        self.journal_counter += 1
+        journal = self.root / f'journal-{self.journal_counter}'
         with ingress_lock(self.lockdir, owner=os.getuid()) as lease:
             return run_under_lease(lease, expected or self.expected, runtime=self.runtime, managed=self.managed,
-                                   owner=os.getuid(), docker_run=self.fake_docker)
+                                   owner=os.getuid(), docker_run=self.fake_docker, journal=journal)
 
     def test_validates_reloads_and_preserves_nonroot_exec(self):
         self.assertEqual(self.run_writer(), self.expected)
@@ -98,6 +102,19 @@ class WebsiteWriterTest(unittest.TestCase):
         with self.assertRaisesRegex(IngressTransactionError, "restored and reloaded"):
             self.run_writer()
         self.assertFalse(self.target.exists())
+
+    def test_journal_parent_fsync_failure_refuses_before_mutating_target(self):
+        real_fsync = os.fsync
+        parent = self.root.stat()
+        def fsync(fd):
+            info = os.fstat(fd)
+            if (info.st_dev, info.st_ino) == (parent.st_dev, parent.st_ino):
+                raise OSError('injected journal parent fsync failure')
+            return real_fsync(fd)
+        with patch.object(os, 'fsync', side_effect=fsync):
+            with self.assertRaisesRegex(OSError, 'journal parent fsync'):
+                self.run_writer()
+        self.assertEqual(self.target.read_bytes(), b'old site\n')
 
     def test_unexpected_caddy_command_or_writable_mount_is_rejected(self):
         mount = {"Source": str(self.managed), "Destination": "/etc/caddy/managed", "RW": False}

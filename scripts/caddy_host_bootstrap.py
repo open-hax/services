@@ -12,7 +12,7 @@ import stat
 
 from axxium_identity_candidate import candidate as identity_candidate
 from caddy_bootstrap_candidate import production_plan, _event
-from caddy_host_recovery import HostRecoveryDriver, command, boundary_proven, VALIDATION
+from caddy_host_recovery import HostRecoveryDriver, command, boundary_proven, VALIDATION, CANDIDATE_COMMAND, environment_digest
 from caddy_state_candidate import copy_verified, inventory
 from identity_ingress_transaction import IngressTransactionError
 from ingress_owner import DIRECTORY, read_selection, begin_transition, settle_transition, mark_bootstrap_pending
@@ -230,6 +230,26 @@ class HostBootstrapDriver(HostRecoveryDriver):
             raise IngressTransactionError('Legacy Compose environment differs from the running incumbent')
         if live['Config'].get('Cmd') != ['caddy', 'run', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile']:
             raise IngressTransactionError('Legacy Caddy command differs from the running incumbent')
+        if live['Config'].get('Entrypoint') is not None or new_model['services']['caddy'].get('entrypoint') is not None:
+            raise IngressTransactionError('Caddy entrypoint is not the qualified image default')
+        contract = {'command': CANDIDATE_COMMAND, 'entrypoint': None,
+                    'environment_sha256': environment_digest(live['Config'].get('Env'))}
+        contract_path = self.journal / 'candidate-runtime.json'
+        try:
+            fd = os.open(contract_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        except FileExistsError:
+            if self.runtime_contract() != contract:
+                raise IngressTransactionError('Candidate runtime contract changed')
+        else:
+            with os.fdopen(fd, 'w') as stream:
+                json.dump(contract, stream, sort_keys=True)
+                stream.flush()
+                os.fsync(stream.fileno())
+            dirfd = os.open(self.journal, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                os.fsync(dirfd)
+            finally:
+                os.close(dirfd)
         return True
 
     def mark_pending_guard(self, plan):

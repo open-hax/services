@@ -17,7 +17,7 @@ def private_dir(path, owner):
         raise IngressTransactionError('Directory must be private and operator-owned')
 
 
-def refuse_pending(journals=JOURNALS, owner=None, *, bootstrap_guard=BOOTSTRAP_GUARD):
+def refuse_pending(journals=JOURNALS, owner=None, *, bootstrap_guard=BOOTSTRAP_GUARD, own_journal=None):
     import os
     owner = os.getuid() if owner is None else owner
     if bootstrap_guard.exists() or bootstrap_guard.is_symlink():
@@ -25,5 +25,7 @@ def refuse_pending(journals=JOURNALS, owner=None, *, bootstrap_guard=BOOTSTRAP_G
     private_dir(journals, owner)
     for directory in journals.iterdir():
         private_dir(directory, owner)
+        if own_journal is not None and directory == own_journal:
+            continue
         if (directory / 'pending').exists() or (directory / 'pending').is_symlink():
             raise IngressTransactionError('Prior ingress transaction requires recovery')

@@ -51,6 +51,27 @@ def _digest(value):
     return hashlib.sha256(value).hexdigest() if value is not None else None
 
 
+def _clear_pending_or_retain(directory_fd):
+    """Keep a visible guard if settlement's directory fsync is uncertain."""
+    try:
+        os.unlink('pending', dir_fd=directory_fd)
+        os.fsync(directory_fd)
+    except Exception:
+        try:
+            fd = os.open('pending', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                         0o600, dir_fd=directory_fd)
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(b'pending settlement recovery\n')
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.fsync(directory_fd)
+        except FileExistsError:
+            pass
+        except OSError:
+            pass  # Never claim settlement on storage failure.
+        raise
+
+
 def apply_bundle_under_lease(lease, items, journal: Path, apply_and_verify, restore_and_verify, *, owner=None):
     """Apply known files and a Caddy recreation as one recoverable operation.
 
@@ -70,8 +91,9 @@ def apply_bundle_under_lease(lease, items, journal: Path, apply_and_verify, rest
         raise IngressTransactionError("Invalid Caddy bundle")
     journal_fd = os.open(journal, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
     snapshots = []
-    installed = []
+    attempted = []
     pending = False
+    settled = False
     try:
         info = os.fstat(journal_fd)
         _check_directory(journal_fd, journal, owner)
@@ -102,35 +124,46 @@ def apply_bundle_under_lease(lease, items, journal: Path, apply_and_verify, rest
                 current = None
             if current != original:
                 raise IngressTransactionError("Caddy bundle changed before installation")
+            # Rename may succeed even if its following directory fsync fails.
+            # Treat the target as potentially affected before entering replace.
+            attempted.append((item, fd, original, mode))
             _replace(fd, item.target.name, item.candidate, mode)
-            installed.append((item, fd, original, mode))
         lease.recheck()
         apply_and_verify()
-        for item, fd, _, _ in installed:
+        for item, fd, _, _ in attempted:
             lease.recheck()
             _check_directory(fd, item.target.parent, owner)
             current, _ = _read(fd, item.target.name, owner)
             if current != item.candidate:
                 raise IngressTransactionError("Caddy bundle changed during verification")
         _write_private(journal_fd, "result", b"applied-and-verified\n")
+        settled = True
         _check_directory(journal_fd, journal, owner)
-        os.unlink("pending", dir_fd=journal_fd)
-        os.fsync(journal_fd)
+        _clear_pending_or_retain(journal_fd)
         pending = False
         return manifest
     except Exception as error:
+        if settled:
+            raise IngressTransactionError("Caddy bundle verified but settlement requires recovery") from error
         if not pending:
             raise
         try:
             lease.recheck()
-            # Check every installed target before changing any of them; a
+            # Check every attempted target before changing any of them; a
             # competing writer means no part of the rollback is safe to apply.
-            for item, fd, _, _ in installed:
+            changed = []
+            for item, fd, original, mode in attempted:
                 _check_directory(fd, item.target.parent, owner)
-                current, _ = _read(fd, item.target.name, owner)
+                try:
+                    current, _ = _read(fd, item.target.name, owner)
+                except FileNotFoundError:
+                    current = None
+                if current == original:
+                    continue
                 if current != item.candidate:
                     raise IngressTransactionError("Newer Caddy state exists; rollback refused")
-            for item, fd, original, mode in reversed(installed):
+                changed.append((item, fd, original, mode))
+            for item, fd, original, mode in reversed(changed):
                 lease.recheck()
                 _check_directory(fd, item.target.parent, owner)
                 if original is None:
@@ -139,11 +172,27 @@ def apply_bundle_under_lease(lease, items, journal: Path, apply_and_verify, rest
                 else:
                     _replace(fd, item.target.name, original, mode)
             lease.recheck()
+            for item, fd, original, _ in snapshots:
+                _check_directory(fd, item.target.parent, owner)
+                try:
+                    current, _ = _read(fd, item.target.name, owner)
+                except FileNotFoundError:
+                    current = None
+                if _digest(current) != _digest(original):
+                    raise IngressTransactionError("Original Caddy bundle could not be verified")
             restore_and_verify()
+            for item, fd, original, _ in snapshots:
+                lease.recheck()
+                _check_directory(fd, item.target.parent, owner)
+                try:
+                    current, _ = _read(fd, item.target.name, owner)
+                except FileNotFoundError:
+                    current = None
+                if _digest(current) != _digest(original):
+                    raise IngressTransactionError("Original Caddy bundle changed during recovery")
             _write_private(journal_fd, "result", b"restored-and-verified\n")
             _check_directory(journal_fd, journal, owner)
-            os.unlink("pending", dir_fd=journal_fd)
-            os.fsync(journal_fd)
+            _clear_pending_or_retain(journal_fd)
         except Exception as rollback_error:
             raise IngressTransactionError("Caddy bundle failed; manual recovery is required") from rollback_error
         raise IngressTransactionError("Caddy bundle failed; prior bundle restored and verified") from error

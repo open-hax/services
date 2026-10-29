@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 from ingress_lock import ingress_lock
-from identity_ingress_transaction import IngressTransactionError, replace_under_lease
+from identity_ingress_transaction import IngressTransactionError, replace_under_lease, create_private_journal
 from ingress_owner import read_selection
 from ingress_pending import refuse_pending, JOURNALS, BOOTSTRAP_GUARD
 
@@ -73,7 +73,7 @@ def incumbent(path, owner):
 
 
 def run_under_lease(lease, expected_sha, *, runtime=RUNTIME, managed=MANAGED,
-                    owner=None, docker_run=docker, container=CONTAINER):
+                    owner=None, docker_run=docker, container=CONTAINER, journal=None):
     """One bounded website writer; caller holds the same host lease throughout."""
     owner = os.getuid() if owner is None else owner
     data = read_private_candidate(runtime / CANDIDATE, expected_sha, owner)
@@ -93,13 +93,17 @@ def run_under_lease(lease, expected_sha, *, runtime=RUNTIME, managed=MANAGED,
         inside = None
     if inside != before:
         raise IngressTransactionError("Caddy does not see the same incumbent managed file")
+    if journal is None:
+        raise IngressTransactionError('A private ingress recovery journal is required')
 
     def validate_and_reload():
         for verb in ("validate", "reload"):
             lease.recheck()
             docker_run(["exec", "--user", "1000:1000", container, "caddy", verb,
                         "--config", config, "--adapter", "caddyfile"])
-    return replace_under_lease(lease, target, data, expected_target, validate_and_reload, owner=owner)
+    lease.recheck()
+    create_private_journal(journal, owner=owner)
+    return replace_under_lease(lease, target, data, expected_target, validate_and_reload, owner=owner, journal=journal)
 
 
 def main():
@@ -120,14 +124,17 @@ def dispatch_under_lease(lease, expected_sha, *, runtime=RUNTIME, journals=JOURN
     selected = read_selection()
     refuse_pending(journals, owner, bootstrap_guard=bootstrap_guard)
     lease.recheck()
+    if re.fullmatch(r'[0-9]+-[0-9]+', runtime.name) is None:
+        raise IngressTransactionError('Website ingress staging identity is invalid')
+    journal = journals / ('website-' + runtime.name)
     def selected_docker(arguments):
         lease.recheck()
         if read_selection() != selected:
             raise IngressTransactionError('Ingress owner changed during website transaction')
-        refuse_pending(journals, owner, bootstrap_guard=bootstrap_guard)
+        refuse_pending(journals, owner, bootstrap_guard=bootstrap_guard, own_journal=journal)
         return docker(arguments)
     return run_under_lease(lease, expected_sha, runtime=runtime,
-                           docker_run=selected_docker, container=selected[1], owner=owner)
+                           docker_run=selected_docker, container=selected[1], owner=owner, journal=journal)
 
 
 if __name__ == "__main__":

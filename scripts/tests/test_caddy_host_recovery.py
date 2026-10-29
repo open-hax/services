@@ -30,7 +30,8 @@ class FakeDocker:
                   ('/etc/caddy/managed', '/srv/open-hax/state/caddy/managed', False),
                   ('/data', snapshot + '/data', True), ('/config', snapshot + '/config', True)]
         self.candidate = {'Id': 'c'*64, 'Image': plan.incumbent_image,
-            'Config': {'User': '1000:1000', 'Labels': {'com.docker.compose.project': 'caddy-identity', 'com.docker.compose.service': 'caddy'}},
+            'Config': {'User': '1000:1000', 'Labels': {'com.docker.compose.project': 'caddy-identity', 'com.docker.compose.service': 'caddy'},
+                       'Cmd': recovery.CANDIDATE_COMMAND, 'Entrypoint': None, 'Env': []},
             'HostConfig': {'PortBindings': copy.deepcopy(original['HostConfig']['PortBindings'])},
             'Mounts': [{'Destination': d, 'Source': s, 'RW': rw} for d, s, rw in mounts],
             'NetworkSettings': {'Networks': {}}, 'State': {'Running': True}}
@@ -72,6 +73,11 @@ class HostRecoveryTest(unittest.TestCase):
         self.plan = production_plan(self.original)
         self.docker = FakeDocker(self.original, self.plan)
         self.driver = recovery.HostRecoveryDriver(Lease(), execute=self.docker, boundary=lambda: True)
+        contract = {'command': recovery.CANDIDATE_COMMAND, 'entrypoint': None,
+                    'environment_sha256': recovery.environment_digest([])}
+        patcher = patch.object(self.driver, 'runtime_contract', return_value=contract)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_production_boundary_is_unconditionally_closed(self):
         calls = []
@@ -130,6 +136,16 @@ class HostRecoveryTest(unittest.TestCase):
                 self.driver.rollback_to_same_incumbent(self.plan)
         self.assertFalse(any(x[:3] == ['docker', 'rm', '-f'] for x in self.docker.calls))
 
+    def test_candidate_command_entrypoint_or_environment_drift_refuses_before_removal(self):
+        for key, value in (('Cmd', ['other']), ('Entrypoint', ['/bin/sh']), ('Env', ['EXTRA=unexpected'])):
+            candidate = self.docker.candidate['Config']
+            before = candidate[key]
+            candidate[key] = value
+            with self.assertRaisesRegex(IngressTransactionError, 'command, entrypoint or environment'):
+                self.driver.checked_candidate(self.plan)
+            candidate[key] = before
+        self.assertFalse(any(x[:3] == ['docker', 'rm', '-f'] for x in self.docker.calls))
+
     def test_incumbent_static_configuration_drift_refuses_before_removal(self):
         self.docker.original['Config']['Env'] = ['changed=fixture']
         with self.assertRaisesRegex(IngressTransactionError, 'configuration changed'):
@@ -156,6 +172,18 @@ class HostRecoveryTest(unittest.TestCase):
         validation['HostConfig'] = {'NetworkMode': 'none', 'PortBindings': {}}
         self.docker.validation = validation
         with self.assertRaisesRegex(IngressTransactionError, 'identity or isolation'):
+            self.driver.rollback_to_same_incumbent(self.plan)
+        self.assertFalse(any(x[:3] == ['docker', 'rm', '-f'] for x in self.docker.calls))
+
+    def test_validation_environment_drift_cannot_be_removed(self):
+        validation = copy.deepcopy(self.docker.candidate)
+        validation['Id'] = 'd'*64
+        validation['Config']['Entrypoint'] = ['caddy']
+        validation['Config']['Cmd'] = ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile']
+        validation['Config']['Env'] = ['UNEXPECTED=value']
+        validation['HostConfig'] = {'NetworkMode': 'none', 'PortBindings': {}}
+        self.docker.validation = validation
+        with self.assertRaisesRegex(IngressTransactionError, 'environment differs'):
             self.driver.rollback_to_same_incumbent(self.plan)
         self.assertFalse(any(x[:3] == ['docker', 'rm', '-f'] for x in self.docker.calls))
 

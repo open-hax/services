@@ -31,6 +31,16 @@ ROUTES = {'axxium.promethean.rest': '/health', 'knoxx.promethean.rest': '/',
           'knoxx-dev.promethean.rest': '/', 'opencode-dev.promethean.rest': '/',
           'shadow-dev.promethean.rest': '/'}
 DEV_ROUTES = {'knoxx-dev.promethean.rest', 'opencode-dev.promethean.rest', 'shadow-dev.promethean.rest'}
+CANDIDATE_COMMAND = ['caddy', 'run', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile']
+
+
+def environment_digest(values):
+    if not isinstance(values, list) or any(not isinstance(value, str) or '=' not in value for value in values):
+        raise IngressTransactionError('Container environment is malformed')
+    pairs = [value.split('=', 1) for value in values]
+    if len({name for name, _ in pairs}) != len(pairs):
+        raise IngressTransactionError('Container environment contains duplicate names')
+    return hashlib.sha256(json.dumps(dict(pairs), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 def command(args, *, allow_missing=False, input_bytes=None):
@@ -146,6 +156,23 @@ class HostRecoveryDriver:
             raise IngressTransactionError('Caddyfile baseline is unsafe')
         return value[:-1].decode()
 
+    def runtime_contract(self):
+        if self.journal is None:
+            raise IngressTransactionError('Candidate runtime contract is unavailable')
+        fd = os.open(self.journal / 'candidate-runtime.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        with os.fdopen(fd, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != self.journal_owner or info.st_nlink != 1 or
+                    stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 4096):
+                raise IngressTransactionError('Candidate runtime contract is unsafe')
+            value = json.load(stream)
+        if (not isinstance(value, dict) or set(value) != {'command', 'entrypoint', 'environment_sha256'} or
+                value['command'] != CANDIDATE_COMMAND or value['entrypoint'] is not None or
+                not isinstance(value['environment_sha256'], str) or
+                re.fullmatch(r'[0-9a-f]{64}', value['environment_sha256']) is None):
+            raise IngressTransactionError('Candidate runtime contract is invalid')
+        return value
+
     def docker(self, *args, allow_missing=False, input_bytes=None):
         self.lease.recheck()
         if input_bytes is None:
@@ -182,6 +209,11 @@ class HostRecoveryDriver:
                 labels.get('com.docker.compose.project') != 'caddy-identity' or
                 labels.get('com.docker.compose.service') != 'caddy'):
             raise IngressTransactionError('Candidate identity, image or Compose ownership is unexpected')
+        config = candidate.get('Config') or {}
+        contract = self.runtime_contract()
+        if (config.get('Cmd') != contract['command'] or config.get('Entrypoint') != contract['entrypoint'] or
+                environment_digest(config.get('Env')) != contract['environment_sha256']):
+            raise IngressTransactionError('Candidate command, entrypoint or environment differs from reviewed model')
         bindings = (candidate.get('HostConfig') or {}).get('PortBindings') or {}
         for host, published, internal in plan.ports:
             expected = [{'HostIp': host, 'HostPort': str(published)}]
@@ -230,6 +262,8 @@ class HostRecoveryDriver:
                 config.get('Cmd') != ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile'] or
                 host.get('NetworkMode') != 'none' or host.get('PortBindings')):
             raise IngressTransactionError('Validation container identity or isolation differs')
+        if environment_digest(config.get('Env')) != self.runtime_contract()['environment_sha256']:
+            raise IngressTransactionError('Validation environment differs from reviewed model')
         mount_entries = validator.get('Mounts', [])
         mounts = {m.get('Destination'): (m.get('Source'), m.get('RW')) for m in mount_entries}
         if len(mounts) != len(mount_entries):

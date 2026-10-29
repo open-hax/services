@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 import stat
 
-from identity_ingress_transaction import IngressTransactionError
+from identity_ingress_transaction import IngressTransactionError, _check_directory
 
 
 @dataclass(frozen=True)
@@ -190,6 +190,12 @@ def bootstrap_under_lease(lease, journal: Path, driver, plan: BootstrapPlan, *, 
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != owner or stat.S_IMODE(info.st_mode) != 0o700 or list(journal.iterdir()):
         raise IngressTransactionError('Bootstrap journal must be a private empty directory')
     lease.recheck()
+    parent_fd = os.open(journal.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        _check_directory(parent_fd, journal.parent, owner)
+        os.fsync(parent_fd)
+    finally:
+        os.close(parent_fd)
     # Admission must cover all writers, snapshot permissions and rollback before
     # stopping anything. It is deliberately not inferred from matching labels.
     if driver.preflight(plan) is not True or driver.prevalidate_nonroot(plan) is not True:

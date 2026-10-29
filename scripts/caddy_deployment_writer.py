@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 from ingress_lock import ingress_lock
-from identity_ingress_transaction import IngressTransactionError
+from identity_ingress_transaction import IngressTransactionError, create_private_journal
 from caddy_bundle_transaction import BundleItem, apply_bundle_under_lease
 from website_ingress_writer import incumbent, selected_config
 from axxium_identity_candidate import candidate as identity_candidate
@@ -108,7 +108,7 @@ def run_transaction(lease, *, runtime, managed, journals, stage, owner, inspect,
     items.append(BundleItem(managed.parent / 'identity-ingress/Caddyfile', values['Caddyfile'],
                             baseline['files']['identity-ingress/Caddyfile']))
     journal = journals / stage.name
-    journal.mkdir(mode=0o700)
+    create_private_journal(journal, owner=owner)
     private_dir(journal, owner)
 
     def apply():

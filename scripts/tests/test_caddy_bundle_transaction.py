@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from caddy_bundle_transaction import BundleItem, apply_bundle_under_lease
 from identity_ingress_transaction import IngressTransactionError
@@ -88,6 +89,78 @@ class BundleTest(unittest.TestCase):
         self.assertEqual(self.caddy.read_bytes(), b"old routes")
         self.assertEqual(list(self.journal.iterdir()), [])
 
+    def test_real_post_rename_directory_fsync_failure_restores_originals(self):
+        original_replace, original_fsync = os.replace, os.fsync
+        state = {'renamed': False, 'failed': False}
+        directory = self.routes.stat()
+        def replace(src, dst, **kwargs):
+            result = original_replace(src, dst, **kwargs)
+            if dst == self.caddy.name:
+                state['renamed'] = True
+            return result
+        def fsync(fd):
+            info = os.fstat(fd)
+            if state['renamed'] and not state['failed'] and (info.st_dev, info.st_ino) == (directory.st_dev, directory.st_ino):
+                state['failed'] = True
+                raise OSError('injected post-rename directory fsync failure')
+            return original_fsync(fd)
+        with patch.object(os, 'replace', side_effect=replace), patch.object(os, 'fsync', side_effect=fsync):
+            with self.assertRaisesRegex(IngressTransactionError, 'prior bundle restored'):
+                self.run_bundle(lambda: self.fail('failed fsync must not apply'), lambda: None)
+        self.assertTrue(state['failed'])
+        self.assertEqual((self.caddy.read_bytes(), self.compose.read_bytes()), (b'old routes', b'old compose'))
+        self.assertFalse((self.journal / 'pending').exists())
+
+    def test_persistent_post_rename_fsync_failure_retains_pending_guard(self):
+        original_replace, original_fsync = os.replace, os.fsync
+        state = {'renamed': False}
+        directory = self.routes.stat()
+        def replace(src, dst, **kwargs):
+            result = original_replace(src, dst, **kwargs)
+            if dst == self.caddy.name:
+                state['renamed'] = True
+            return result
+        def fsync(fd):
+            info = os.fstat(fd)
+            if state['renamed'] and (info.st_dev, info.st_ino) == (directory.st_dev, directory.st_ino):
+                raise OSError('persistent target directory fsync failure')
+            return original_fsync(fd)
+        with patch.object(os, 'replace', side_effect=replace), patch.object(os, 'fsync', side_effect=fsync):
+            with self.assertRaisesRegex(IngressTransactionError, 'manual recovery'):
+                self.run_bundle(lambda: None, lambda: None)
+        self.assertTrue((self.journal / 'pending').exists())
+
+    def test_recovery_callback_mutating_restored_file_retains_guard(self):
+        def apply():
+            raise RuntimeError('fixture failure')
+        def restore():
+            self.caddy.write_bytes(b'changed after restore')
+        with self.assertRaisesRegex(IngressTransactionError, 'manual recovery'):
+            self.run_bundle(apply, restore)
+        self.assertTrue((self.journal / 'pending').exists())
+
+    def test_guard_unlink_fsync_failure_does_not_undo_verified_apply(self):
+        original_unlink, original_fsync = os.unlink, os.fsync
+        directory = self.journal.stat()
+        state = {'unlinked': False, 'failed': False}
+        def unlink(name, **kwargs):
+            result = original_unlink(name, **kwargs)
+            if name == 'pending':
+                state['unlinked'] = True
+            return result
+        def fsync(fd):
+            info = os.fstat(fd)
+            if state['unlinked'] and not state['failed'] and (info.st_dev, info.st_ino) == (directory.st_dev, directory.st_ino):
+                state['failed'] = True
+                raise OSError('injected guard settlement fsync failure')
+            return original_fsync(fd)
+        with patch.object(os, 'unlink', side_effect=unlink), patch.object(os, 'fsync', side_effect=fsync):
+            with self.assertRaisesRegex(IngressTransactionError, 'settlement requires recovery'):
+                self.run_bundle(lambda: None, lambda: self.fail('verified apply must not be rolled back'))
+        self.assertTrue((self.journal / 'pending').exists())
+        self.assertEqual((self.journal / 'result').read_text(), 'applied-and-verified\n')
+        self.assertEqual((self.caddy.read_bytes(), self.compose.read_bytes()), (b'new routes', b'new compose'))
+
     def test_website_writer_process_cannot_acquire_lease_mid_bundle(self):
         runtime, managed = self.root / "website-runtime", self.root / "managed"
         runtime.mkdir(mode=0o755)
@@ -111,7 +184,7 @@ def docker(args):
  return b"ok"
 try:
  with ingress_lock(sys.argv[1],owner=os.getuid()) as lease:
-  run_under_lease(lease,hashlib.sha256(b"new website").hexdigest(),runtime=runtime,managed=managed,docker_run=docker)
+  run_under_lease(lease,hashlib.sha256(b"new website").hexdigest(),runtime=runtime,managed=managed,docker_run=docker,journal=runtime/"journal")
 except IngressLockError:sys.exit(7)
 '''
         env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}

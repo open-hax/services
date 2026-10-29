@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -59,3 +60,32 @@ class PendingTest(unittest.TestCase):
                 website_ingress_writer.dispatch_under_lease(Lease(), 'a'*64, runtime=self.root,
                     journals=self.journals, owner=os.getuid(), bootstrap_guard=self.guard)
             writer.assert_not_called()
+
+    def test_website_dispatch_can_validate_its_own_guarded_transaction(self):
+        runtime, managed = self.root / '1-1', self.root / 'managed'
+        runtime.mkdir(mode=0o700)
+        managed.mkdir(mode=0o700)
+        (runtime / 'website-staging.caddy.candidate').write_bytes(b'new website')
+        (runtime / 'website-staging.caddy.candidate').chmod(0o600)
+        target = managed / 'website-staging.caddy'
+        target.write_bytes(b'old website')
+        target.chmod(0o600)
+        def docker(args):
+            if args[:2] == ['inspect', '--format'] and args[2] == '{{json .Mounts}}':
+                return json.dumps([{'Source': str(managed), 'Destination': '/etc/caddy/managed', 'RW': False}]).encode()
+            if args[:2] == ['inspect', '--format']:
+                return json.dumps(['caddy', 'run', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile']).encode()
+            if 'cat' in args:
+                return b'import /etc/caddy/managed/*.caddy\n' if args[-1] == '/etc/caddy/Caddyfile' else target.read_bytes()
+            return b'ok'
+        real_run = website_ingress_writer.run_under_lease
+        def run(lease, expected, **kwargs):
+            return real_run(lease, expected, managed=managed, **kwargs)
+        with patch.object(website_ingress_writer, 'read_selection', return_value=('caddy', 'caddy-caddy-1')), \
+             patch.object(website_ingress_writer, 'docker', side_effect=docker), \
+             patch.object(website_ingress_writer, 'run_under_lease', side_effect=run):
+            result = website_ingress_writer.dispatch_under_lease(Lease(), hashlib.sha256(b'new website').hexdigest(),
+                runtime=runtime, journals=self.journals, owner=os.getuid(), bootstrap_guard=self.guard)
+        self.assertEqual(result, hashlib.sha256(b'new website').hexdigest())
+        self.assertEqual(target.read_bytes(), b'new website')
+        self.assertFalse((self.journals / 'website-1-1/pending').exists())

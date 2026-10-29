@@ -266,3 +266,18 @@ crash recovery, and a failed rollback that leaves the guard and evidence in
 place. The root test uses a temporary filesystem and never invokes real Docker.
 Separate nonroot Docker fixtures exercise network, TLS and one-off container
 behavior. These tests do not qualify the production boundary or source/image.
+
+Both multi-file Caddy changes and one-file website changes now use private
+durable journals. A target is treated as potentially changed before rename:
+if the following directory fsync fails, recovery compares current bytes with
+the saved original and the candidate, refuses a foreign value, and verifies
+the original hashes again after the recovery callback. Journal directories
+are linked and fsynced before target changes. If restoration or guard
+settlement is uncertain, the pending marker is retained for recovery.
+
+The bootstrap's reviewed Compose model also yields a private runtime contract
+containing the expected Caddy command, image-default entrypoint and a canonical
+environment hash. Candidate and one-off validation container inspection must
+match that contract before adoption or targeted cleanup. The hash avoids writing
+environment values to the contract, but it does not establish the currently
+unproven production writer boundary or deployment qualification.
