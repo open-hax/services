@@ -65,6 +65,18 @@ specific reuse of the staged image preserves its original bytes; subsequent
 services continue to use the GHCR delivery above. The ordinary production
 qualification and required service health gate remain enforced.
 
+The fixed Cloud Cuckoo transport-stage scope also runs inside Deploy Stack's
+existing host lock and uses a public immutable GHCR image built by its source
+repository. Native publisher artifact custody is admitted before SSH. Its
+second compose project, private state, and compiled loopback endpoints use the
+real gateway/authentication/forwarding code with synthetic MCP peers. The
+mandatory gate traverses actual downstream OAuth and read-only fixture tools
+with one short-lived session for an existing synthetic Stage actor, verifies
+session removal and revocation, and records these limits explicitly. It proves
+transport/authentication staging; it supplies no Google execution, human login,
+production qualification or credit for the older inert identity probe. See
+`docs/colab-transport-staging.md` for the closed tuple and refusal/recovery rules.
+
 ## 2. The service descriptor
 
 A service is one directory under `digitalocean/services/<name>/`, one entry in

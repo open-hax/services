@@ -40,6 +40,11 @@ on:
         required: false
         default: ''
         type: string
+      colab_ref:
+        description: Fixed immutable Cloud Cuckoo source; colab-stage scope only
+        required: false
+        default: ''
+        type: string
       openplanner_ref:
         description: Immutable open-hax/openplanner ref used to compile Knoxx devtools
         required: true
@@ -76,6 +81,14 @@ permissions:
   packages: write
 
 jobs:
+  deploy-colab-stage:
+    if: inputs.scope == 'colab-stage'
+    uses: ./.github/workflows/deploy-colab-transport-stage.yml
+    with:
+      source_sha: ${{ inputs.colab_ref }}
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
   # The caller retains the existing production-host queue throughout admission
   # and this fixed service transaction. No new dispatch or host queue is added.
   deploy-axxium:

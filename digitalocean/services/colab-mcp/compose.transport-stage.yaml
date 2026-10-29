@@ -1,0 +1,32 @@
+# Actual forwarding code, isolated synthetic peers; never Google's runtime.
+x-stage: &stage
+  image: ${COLAB_MCP_IMAGE:?Immutable admitted Cloud Cuckoo image required}
+  user: "1000:1000"
+  restart: unless-stopped
+  network_mode: host
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 128
+  mem_limit: 256m
+  cpus: 0.5
+  tmpfs: [/tmp:size=32m,mode=1777]
+  environment:
+    FASTMCP_CHECK_FOR_UPDATES: "off"
+    COLAB_AUTH_PROFILE: transport-staging
+  volumes:
+    - /srv/open-hax/state/colab-transport-stage:/run/colab-transport-stage:ro
+
+services:
+  bridge-staging:
+    <<: *stage
+    command: [knoxx-colab-mcp, transport-stage-bridge, --host, 127.0.0.1, --port, "18773"]
+  compute-staging:
+    <<: *stage
+    command: [knoxx-colab-mcp, transport-stage-compute, --host, 127.0.0.1, --port, "18775"]
+  gateway-staging:
+    <<: *stage
+    volumes:
+      - /srv/open-hax/state/colab-transport-stage:/run/colab-transport-stage:ro
+      - /srv/open-hax/state/colab-transport-stage/oauth:/var/lib/colab-transport-stage:rw
+    command: [knoxx-colab-mcp, gateway, --host, 127.0.0.1, --port, "18771"]

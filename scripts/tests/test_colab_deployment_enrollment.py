@@ -28,7 +28,8 @@ class ColabEnrollmentBoundaryTests(unittest.TestCase):
 
     def test_descriptor_does_not_claim_a_production_phase(self):
         value = yaml.safe_load((ROOT / 'digitalocean/services/colab-mcp/service.yaml').read_text())
-        self.assertEqual(value['phases'], [])
+        self.assertEqual(value['phases'], ['staging'])
+        self.assertIs(value['staging']['syntheticUpstreams'], True)
         self.assertIs(value['verify']['required'], True)
 
 

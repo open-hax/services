@@ -1,0 +1,14 @@
+{
+  "artifact_digest": "sha256:396a414f90b75ad4e0ae8a56122d50aad2f32960cfad8a9644b49d8501ef70a8",
+  "artifact_id": 12932943188,
+  "image_id": "sha256:6b107b5c77b2f3c780160bedf0fc0e11cc2b801b4639f740f9e8b690161bfc8c",
+  "image_reference": "ghcr.io/open-hax/cloud-cuckoo@sha256:8cd5bf61555d7c1096a053715ab39b78d028958ed62f0e20555e158096d7c767",
+  "license_sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+  "publisher_attempt": 1,
+  "publisher_controller_sha": "19e1adadb1b24eacca993de92f6370b400cf3d33",
+  "publisher_run_id": 40956619355,
+  "schema": "colab-transport-stage/v1",
+  "source_pr": 13,
+  "source_sha": "19e1adadb1b24eacca993de92f6370b400cf3d33",
+  "tests": 136
+}

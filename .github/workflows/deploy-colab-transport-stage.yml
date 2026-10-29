@@ -1,0 +1,148 @@
+name: Deploy fixed Cloud Cuckoo transport stage
+
+# Only Deploy Stack's existing locked chain can call this body. The source
+# publisher's native evidence is admitted before any host credential is used.
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      caller_holds_production_host_lock:
+        required: true
+        type: boolean
+    secrets:
+      DIGITALOCEAN_SSH_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  admit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      admitted: ${{ steps.evidence.outputs.admitted }}
+      plan_sha256: ${{ steps.evidence.outputs.plan_sha256 }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Test fixed staging boundaries without host capabilities
+        run: python3 -m unittest scripts.tests.test_colab_transport_stage scripts.tests.test_colab_stage_admission scripts.tests.test_colab_stage_oauth_smoke
+      - name: Admit existing caller and published merged source
+        id: evidence
+        env:
+          CALLER_LOCKED: ${{ inputs.caller_holds_production_host_lock }}
+          CALLER_WORKFLOW: ${{ github.workflow_ref }}
+          CALLER_REF: ${{ github.ref }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CONTROLLER_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$CALLER_LOCKED" = true
+          test "$CALLER_REF" = refs/heads/main
+          test "$CALLER_WORKFLOW" = 'open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main'
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          plan=digitalocean/services/colab-mcp/transport-stage-plan.json
+          test "$SOURCE_SHA" = "$(jq -er .source_sha "$plan")"
+          artifact_id=$(jq -er '.artifact_id | select(type == "number" and . > 0 and floor == .)' "$plan")
+          timeout --kill-after=5s 120s gh api "repos/open-hax/cloud-cuckoo/actions/artifacts/${artifact_id}/zip" > release.zip
+          python3 scripts/colab_stage_admission.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --artifact release.zip > admission.json
+          jq -e '.admitted == true and .production_qualified == false and .synthetic_upstreams == true' admission.json >/dev/null
+          jq -r '"admitted=true", "plan_sha256=" + .plan_sha256' admission.json >> "$GITHUB_OUTPUT"
+
+  stage:
+    needs: admit
+    if: needs.admit.outputs.admitted == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Same existing protected host environment and deploy UID, no new key.
+    # This job's compiled controller can select only the isolated stage slot.
+    environment: production
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Recheck native evidence before receiving SSH capability
+        env:
+          CONTROLLER_SHA: ${{ github.sha }}
+          EXPECTED_PLAN: ${{ needs.admit.outputs.plan_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          plan=digitalocean/services/colab-mcp/transport-stage-plan.json
+          test "$(sha256sum "$plan" | cut -d' ' -f1)" = "$EXPECTED_PLAN"
+          artifact_id=$(jq -er .artifact_id "$plan")
+          timeout --kill-after=5s 120s gh api "repos/open-hax/cloud-cuckoo/actions/artifacts/${artifact_id}/zip" > release.zip
+          python3 scripts/colab_stage_admission.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --artifact release.zip > admission.json
+          jq -e '.admitted == true' admission.json >/dev/null
+      - name: Configure canonical pinned SSH trust
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          . digitalocean/lib/host-contract.sh
+          load_host_contract production
+          assert_pinned_host_key
+          test -n "$SSH_PRIVATE_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/digitalocean
+          chmod 600 ~/.ssh/digitalocean
+          install -m 600 "$OPEN_HAX_KNOWN_HOSTS" ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<CONFIG
+          Host open-hax-target
+            HostName $OPEN_HAX_HOST
+            User $OPEN_HAX_SSH_USER
+            IdentityFile ~/.ssh/digitalocean
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            ConnectTimeout 10
+          CONFIG
+          chmod 600 ~/.ssh/config
+      - name: Install reviewed controller and deploy the fixed synthetic stage
+        env:
+          CONTROLLER_SHA: ${{ github.sha }}
+          PLAN_SHA256: ${{ needs.admit.outputs.plan_sha256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PLAN_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          . digitalocean/lib/host-contract.sh
+          load_host_contract production
+          controller="$OPEN_HAX_SERVICES_ROOT/colab-transport-stage/controllers/$CONTROLLER_SHA"
+          tar --mode=u=rw,go= -cf controller.tar \
+            scripts/colab_stage_admission.py scripts/colab_transport_stage.py \
+            scripts/colab_stage_oauth_smoke.py scripts/axxium_production_qualification.py \
+            scripts/environment_policy.py scripts/github_environment_admission.py \
+            digitalocean/services/colab-mcp/compose.transport-stage.yaml \
+            digitalocean/services/colab-mcp/transport-stage-plan.json
+          # Fixed host-contract paths and validated SHA intentionally expand locally.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "umask 077; mkdir -p '$OPEN_HAX_SERVICES_ROOT/colab-transport-stage/controllers'; mkdir -m 700 '$controller'; tar --no-same-owner -xf - -C '$controller'" < controller.tar
+          # Fixed host-contract paths and validated SHA intentionally expand locally.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "env PYTHONDONTWRITEBYTECODE=1 python3 '$controller/scripts/colab_transport_stage.py' --plan '$controller/digitalocean/services/colab-mcp/transport-stage-plan.json' --controller-sha '$CONTROLLER_SHA' --plan-sha256 '$PLAN_SHA256' --apply" </dev/null > stage-receipt.json
+          jq -e '.health == "success" and .phase == "staging" and .synthetic_upstreams == true and .oauth_flow_verified == true and .gateway_forwarding_verified == true and .session_revoked == true and .google_execution_verified == false and .production_qualified == false' stage-receipt.json >/dev/null
+      - name: Preserve sanitized stage receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: colab-transport-stage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stage-receipt.json
+          if-no-files-found: ignore
+      - name: Remove runner SSH credential copy
+        if: always()
+        run: rm -f ~/.ssh/digitalocean controller.tar release.zip
