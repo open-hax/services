@@ -505,6 +505,29 @@ jobs:
           set -euo pipefail
           # Select the trusted phase topology before transferring anything.
           # Staging's service key must not publish the production DNS alias.
+          if [ "$SERVICE" = caddy ]; then
+            test "$RUNTIME_PATH" = /srv/open-hax/services/caddy
+            run_key="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            [[ "$run_key" =~ ^[0-9]+-[0-9]+$ ]]
+            stage="$RUNTIME_PATH/.ingress-candidates/$run_key"
+            ssh open-hax-target "umask 077; mkdir -p '$RUNTIME_PATH/.ingress-candidates'; mkdir '$stage'"
+            scp "$SERVICE_DIR/Caddyfile" "$SERVICE_DIR/compose.yaml" "$SERVICE_DIR/verify.sh" \
+              "$SERVICE_DIR/env.template" scripts/ingress_lock.py scripts/identity_ingress_transaction.py \
+              scripts/website_ingress_writer.py scripts/axxium_identity_candidate.py \
+              scripts/caddy_bundle_transaction.py scripts/caddy_deployment_writer.py "open-hax-target:$stage/"
+            scp rendered.env "open-hax-target:$stage/.env"
+            # Verify all executable helpers and source files against the checkout
+            # before allowing a host-side baseline capture or transaction.
+            sums=$(cd "$SERVICE_DIR" && sha256sum Caddyfile compose.yaml verify.sh env.template)
+            helper_sums=$(cd scripts && sha256sum ingress_lock.py identity_ingress_transaction.py \
+              website_ingress_writer.py axxium_identity_candidate.py caddy_bundle_transaction.py caddy_deployment_writer.py)
+            env_sum=$(sha256sum rendered.env | awk '{print $1}')
+            ssh open-hax-target "cd '$stage'; chmod 600 Caddyfile compose.yaml verify.sh env.template .env *.py; \
+              printf '%s\\n' '$sums' '$helper_sums' '$env_sum  .env' | sha256sum --check --status; \
+              python3 caddy_deployment_writer.py capture '$run_key'"
+            echo 'definition_changed=1' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           definition_dir=$SERVICE_DIR
           definition_rsync=()
           if [ "$SERVICE_COMPOSE" != "$SERVICE_DIR/compose.yaml" ]; then
@@ -625,6 +648,14 @@ jobs:
           DEFINITION_CHANGED: ${{ steps.sync.outputs.definition_changed }}
         run: |
           set -euo pipefail
+          if [ "$SERVICE" = caddy ]; then
+            test "$RUNTIME_PATH" = /srv/open-hax/services/caddy
+            run_key="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            [[ "$run_key" =~ ^[0-9]+-[0-9]+$ ]]
+            stage="$RUNTIME_PATH/.ingress-candidates/$run_key"
+            ssh open-hax-target "cd '$stage'; python3 caddy_deployment_writer.py apply '$run_key'"
+            exit 0
+          fi
           # Quoted heredoc: the script is opaque to the runner's shell and the
           # four values arrive as positional arguments on the host.
           #

@@ -81,6 +81,8 @@ jobs:
         run: |
           python -m unittest scripts.tests.test_identity_ingress_transaction \
             scripts.tests.test_caddy_bundle_transaction \
+            scripts.tests.test_caddy_deployment_writer \
+            scripts.tests.test_caddy_state_candidate \
             scripts.tests.test_website_ingress_writer \
             scripts.tests.test_axxium_identity_candidate
 

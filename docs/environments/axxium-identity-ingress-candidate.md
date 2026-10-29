@@ -134,3 +134,38 @@ scripts.tests.test_caddy_bundle_transaction
 scripts.tests.test_website_ingress_writer
 scripts.tests.test_axxium_identity_candidate` and
 `bash scripts/tests/test_axxium_identity_network.sh` from the worktree root.
+
+# Caddy writer and nonroot adoption status
+
+This remains a review candidate; do not merge or activate it as a complete
+production migration. The workflow now stages Caddy's fixed definition and
+invokes `caddy_deployment_writer.py` under the same host lease as the website
+writer. The writer checks the captured incumbent files, managed-route inventory,
+container ID and image, refuses unresolved journals, checks the staged hashes,
+and journals all file replacements before image-pinned recreation and health
+verification. A failed transaction restores all prior bytes and verifies the
+same image; non-cooperating writes retain the recovery journal instead.
+
+The dispatcher is intentionally narrower than a complete Caddy adoption: it
+requires an already nonroot Caddy, the directory bind, a pre-provisioned lock,
+private journal root and an operator-owned override pinning the actual image.
+It refuses Compose or environment changes and limits configuration changes to
+the existing Axxium OIDC transform. Current production does not satisfy those
+preconditions; its config and Compose definition also differ from Services
+main. Thus the workflow must not be promoted until bootstrap and source
+reconciliation are implemented and tested.
+
+The private state-copy utility snapshots data and config into an exclusive
+UID-1000 directory and verifies source stability and every copied byte. A
+successful result is a point-in-time receipt only: a live Caddy may update its
+certificate state or lock files immediately afterwards. At activation a new
+consistent state snapshot, verified after quiescing its writer, is required.
+Never recursively change ownership of live certificate data.
+
+A bootstrap must preserve the incumbent container through failure. Compose
+force-recreation removes it, so rollback cannot faithfully restart the old
+root container afterwards, and recreating a root application container is not
+allowed. A separately tested handoff must retain the stopped incumbent while
+transferring ports and the fixed Docker network address to a nonroot candidate,
+verify TLS state and application routes, and prove the reverse transfer before
+any Compose ownership adoption. No such host handoff is implemented here.
