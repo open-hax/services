@@ -101,6 +101,10 @@ jobs:
             echo "service deployment requires the Deploy Stack production lock" >&2
             exit 2
           fi
+          if [ "$SERVICE" = colab-mcp ]; then
+            echo 'Colab phases are not enrolled; generic deployment cannot activate this inventory.' >&2
+            exit 2
+          fi
           . digitalocean/lib/host-contract.sh
           case "$DEPLOY_ENVIRONMENT:$SERVICE" in
             production:*) ;;
