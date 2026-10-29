@@ -33,6 +33,7 @@ CONTAINER = 'axxium-staging-axxium-1'
 CLIENT = 'knoxx-colab-transport-staging'
 CALLBACK = 'http://127.0.0.1:18771/auth/callback'
 REDIRECT = 'http://127.0.0.1:18776/callback'
+OWNER_UID = 1000
 
 
 def present(path):
@@ -108,7 +109,7 @@ def write_new(path, raw):
     no_symlinks(path)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     try:
-        os.fchown(fd, 1000, 1000)
+        os.fchown(fd, OWNER_UID, 1000)
         os.fchmod(fd, 0o600)
         with os.fdopen(fd, 'wb', closefd=False) as target:
             target.write(raw)
@@ -220,9 +221,9 @@ def enroll(*, check=False):
         require(added)
         if not present(STATE):
             STATE.mkdir(mode=0o700)
-            os.chown(STATE, 1000, 1000)
+            os.chown(STATE, OWNER_UID, 1000)
         info = STATE.lstat()
-        require(stat.S_ISDIR(info.st_mode) and info.st_uid == 1000 and stat.S_IMODE(info.st_mode) == 0o700)
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == OWNER_UID and stat.S_IMODE(info.st_mode) == 0o700)
         new_raw, gateway_raw = bytes_json(candidate), bytes_json(gateway)
         state = {'schema': 'colab-stage-enrollment/v1', 'status': 'pending', **before,
                  'backup_sha256': digest(original), 'authority_sha256': digest(new_raw),

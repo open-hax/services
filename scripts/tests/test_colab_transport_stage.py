@@ -66,9 +66,10 @@ class StageTests(unittest.TestCase):
             path = Path(root) / 'client'
             path.write_text('private-fixture')
             path.chmod(0o600)
-            with patch.object(m.os, 'getuid', return_value=1000):
-                if path.stat().st_uid == 1000:
-                    self.assertEqual(m.private_read(path), b'private-fixture')
+            # The private fixture belongs to the runner (normally1001), not
+            # the host's deployment account. All actual file checks still run.
+            with patch.object(m, 'OWNER_UID', os.getuid()):
+                self.assertEqual(m.private_read(path), b'private-fixture')
                 path.chmod(0o644)
                 with self.assertRaises(m.Refused):
                     m.private_read(path)
@@ -76,6 +77,9 @@ class StageTests(unittest.TestCase):
                 link.symlink_to(path)
                 with self.assertRaises(OSError):
                     m.private_read(link)
+
+    def test_production_deploy_owner_is_closed_at_uid1000(self):
+        self.assertEqual(m.OWNER_UID, 1000)
 
     def test_actual_order_admits_image_before_effects_and_proof_before_receipt(self):
         host = FakeHost()

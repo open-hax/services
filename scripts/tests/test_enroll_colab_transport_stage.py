@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import enroll_colab_transport_stage as m
+import colab_transport_stage as stage
 
 
 def authority():
@@ -23,6 +24,10 @@ def authority():
 
 
 class EnrollmentLaws(unittest.TestCase):
+    def test_production_enrollment_owner_is_closed_at_uid1000(self):
+        self.assertEqual(m.OWNER_UID, 1000)
+        self.assertEqual(stage.OWNER_UID, 1000)
+
     def test_only_one_new_client_and_no_existing_semantics_change(self):
         old = authority()
         snapshot = copy.deepcopy(old)
@@ -89,6 +94,12 @@ class EnrollmentTransactionTests(unittest.TestCase):
         self.before = {'container_id': 'a' * 64, 'image_id': 'sha256:' + 'b' * 64, 'source_sha': 'c' * 40}
         self.calls = []
         self.patchers = [patch.object(m, key, value) for key, value in self.paths.items()]
+        # Sandbox files belong to the ordinary runner UID. Root-only chowns
+        # are observed without executing them; actual mode/regular/symlink,
+        # byte backup, exclusive creation and refusal checks remain active.
+        self.patchers += [patch.object(m, 'OWNER_UID', os.getuid()),
+                          patch.object(stage, 'OWNER_UID', os.getuid()),
+                          patch.object(m.os, 'chown'), patch.object(m.os, 'fchown')]
         self.patchers += [patch.object(m, 'require_identity'), patch.object(m, 'actor_verified'),
                           patch.object(m, 'installed_stage', return_value=self.before),
                           patch.object(m, 'issuer_ready'), patch.object(m, 'run', side_effect=self.command),

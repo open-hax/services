@@ -32,6 +32,7 @@ SERVICES = {'bridge-staging', 'compute-staging', 'gateway-staging'}
 ACTOR = 'actor_20603b93-2c96-4ff2-a213-0b1e84017993'
 ISSUER = 'https://staging.axxium.promethean.rest/oidc'
 BASE = 'http://127.0.0.1:18771'
+OWNER_UID = 1000
 
 
 class Refused(RuntimeError):
@@ -47,7 +48,7 @@ def private_read(path, maximum=65536):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     try:
         info = os.fstat(fd)
-        require(stat.S_ISREG(info.st_mode) and info.st_uid == 1000 and info.st_nlink == 1 and
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == OWNER_UID and info.st_nlink == 1 and
                 stat.S_IMODE(info.st_mode) == 0o600 and info.st_size <= maximum)
         with os.fdopen(fd, 'rb', closefd=False) as source:
             return source.read(maximum + 1)
@@ -59,7 +60,7 @@ def controlled_directory(path, create=False):
     if create and not path.exists():
         path.mkdir(mode=0o700)
     info = path.lstat()
-    require(stat.S_ISDIR(info.st_mode) and info.st_uid == 1000 and not info.st_mode & 0o077)
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == OWNER_UID and not info.st_mode & 0o077)
 
 
 def sync_directory(path):
@@ -200,11 +201,11 @@ class Host:
 
     @contextmanager
     def lock(self):
-        require(os.getuid() == 1000, 'Trusted deploy UID required')
+        require(os.getuid() == OWNER_UID, 'Trusted deploy UID required')
         controlled_directory(RUNTIME, create=True)
         fd = os.open(RUNTIME / '.lock', os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         info = os.fstat(fd)
-        require(stat.S_ISREG(info.st_mode) and info.st_uid == 1000 and info.st_nlink == 1 and
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == OWNER_UID and info.st_nlink == 1 and
                 stat.S_IMODE(info.st_mode) == 0o600)
         with os.fdopen(fd, 'w') as target:
             fcntl.flock(target, fcntl.LOCK_EX | fcntl.LOCK_NB)
