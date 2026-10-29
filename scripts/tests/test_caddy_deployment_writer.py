@@ -22,22 +22,22 @@ class DeploymentWriterTest(unittest.TestCase):
         self.managed = root / 'managed'
         self.journals = root / 'journals'
         self.stage = root / '1-1'
-        for path in (self.runtime, self.managed, self.journals, self.stage, self.runtime / 'identity-ingress'):
+        for path in (self.runtime, self.managed, self.journals, self.stage, self.managed.parent / 'identity-ingress'):
             path.mkdir(mode=0o700)
         for name in writer.FILES:
             (self.runtime / name).write_bytes((name + '-before').encode())
             (self.stage / name).write_bytes((name + '-before').encode())
             (self.runtime / name).chmod(0o600)
             (self.stage / name).chmod(0o600)
-        (self.runtime / 'identity-ingress/Caddyfile').write_bytes(b'Caddyfile-before')
+        (self.managed.parent / 'identity-ingress/Caddyfile').write_bytes(b'Caddyfile-before')
         (self.managed / 'website.caddy').write_bytes(b'old route')
-        (self.runtime / 'identity-ingress/Caddyfile').chmod(0o600)
+        (self.managed.parent / 'identity-ingress/Caddyfile').chmod(0o600)
         (self.managed / 'website.caddy').chmod(0o600)
         self.container = {'Id': 'abc', 'Image': 'sha256:' + 'a' * 64,
                           'Config': {'User': '1000:1000', 'Cmd': ['caddy', 'run', '--config',
                               '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile']},
                           'Mounts': [{'Source': str(self.managed), 'Destination': '/etc/caddy/managed', 'RW': False},
-                                     {'Source': str(self.runtime / 'identity-ingress'),
+                                     {'Source': str(self.managed.parent / 'identity-ingress'),
                                       'Destination': '/etc/caddy/identity-ingress', 'RW': False}]}
         self.calls = []
         self.capture()
@@ -60,7 +60,7 @@ class DeploymentWriterTest(unittest.TestCase):
         self.assertEqual([x[0] for x in self.calls], ['prepare', 'recreate', 'verify'])
         self.assertTrue(all(x[1] == self.container['Image'] for x in self.calls))
         self.assertFalse((self.journals / '1-1/pending').exists())
-        self.assertEqual((self.runtime / 'identity-ingress/Caddyfile').read_bytes(), b'Caddyfile-before')
+        self.assertEqual((self.managed.parent / 'identity-ingress/Caddyfile').read_bytes(), b'Caddyfile-before')
 
     def test_failed_health_restores_prior_files_and_recreates_old_image(self):
         (self.stage / 'verify.sh').write_bytes(b'new verify')

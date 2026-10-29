@@ -169,3 +169,42 @@ allowed. A separately tested handoff must retain the stopped incumbent while
 transferring ports and the fixed Docker network address to a nonroot candidate,
 verify TLS state and application routes, and prove the reverse transfer before
 any Compose ownership adoption. No such host handoff is implemented here.
+
+The review-only `caddy_bootstrap_candidate.py` now defines a journaled bootstrap
+state machine and recognizes the current fixed ports, networks, Caddy mounts,
+Compose project and incumbent image. It fingerprints the complete inspected
+configuration without serializing environment values. It requires explicit
+preflight evidence of safe Compose adoption before stopping the incumbent.
+It writes an intent marker before every effect and requires verification of the
+same incumbent container after rollback; interrupted or failed recovery leaves
+the journal for an external recovery controller. This is a driver contract, not
+a production Docker driver or an automatic recovery service.
+
+The isolated TLS/proxy fixture validates a nonroot candidate before transfer,
+copies and compares the stopped incumbent's data and config trees (including
+its fixture certificate and private key), verifies TLS and the `/oidc` proxy
+peer through the candidate, and restores the same incumbent ID on failure. A
+separate Compose fixture proves that two containers can carry the same service
+ownership labels; matching labels alone cannot qualify an adoption. Neither
+fixture proves production TLS data, multi-network endpoint replay, Compose
+ownership adoption, root-run incumbent rollback or crash recovery. A fixed-path
+host driver implementing those operations and a tested recovery controller are
+still required before this candidate can be activated.
+
+An additional fixture uses separate legacy and candidate Compose projects: it
+confirms each has one distinct service owner, retains the stopped original,
+transfers a fixed port and network peer, and restores the same original ID.
+The candidate source includes a root-owned selector at the fixed host path
+`/etc/open-hax/ingress/owner.json`. Both deployment writers derive their fixed
+project and container from it under the shared lease. Missing, unsafe, unknown,
+or transitioning records stop the writers; the service verifier also rejects a
+supplied project that differs from the installed selector. Its host reader and
+dependency under `/usr/local/lib/open-hax/` require root-owned provisioning.
+The bootstrap contract requires marking the selector transitioning before
+stopping the old service and settling it only after verified adoption or
+verified same-container rollback. Atomic transition and verified settlement
+functions are implemented; a production host driver and the live verification
+callbacks needed to operate or recover them are not implemented. Existing
+uncoordinated old-project deploy paths must be retired or blocked before any
+cutover. Separate projects alone do not provide crash recovery, preserve the
+dev firewall peer, or qualify the production multi-network and TLS state.

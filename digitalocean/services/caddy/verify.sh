@@ -8,13 +8,24 @@ set -euo pipefail
 
 : "${KNOXX_PUBLIC_HOST:?KNOXX_PUBLIC_HOST missing from the rendered environment}"
 : "${PROXX_PUBLIC_HOST:?PROXX_PUBLIC_HOST missing from the rendered environment}"
+: "${CADDY_COMPOSE_PROJECT:?selected ingress project must be supplied}"
+selected_project=$(python3 /usr/local/lib/open-hax/ingress_owner.py project)
+if [ "$CADDY_COMPOSE_PROJECT" != "$selected_project" ]; then
+  echo 'caddy: supplied project is not the selected ingress owner' >&2
+  exit 1
+fi
+case "$selected_project" in
+  caddy) config=/etc/caddy/Caddyfile ;;
+  caddy-identity) config=/etc/caddy/identity-ingress/Caddyfile ;;
+  *) echo 'caddy: invalid selected ingress project' >&2; exit 1 ;;
+esac
 
 # 1. Config is valid and the process is serving.
 # `exec -T` still attaches stdin, so it is closed explicitly: when this script
 # runs under a caller whose own script arrives on stdin, an unredirected exec
 # eats it. See the health gate in .github/workflows/deploy-digitalocean.yml.
-docker compose --project-name caddy --env-file .env \
-  exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile \
+docker compose --project-name "$selected_project" --env-file .env \
+  exec -T caddy caddy validate --config "$config" --adapter caddyfile \
   >/dev/null </dev/null
 
 # 2. Plain HTTP either redirects to HTTPS or answers the ACME challenge.

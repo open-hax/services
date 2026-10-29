@@ -15,6 +15,7 @@ import sys
 
 from ingress_lock import ingress_lock
 from identity_ingress_transaction import IngressTransactionError, replace_under_lease
+from ingress_owner import read_selection
 
 RUNTIME = Path("/srv/open-hax/services/staging/website-staging")
 MANAGED = Path("/srv/open-hax/state/caddy/managed")
@@ -71,14 +72,14 @@ def incumbent(path, owner):
 
 
 def run_under_lease(lease, expected_sha, *, runtime=RUNTIME, managed=MANAGED,
-                    owner=None, docker_run=docker):
+                    owner=None, docker_run=docker, container=CONTAINER):
     """One bounded website writer; caller holds the same host lease throughout."""
     owner = os.getuid() if owner is None else owner
     data = read_private_candidate(runtime / CANDIDATE, expected_sha, owner)
-    mounts = json.loads(docker_run(["inspect", "--format", "{{json .Mounts}}", CONTAINER]))
-    command = json.loads(docker_run(["inspect", "--format", "{{json .Config.Cmd}}", CONTAINER]))
+    mounts = json.loads(docker_run(["inspect", "--format", "{{json .Mounts}}", container]))
+    command = json.loads(docker_run(["inspect", "--format", "{{json .Config.Cmd}}", container]))
     config = selected_config(mounts, command, managed)
-    config_bytes = docker_run(["exec", "--user", "1000:1000", CONTAINER, "cat", config])
+    config_bytes = docker_run(["exec", "--user", "1000:1000", container, "cat", config])
     if not re.search(rb"(?m)^\s*import /etc/caddy/managed/\*\.caddy\s*$", config_bytes):
         raise IngressTransactionError("Selected Caddy configuration does not import managed routes")
     target = managed / TARGET
@@ -86,7 +87,7 @@ def run_under_lease(lease, expected_sha, *, runtime=RUNTIME, managed=MANAGED,
     expected_target = hashlib.sha256(before).hexdigest() if before is not None else None
     # This prevents a file bind or wrong directory from passing a host-only check.
     try:
-        inside = docker_run(["exec", "--user", "1000:1000", CONTAINER, "cat", "/etc/caddy/managed/" + TARGET])
+        inside = docker_run(["exec", "--user", "1000:1000", container, "cat", "/etc/caddy/managed/" + TARGET])
     except subprocess.CalledProcessError:
         inside = None
     if inside != before:
@@ -95,7 +96,7 @@ def run_under_lease(lease, expected_sha, *, runtime=RUNTIME, managed=MANAGED,
     def validate_and_reload():
         for verb in ("validate", "reload"):
             lease.recheck()
-            docker_run(["exec", "--user", "1000:1000", CONTAINER, "caddy", verb,
+            docker_run(["exec", "--user", "1000:1000", container, "caddy", verb,
                         "--config", config, "--adapter", "caddyfile"])
     return replace_under_lease(lease, target, data, expected_target, validate_and_reload, owner=owner)
 
@@ -107,7 +108,14 @@ def main():
         raise SystemExit("Expected reviewed candidate SHA-256 and numeric run-attempt ID")
     candidate_runtime = RUNTIME / ".ingress-candidates" / sys.argv[2]
     with ingress_lock() as lease:
-        digest = run_under_lease(lease, sys.argv[1], runtime=candidate_runtime)
+        selected = read_selection()
+        def selected_docker(arguments):
+            lease.recheck()
+            if read_selection() != selected:
+                raise IngressTransactionError('Ingress owner changed during website transaction')
+            return docker(arguments)
+        digest = run_under_lease(lease, sys.argv[1], runtime=candidate_runtime,
+                                 docker_run=selected_docker, container=selected[1])
     print(json.dumps({"service": "website-staging", "sha256": digest, "status": "reloaded"}))
 
 

@@ -19,11 +19,13 @@ from identity_ingress_transaction import IngressTransactionError
 from caddy_bundle_transaction import BundleItem, apply_bundle_under_lease
 from website_ingress_writer import incumbent, selected_config
 from axxium_identity_candidate import candidate as identity_candidate
+from ingress_owner import read_selection
 
 RUNTIME = Path('/srv/open-hax/services/caddy')
 MANAGED = Path('/srv/open-hax/state/caddy/managed')
 JOURNALS = Path('/srv/open-hax/state/caddy/ingress-transactions')
 CONTAINER = 'caddy-caddy-1'
+PROJECT = 'caddy'
 FILES = ('Caddyfile', 'compose.yaml', 'verify.sh', 'env.template', '.env')
 STAGE_FILES = ('Caddyfile', 'compose.yaml', 'verify.sh', 'env.template', '.env')
 
@@ -76,7 +78,7 @@ def capture(runtime, managed, owner, inspect):
     if config != '/etc/caddy/identity-ingress/Caddyfile':
         raise IngressTransactionError('Caddy must already use the approved directory-mounted configuration')
     mounts = [m for m in container['Mounts'] if m.get('Destination') == '/etc/caddy/identity-ingress']
-    config_dir = runtime / 'identity-ingress'
+    config_dir = managed.parent / 'identity-ingress'
     if len(mounts) != 1 or mounts[0].get('Source') != str(config_dir) or mounts[0].get('RW') is not False:
         raise IngressTransactionError('Caddy identity directory mount differs')
     files['identity-ingress/Caddyfile'] = sha(read_file(config_dir / 'Caddyfile', owner))
@@ -116,7 +118,7 @@ def run_transaction(lease, *, runtime, managed, journals, stage, owner, inspect,
     lease.recheck()
     prepare(baseline['image'])
     items = [BundleItem(runtime / name, values[name], baseline['files'][name]) for name in FILES]
-    items.append(BundleItem(runtime / 'identity-ingress/Caddyfile', values['Caddyfile'],
+    items.append(BundleItem(managed.parent / 'identity-ingress/Caddyfile', values['Caddyfile'],
                             baseline['files']['identity-ingress/Caddyfile']))
     journal = journals / stage.name
     journal.mkdir(mode=0o700)
@@ -154,8 +156,18 @@ def prepare(image):
     # A fixed pre-provisioned override avoids generating live unjournaled files.
     if read_file(override, os.getuid()) != ('services:\n  caddy:\n    image: ' + image + '\n').encode():
         raise IngressTransactionError('Pinned-image override is absent or does not match the incumbent image')
+    # verify.sh independently uses the host-installed selector. Qualify it
+    # before replacing any file so a missing or stale installation cannot make
+    # both forward verification and rollback verification fail afterwards.
+    for path in (Path('/usr/local/lib/open-hax/ingress_owner.py'),
+                 Path('/usr/local/lib/open-hax/identity_ingress_transaction.py')):
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise IngressTransactionError('Installed ingress selector is not root-owned and immutable to deploy')
+    if command(['python3', '/usr/local/lib/open-hax/ingress_owner.py', 'project']).decode().strip() != PROJECT:
+        raise IngressTransactionError('Installed ingress selector disagrees with selected owner')
     inside = command(['docker', 'exec', '--user', '1000:1000', CONTAINER, 'cat', '/etc/caddy/identity-ingress/Caddyfile'])
-    if inside != read_file(RUNTIME / 'identity-ingress/Caddyfile', os.getuid()):
+    if inside != read_file(MANAGED.parent / 'identity-ingress/Caddyfile', os.getuid()):
         raise IngressTransactionError('Caddy configuration differs from its mounted host file')
 
 
@@ -163,7 +175,7 @@ def recreate(image):
     override = RUNTIME / '.ingress-pinned-image.yaml'
     if read_file(override, os.getuid()) != ('services:\n  caddy:\n    image: ' + image + '\n').encode():
         raise IngressTransactionError('Pinned-image override changed')
-    command(['docker', 'compose', '--project-name', 'caddy', '--env-file', '.env',
+    command(['docker', 'compose', '--project-name', PROJECT, '--env-file', '.env',
              '-f', 'compose.yaml', '-f', override.name, 'up', '-d', '--no-deps',
              '--pull', 'never', '--force-recreate', '--wait', '--wait-timeout', '90', 'caddy'], cwd=RUNTIME)
 
@@ -174,11 +186,12 @@ def verify(image, require_oidc):
         raise IngressTransactionError('Caddy recreation did not preserve image, identity, or running state')
     capture(RUNTIME, MANAGED, os.getuid(), lambda: container)
     inside = command(['docker', 'exec', '--user', '1000:1000', CONTAINER, 'cat', '/etc/caddy/identity-ingress/Caddyfile'])
-    if inside != read_file(RUNTIME / 'identity-ingress/Caddyfile', os.getuid()):
+    if inside != read_file(MANAGED.parent / 'identity-ingress/Caddyfile', os.getuid()):
         raise IngressTransactionError('Recreated Caddy mounted the wrong configuration')
     command(['docker', 'exec', '--user', '1000:1000', CONTAINER, 'caddy', 'validate', '--config',
              '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile'])
-    command(['bash', '-c', 'set -euo pipefail; set -a; . ./.env; set +a; ./verify.sh'], cwd=RUNTIME)
+    command(['bash', '-c', 'set -euo pipefail; set -a; . ./.env; set +a; CADDY_COMPOSE_PROJECT="$1" ./verify.sh',
+             'caddy-verify', PROJECT], cwd=RUNTIME)
     if require_oidc:
         discovery = command(['curl', '--fail', '--silent', '--show-error', '--max-time', '15',
                              '--resolve', 'axxium.promethean.rest:443:127.0.0.1',
@@ -188,11 +201,14 @@ def verify(image, require_oidc):
 
 
 def main():
+    global PROJECT, CONTAINER
     if len(sys.argv) != 3 or sys.argv[1] not in ('capture', 'apply') or not re.fullmatch(r'[0-9]+-[0-9]+', sys.argv[2]):
         raise SystemExit('Expected capture|apply and numeric run-attempt ID')
     stage = RUNTIME / '.ingress-candidates' / sys.argv[2]
     owner = os.getuid()
     with ingress_lock() as lease:
+        selected = read_selection()
+        PROJECT, CONTAINER = selected
         if sys.argv[1] == 'capture':
             private_dir(stage, owner)
             refuse_pending(JOURNALS, owner)
@@ -205,9 +221,17 @@ def main():
                 os.fsync(output.fileno())
             print('Caddy baseline captured')
         else:
+            def guarded_prepare(image):
+                if read_selection() != selected:
+                    raise IngressTransactionError('Ingress owner changed during Caddy transaction')
+                prepare(image)
+            def guarded_recreate(image):
+                if read_selection() != selected:
+                    raise IngressTransactionError('Ingress owner changed during Caddy transaction')
+                recreate(image)
             run_transaction(lease, runtime=RUNTIME, managed=MANAGED, journals=JOURNALS,
-                            stage=stage, owner=owner, inspect=inspect_container, prepare=prepare,
-                            recreate=recreate, verify=verify)
+                            stage=stage, owner=owner, inspect=inspect_container, prepare=guarded_prepare,
+                            recreate=guarded_recreate, verify=verify)
             print('Caddy transaction applied and verified')
 
 
