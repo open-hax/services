@@ -8,8 +8,8 @@ not proof its image was built from that Git revision. Later Cloud Cuckoo changes
 including exact harness callbacks, resource-boundary forwarding, retryable
 revocation and serialized code exchange, are merged through
 `a2433edbe678ddd3ae042053e996737fd4c2eeb4` but are not yet deployed to the
-production gateway. Source-revision image labels are prepared in Cloud Cuckoo
-PR #6; that image change must be merged before selecting a new release artifact.
+production gateway. Source-revision image labels are defined in Cloud Cuckoo
+PR #6; select a release containing that change before preparing a new artifact.
 
 This directory describes placement, processes and rollback; the package wraps
 the pinned official Google bridge, and the browser must run on Stealth.
