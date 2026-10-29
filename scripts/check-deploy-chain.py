@@ -36,8 +36,8 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     """Keep the isolated phase graph fail closed without authorizing new callers."""
     errors = []
     scope = entry["on"]["workflow_dispatch"]["inputs"].get("scope", {})
-    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx"]:
-        errors.append("manual scope must retain stack as default and offer website")
+    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx", "axxium"]:
+        errors.append("manual scope must retain stack as default and only offer reviewed service scopes")
     jobs = chain["jobs"]
     if chain["jobs"]["build-proxx"].get("if") != "inputs.scope == 'stack' || inputs.scope == 'proxx'":
         errors.append("Proxx builds must be limited to stack and proxx scopes")

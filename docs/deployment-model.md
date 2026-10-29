@@ -55,6 +55,16 @@ lane to fall back to, and adding one is a change to this document first.
 it to GHCR; the host pulls it. Nothing is built on the host and no working tree
 is copied to it. A service that cannot be expressed as an image does not deploy.
 
+The fixed Axxium first-adoption scope promotes the exact native CI image already
+admitted to staging on the same host. Its collector verifies the original build
+run, immutable controller, source, unexpired artifact and complete OCI archive
+against the actual image ID before host capability is granted. It does not build,
+load or retag application source on the host. Only the accepted controller and
+service definitions are delivered through the same Deploy Stack queue. This
+specific reuse of the staged image preserves its original bytes; subsequent
+services continue to use the GHCR delivery above. The ordinary production
+qualification and required service health gate remain enforced.
+
 ## 2. The service descriptor
 
 A service is one directory under `digitalocean/services/<name>/`, one entry in

@@ -50,6 +50,24 @@ The former Promethean VPS implementation is retired. Its non-secret evidence is
 preserved in [`docs/history/promethean-vps.md`](docs/history/promethean-vps.md)
 and `docs/reports/`; it is not an alternative runtime.
 
+## Fixed Axxium production adoption
+
+The `axxium` scope uses the existing Deploy Stack entry point and production-host
+queue. It promotes only the immutable, natively verified staging image described
+in [`minimal-production-plan.json`](digitalocean/services/axxium/minimal-production-plan.json).
+See [the bounded adoption runbook](docs/environments/axxium-minimal-production.md)
+for exact backup, maintenance, compatibility, ingress and rollback behavior.
+The incumbent private environment, application database and PDS are preserved.
+A private binding selects the previously verified existing human for the Colab
+client; it never creates a human account.
+
+The normal production qualification remains required before SSH: integration,
+e2e and four disjoint batches of at least 250 test-killed mutations for that
+source. The current candidate has staging custody, but no such qualification
+receipt; ordinary dispatch therefore refuses. No health result or pilot report
+supplies an exception. This first adoption is a fixed transition, not a generic
+Axxium environment renderer or another dispatch lane.
+
 ## Operational contracts
 
 - [`docs/dev-instances.md`](docs/dev-instances.md) — host-resident development

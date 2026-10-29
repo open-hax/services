@@ -1,0 +1,58 @@
+# Descriptor under docs/deployment-model.md section 2. The one-use adoption
+# transaction preserves the host-owned base; it does not render these files.
+version: 1
+name: axxium
+kind: app
+sourceRepo: open-hax/axxium
+sourceRef: 58234df96ca86507e6cdd87f65aaa9ab35621415
+
+image:
+  name: promethean-axxium
+  # The native Axxium staging producer built this image in CI. The fixed plan
+  # binds its archive and digest; production requires it already on the host.
+  build: services:.github/workflows/deploy-service-environment.yml@a2aee9a01a51ef1481dcc6d1071104f449dcf6bd
+  toolchain: [node, java, docker]
+  output: images.tar
+  digest: sha256:6aed20a3439dc29c6bcb43cf3f1e0bf41f65a72734975eb2db922898c45e4652
+
+serve:
+  internalPort: 8787
+  loopbackPort: 8787
+  networkAlias: axxium
+
+ingress:
+  hostname: axxium.promethean.rest
+  # The adopted incumbent block uses this literal host, not an environment
+  # placeholder. The controller binds its exact bytes before the narrow edit.
+  caddySite: "axxium.promethean.rest, *.axxium.promethean.rest"
+  apiPaths: [/, /health, /portal/*, /api/auth/*, /api/actors*, /api/entities*, /api/atproto/*, /oidc/*]
+  fallback: axxium-pds:3000
+
+state:
+  root: /srv/open-hax/state/axxium
+  database: postgres
+  pds: pds
+  oidc: oidc
+
+phases: [staging, production]
+
+deployment:
+  controller: scripts/axxium_minimal_release.py
+  plan: digitalocean/services/axxium/minimal-production-plan.json
+  base: existing-host-owned-compose
+  genericRenderer: false
+  preserve: [private-environment, database, pds, google-client, networks]
+  qualification: environment_policy.production_admission
+
+verify:
+  required: true
+  probes:
+    - admitted-application-image
+    - preserved-dependency-identities
+    - private-and-public-identity-health
+    - atproto-client-metadata
+    - preserved-pds-health-and-did
+    - proxy-origin-private-oidc-discovery
+    - public-oidc-issuer-s256-endpoints
+    - public-signing-keys
+    - unauthenticated-introspection-denied

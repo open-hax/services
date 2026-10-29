@@ -9,17 +9,21 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: Stack deployment or isolated website staging and promotion
+        description: Stack, website, Proxx, or the fixed qualified Axxium adoption
         required: false
         default: stack
         type: choice
-        options: [stack, website, proxx]
+        options: [stack, website, proxx, axxium]
       proxx_ref:
         description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
         type: string
       knoxx_ref:
         description: Immutable merged Knoxx commit required for stack scope
+        required: false
+        type: string
+      axxium_ref:
+        description: Immutable staged Axxium source required for its fixed production adoption plan
         required: false
         type: string
       openplanner_ref:
@@ -36,7 +40,7 @@ on:
         required: false
         type: string
       include_ingress:
-        description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
+        description: Stack-only Caddy deployment. Axxium uses its fixed OIDC route transaction.
         required: false
         default: true
         type: boolean
@@ -52,6 +56,8 @@ on:
 # and GitHub refuses to start the run on the mismatch.
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
   packages: write
 
 jobs:
@@ -67,6 +73,8 @@ jobs:
         env:
           PROXX_SHA: ${{ inputs.proxx_ref }}
           KNOXX_SHA: ${{ inputs.knoxx_ref }}
+          AXXIUM_SHA: ${{ inputs.axxium_ref }}
+          CALLER_REF: ${{ github.ref }}
           EVENT_NAME: ${{ github.event_name }}
           DEPLOY_SCOPE: ${{ inputs.scope || 'stack' }}
           INCLUDE_WEBSITE: ${{ inputs.include_website }}
@@ -76,7 +84,7 @@ jobs:
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             case "$DEPLOY_SCOPE" in
-              stack|website|proxx) ;;
+              stack|website|proxx|axxium) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
             esac
             if [ -n "$WEBSITE_IMAGE" ] && [ "$DEPLOY_SCOPE" != website ]; then
@@ -98,6 +106,12 @@ jobs:
               fi
               if [ -n "$PROXX_SHA" ] && ! [[ "$PROXX_SHA" =~ ^[0-9a-f]{40}$ ]]; then
                 echo '::error::Proxx scope requires an immutable source SHA.' >&2
+                exit 2
+              fi
+            fi
+            if [ "$DEPLOY_SCOPE" = axxium ]; then
+              if [ "$CALLER_REF" != refs/heads/main ] || [ "$INCLUDE_WEBSITE" = true ] || ! [[ "${AXXIUM_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+                echo '::error::Axxium requires the main controller, its immutable staged source and no website opt-in.' >&2
                 exit 2
               fi
             fi
@@ -127,6 +141,7 @@ jobs:
       # dispatch may deliberately override this reviewed immutable default.
       proxx_ref: ${{ inputs.proxx_ref || '3ed25eec53a5bed6dc224f108323ea5d20420a22' }}
       knoxx_ref: ${{ inputs.knoxx_ref }}
+      axxium_ref: ${{ inputs.axxium_ref }}
       # Keep the production default in one place. Nested reusable workflows
       # require this input instead of carrying independent, drift-prone pins.
       openplanner_ref: ${{ inputs.openplanner_ref || '07085d6557b75834ce6f50e6c54b8ca47e1c7c08' }}
