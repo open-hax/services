@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import unittest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 BASE = ROOT / 'digitalocean/environments/axxium.compose.yaml'
@@ -33,12 +34,27 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         mount = [v for v in app['volumes'] if v['target'] == '/run/axxium/oidc']
         self.assertEqual(len(mount), 1)
         self.assertTrue(mount[0]['read_only'])
-        self.assertFalse(mount[0]['bind']['create_host_path'])
+        source = yaml.safe_load(STAGING.read_text())
+        source_mount = next(v for v in source['services']['axxium']['volumes']
+                            if isinstance(v, dict) and v['target'] == '/run/axxium/oidc')
+        self.assertIs(source_mount['bind']['create_host_path'], False)
+        self.assertIs(mount[0]['bind'].get('create_host_path', False), False)
         app['volumes'].remove(mount[0])
         self.assertEqual(staging, base)
 
     def test_missing_proxy_refuses_render(self):
         self.assertNotEqual(self.render(STAGING, trust=False).returncode, 0)
+
+    def test_both_staging_templates_allow_maximum_startup_shutdown_bound(self):
+        # Axxium's maximum statement timeout is 300s; shutdown during startup
+        # permits 2 * timeout + 5s, so Compose must allow more than 605s.
+        for path in (BASE, STAGING):
+            with self.subTest(template=path.name):
+                result = self.render(path)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                services = json.loads(result.stdout)['services']
+                self.assertEqual(services['axxium']['stop_grace_period'], '10m10s')
+                self.assertNotIn('stop_grace_period', services['database'])
 
 if __name__ == '__main__':
     unittest.main()

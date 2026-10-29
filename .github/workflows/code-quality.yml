@@ -72,8 +72,8 @@ jobs:
 
       - name: Test service environment admission and receiver boundaries
         run: python3 -m unittest discover -s scripts/tests -p 'test_environment*.py'
-      - name: Test Axxium production admission and environment boundaries
-        run: python3 -m unittest discover -s scripts/tests -p 'test_axxium_production_*.py'
+      - name: Test Axxium production and staging environment boundaries
+        run: python3 -m unittest discover -s scripts/tests -p 'test_axxium*.py'
       - name: Test website phase isolation and serving gates
         run: python scripts/test_website_deployment.py
 

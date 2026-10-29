@@ -35,6 +35,8 @@ class AxxiumProductionTopologyTest(unittest.TestCase):
         self.assertEqual(old['networks'], new['networks'])
         app = new['services']['axxium']
         self.assertEqual(app.pop('user'), '1000:1000')
+        # 610s exceeds Axxium's maximum startup shutdown bound of 605s.
+        self.assertEqual(app.pop('stop_grace_period'), '10m10s')
         self.assertEqual(app['environment'].pop('AXXIUM_TRUST_PROXY'), '')
         self.assertEqual(app['environment'].pop('AXXIUM_OIDC_CONFIG_FILE'), '')
         self.assertEqual(old['services']['axxium'], app)

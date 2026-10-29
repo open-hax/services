@@ -25,6 +25,8 @@ services:
     user: "1000:1000"
     image: ${AXXIUM_IMAGE:?AXXIUM_IMAGE must be set}
     restart: unless-stopped
+    # Covers startup shutdown: 2 * 300s maximum statement timeout + 5s.
+    stop_grace_period: 610s
     depends_on:
       axxium-db:
         condition: service_healthy
