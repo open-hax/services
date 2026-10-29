@@ -27,6 +27,23 @@ class AxxiumProductionWorkflowTest(unittest.TestCase):
         self.chain = workflow('deploy-stack-chain.yml')
         self.child = workflow('deploy-axxium-production.yml')
 
+    def test_legacy_renderer_refuses_protected_axxium_environment(self):
+        # Production identity and PDS credentials belong to the enrolled host
+        # operator environment, never an independently rendered GitHub file.
+        # Execute the real legacy admission prefix and require the explicit
+        # missing-template refusal rather than accepting an arbitrary failure.
+        legacy = workflow('deploy-digitalocean.yml')
+        step = next(s for s in legacy['jobs']['deploy']['steps'] if s.get('id') == 'contract')
+        with tempfile.TemporaryDirectory() as directory:
+            env = {**os.environ, 'SERVICE': 'axxium', 'DEPLOY_ENVIRONMENT': 'production',
+                   'CALLER_HOLDS_PRODUCTION_HOST_LOCK': 'true',
+                   'GITHUB_OUTPUT': str(Path(directory) / 'github-output')}
+            result = subprocess.run(['bash', '-c', step['run']], cwd=ROOT, env=env,
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('service axxium is missing digitalocean/services/axxium/env.template', result.stderr)
+            self.assertFalse(Path(env['GITHUB_OUTPUT']).exists())
+
     def test_guarded_two_phase_caller_and_mutated_controls(self):
         self.assertEqual([], path_errors(self.entry, self.chain, self.child))
         for change in ('lock', 'scope', 'dispatch', 'build', 'host', 'recheck'):

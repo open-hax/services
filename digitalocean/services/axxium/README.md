@@ -7,6 +7,16 @@ application settings are checked against the non-secret configuration observed
 on the production host on 2026-10-28. The overlay deliberately refuses to
 create a missing host authority directory.
 
+Production credentials and existing runtime settings belong to the private
+host operator environment. The protected receiver must preserve and verify
+them when it is qualified and enrolled; this repository must not render
+replacement Axxium or PDS credentials from GitHub secrets. There is
+intentionally no `env.template` for the generic DigitalOcean renderer: its
+required-file admission refuses Axxium
+before it can render an environment or contact a deployment host. The protected
+caller and receiver are the intended sole production deployment path for this
+topology; the receiver and enrollment prerequisites below remain outstanding.
+
 When `AXXIUM_OIDC_CONFIG_FILE` is set, `verify.sh` additionally requires local
 OIDC discovery to report the production issuer and S256. This does not prove an
 external consent, token exchange or user-facing tool call.
