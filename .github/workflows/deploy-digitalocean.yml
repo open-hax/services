@@ -105,6 +105,10 @@ jobs:
             echo 'Axxium requires its qualified fixed production workflow; generic deployment cannot render its private environment.' >&2
             exit 2
           fi
+          if [ "$SERVICE" = colab-mcp ]; then
+            echo 'Colab phases are not enrolled; generic deployment cannot activate this inventory.' >&2
+            exit 2
+          fi
           . digitalocean/lib/host-contract.sh
           case "$DEPLOY_ENVIRONMENT:$SERVICE" in
             production:*) ;;

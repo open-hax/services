@@ -1,0 +1,5 @@
+services:
+  backend:
+    environment:
+      MCP_ENABLED: "true"
+      COLAB_MCP_TOKEN: ${COLAB_MCP_TOKEN:?Load from private bridge-token file}
