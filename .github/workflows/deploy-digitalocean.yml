@@ -535,7 +535,7 @@ jobs:
           # changed config file leaves the old container running untouched.
           # Host-local recovery snapshots are not Services-owned definitions.
           # Exclusion also protects them from --delete without traversing them.
-          rsync -az "${definition_rsync[@]}" --delete --itemize-changes --exclude "/backups/" --exclude '.env' --exclude 'contracts' -e ssh \
+          rsync -az "${definition_rsync[@]}" --delete --itemize-changes --exclude "/backups/" --exclude '/.ingress-candidates/' --exclude '.env' --exclude 'contracts' -e ssh \
             "${definition_dir}/" "open-hax-target:${RUNTIME_PATH}/" | tee rsync.out
           # Accumulated, then written once at the end of this step. Two writes
           # to the same GITHUB_OUTPUT key would resolve by last-write-wins,
@@ -588,45 +588,33 @@ jobs:
         run: |
           set -euo pipefail
           snippet=digitalocean/services/caddy/managed/website-staging.caddy
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          test "$RUNTIME_PATH" = /srv/open-hax/services/staging/website-staging
+          test "$INGRESS_RUNTIME" = /srv/open-hax/services/caddy
+          test "$INGRESS_STATE" = /srv/open-hax/state/caddy/managed
+          run_key="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          staged="$RUNTIME_PATH/.ingress-candidates/$run_key"
           snippet_sha=$(sha256sum "$snippet" | awk '{print $1}')
-          scp "$snippet" "open-hax-target:${RUNTIME_PATH}/website-staging.caddy.candidate"
-          ssh open-hax-target "bash -euo pipefail -s -- '$RUNTIME_PATH' '$INGRESS_RUNTIME' '$INGRESS_STATE' '$snippet_sha'" <<'REMOTE'
+          lease_sha=$(sha256sum scripts/ingress_lock.py | awk '{print $1}')
+          transaction_sha=$(sha256sum scripts/identity_ingress_transaction.py | awk '{print $1}')
+          writer_sha=$(sha256sum scripts/website_ingress_writer.py | awk '{print $1}')
+          # A run gets a new staging directory. Replays never replace a prior
+          # candidate, and the uploaded files are verified before execution.
+          # The substituted path components are fixed paths and numeric IDs.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "mkdir -p '$RUNTIME_PATH/.ingress-candidates' && mkdir -m 700 '$staged'"
+          scp "$snippet" "open-hax-target:$staged/website-staging.caddy.candidate"
+          scp scripts/ingress_lock.py scripts/identity_ingress_transaction.py scripts/website_ingress_writer.py "open-hax-target:$staged/"
+          # Arguments are fixed paths, numeric IDs and sha256sum-produced hex.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "bash -euo pipefail -s -- '$staged' '$run_key' '$snippet_sha' '$lease_sha' '$transaction_sha' '$writer_sha'" <<'REMOTE'
           {
-          runtime=$1; ingress_runtime=$2; managed=$3; expected_sha=$4
-          candidate="$runtime/website-staging.caddy.candidate"
-          test "$(sha256sum "$candidate" | awk '{print $1}')" = "$expected_sha"
-          container=$(docker compose --project-name caddy --env-file "$ingress_runtime/.env" \
-            -f "$ingress_runtime/compose.yaml" ps -q caddy </dev/null)
-          test -n "$container"
-          docker inspect --format '{{json .Mounts}}' "$container" | jq -e \
-            --arg source "$managed" 'any(.[]; .Source == $source and .Destination == "/etc/caddy/managed" and .RW == false)' >/dev/null
-          docker exec "$container" cat /etc/caddy/Caddyfile \
-            | grep -Eq '^import /etc/caddy/managed/\*\.caddy[[:space:]]*$'
-          test -d "$managed" && test -w "$managed"
-          target="$managed/website-staging.caddy"
-          backup=$(mktemp "$managed/.website-staging.rollback.XXXXXXXX")
-          trap 'rm -f "$backup" "$candidate"' EXIT
-          existed=false; committed=false
-          if [ -f "$target" ]; then cp "$target" "$backup"; existed=true; fi
-          rollback() {
-            status=$?
-            trap - EXIT
-            if [ "$committed" != true ]; then
-              if [ "$existed" = true ]; then mv -f "$backup" "$target"; else rm -f "$target"; fi
-              if ! timeout 30s docker exec "$container" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile \
-                || ! timeout 30s docker exec "$container" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile; then
-                echo 'staging ingress rollback could not reload the previous configuration' >&2
-                status=1
-              fi
-            fi
-            rm -f "$backup" "$candidate"
-            exit "$status"
-          }
-          trap rollback EXIT
-          install -m 644 "$candidate" "$target"
-          timeout 30s docker exec "$container" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-          timeout 30s docker exec "$container" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
-          committed=true
+          staged=$1; run_key=$2; snippet_sha=$3; lease_sha=$4; transaction_sha=$5; writer_sha=$6
+          cd "$staged"
+          chmod 644 website-staging.caddy.candidate ingress_lock.py identity_ingress_transaction.py website_ingress_writer.py
+          printf '%s  %s\n' "$snippet_sha" website-staging.caddy.candidate "$lease_sha" ingress_lock.py \
+            "$transaction_sha" identity_ingress_transaction.py "$writer_sha" website_ingress_writer.py | sha256sum -c -
+          python3 -B website_ingress_writer.py "$snippet_sha" "$run_key"
           } </dev/null
           REMOTE
 

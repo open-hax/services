@@ -648,56 +648,35 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
             self.assertIn("Existing Website images require the trusted main controller ref.", result.stderr)
             self.assertFalse(output.exists())
 
-    def test_staging_ingress_preserves_other_routes_and_rolls_back_failures(self):
+    def test_staging_ingress_invokes_verified_lease_writer(self):
         ingress = step("Install website staging ingress")
         self.assertEqual("inputs.service == 'website' && inputs.environment == 'staging'", ingress["if"])
-        command = ingress["run"].split("<<'REMOTE'\n", 1)[1].rsplit("\nREMOTE", 1)[0]
-        for mode in ("ok", "missing-import", "missing-mount", "backup-copy-failure", "validation-failure", "reload-failure"):
-            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
-                directory = Path(temporary)
-                runtime = directory / "runtime"
-                runtime.mkdir()
-                managed = directory / "managed"
-                managed.mkdir()
-                target = managed / "website-staging.caddy"
-                target.write_text("old\n")
-                sibling = managed / "federation.caddy"
-                sibling.write_text("preserved federation route\n")
-                candidate = runtime / "website-staging.caddy.candidate"
-                candidate.write_text("new staged route\n")
-                import hashlib
-                digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
-                binary = directory / "bin"
-                binary.mkdir()
-                if mode == "backup-copy-failure":
-                    self.write(binary / "cp", "#!/usr/bin/env bash\nexit 1\n")
-                self.write(binary / "docker", '''#!/usr/bin/env python3
-import json,os,sys
-from pathlib import Path
-a=sys.argv[1:]; mode=os.environ['MODE']; managed=Path(os.environ['MANAGED'])
-if a[0]=='compose': print('caddy-container')
-elif a[0]=='inspect': print(json.dumps([{'Source':'wrong' if mode=='missing-mount' else str(managed),'Destination':'/etc/caddy/managed','RW':False}]))
-elif 'cat' in a: print('no managed import' if mode=='missing-import' else 'import /etc/caddy/managed/*.caddy')
-elif 'caddy' in a:
- op=a[a.index('caddy')+1]
- with (managed/'calls.log').open('a') as f: f.write(op+'\\n')
- changed=(managed/'website-staging.caddy').read_text()!='old\\n'
- if changed and ((mode=='validation-failure' and op=='validate') or (mode=='reload-failure' and op=='reload')): sys.exit(1)
-else: sys.exit(1)
-''')
-                result = subprocess.run(["bash", "-euo", "pipefail", "-s", "--", str(runtime),
-                                         str(directory), str(managed), digest], input=command,
-                    env={**os.environ, "PATH": str(binary) + ":" + os.environ["PATH"], "MODE": mode, "MANAGED": str(managed)},
-                    text=True, capture_output=True)
-                self.assertEqual(mode == "ok", result.returncode == 0, result.stdout + result.stderr)
-                self.assertEqual("new staged route\n" if mode == "ok" else "old\n", target.read_text())
-                self.assertEqual("preserved federation route\n", sibling.read_text())
-                if mode in ("validation-failure", "reload-failure"):
-                    self.assertTrue((managed / "calls.log").read_text().endswith("validate\nreload\n"))
-                if mode == "backup-copy-failure":
-                    self.assertFalse(candidate.exists())
-                    self.assertEqual([], list(managed.glob(".website-staging.rollback.*")))
-                    self.assertFalse((managed / "calls.log").exists())
+        command = ingress["run"]
+        self.assertIn("sha256sum -c -", command)
+        self.assertIn("python3 -B website_ingress_writer.py", command)
+        self.assertIn(".ingress-candidates/$run_key", command)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            binary = directory / "bin"
+            binary.mkdir()
+            log = directory / "calls"
+            self.write(binary / "ssh", "#!/usr/bin/env bash\nprintf 'ssh\n' >> \"$CALLS\"\ncat >/dev/null\n")
+            self.write(binary / "scp", "#!/usr/bin/env bash\nprintf 'scp\n' >> \"$CALLS\"\n")
+            environment = {**os.environ, "PATH": str(binary) + ":" + os.environ["PATH"], "CALLS": str(log),
+                           "GITHUB_RUN_ID": "12345", "GITHUB_RUN_ATTEMPT": "1",
+                           "RUNTIME_PATH": "/srv/open-hax/services/staging/website-staging",
+                           "INGRESS_RUNTIME": "/srv/open-hax/services/caddy",
+                           "INGRESS_STATE": "/srv/open-hax/state/caddy/managed"}
+            result = subprocess.run(["bash", "-euo", "pipefail", "-c", command], cwd=ROOT,
+                                    env=environment, text=True, capture_output=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(log.read_text().splitlines(), ["ssh", "scp", "scp", "ssh"])
+            log.unlink()
+            environment["GITHUB_RUN_ID"] = "123;false"
+            result = subprocess.run(["bash", "-euo", "pipefail", "-c", command], cwd=ROOT,
+                                    env=environment, text=True, capture_output=True)
+            self.assertNotEqual(0, result.returncode)
+            self.assertFalse(log.exists())
 
     def test_verifier_requires_digest_alias_real_artifact_absence_and_stage_tls(self):
         for mode, success in (("ok", True), ("wrong-image", False), ("wrong-alias", False), ("bare-alias", False),

@@ -1,0 +1,27 @@
+# REVIEW CANDIDATE ONLY. Do not select this file until the Services-owned
+# production transaction has been qualified and can update both projects.
+services:
+  caddy:
+    # A directory bind lets the reviewed controller replace Caddyfile
+    # atomically without leaving an old single-file bind inode in the process.
+    command: [caddy, run, --config, /etc/caddy/identity-ingress/Caddyfile, --adapter, caddyfile]
+    healthcheck:
+      test: [CMD, caddy, validate, --config, /etc/caddy/identity-ingress/Caddyfile, --adapter, caddyfile]
+    volumes:
+      - type: bind
+        source: ${CADDY_STATE_PATH}/identity-ingress
+        target: /etc/caddy/identity-ingress
+        read_only: true
+    networks:
+      axxium-identity-ingress:
+        ipv4_address: 172.30.115.2
+
+networks:
+  axxium-identity-ingress:
+    name: axxium-identity-ingress
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.115.0/29
+          gateway: 172.30.115.1

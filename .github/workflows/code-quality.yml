@@ -75,6 +75,15 @@ jobs:
       - name: Test website phase isolation and serving gates
         run: python scripts/test_website_deployment.py
 
+      - name: Test proposed shared ingress lease and transactions
+        env:
+          PYTHONPATH: scripts
+        run: |
+          python -m unittest scripts.tests.test_identity_ingress_transaction \
+            scripts.tests.test_caddy_bundle_transaction \
+            scripts.tests.test_website_ingress_writer \
+            scripts.tests.test_axxium_identity_candidate
+
       - name: Test exact Website owner-decision admission
         run: python scripts/test-website-owner-decision.py
 

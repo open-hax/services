@@ -1,0 +1,15 @@
+# REVIEW CANDIDATE ONLY. Combine with the qualified production Axxium topology
+# and OIDC overlay. This overlay does not select an image or create credentials.
+services:
+  axxium:
+    environment:
+      AXXIUM_TRUST_PROXY: 172.30.115.2
+    networks:
+      axxium-identity-ingress:
+        ipv4_address: 172.30.115.3
+        aliases: [axxium-identity-ingress]
+
+networks:
+  axxium-identity-ingress:
+    name: axxium-identity-ingress
+    external: true
