@@ -1,0 +1,14 @@
+[Unit]
+Description=Review-candidate Caddy bootstrap recovery
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+ConditionPathExists=/etc/open-hax/ingress/bootstrap-pending
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/open-hax/caddy_host_recovery.py --boot
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

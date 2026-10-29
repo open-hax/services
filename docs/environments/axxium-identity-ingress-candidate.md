@@ -76,7 +76,8 @@ it checks the Caddy mount and its selected configuration, compares the file
 seen inside the container with the host, verifies candidate bytes, and reloads
 or conditionally rolls back while retaining the lease. First install and restore
 to absence are covered. This branch wires the website writer only in candidate
-workflow source; it is not adopted, and the full Caddy writer is not wired.
+workflow source; it is not adopted. A restricted Caddy writer is also wired in
+candidate workflow source and refuses production's current root/file-bind setup.
 `/run/open-hax/ingress/transaction.lock` is not currently provisioned.
 Root-owned, persistent-across-service-restart tmpfiles
 provisioning and a trusted fixed dispatcher are prerequisites. Preserve a
@@ -89,9 +90,9 @@ environment updates and cannot safely perform the first network migration.
 it validates every baseline under the same lease, retains private before-images
 and a crash-persistent pending marker, commits the selected files, invokes a
 fixed apply/health callback, and conditionally restores the entire bundle on
-failure. It refuses to overwrite a newer non-cooperating write. Its dispatcher,
-image pinning, Compose execution and workflow integration are not implemented;
-the source neither changes host state nor establishes the production boundary.
+failure. It refuses to overwrite a newer non-cooperating write. The candidate
+dispatcher pins an image and invokes Compose and health verification, but does
+not implement the initial nonroot adoption or establish the production boundary.
 
 ## Rollback boundary
 
@@ -177,8 +178,8 @@ configuration without serializing environment values. It requires explicit
 preflight evidence of safe Compose adoption before stopping the incumbent.
 It writes an intent marker before every effect and requires verification of the
 same incumbent container after rollback; interrupted or failed recovery leaves
-the journal for an external recovery controller. This is a driver contract, not
-a production Docker driver or an automatic recovery service.
+the journal for a recovery controller. The boot driver and systemd unit below
+remain fail-closed review candidates and are not installed.
 
 The isolated TLS/proxy fixture validates a nonroot candidate before transfer,
 copies and compares the stopped incumbent's data and config trees (including
@@ -188,8 +189,8 @@ separate Compose fixture proves that two containers can carry the same service
 ownership labels; matching labels alone cannot qualify an adoption. Neither
 fixture proves production TLS data, multi-network endpoint replay, Compose
 ownership adoption, root-run incumbent rollback or crash recovery. A fixed-path
-host driver implementing those operations and a tested recovery controller are
-still required before this candidate can be activated.
+host driver and recovery controller qualified against the real topology remain
+required before this candidate can be activated.
 
 An additional fixture uses separate legacy and candidate Compose projects: it
 confirms each has one distinct service owner, retains the stopped original,
@@ -203,8 +204,8 @@ dependency under `/usr/local/lib/open-hax/` require root-owned provisioning.
 The bootstrap contract requires marking the selector transitioning before
 stopping the old service and settling it only after verified adoption or
 verified same-container rollback. Atomic transition and verified settlement
-functions are implemented; a production host driver and the live verification
-callbacks needed to operate or recover them are not implemented. Existing
+functions are implemented; the full live verification callbacks needed to
+operate or recover them are not qualified. Existing
 uncoordinated old-project deploy paths must be retired or blocked before any
 cutover. Separate projects alone do not provide crash recovery, preserve the
 dev firewall peer, or qualify the production multi-network and TLS state.
@@ -216,13 +217,24 @@ journals persist the nonsecret incumbent identity, image, endpoint topology,
 and inspected-configuration fingerprint before any effects. Recovery rechecks
 that plan and never rolls back an already recorded successful adoption just
 because guard cleanup failed. The shared guard is not a substitute for a host
-Docker driver or for an enforced old-writer access boundary.
+fully qualified Docker driver or for an enforced old-writer access boundary.
 
 `provision_ingress_owner.py` is a non-activated candidate for the initial
 selector and lock. It requires pre-existing administrator-controlled control
 directories, verifies the incumbent topology, and creates files exclusively;
 re-running it never replaces an existing lock inode. This does not install the
-selector helper, provision durable directories across reboot, or restrict
+selector helper, install the candidate tmpfiles definitions, or restrict
 earlier deployment workflows. In particular, a stale workflow with the existing
 deploy account's direct Docker and filesystem access can bypass this new source
 code. That access boundary must be addressed and tested before activation.
+
+`caddy_host_recovery.py` now contains a fixed-path recovery candidate and an
+uninstalled boot unit. It validates the retained container's static Docker
+fingerprint and saved aliases, reconnects the daemon-assigned open network
+without trying to claim its old dynamic address, restores the fixed dev peer,
+and limits candidate removal to the expected image, owner, ports and mounts.
+The boundary verifier deliberately always refuses, and full incumbent-route and
+successful-adoption verification deliberately refuse. It cannot currently
+activate, automatically recover, or clear a production guard. Its Docker actions
+are unit-tested against a fake daemon, not a production host. The alternate-root
+tmpfiles fixture verifies that repeated provisioning preserves the lock inode.

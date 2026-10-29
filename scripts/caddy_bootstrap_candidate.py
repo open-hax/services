@@ -26,6 +26,8 @@ class BootstrapPlan:
     networks: tuple[tuple[str, str], ...]
     identity_peer: tuple[str, str]
     inspected_fingerprint: str
+    static_fingerprint: str
+    network_aliases: tuple[tuple[str, tuple[str, ...]], ...]
     compose_project: str = 'caddy'
     compose_service: str = 'caddy'
 
@@ -63,6 +65,7 @@ def production_plan(container):
     if set(networks) != {'open-hax', 'caddy-dev-ingress'}:
         raise IngressTransactionError('Unexpected incumbent network topology')
     pairs = []
+    alias_pairs = []
     for name in sorted(networks):
         address = networks[name].get('IPAddress')
         try:
@@ -72,6 +75,10 @@ def production_plan(container):
         if not valid:
             raise IngressTransactionError('Missing incumbent network address')
         pairs.append((name, address))
+        aliases = networks[name].get('Aliases') or []
+        if not isinstance(aliases, list) or set(aliases) != {'caddy', 'caddy-caddy-1'}:
+            raise IngressTransactionError('Unexpected incumbent network aliases')
+        alias_pairs.append((name, tuple(sorted(set(aliases)))))
     if networks['caddy-dev-ingress']['IPAddress'] != '172.31.255.2':
         raise IngressTransactionError('Dev-ingress fixed peer differs')
     mounts = container.get('Mounts', [])
@@ -88,8 +95,16 @@ def production_plan(container):
     fingerprint = hashlib.sha256(json.dumps(
         {key: container.get(key) for key in ('Id', 'Image', 'Config', 'HostConfig', 'Mounts', 'NetworkSettings')},
         sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    static = static_fingerprint(container)
     return BootstrapPlan(ident, image, tuple(ports), tuple(pairs),
-                         ('axxium-identity-ingress', '172.30.115.2'), fingerprint)
+                         ('axxium-identity-ingress', '172.30.115.2'), fingerprint, static, tuple(alias_pairs))
+
+
+def static_fingerprint(container):
+    """Inspect fields expected to survive stop and network disconnection."""
+    return hashlib.sha256(json.dumps(
+        {key: container.get(key) for key in ('Id', 'Image', 'Config', 'HostConfig', 'Mounts')},
+        sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 def _event(journal, index, name):
@@ -136,18 +151,21 @@ def _load_plan(journal, owner):
         plan = BootstrapPlan(value['incumbent_id'], value['incumbent_image'],
                              tuple(tuple(x) for x in value['ports']), tuple(tuple(x) for x in value['networks']),
                              tuple(value['identity_peer']), value['inspected_fingerprint'],
+                             value['static_fingerprint'], tuple((x[0], tuple(x[1])) for x in value['network_aliases']),
                              value['compose_project'], value['compose_service'])
     except (KeyError, TypeError, ValueError) as error:
         raise IngressTransactionError('Invalid bootstrap recovery plan') from error
     if (set(value) != set(asdict(plan)) or not re.fullmatch(r'[0-9a-f]{64}', plan.incumbent_id) or
             not re.fullmatch(r'sha256:[0-9a-f]{64}', plan.incumbent_image) or
             not re.fullmatch(r'[0-9a-f]{64}', plan.inspected_fingerprint) or
+            not re.fullmatch(r'[0-9a-f]{64}', plan.static_fingerprint) or
             plan.compose_project != 'caddy' or plan.compose_service != 'caddy' or
             plan.identity_peer != ('axxium-identity-ingress', '172.30.115.2') or
             len(plan.ports) != 2 or any(len(x) != 3 for x in plan.ports) or
             any(x[0] not in ('', '0.0.0.0') for x in plan.ports) or
             tuple(x[1:] for x in plan.ports) != ((80, 80), (443, 443)) or
             len(plan.networks) != 2 or {name for name, _ in plan.networks} != {'open-hax', 'caddy-dev-ingress'} or
+            dict(plan.network_aliases) != {'open-hax': ('caddy', 'caddy-caddy-1'), 'caddy-dev-ingress': ('caddy', 'caddy-caddy-1')} or
             dict(plan.networks).get('caddy-dev-ingress') != '172.31.255.2'):
         raise IngressTransactionError('Bootstrap recovery plan is outside the fixed topology')
     try:

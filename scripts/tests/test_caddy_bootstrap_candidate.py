@@ -37,8 +37,8 @@ def container():
             'Config': {'User': '', 'Labels': {'com.docker.compose.project': 'caddy', 'com.docker.compose.service': 'caddy'}},
             'HostConfig': {'PortBindings': {'80/tcp': [{'HostIp': '', 'HostPort': '80'}],
                                             '443/tcp': [{'HostIp': '', 'HostPort': '443'}]}},
-            'NetworkSettings': {'Networks': {'open-hax': {'IPAddress': '172.18.0.9'},
-                                                'caddy-dev-ingress': {'IPAddress': '172.31.255.2'}}},
+            'NetworkSettings': {'Networks': {'open-hax': {'IPAddress': '172.18.0.9', 'Aliases': ['caddy-caddy-1', 'caddy', 'caddy']},
+                                                'caddy-dev-ingress': {'IPAddress': '172.31.255.2', 'Aliases': ['caddy-caddy-1', 'caddy']}}},
             'Mounts': [{'Destination': d, 'Source': s, 'RW': rw} for d, s, rw in mounts]}
 
 

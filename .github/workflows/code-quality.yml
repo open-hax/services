@@ -83,6 +83,7 @@ jobs:
             scripts.tests.test_caddy_bundle_transaction \
             scripts.tests.test_caddy_deployment_writer \
             scripts.tests.test_caddy_bootstrap_candidate \
+            scripts.tests.test_caddy_host_recovery \
             scripts.tests.test_ingress_owner \
             scripts.tests.test_ingress_pending \
             scripts.tests.test_provision_ingress_owner \
