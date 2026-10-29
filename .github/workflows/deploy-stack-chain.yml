@@ -27,6 +27,14 @@ on:
         required: false
         default: stack
         type: string
+      axxium_pull_request:
+        description: Merged Axxium PR admitted by the production controller
+        required: false
+        type: string
+      axxium_image_run_id:
+        description: Existing trusted build-only run; blank builds only
+        required: false
+        type: string
       proxx_ref:
         description: Immutable open-hax/proxx ref to deploy
         required: true
@@ -65,10 +73,21 @@ on:
 # workflow's jobs can never hold more than the caller's top-level permissions,
 # and GitHub refuses to start the run on the mismatch.
 permissions:
+  actions: read
   contents: read
   packages: write
+  pull-requests: read
 
 jobs:
+  deploy-axxium:
+    if: inputs.scope == 'axxium'
+    uses: ./.github/workflows/deploy-axxium-production.yml
+    with:
+      pull_request: ${{ inputs.axxium_pull_request }}
+      image_run_id: ${{ inputs.axxium_image_run_id }}
+      caller_holds_production_host_lock: true
+    secrets: inherit
+
   # Build jobs may run while the host is prepared, but no production service
   # deploy starts until this exact checkout has installed and verified the
   # provisioner it expects. deploy-stack.yml holds the production-host lock
