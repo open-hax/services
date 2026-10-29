@@ -1,0 +1,36 @@
+{
+  "artifact_id": 12911496785,
+  "artifact_sha256": "6e590d99451e0404615016d85beb37dfe4c9d5127a629df2f690de700932280c",
+  "authority": {
+    "callback_uri": "https://knoxx.promethean.rest/colab/auth/callback",
+    "client_id": "knoxx-colab",
+    "issuer": "https://axxium.promethean.rest/oidc"
+  },
+  "expected": {
+    "app_container_id": "a63756b4a0133699c6adff752110454e3199fdd3b57244d3811716d6b9efa0d1",
+    "app_environment_sha256": "78fd412063563fd584f7fd0a5c77874d02918479fbf625caddd357ee09857a18",
+    "app_image_id": "sha256:e39ed6c2693ddcc0d092d37fc0d0dd5175aa28edc6ece32a48dbc8a34037b367",
+    "app_writable_layer_sha256": "ed6eb61a5a60937ad367e8e630498a493a8dc6c76c6dcf0c9b2ae3e56f89af5b",
+    "caddy_container_id": "5ef621be013356092ea07330a7e5dbc9c50b49cc55da46b09f3a935d0cac6992",
+    "caddy_image_id": "sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17",
+    "caddy_proxy_ip": "172.18.0.9",
+    "caddyfile_sha256": "b1336738414e94daf9f6e54fdc1b1c8698440b68db46f4254e825a5b17ddf524",
+    "compose_sha256": "6185dee425d257803a045a99fb96c9b3be270dbb08337745400914056c0aed79",
+    "db_container_id": "b66563abe4e7ad99cc1ae805dc676394524830f2d9adfcc5a62a46c82ecd0ea8",
+    "db_environment_sha256": "533205d4649345a4cd4938c045dc31864b1e868d027328c0decc0f4f81c1f16e",
+    "db_image_id": "sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825",
+    "environment_file_sha256": "e173b2f5d640e4328d6a4524bdce8b1a74bc8e19f01bd26530ea848d3b3f9354",
+    "managed_caddy_sha256": "2e3a1383fe72b5fe774739a527d69ffd2898cf7c325e8f478d971a7960172720",
+    "pds_container_id": "fe02d8d9860e30c0ed1e6f33031568de41407eeb53c6c1e439300d2c80199a49",
+    "pds_environment_sha256": "c9782b89055d9360654346d5a5c8dfc21110427f12d79c32316f329b1e4f38eb",
+    "pds_image_id": "sha256:95d6179bc9fb10cc36ccd6dea0407fc6d99f21374bf2a1f9e8f28c0427c7e336"
+  },
+  "host": "knoxx.promethean.rest",
+  "image_id": "sha256:6aed20a3439dc29c6bcb43cf3f1e0bf41f65a72734975eb2db922898c45e4652",
+  "schema": "axxium-minimal-production/v1",
+  "source_pr": 37,
+  "source_sha": "58234df96ca86507e6cdd87f65aaa9ab35621415",
+  "stage_controller_sha": "a2aee9a01a51ef1481dcc6d1071104f449dcf6bd",
+  "stage_run_id": 40905644420,
+  "stage_workflow_path": ".github/workflows/service-environment-staging.yml"
+}

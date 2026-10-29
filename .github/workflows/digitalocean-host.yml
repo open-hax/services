@@ -150,6 +150,10 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
 
+      - name: Refuse unresolved Axxium transition before host mutation
+        if: steps.target.outputs.operation == 'bootstrap'
+        run: ssh production-droplet 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
+
       - name: Bootstrap host
         if: steps.target.outputs.operation == 'bootstrap'
         run: |

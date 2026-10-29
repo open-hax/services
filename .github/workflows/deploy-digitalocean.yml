@@ -101,6 +101,10 @@ jobs:
             echo "service deployment requires the Deploy Stack production lock" >&2
             exit 2
           fi
+          if [ "$SERVICE" = axxium ]; then
+            echo 'Axxium requires its qualified fixed production workflow; generic deployment cannot render its private environment.' >&2
+            exit 2
+          fi
           . digitalocean/lib/host-contract.sh
           case "$DEPLOY_ENVIRONMENT:$SERVICE" in
             production:*) ;;
@@ -187,6 +191,9 @@ jobs:
             UserKnownHostsFile ~/.ssh/known_hosts
           EOF
           chmod 600 ~/.ssh/config
+
+      - name: Refuse unresolved Axxium production transition
+        run: ssh open-hax-target 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
 
       - name: Verify Caddy dev-ingress firewall boundary
         if: inputs.service == 'caddy'

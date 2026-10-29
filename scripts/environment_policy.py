@@ -118,30 +118,32 @@ def clean_receipt_markers(receipt: dict) -> bool:
 
 def production_admission(source_sha: str, integration: dict, e2e: dict, batches: list[dict]) -> dict:
     """Never count stale, duplicated, planned, invalid, timed-out or untested mutants as proof."""
-    if not SHA.fullmatch(source_sha):
+    if not isinstance(source_sha, str) or not SHA.fullmatch(source_sha):
         return {"admitted": False, "reason": "production requires an immutable source SHA"}
     for name, receipt in [("integration", integration), ("e2e", e2e)]:
-        if (receipt.get("source_sha") != source_sha or receipt.get("status") != "passed"
-                or receipt.get("assertions", 0) <= 0 or not clean_receipt_markers(receipt)):
+        if (not isinstance(receipt, dict) or receipt.get("source_sha") != source_sha or receipt.get("status") != "passed"
+                or type(receipt.get("assertions")) is not int or receipt["assertions"] <= 0 or not clean_receipt_markers(receipt)):
             return {"admitted": False, "reason": f"{name} evidence missing, invalid or for a different revision"}
-    if len(batches) != MUTATION_BATCHES:
+    if not isinstance(batches, list) or len(batches) != MUTATION_BATCHES:
         return {"admitted": False, "reason": "four completed mutation batches are required"}
     seen = set()
     indexes = set()
     for batch in batches:
-        if (batch.get("source_sha") != source_sha or batch.get("status") != "passed"
+        if (not isinstance(batch, dict) or batch.get("source_sha") != source_sha or batch.get("status") != "passed"
                 or batch.get("baseline") != "passed" or not clean_receipt_markers(batch)):
             return {"admitted": False, "reason": "mutation batch baseline, status or revision is invalid"}
         index = batch.get("batch_index")
-        if index not in range(MUTATION_BATCHES) or index in indexes:
+        if type(index) is not int or index not in range(MUTATION_BATCHES) or index in indexes:
             return {"admitted": False, "reason": "mutation batch indexes are incomplete or duplicated"}
         indexes.add(index)
         mutants = batch.get("mutants", [])
-        if len(mutants) < MUTANTS_PER_BATCH:
+        if not isinstance(mutants, list) or len(mutants) < MUTANTS_PER_BATCH:
             return {"admitted": False, "reason": "each mutation batch requires at least 250 evaluated source mutations"}
         for mutant in mutants:
+            if not isinstance(mutant, dict):
+                return {"admitted": False, "reason": "malformed mutation"}
             key = mutant.get("fingerprint")
-            if (not key or key in seen or mutant.get("status") != "killed"
+            if (not isinstance(key, str) or not key.strip() or key in seen or mutant.get("status") != "killed"
                     or mutant.get("phase") != "test" or not clean_receipt_markers(mutant)):
                 return {"admitted": False, "reason": "survived, duplicate, invalid or unevaluated mutation"}
             seen.add(key)
