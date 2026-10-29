@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read one existing private image using only this Services run's token."""
+"""Read the fixed GPL image anonymously when public; retain private observations."""
 import argparse
 import json
 import os
@@ -10,9 +10,11 @@ import tempfile
 import urllib.error
 import urllib.request
 
-IMAGE = 'ghcr.io/open-hax/cloud-cuckoo@sha256:02c8b6173fe9c3d52e80ad8f9ce273089abbed626cc01319eb708f63eab0137a'
-SOURCE = 'c5f4ee1fdba4b2d32425c083366083ee457e3f43'
-IMAGE_ID = 'sha256:4ccab07d7847cf29c3fd0a9586bc63a652afec9e5f5faa452d2cb3de9a78549d'
+IMAGE = 'ghcr.io/open-hax/cloud-cuckoo@sha256:f208ca09c52f33fbff03c8423d18c607db7069876c15597bed8d66b67f1cc26c'
+SOURCE = '6e5b5ded1841364b97769e4093445b116873611f'
+IMAGE_ID = 'sha256:942907824a8e1e5f4dcbccd2a68ba112764bafa86e4f2ab59adcfe4fdff9a95d'
+LICENSE_PATH = '/usr/share/licenses/cloud-cuckoo/LICENSE'
+LICENSE_SHA256 = '3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986'
 
 
 class Refusal(Exception):
@@ -57,6 +59,8 @@ def observe(output, *, run=command, read=metadata):
               'workflow_sha': os.environ['GITHUB_SHA'], 'run_id': int(os.environ['GITHUB_RUN_ID']),
               'image_reference': IMAGE, 'source_sha': SOURCE, 'expected_image_id': IMAGE_ID,
               'metadata_http_status': None, 'package_visibility': None,
+              'publication_target': 'public', 'anonymous_digest_pull_verified': False,
+              'license_verified': False, 'license_sha256': LICENSE_SHA256,
               'registry_pull_succeeded': False, 'image_contract_verified': False, 'stage': 'native_context'}
     stage = 'native_context'
     try:
@@ -65,21 +69,24 @@ def observe(output, *, run=command, read=metadata):
         token, actor = os.environ.get('GH_TOKEN'), os.environ.get('GITHUB_ACTOR')
         if not token or not actor:
             raise Refusal()
-        stage = 'private_metadata'
+        stage = 'package_metadata'
         status, package = read(token)
         result['metadata_http_status'] = status
         if isinstance(package, dict) and package.get('visibility') in ['private', 'public', 'internal']:
             result['package_visibility'] = package['visibility']
-        if (status != 200 or not isinstance(package, dict) or package.get('visibility') != 'private' or
+        if (status != 200 or not isinstance(package, dict) or package.get('visibility') not in ['private', 'public'] or
                 package.get('name') != 'cloud-cuckoo' or package.get('package_type') != 'container' or
                 not isinstance(package.get('owner'), dict) or package['owner'].get('login') != 'open-hax'):
             raise Refusal()
         with tempfile.TemporaryDirectory(prefix='services-colab-read-') as auth:
-            child_env = {key: value for key, value in os.environ.items() if key not in {'GH_TOKEN', 'GITHUB_TOKEN'}}
-            child_env['DOCKER_CONFIG'] = auth
+            anonymous = package['visibility'] == 'public'
+            child_env = ({'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': auth, 'DOCKER_CONFIG': auth}
+                         if anonymous else {**{key: value for key, value in os.environ.items()
+                                               if key not in {'GH_TOKEN', 'GITHUB_TOKEN'}}, 'DOCKER_CONFIG': auth})
             try:
-                stage = 'registry_login'
-                run(['docker', 'login', 'ghcr.io', '--username', actor, '--password-stdin'], input=token.encode(), env=child_env)
+                if not anonymous:
+                    stage = 'registry_login'
+                    run(['docker', 'login', 'ghcr.io', '--username', actor, '--password-stdin'], input=token.encode(), env=child_env)
                 stage = 'immutable_pull'
                 run(['docker', 'pull', IMAGE], env=child_env)
                 result['registry_pull_succeeded'] = True
@@ -92,15 +99,25 @@ def observe(output, *, run=command, read=metadata):
                 labels = config.get('Labels', {})
                 if (image.get('Id') != IMAGE_ID or config.get('User') != '1000:1000' or
                         labels.get('org.opencontainers.image.source') != 'https://github.com/open-hax/cloud-cuckoo' or
+                        labels.get('org.opencontainers.image.licenses') != 'GPL-3.0-or-later' or
                         labels.get('org.opencontainers.image.revision') != SOURCE):
                     raise Refusal()
                 result['image_contract_verified'] = True
+                stage = 'full_license'
+                check = ("from pathlib import Path; import hashlib; "
+                         f"assert hashlib.sha256(Path({LICENSE_PATH!r}).read_bytes()).hexdigest()=={LICENSE_SHA256!r}")
+                run(['docker', 'run', '--rm', '-i', '--pull', 'never', '--network', 'none', '--read-only',
+                     '--user', '1000:1000', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+                     '--pids-limit', '64', '--memory', '128m', IMAGE_ID, 'python', '-'], input=check.encode(), env=child_env)
+                result['license_verified'] = True
+                result['anonymous_digest_pull_verified'] = anonymous
                 stage = 'verified'
             finally:
-                try:
-                    run(['docker', 'logout', 'ghcr.io'], env=child_env)
-                except Refusal:
-                    pass
+                if not anonymous:
+                    try:
+                        run(['docker', 'logout', 'ghcr.io'], env=child_env)
+                    except Refusal:
+                        pass
     except (Refusal, OSError, ValueError, TypeError, subprocess.TimeoutExpired):
         pass  # The receipt carries only a fixed stage and projected observations.
     result['stage'] = stage

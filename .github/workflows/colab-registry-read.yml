@@ -1,4 +1,4 @@
-name: Verify Services read access to the private Colab image
+name: Verify Services read access to the GPL Colab image
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ jobs:
           persist-credentials: false
       - name: Verify probe boundary without registry credentials
         run: python3 -m unittest scripts.tests.test_colab_registry_probe
-      - name: Read exact private metadata and pull the existing immutable image
+      - name: Read exact metadata and verify public anonymous image access when available
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/probe_colab_registry.py --output "$RUNNER_TEMP/colab-registry-read.json"
