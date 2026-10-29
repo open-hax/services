@@ -137,7 +137,10 @@ def protocol_checks():
     status, raw = request(BASE + '/.well-known/oauth-authorization-server')
     require(status == 200)
     discovery = json.loads(raw)
-    require(discovery.get('issuer') == BASE and discovery.get('scopes_supported') == ['openid', 'profile'] and
+    # Pydantic's root AnyHttpUrl in the actual FastMCP OAuthProxy metadata is
+    # serialized with its canonical trailing slash. Endpoints/resource retain
+    # their exact compiled paths; do not normalize arbitrary URLs here.
+    require(discovery.get('issuer') == BASE + '/' and discovery.get('scopes_supported') == ['openid', 'profile'] and
             discovery.get('code_challenge_methods_supported') == ['S256'] and
             all(discovery.get(k) == BASE + suffix for k, suffix in {
                 'authorization_endpoint': '/authorize', 'token_endpoint': '/token',
@@ -145,7 +148,7 @@ def protocol_checks():
     status, raw = request(BASE + '/.well-known/oauth-protected-resource/mcp')
     require(status == 200)
     resource = json.loads(raw)
-    require(resource.get('resource') == BASE + '/mcp' and resource.get('authorization_servers') == [BASE] and
+    require(resource.get('resource') == BASE + '/mcp' and resource.get('authorization_servers') == [BASE + '/'] and
             sorted(resource.get('scopes_supported', [])) == ['openid', 'profile'])
     status, raw = request(ISSUER + '/.well-known/openid-configuration')
     require(status == 200)

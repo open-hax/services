@@ -149,12 +149,14 @@ class StageTests(unittest.TestCase):
     def responses(self):
         return {m.BASE + '/health': (200, {'service': 'knoxx-colab-mcp', 'ready': True, 'identity_available': True}),
                 m.BASE + '/.well-known/oauth-authorization-server': (200, {
-                    'issuer': m.BASE, 'scopes_supported': ['openid', 'profile'],
+                    # Observed from the accepted19e FastMCP OAuthProxy's real
+                    # HTTP response: root issuer has one canonical slash.
+                    'issuer': m.BASE + '/', 'scopes_supported': ['openid', 'profile'],
                     'code_challenge_methods_supported': ['S256'],
                     **{k: m.BASE + v for k, v in {'authorization_endpoint': '/authorize', 'token_endpoint': '/token',
                        'registration_endpoint': '/register', 'revocation_endpoint': '/revoke'}.items()}}),
                 m.BASE + '/.well-known/oauth-protected-resource/mcp': (200, {
-                    'resource': m.BASE + '/mcp', 'authorization_servers': [m.BASE], 'scopes_supported': ['openid', 'profile']}),
+                    'resource': m.BASE + '/mcp', 'authorization_servers': [m.BASE + '/'], 'scopes_supported': ['openid', 'profile']}),
                 m.ISSUER + '/.well-known/openid-configuration': (200, {
                     'issuer': m.ISSUER, 'code_challenge_methods_supported': ['S256'],
                     'token_endpoint_auth_methods_supported': ['client_secret_post'],
@@ -181,6 +183,19 @@ class StageTests(unittest.TestCase):
                     self.protocol(responses)
         responses = self.responses()
         responses[m.BASE + '/mcp'] = (200, {})
+        with self.assertRaises(m.Refused):
+            self.protocol(responses)
+
+    def test_observed_canonical_root_issuer_passes_but_port_or_path_drift_refuses(self):
+        self.protocol(self.responses())
+        for issuer in (m.BASE, m.BASE + '//', m.BASE + '/other/', 'http://127.0.0.1:18761/'):
+            with self.subTest(issuer=issuer):
+                responses = self.responses()
+                responses[m.BASE + '/.well-known/oauth-authorization-server'][1]['issuer'] = issuer
+                with self.assertRaises(m.Refused):
+                    self.protocol(responses)
+        responses = self.responses()
+        responses[m.BASE + '/.well-known/oauth-protected-resource/mcp'][1]['authorization_servers'] = [m.BASE]
         with self.assertRaises(m.Refused):
             self.protocol(responses)
 
