@@ -13,6 +13,11 @@ from ingress_pending import refuse_pending
 import website_ingress_writer
 
 
+class Lease:
+    def recheck(self):
+        pass
+
+
 class OwnerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -124,11 +129,58 @@ class OwnerTest(unittest.TestCase):
         journals = self.directory / 'journals'
         journals.mkdir(mode=0o700)
         with self.assertRaisesRegex(IngressTransactionError, 'bootstrap'):
-            refuse_pending(journals, os.getuid(), bootstrap_guard=self.directory / 'bootstrap-pending')
+            refuse_pending(journals, os.getuid(), bootstrap_guard=self.directory / 'bootstrap-pending', bootstrap_owner=os.getuid())
         with self.assertRaisesRegex(IngressTransactionError, 'identity changed'):
             clear_bootstrap_pending(lease, 'b'*64, 'caddy-identity', self.directory, owner=os.getuid())
         clear_bootstrap_pending(lease, old_id, 'caddy-identity', self.directory, owner=os.getuid())
-        refuse_pending(journals, os.getuid(), bootstrap_guard=self.directory / 'bootstrap-pending')
+        refuse_pending(journals, os.getuid(), bootstrap_guard=self.directory / 'bootstrap-pending', bootstrap_owner=os.getuid())
+
+    def test_bootstrap_settlement_fsync_failure_keeps_guard_closed(self):
+        import ingress_owner
+        lease = Lease()
+        old_id = 'a' * 64
+        self.put({'version': 1, 'phase': 'stable', 'project': 'caddy'})
+        mark_bootstrap_pending(lease, old_id, self.directory, owner=os.getuid())
+        directory_info = self.directory.stat()
+        original_fsync, original_unlink = os.fsync, os.unlink
+        state = {'failed': False, 'unlink_attempted': False}
+        def fsync(fd):
+            info = os.fstat(fd)
+            if (list(self.directory.glob('.bootstrap-settlement-*')) and
+                    (info.st_dev, info.st_ino) == (directory_info.st_dev, directory_info.st_ino)):
+                state['failed'] = True
+                raise OSError('injected bootstrap settlement fsync failure')
+            return original_fsync(fd)
+        def unlink(name, **kwargs):
+            if name == 'bootstrap-pending':
+                state['unlink_attempted'] = True
+                raise OSError('guard recreation unavailable')
+            return original_unlink(name, **kwargs)
+        with patch.object(os, 'fsync', side_effect=fsync), patch.object(os, 'unlink', side_effect=unlink):
+            with self.assertRaises(OSError):
+                clear_bootstrap_pending(lease, old_id, 'caddy', self.directory, owner=os.getuid())
+        self.assertTrue(state['failed'])
+        self.assertFalse(state['unlink_attempted'])
+        self.assertTrue(ingress_owner.bootstrap_guard_pending(self.directory / 'bootstrap-pending', owner=os.getuid()))
+        self.assertFalse((self.directory / 'bootstrap-settled').exists())
+
+    def test_bootstrap_settlement_rejects_mismatched_identity_and_owner_selection(self):
+        import ingress_owner
+        lease = Lease()
+        old_id = 'a' * 64
+        self.put({'version': 1, 'phase': 'stable', 'project': 'caddy'})
+        mark_bootstrap_pending(lease, old_id, self.directory, owner=os.getuid())
+        marker = self.directory / 'bootstrap-settled'
+        marker.write_text('b' * 64 + '\ncaddy\n')
+        marker.chmod(0o644)
+        self.assertTrue(ingress_owner.bootstrap_guard_pending(self.directory / 'bootstrap-pending', owner=os.getuid()))
+        marker.write_text(old_id + '\ncaddy-identity\n')
+        self.assertTrue(ingress_owner.bootstrap_guard_pending(self.directory / 'bootstrap-pending', owner=os.getuid()))
+        marker.unlink()
+        clear_bootstrap_pending(lease, old_id, 'caddy', self.directory, owner=os.getuid())
+        self.assertFalse(ingress_owner.bootstrap_guard_pending(self.directory / 'bootstrap-pending', owner=os.getuid()))
+        self.assertTrue((self.directory / 'bootstrap-pending').exists())
+        clear_bootstrap_pending(lease, old_id, 'caddy', self.directory, owner=os.getuid())
 
 
 if __name__ == '__main__':

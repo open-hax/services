@@ -31,6 +31,7 @@ class SyntheticDocker:
         self.original, self.candidate_config = original, candidate_config
         self.before, self.after = before, after
         self.candidate = None
+        self.validation = None
         self.fault = fault
         self.calls = []
 
@@ -46,8 +47,10 @@ class SyntheticDocker:
             if name == 'axxium-axxium-1':
                 return self.result(json.dumps([{'Config': {'Env': ['AXXIUM_TRUST_PROXY=172.30.115.2']},
                     'NetworkSettings': {'Networks': {'axxium-identity-ingress': {'IPAddress': '172.30.115.3'}}}}]).encode())
-            if name == recovery.NEW and self.candidate is not None:
+            if name in (recovery.NEW, 'c'*64) and self.candidate is not None:
                 return self.result(json.dumps([self.candidate]).encode())
+            if name in (recovery.VALIDATION, 'd'*64) and self.validation is not None:
+                return self.result(json.dumps([self.validation]).encode())
             return self.result(code=1)
         if args[:3] == ['docker', 'ps', '-aq']:
             return self.result()
@@ -71,7 +74,16 @@ class SyntheticDocker:
                 'Aliases': ['caddy', 'caddy-caddy-1']}
             return self.result()
         if args[:2] == ['docker', 'start']:
-            self.old['State']['Running'] = True
+            ident = args[-1]
+            if ident == 'd'*64:
+                self.validation['State'] = {'Running': False, 'Status': 'exited', 'ExitCode': 0}
+            elif ident == 'c'*64:
+                self.candidate['State'] = {'Running': True, 'Status': 'running'}
+            else:
+                self.old['State']['Running'] = True
+            return self.result()
+        if args[:2] == ['docker', 'rm'] and args[-1] == 'd'*64:
+            self.validation = None
             return self.result()
         if args[:3] == ['docker', 'rm', '-f']:
             if self.fault == 'rollback-fails':
@@ -85,23 +97,35 @@ class SyntheticDocker:
                 if any(x.endswith('compose.validation.yaml') for x in args):
                     isolated = copy.deepcopy(self.after)
                     isolated['services']['caddy'].pop('networks')
-                    isolated['services']['caddy']['network_mode'] = 'none'
+                    isolated['services']['caddy'].update({'network_mode': 'none', 'ports': [], 'container_name': recovery.VALIDATION,
+                        'entrypoint': ['caddy'], 'command': ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile'], 'restart': 'no'})
                     return self.result(json.dumps(isolated).encode())
                 return self.result(json.dumps(self.after if 'caddy-identity' in args else self.before).encode())
-            if 'run' in args:
-                return self.result()
-            if 'up' in args:
+            if 'create' in args:
                 mounts = [{'Destination': v['target'], 'Source': v['source'], 'RW': not v['read_only']}
                           for v in self.after['services']['caddy']['volumes']]
+                if 'caddy-validation' in args:
+                    self.validation = {'Id': 'd'*64, 'Image': self.plan.incumbent_image,
+                        'Config': {'User': '1000:1000', 'Labels': {'com.docker.compose.project': 'caddy-validation',
+                                  'com.docker.compose.service': 'caddy'}, 'Entrypoint': ['caddy'],
+                                  'Cmd': ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile'],
+                                  'Env': ['FIXTURE=value']}, 'HostConfig': {'NetworkMode': 'none', 'PortBindings': {}},
+                        'Mounts': mounts, 'State': {'Running': False, 'Status': 'created'}}
+                    if self.fault == 'validator-drift':
+                        self.validation['Config']['Cmd'] = ['unexpected']
+                    return self.result()
                 self.candidate = {'Id': 'c'*64, 'Image': self.plan.incumbent_image,
                     'Config': {'User': '1000:1000', 'Labels': {'com.docker.compose.project': 'caddy-identity',
                                                                'com.docker.compose.service': 'caddy'},
                                'Cmd': recovery.CANDIDATE_COMMAND, 'Entrypoint': None, 'Env': ['FIXTURE=value']},
                     'HostConfig': {'PortBindings': copy.deepcopy(self.old['HostConfig']['PortBindings'])},
-                    'Mounts': mounts, 'State': {'Running': True}, 'NetworkSettings': {'Networks': {
+                    'Mounts': mounts, 'State': {'Running': False, 'Status': 'created'}, 'NetworkSettings': {'Networks': {
                         'open-hax': {'IPAddress': '172.18.0.31', 'Aliases': ['caddy']},
                         'caddy-dev-ingress': {'IPAddress': '172.31.255.2'},
                         'axxium-identity-ingress': {'IPAddress': '172.30.115.2'}}}}
+                if self.fault == 'candidate-drift':
+                    self.candidate['Config']['Cmd'] = ['unexpected']
+                    return self.result()
                 if self.fault == 'interrupt':
                     raise KeyboardInterrupt()
                 if self.fault:
@@ -173,6 +197,13 @@ class BootstrapE2E(unittest.TestCase):
             stack.enter_context(patch.object(recovery, 'settle_transition', lambda lease, target, verify: owner.settle_transition(lease, target, verify, selector)))
             stack.enter_context(patch.object(recovery, 'clear_bootstrap_pending', lambda lease, ident, target: owner.clear_bootstrap_pending(lease, ident, target, selector)))
             driver = boot.HostBootstrapDriver(Lease(), journal, execute=fake, boundary=lambda: True, qualification=lambda: True)
+            if fault in ('validator-drift', 'candidate-drift'):
+                with self.assertRaisesRegex(IngressTransactionError, 'manual recovery'):
+                    bootstrap_under_lease(driver.lease, journal, driver, plan, owner=0)
+                self.assertTrue(owner.bootstrap_guard_pending(selector / 'bootstrap-pending'))
+                blocked = 'd'*64 if fault == 'validator-drift' else 'c'*64
+                self.assertFalse(any(call[:2] == ['docker', 'start'] and call[-1] == blocked for call in fake.calls))
+                return
             if fault == 'interrupt':
                 with self.assertRaises(KeyboardInterrupt):
                     bootstrap_under_lease(driver.lease, journal, driver, plan, owner=0)
@@ -203,8 +234,15 @@ class BootstrapE2E(unittest.TestCase):
                 self.assertFalse(old['State']['Running'])
                 self.assertIsNotNone(fake.candidate)
                 self.assertTrue((journal / '09-adopted-and-verified.json').exists())
-            self.assertFalse((selector / 'bootstrap-pending').exists())
+            self.assertTrue((selector / 'bootstrap-pending').exists())
+            self.assertFalse(owner.bootstrap_guard_pending(selector / 'bootstrap-pending'))
             self.assertTrue((journal / '30-validation-container-intent.json').exists())
+
+    def test_validator_configuration_drift_never_executes(self):
+        self.exercise('validator-drift')
+
+    def test_candidate_configuration_drift_never_executes(self):
+        self.exercise('candidate-drift')
 
     def test_complete_synthetic_adoption(self):
         self.exercise(False)

@@ -17,6 +17,7 @@ from identity_ingress_transaction import IngressTransactionError
 DIRECTORY = Path('/etc/open-hax/ingress')
 NAME = 'owner.json'
 PENDING = 'bootstrap-pending'
+SETTLED = 'bootstrap-settled'
 PROJECTS = {'caddy': 'caddy-caddy-1', 'caddy-identity': 'caddy-identity-caddy-1'}
 
 
@@ -112,8 +113,35 @@ def mark_bootstrap_pending(lease, incumbent_id, directory=DIRECTORY, *, owner=0)
         os.close(directory_fd)
 
 
+def bootstrap_guard_pending(path=DIRECTORY / PENDING, *, owner=0):
+    """A permanent guard opens only with a matching root-owned completion."""
+    path = Path(path)
+    if not path.exists() and not path.is_symlink():
+        return False
+    from identity_ingress_transaction import _read
+    directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        directory = os.fstat(directory_fd)
+        if directory.st_uid != owner or directory.st_mode & 0o022:
+            raise IngressTransactionError('Bootstrap guard directory is unsafe')
+        pending, _ = _read(directory_fd, path.name, owner)
+        if re.fullmatch(rb'[0-9a-f]{64}\n', pending) is None:
+            raise IngressTransactionError('Bootstrap guard is unsafe or malformed')
+        try:
+            settled, _ = _read(directory_fd, SETTLED, owner)
+        except FileNotFoundError:
+            return True
+        try:
+            project = read_selection(path.parent, owner=owner)[0]
+        except (IngressTransactionError, OSError, ValueError):
+            return True
+        return settled != pending + (project + '\n').encode()
+    finally:
+        os.close(directory_fd)
+
+
 def clear_bootstrap_pending(lease, incumbent_id, target, directory=DIRECTORY, *, owner=0):
-    """Clear only after a terminal journal and verified stable selection."""
+    """Publish a pre-synced terminal marker; retain the original guard forever."""
     if os.geteuid() != owner or not re.fullmatch(r'[0-9a-f]{64}', incumbent_id):
         raise IngressTransactionError('Invalid bootstrap guard identity')
     lease.recheck()
@@ -127,12 +155,30 @@ def clear_bootstrap_pending(lease, incumbent_id, target, directory=DIRECTORY, *,
             if (not stat.S_ISREG(info.st_mode) or info.st_uid != owner or info.st_nlink != 1 or
                     info.st_mode & 0o022 or stream.read(66) != (incumbent_id + '\n').encode()):
                 raise IngressTransactionError('Bootstrap guard identity changed')
+        if not bootstrap_guard_pending(directory / PENDING, owner=owner):
+            return  # Idempotent re-verification of the exact same outcome.
         lease.recheck()
         current = os.stat(PENDING, dir_fd=directory_fd, follow_symlinks=False)
         if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
             raise IngressTransactionError('Bootstrap guard was replaced')
-        os.unlink(PENDING, dir_fd=directory_fd)
+        prepared = '.bootstrap-settlement-' + secrets.token_hex(16)
+        fd = os.open(prepared, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                     0o644, dir_fd=directory_fd)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write((incumbent_id + '\n' + target + '\n').encode())
+            stream.flush()
+            os.fchmod(stream.fileno(), 0o644)
+            os.fsync(stream.fileno())
         os.fsync(directory_fd)
+        lease.recheck()
+        if read_selection(directory, owner=owner)[0] != target:
+            raise IngressTransactionError('Ingress owner changed before bootstrap settlement')
+        current = os.stat(PENDING, dir_fd=directory_fd, follow_symlinks=False)
+        if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+            raise IngressTransactionError('Bootstrap guard was replaced')
+        # Publication is the final fallible operation. If this rename is lost
+        # after reboot, the retained guard conservatively blocks all writers.
+        os.rename(prepared, SETTLED, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
     finally:
         os.close(directory_fd)
 

@@ -51,25 +51,16 @@ def _digest(value):
     return hashlib.sha256(value).hexdigest() if value is not None else None
 
 
-def _clear_pending_or_retain(directory_fd):
-    """Keep a visible guard if settlement's directory fsync is uncertain."""
-    try:
-        os.unlink('pending', dir_fd=directory_fd)
-        os.fsync(directory_fd)
-    except Exception:
-        try:
-            fd = os.open('pending', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
-                         0o600, dir_fd=directory_fd)
-            with os.fdopen(fd, 'wb') as stream:
-                stream.write(b'pending settlement recovery\n')
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.fsync(directory_fd)
-        except FileExistsError:
-            pass
-        except OSError:
-            pass  # Never claim settlement on storage failure.
-        raise
+def _publish_settlement(directory_fd, content):
+    """Publish a verified outcome without ever removing the pending guard.
+
+    The prepared file and its directory are synced before the atomic rename.
+    No fallible durability operation follows publication: after a crash the
+    rename may be lost, in which case the retained guard conservatively closes
+    the gate. A visible settlement can only describe already durable state.
+    """
+    _write_private(directory_fd, 'settlement-prepared', content)
+    os.rename('settlement-prepared', 'settled', src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
 
 
 def apply_bundle_under_lease(lease, items, journal: Path, apply_and_verify, restore_and_verify, *, owner=None):
@@ -139,7 +130,7 @@ def apply_bundle_under_lease(lease, items, journal: Path, apply_and_verify, rest
         _write_private(journal_fd, "result", b"applied-and-verified\n")
         settled = True
         _check_directory(journal_fd, journal, owner)
-        _clear_pending_or_retain(journal_fd)
+        _publish_settlement(journal_fd, b"applied-and-verified\n")
         pending = False
         return manifest
     except Exception as error:
@@ -192,7 +183,7 @@ def apply_bundle_under_lease(lease, items, journal: Path, apply_and_verify, rest
                     raise IngressTransactionError("Original Caddy bundle changed during recovery")
             _write_private(journal_fd, "result", b"restored-and-verified\n")
             _check_directory(journal_fd, journal, owner)
-            _clear_pending_or_retain(journal_fd)
+            _publish_settlement(journal_fd, b"restored-and-verified\n")
         except Exception as rollback_error:
             raise IngressTransactionError("Caddy bundle failed; manual recovery is required") from rollback_error
         raise IngressTransactionError("Caddy bundle failed; prior bundle restored and verified") from error

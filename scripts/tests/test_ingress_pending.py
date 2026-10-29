@@ -50,13 +50,34 @@ class PendingTest(unittest.TestCase):
             docker.assert_not_called()
             writer.assert_not_called()
 
+    def test_only_matching_safe_terminal_marker_opens_pending_journal(self):
+        journal = self.journals / 'run'
+        journal.mkdir(mode=0o700)
+        (journal / 'pending').write_bytes(b'pending\n')
+        (journal / 'result').write_bytes(b'applied-and-verified\n')
+        (journal / 'result').chmod(0o600)
+        # A fully written but unpublished staging marker never opens the gate.
+        (journal / 'settlement-prepared').write_bytes(b'applied-and-verified\n')
+        (journal / 'settlement-prepared').chmod(0o600)
+        with self.assertRaisesRegex(IngressTransactionError, 'requires recovery'):
+            refuse_pending(self.journals, os.getuid(), bootstrap_guard=self.guard)
+        (journal / 'settled').write_bytes(b'restored-and-verified\n')
+        (journal / 'settled').chmod(0o600)
+        with self.assertRaisesRegex(IngressTransactionError, 'requires recovery'):
+            refuse_pending(self.journals, os.getuid(), bootstrap_guard=self.guard)
+        (journal / 'settled').write_bytes(b'applied-and-verified\n')
+        refuse_pending(self.journals, os.getuid(), bootstrap_guard=self.guard)
+        (journal / 'settled').chmod(0o644)
+        with self.assertRaisesRegex(IngressTransactionError, 'requires recovery'):
+            refuse_pending(self.journals, os.getuid(), bootstrap_guard=self.guard)
+
     def test_bootstrap_pending_blocks_both_bundle_and_website_guards(self):
         self.guard.write_text('pending')
-        with self.assertRaisesRegex(IngressTransactionError, 'bootstrap'):
+        with self.assertRaisesRegex(IngressTransactionError, '[Bb]ootstrap'):
             refuse_pending(self.journals, os.getuid(), bootstrap_guard=self.guard)
         with patch.object(website_ingress_writer, 'read_selection', return_value=('caddy-identity', 'caddy-identity-caddy-1')), \
              patch.object(website_ingress_writer, 'run_under_lease') as writer:
-            with self.assertRaisesRegex(IngressTransactionError, 'bootstrap'):
+            with self.assertRaisesRegex(IngressTransactionError, '[Bb]ootstrap'):
                 website_ingress_writer.dispatch_under_lease(Lease(), 'a'*64, runtime=self.root,
                     journals=self.journals, owner=os.getuid(), bootstrap_guard=self.guard)
             writer.assert_not_called()
@@ -88,4 +109,4 @@ class PendingTest(unittest.TestCase):
                 runtime=runtime, journals=self.journals, owner=os.getuid(), bootstrap_guard=self.guard)
         self.assertEqual(result, hashlib.sha256(b'new website').hexdigest())
         self.assertEqual(target.read_bytes(), b'new website')
-        self.assertFalse((self.journals / 'website-1-1/pending').exists())
+        self.assertTrue((self.journals / 'website-1-1/settled').exists())

@@ -18,7 +18,7 @@ import sys
 from caddy_bootstrap_candidate import recover_under_lease, static_fingerprint
 from identity_ingress_transaction import IngressTransactionError
 from ingress_lock import ingress_lock
-from ingress_owner import DIRECTORY, _publish, _read_record, read_selection, settle_transition, clear_bootstrap_pending
+from ingress_owner import DIRECTORY, _publish, _read_record, read_selection, settle_transition, clear_bootstrap_pending, bootstrap_guard_pending
 
 JOURNALS = Path('/var/lib/open-hax/ingress/bootstrap')
 RUNTIME = Path('/srv/open-hax/services/caddy')
@@ -194,8 +194,8 @@ class HostRecoveryDriver:
             raise IngressTransactionError('Retained incumbent identity or configuration changed')
         return old
 
-    def checked_candidate(self, plan):
-        candidate = self.inspect(NEW, allow_missing=True)
+    def checked_candidate(self, plan, *, name=NEW):
+        candidate = self.inspect(name, allow_missing=True)
         if candidate is None:
             # A Docker inspect error is not proof of absence. Listing must
             # independently succeed and contain no exact candidate name.
@@ -244,8 +244,8 @@ class HostRecoveryDriver:
                     raise IngressTransactionError('Candidate fixed network peer differs')
         return candidate
 
-    def checked_validation(self, plan):
-        validator = self.inspect(VALIDATION, allow_missing=True)
+    def checked_validation(self, plan, *, name=VALIDATION):
+        validator = self.inspect(name, allow_missing=True)
         if validator is None:
             names = self.docker('ps', '-aq', '--filter', f'name=^/{VALIDATION}$').stdout.strip()
             if names:
@@ -256,7 +256,7 @@ class HostRecoveryDriver:
         host = validator.get('HostConfig') or {}
         if (validator.get('Id') == plan.incumbent_id or validator.get('Image') != plan.incumbent_image or
                 config.get('User') not in ('1000', '1000:1000') or
-                labels.get('com.docker.compose.project') != 'caddy-identity' or
+                labels.get('com.docker.compose.project') != 'caddy-validation' or
                 labels.get('com.docker.compose.service') != 'caddy' or
                 config.get('Entrypoint') != ['caddy'] or
                 config.get('Cmd') != ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile'] or
@@ -390,11 +390,11 @@ class HostRecoveryDriver:
 def main():
     if os.geteuid() != 0 or sys.argv[1:] != ['--boot']:
         raise SystemExit('Root and fixed --boot mode are required')
-    if not GUARD.exists() and not GUARD.is_symlink():
-        print('No pending Caddy bootstrap recovery')
-        return
-    identity = guard_identity()
     with ingress_lock() as lease:
+        if not bootstrap_guard_pending(GUARD):
+            print('No pending Caddy bootstrap recovery')
+            return
+        identity = guard_identity()
         journal = JOURNALS / identity
         result = recover_under_lease(lease, journal, HostRecoveryDriver(lease, journal=journal), owner=0)
     print(result)

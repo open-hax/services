@@ -155,6 +155,7 @@ class HostRecoveryTest(unittest.TestCase):
     def test_recovery_removes_only_verified_owned_validation_orphan(self):
         validation = copy.deepcopy(self.docker.candidate)
         validation['Id'] = 'd'*64
+        validation['Config']['Labels']['com.docker.compose.project'] = 'caddy-validation'
         validation['Config']['Entrypoint'] = ['caddy']
         validation['Config']['Cmd'] = ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile']
         validation['HostConfig'] = {'NetworkMode': 'none', 'PortBindings': {}}
@@ -167,6 +168,7 @@ class HostRecoveryTest(unittest.TestCase):
     def test_unrelated_validation_name_cannot_be_removed(self):
         validation = copy.deepcopy(self.docker.candidate)
         validation['Id'] = 'd'*64
+        validation['Config']['Labels']['com.docker.compose.project'] = 'caddy-validation'
         validation['Config']['Entrypoint'] = ['caddy']
         validation['Config']['Cmd'] = ['serve-unrelated']
         validation['HostConfig'] = {'NetworkMode': 'none', 'PortBindings': {}}
@@ -178,6 +180,7 @@ class HostRecoveryTest(unittest.TestCase):
     def test_validation_environment_drift_cannot_be_removed(self):
         validation = copy.deepcopy(self.docker.candidate)
         validation['Id'] = 'd'*64
+        validation['Config']['Labels']['com.docker.compose.project'] = 'caddy-validation'
         validation['Config']['Entrypoint'] = ['caddy']
         validation['Config']['Cmd'] = ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile']
         validation['Config']['Env'] = ['UNEXPECTED=value']

@@ -7,6 +7,7 @@ the methods; neither tests nor an on-disk marker qualify the live boundary.
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 
@@ -21,12 +22,14 @@ from ingress_pending import refuse_pending
 RUNTIME = Path('/srv/open-hax/services/caddy')
 STATE = Path('/srv/open-hax/state/caddy')
 STAGED = Path('/etc/open-hax/ingress/candidate')
-VALIDATION_OVERLAY = b'services:\n  caddy:\n    network_mode: none\n    networks: !reset null\n'
+VALIDATION_OVERLAY = b'services:\n  caddy:\n    container_name: caddy-identity-bootstrap-validation\n    network_mode: none\n    networks: !reset null\n    ports: !reset []\n    entrypoint: [caddy]\n    command: [validate, --config, /etc/caddy/identity-ingress/Caddyfile, --adapter, caddyfile]\n    restart: \"no\"\n'
 
 
 def deployment_qualified():
     # The specific source, image, actor binding and required promotion gates
     # must be independently verified before a real production implementation.
+    # The create-inspect-start-by-ID sequence is still only a candidate;
+    # it requires independent review and real qualified environment evidence.
     return False
 
 
@@ -94,12 +97,16 @@ def validate_candidate_models(legacy, candidate, plan):
 def validate_isolated_model(candidate, isolated):
     if set(isolated.get('services', {})) != {'caddy'}:
         raise IngressTransactionError('Isolated validation service differs')
-    before = candidate['services']['caddy']
-    after = isolated['services']['caddy']
+    before, after = candidate['services']['caddy'], isolated['services']['caddy']
+    changed = {'networks', 'network_mode', 'ports', 'container_name', 'entrypoint', 'command', 'restart'}
     if (after.get('network_mode') != 'none' or after.get('networks') not in (None, {}) or
-            {k: v for k, v in before.items() if k not in ('networks', 'network_mode')} !=
-            {k: v for k, v in after.items() if k not in ('networks', 'network_mode')}):
-        raise IngressTransactionError('Validation overlay changes more than network isolation')
+            after.get('ports') not in (None, []) or after.get('container_name') != VALIDATION or
+            after.get('entrypoint') != ['caddy'] or
+            after.get('command') != ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile'] or
+            after.get('restart') != 'no' or
+            {k: v for k, v in before.items() if k not in changed} !=
+            {k: v for k, v in after.items() if k not in changed}):
+        raise IngressTransactionError('Validation overlay changes more than approved isolation and command')
 
 
 def read_root_file(path, limit=2*1024*1024):
@@ -216,7 +223,7 @@ class HostBootstrapDriver(HostRecoveryDriver):
         new = self.execute(['docker', 'compose', '--project-name', 'caddy-identity', '--env-file', str(RUNTIME / '.env'),
                             '-f', str(RUNTIME / 'compose.yaml'), '-f', str(STAGED / 'compose.bootstrap.yaml'),
                             'config', '--format', 'json'])
-        isolated = self.execute(['docker', 'compose', '--project-name', 'caddy-identity', '--env-file', str(RUNTIME / '.env'),
+        isolated = self.execute(['docker', 'compose', '--project-name', 'caddy-validation', '--env-file', str(RUNTIME / '.env'),
                                  '-f', str(RUNTIME / 'compose.yaml'), '-f', str(STAGED / 'compose.bootstrap.yaml'),
                                  '-f', str(STAGED / 'compose.validation.yaml'), 'config', '--format', 'json'])
         old_model, new_model = json.loads(base.stdout), json.loads(new.stdout)
@@ -275,13 +282,22 @@ class HostBootstrapDriver(HostRecoveryDriver):
         if self.checked_validation(plan) is not None:
             raise IngressTransactionError('Prior bootstrap validation container still exists')
         _event(self.journal, 30, 'validation-container-intent')
-        self.execute(['docker', 'compose', '--project-name', 'caddy-identity', '--env-file', str(RUNTIME / '.env'),
+        self.execute(['docker', 'compose', '--project-name', 'caddy-validation', '--env-file', str(RUNTIME / '.env'),
                       '-f', str(RUNTIME / 'compose.yaml'), '-f', str(STAGED / 'compose.bootstrap.yaml'),
                       '-f', str(STAGED / 'compose.validation.yaml'),
-                      'run', '--rm', '--name', VALIDATION, '--no-deps', '--entrypoint', 'caddy', 'caddy',
-                      'validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile'])
+                      'create', '--no-build', '--pull', 'never', 'caddy'])
+        validator = self.checked_validation(plan)
+        validator_id = self.require_created_container(validator, self.checked_validation, plan)
+        self.docker('start', '--attach', validator_id)
+        completed = self.checked_validation(plan, name=validator_id)
+        if (completed is None or completed.get('Id') != validator_id or
+                (completed.get('State') or {}).get('Running') is not False or
+                (completed.get('State') or {}).get('ExitCode') != 0 or
+                (completed.get('State') or {}).get('Status') != 'exited'):
+            raise IngressTransactionError('Inspected validation container did not exit successfully')
+        self.docker('rm', validator_id)
         if self.checked_validation(plan) is not None:
-            raise IngressTransactionError('Bootstrap validation container did not exit cleanly')
+            raise IngressTransactionError('Bootstrap validation container still exists')
         verify_quiescent_snapshot(STATE, STATE / 'nonroot-adoption-candidates' / plan.incumbent_id)
 
     def release_incumbent_endpoints(self, plan):
@@ -294,6 +310,18 @@ class HostBootstrapDriver(HostRecoveryDriver):
         for name, _ in plan.networks:
             self.docker('network', 'disconnect', '--force', name, plan.incumbent_id)
 
+    def require_created_container(self, container, check, plan):
+        if container is None or not isinstance(container.get('Id'), str) or re.fullmatch(r'[0-9a-f]{64}', container['Id']) is None:
+            raise IngressTransactionError('Created container identity is missing')
+        ident = container['Id']
+        exact = check(plan, name=ident)
+        if (exact is None or exact.get('Id') != ident or
+                (exact.get('State') or {}).get('Status') != 'created' or
+                (exact.get('State') or {}).get('Running') is not False):
+            raise IngressTransactionError('Inspected exact container was not in created state')
+        self.lease.recheck()
+        return ident
+
     def start_nonroot_candidate(self, plan):
         self.lease.recheck()
         self.adoption_preflight(plan)
@@ -302,8 +330,13 @@ class HostBootstrapDriver(HostRecoveryDriver):
             raise IngressTransactionError('Staged candidate changed before start')
         self.execute(['docker', 'compose', '--project-name', 'caddy-identity', '--env-file', str(RUNTIME / '.env'),
                       '-f', str(RUNTIME / 'compose.yaml'), '-f', str(STAGED / 'compose.bootstrap.yaml'),
-                      'up', '-d', '--no-deps', '--pull', 'never', '--no-build', 'caddy'])
-        self.checked_candidate(plan)
+                      'create', '--no-build', '--pull', 'never', 'caddy'])
+        candidate = self.checked_candidate(plan)
+        ident = self.require_created_container(candidate, self.checked_candidate, plan)
+        self.docker('start', ident)
+        actual = self.checked_candidate(plan, name=ident)
+        if actual is None or actual.get('Id') != ident or not (actual.get('State') or {}).get('Running'):
+            raise IngressTransactionError('Inspected candidate did not start')
 
     def verify_candidate_tls_routes_peer(self, plan):
         self.verify_adoption_and_retained_incumbent(plan)

@@ -50,7 +50,7 @@ class BundleTest(unittest.TestCase):
         self.assertEqual((self.journal / "before-1").read_bytes(), b"old compose")
         self.assertEqual((self.journal / "before-0").stat().st_mode & 0o777, 0o600)
         self.assertEqual((self.journal / "result").read_text().strip(), "applied-and-verified")
-        self.assertFalse((self.journal / "pending").exists())
+        self.assertTrue((self.journal / "settled").exists())
 
     def test_failed_recreate_restores_the_entire_bundle_and_verifies(self):
         calls = []
@@ -62,7 +62,7 @@ class BundleTest(unittest.TestCase):
         self.assertEqual(calls, ["apply", "restored"])
         self.assertEqual((self.caddy.read_bytes(), self.compose.read_bytes()), (b"old routes", b"old compose"))
         self.assertEqual((self.journal / "result").read_text().strip(), "restored-and-verified")
-        self.assertFalse((self.journal / "pending").exists())
+        self.assertTrue((self.journal / "settled").exists())
 
     def test_foreign_write_refuses_all_rollback_and_keeps_pending(self):
         def apply():
@@ -109,7 +109,7 @@ class BundleTest(unittest.TestCase):
                 self.run_bundle(lambda: self.fail('failed fsync must not apply'), lambda: None)
         self.assertTrue(state['failed'])
         self.assertEqual((self.caddy.read_bytes(), self.compose.read_bytes()), (b'old routes', b'old compose'))
-        self.assertFalse((self.journal / 'pending').exists())
+        self.assertTrue((self.journal / 'settled').exists())
 
     def test_persistent_post_rename_fsync_failure_retains_pending_guard(self):
         original_replace, original_fsync = os.replace, os.fsync
@@ -139,27 +139,55 @@ class BundleTest(unittest.TestCase):
             self.run_bundle(apply, restore)
         self.assertTrue((self.journal / 'pending').exists())
 
-    def test_guard_unlink_fsync_failure_does_not_undo_verified_apply(self):
-        original_unlink, original_fsync = os.unlink, os.fsync
+    def test_settlement_fsync_and_guard_recreation_failures_keep_gate_closed(self):
+        from ingress_pending import refuse_pending
+        original_fsync, original_unlink = os.fsync, os.unlink
         directory = self.journal.stat()
-        state = {'unlinked': False, 'failed': False}
-        def unlink(name, **kwargs):
-            result = original_unlink(name, **kwargs)
-            if name == 'pending':
-                state['unlinked'] = True
-            return result
+        state = {'failed': False, 'guard_unlink_attempted': False}
         def fsync(fd):
             info = os.fstat(fd)
-            if state['unlinked'] and not state['failed'] and (info.st_dev, info.st_ino) == (directory.st_dev, directory.st_ino):
+            if ((self.journal / 'settlement-prepared').exists() and
+                    (info.st_dev, info.st_ino) == (directory.st_dev, directory.st_ino)):
                 state['failed'] = True
-                raise OSError('injected guard settlement fsync failure')
+                raise OSError('injected settlement directory fsync failure')
             return original_fsync(fd)
+        def unlink(name, **kwargs):
+            if name == 'pending':
+                state['guard_unlink_attempted'] = True
+                raise OSError('injected guard unlink/recreation failure')
+            return original_unlink(name, **kwargs)
         with patch.object(os, 'unlink', side_effect=unlink), patch.object(os, 'fsync', side_effect=fsync):
             with self.assertRaisesRegex(IngressTransactionError, 'settlement requires recovery'):
                 self.run_bundle(lambda: None, lambda: self.fail('verified apply must not be rolled back'))
+        self.assertTrue(state['failed'])
+        self.assertFalse(state['guard_unlink_attempted'])
         self.assertTrue((self.journal / 'pending').exists())
-        self.assertEqual((self.journal / 'result').read_text(), 'applied-and-verified\n')
+        self.assertFalse((self.journal / 'settled').exists())
+        # Use a private parent and the actual shared writer guard.
+        journals = self.root / 'journals'
+        journals.mkdir(mode=0o700)
+        self.journal.rename(journals / 'run')
+        with self.assertRaisesRegex(IngressTransactionError, 'requires recovery'):
+            refuse_pending(journals, os.getuid(), bootstrap_guard=self.root / 'none')
         self.assertEqual((self.caddy.read_bytes(), self.compose.read_bytes()), (b'new routes', b'new compose'))
+
+    def test_interrupted_terminal_publication_remains_guarded(self):
+        from ingress_pending import refuse_pending
+        original_rename = os.rename
+        def rename(src, dst, **kwargs):
+            if dst == 'settled':
+                raise OSError('injected terminal rename failure')
+            return original_rename(src, dst, **kwargs)
+        with patch.object(os, 'rename', side_effect=rename):
+            with self.assertRaisesRegex(IngressTransactionError, 'settlement requires recovery'):
+                self.run_bundle(lambda: None, lambda: self.fail('verified apply must not be rolled back'))
+        self.assertTrue((self.journal / 'pending').exists())
+        self.assertTrue((self.journal / 'settlement-prepared').exists())
+        journals = self.root / 'journals'
+        journals.mkdir(mode=0o700)
+        self.journal.rename(journals / 'run')
+        with self.assertRaisesRegex(IngressTransactionError, 'requires recovery'):
+            refuse_pending(journals, os.getuid(), bootstrap_guard=self.root / 'none')
 
     def test_website_writer_process_cannot_acquire_lease_mid_bundle(self):
         runtime, managed = self.root / "website-runtime", self.root / "managed"

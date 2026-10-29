@@ -281,3 +281,28 @@ environment hash. Candidate and one-off validation container inspection must
 match that contract before adoption or targeted cleanup. The hash avoids writing
 environment values to the contract, but it does not establish the currently
 unproven production writer boundary or deployment qualification.
+
+### Exact-container qualification remains refused
+
+The driver now creates an isolated, portless validation container under a
+separate fixed Compose project and checks its configuration while stopped.
+It starts the inspected Docker ID, verifies that same ID exited successfully,
+and removes that exact ID. The candidate is likewise created stopped, checked
+by ID, started by ID and rechecked. Synthetic adversarial tests reject drift
+before either container executes, and an isolated nonroot Docker fixture checks
+the validator sequence. Both production gates stay hard false until independent
+review and production-specific boundary and promotion evidence exist.
+
+Bundle journals retain their `pending` guard permanently. A pre-synced
+`settlement-prepared` file is atomically renamed to `settled` only after the
+verified result is durable. Writers admit a journal only when `settled` and
+`result` have the same exact safe terminal value. No fsync follows the rename:
+if a crash loses that last rename, the retained guard conservatively blocks
+writes. A settlement failure never requires removing or recreating the guard.
+
+The root-owned bootstrap guard uses the same conservative publication rule.
+It remains present, while `bootstrap-settled` binds the incumbent ID and the
+verified stable selector project. A matching marker permits normal writers; an
+absent, invalid, or mismatched marker blocks them. The boot recovery entry
+point checks this state while holding the same lease. Bootstrap is one-shot:
+the retained guard prevents a second bootstrap using the same mechanism.

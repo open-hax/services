@@ -60,7 +60,7 @@ class DeploymentWriterTest(unittest.TestCase):
         self.run_transaction()
         self.assertEqual([x[0] for x in self.calls], ['prepare', 'recreate', 'verify'])
         self.assertTrue(all(x[1] == self.container['Image'] for x in self.calls))
-        self.assertFalse((self.journals / '1-1/pending').exists())
+        self.assertTrue((self.journals / '1-1/settled').exists())
         self.assertEqual((self.managed.parent / 'identity-ingress/Caddyfile').read_bytes(), b'Caddyfile-before')
 
     def test_failed_health_restores_prior_files_and_recreates_old_image(self):
@@ -105,7 +105,7 @@ class DeploymentWriterTest(unittest.TestCase):
         def guard_check(journals, owner):
             return ingress_pending.refuse_pending(journals, owner, bootstrap_guard=guard)
         with patch.object(writer, 'refuse_pending', guard_check):
-            with self.assertRaisesRegex(IngressTransactionError, 'bootstrap'):
+            with self.assertRaisesRegex(IngressTransactionError, '[Bb]ootstrap'):
                 self.run_transaction()
         self.assertEqual(self.calls, [])
         self.assertEqual(list(self.journals.iterdir()), [])

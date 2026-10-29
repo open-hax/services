@@ -81,7 +81,7 @@ class TransactionTest(unittest.TestCase):
                                  lambda: observed.append(self.target.read_bytes()))
         self.assertEqual(self.target.read_bytes(), b'old configuration\n')
         self.assertEqual(observed, [b'old configuration\n'])
-        self.assertFalse((self.root / 'journal-1/pending').exists())
+        self.assertTrue((self.root / 'journal-1/settled').exists())
 
     def test_persistent_post_rename_fsync_failure_keeps_durable_guard(self):
         original_replace, original_fsync = os.replace, os.fsync
@@ -124,7 +124,7 @@ class TransactionTest(unittest.TestCase):
                 with self.assertRaisesRegex(IngressTransactionError, 'restored and reloaded'):
                     self.replace(lease, self.target, b'new route', None, lambda: None)
         self.assertFalse(self.target.exists())
-        self.assertFalse((self.root / 'journal-1/pending').exists())
+        self.assertTrue((self.root / 'journal-1/settled').exists())
 
     def test_new_file_install_and_failed_install_restores_absence(self):
         self.target.unlink()

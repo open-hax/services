@@ -59,6 +59,24 @@ class BootstrapDriverTest(unittest.TestCase):
             self.assertFalse(driver.preflight(self.plan))
         self.assertEqual(calls, [])
 
+    def test_qualification_alone_refuses_even_if_writer_boundary_is_proven(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as root:
+            driver = bootstrap.HostBootstrapDriver(Lease(), Path(root), execute=lambda *a, **kw: calls.append(a), boundary=lambda: True)
+            self.assertFalse(driver.preflight(self.plan))
+        self.assertEqual(calls, [])
+        self.assertFalse(bootstrap.deployment_qualified())
+
+    def test_created_container_drift_or_preexecution_blocks_start(self):
+        driver = bootstrap.HostBootstrapDriver(Lease(), Path('/unused'), boundary=lambda: True, qualification=lambda: True)
+        for inspected in (None, {'Id': 'e'*64, 'State': {'Running': False, 'Status': 'created'}},
+                          {'Id': 'c'*64, 'State': {'Running': True, 'Status': 'running'}},
+                          {'Id': 'c'*64, 'State': {'Running': False, 'Status': 'exited'}}):
+            with self.assertRaises(IngressTransactionError):
+                driver.require_created_container({'Id': 'c'*64}, lambda *a, **kw: inspected, self.plan)
+        with self.assertRaisesRegex(IngressTransactionError, 'identity is missing'):
+            driver.require_created_container({'Id': 'short'}, lambda *a, **kw: None, self.plan)
+
     def test_reviewed_only_model_is_accepted(self):
         bootstrap.validate_candidate_models(self.before, self.after, self.plan)
 
@@ -105,7 +123,7 @@ class BootstrapDriverTest(unittest.TestCase):
             old['State']['Running'] = False
             with patch.object(driver, 'checked_incumbent', return_value=old), \
                  patch.object(driver, 'adoption_preflight', return_value=True), \
-                 patch.object(driver, 'checked_validation', return_value=None), \
+                 patch.object(driver, 'checked_validation', side_effect=[None, {'Id': 'd'*64}, {'Id': 'd'*64, 'State': {'Running': False, 'Status': 'created'}}, {'Id': 'd'*64, 'State': {'Running': False, 'Status': 'exited', 'ExitCode': 0}}, None]), \
                  patch.object(bootstrap, 'copy_verified') as copied, \
                  patch.object(bootstrap, 'verify_quiescent_snapshot') as snapshot_checked:
                 driver.snapshot_quiescent_and_verify(self.plan)
@@ -114,14 +132,14 @@ class BootstrapDriverTest(unittest.TestCase):
             snapshot_checked.assert_called_once()
             self.assertIn(['docker', 'stop', '--time', '30', self.plan.incumbent_id], calls)
             self.assertEqual(len([x for x in calls if x[:3] == ['docker', 'network', 'disconnect']]), 2)
-            self.assertTrue(any(x[:3] == ['docker', 'compose', '--project-name'] and 'run' in x and
+            self.assertTrue(any(x[:3] == ['docker', 'compose', '--project-name'] and 'create' in x and
                                 '/etc/open-hax/ingress/candidate/compose.validation.yaml' in x for x in calls))
             with patch.object(driver, 'adoption_preflight', return_value=True), \
                  patch.object(driver, 'baseline_caddy_sha', return_value=hashlib.sha256(b'fixture').hexdigest()), \
-                 patch.object(driver, 'checked_candidate', return_value={}), \
+                 patch.object(driver, 'checked_candidate', side_effect=[{'Id': 'c'*64}, {'Id': 'c'*64, 'State': {'Running': False, 'Status': 'created'}}, {'Id': 'c'*64, 'State': {'Running': True}}]), \
                  patch.object(Path, 'read_bytes', return_value=b'fixture'):
                 driver.start_nonroot_candidate(self.plan)
-            self.assertTrue(any(x[:3] == ['docker', 'compose', '--project-name'] and 'up' in x and '--pull' in x for x in calls))
+            self.assertTrue(any(x[:3] == ['docker', 'compose', '--project-name'] and 'create' in x and '--pull' in x for x in calls))
 
 
 if __name__ == '__main__':
