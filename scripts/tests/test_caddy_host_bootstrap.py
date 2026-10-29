@@ -29,7 +29,7 @@ def models(plan, root='/srv/open-hax/services/caddy', state='/srv/open-hax/state
     service = {'image': 'caddy:2.8-alpine', 'environment': {'FIXTURE': 'value'}, 'restart': 'unless-stopped',
                'ports': [{'target': 80, 'published': '80', 'protocol': 'tcp'}, {'target': 443, 'published': '443', 'protocol': 'tcp'}],
                'volumes': volumes, 'networks': {'default': {'aliases': ['caddy']}, 'dev-ingress': {'ipv4_address': '172.31.255.2'}},
-               'healthcheck': {'test': ['CMD', 'caddy', 'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'], 'interval': '30s'}}
+               'healthcheck': {'test': ['CMD', 'caddy', 'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'], 'interval': '30s', 'timeout': '10s', 'start_period': '10s', 'retries': 3}}
     before = {'services': {'caddy': service}}
     after = copy.deepcopy(before)
     new = after['services']['caddy']
@@ -105,6 +105,21 @@ class BootstrapDriverTest(unittest.TestCase):
             after['services']['caddy'][key] = value
             with self.subTest(key=key), self.assertRaisesRegex(IngressTransactionError, 'Unsupported Compose'):
                 bootstrap.validate_candidate_models(before, after, self.plan)
+
+    def test_unsupported_or_incomplete_healthcheck_and_restart_are_rejected(self):
+        for key, value in (('interval', '1m30s'), ('timeout', None), ('retries', 0), ('start_period', '0s')):
+            after = copy.deepcopy(self.after)
+            after['services']['caddy']['healthcheck'][key] = value
+            with self.subTest(key=key), self.assertRaises(IngressTransactionError):
+                bootstrap.validate_candidate_models(self.before, after, self.plan)
+        after = copy.deepcopy(self.after)
+        after['services']['caddy']['healthcheck']['start_interval'] = '1s'
+        with self.assertRaises(IngressTransactionError):
+            bootstrap.validate_candidate_models(self.before, after, self.plan)
+        before, after = copy.deepcopy(self.before), copy.deepcopy(self.after)
+        before['services']['caddy']['restart'] = after['services']['caddy']['restart'] = 'on-failure:3'
+        with self.assertRaisesRegex(IngressTransactionError, 'restart policy'):
+            bootstrap.validate_candidate_models(before, after, self.plan)
 
     def test_snapshot_verification_detects_post_validation_changes(self):
         with tempfile.TemporaryDirectory() as root:

@@ -16,7 +16,7 @@ import ingress_owner as owner
 from caddy_bootstrap_candidate import bootstrap_under_lease, production_plan, recover_under_lease
 from identity_ingress_transaction import IngressTransactionError
 from ingress_pending import refuse_pending
-from caddy_runtime_security import HOST_PROFILE, MASKED_REQUIRED, READONLY_REQUIRED
+from caddy_runtime_security import HOST_PROFILE, MASKED_REQUIRED, READONLY_REQUIRED, reviewed_runtime
 from scripts.tests.test_caddy_bootstrap_candidate import container
 from scripts.tests.test_caddy_host_bootstrap import models
 
@@ -110,18 +110,21 @@ class SyntheticDocker:
                         'Config': {'User': '1000:1000', 'Labels': {'com.docker.compose.project': 'caddy-validation',
                                   'com.docker.compose.service': 'caddy'}, 'Entrypoint': ['caddy'],
                                   'Cmd': ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile'],
-                                  'Env': ['FIXTURE=value']}, 'HostConfig': {**{k: v[0] for k, v in HOST_PROFILE.items()}, 'MaskedPaths': sorted(MASKED_REQUIRED), 'ReadonlyPaths': sorted(READONLY_REQUIRED), 'NetworkMode': 'none', 'PortBindings': {}},
+                                  'Env': ['FIXTURE=value'], 'Healthcheck': reviewed_runtime(self.after['services']['caddy'])['healthcheck']}, 'HostConfig': {**{k: v[0] for k, v in HOST_PROFILE.items()}, 'MaskedPaths': sorted(MASKED_REQUIRED), 'ReadonlyPaths': sorted(READONLY_REQUIRED), 'NetworkMode': 'none', 'PortBindings': {}, 'RestartPolicy': {'Name': 'no', 'MaximumRetryCount': 0}},
                         'Mounts': mounts, 'State': {'Running': False, 'Status': 'created'}}
                     if self.fault == 'validator-drift':
                         self.validation['Config']['Cmd'] = ['unexpected']
                     if self.fault == 'validator-privileged':
                         self.validation['HostConfig']['Privileged'] = True
+                    if self.fault == 'validator-restart':
+                        self.validation['HostConfig']['RestartPolicy']['Name'] = 'always'
                     return self.result()
                 self.candidate = {'Id': 'c'*64, 'Image': self.plan.incumbent_image,
                     'Config': {'User': '1000:1000', 'Labels': {'com.docker.compose.project': 'caddy-identity',
                                                                'com.docker.compose.service': 'caddy'},
-                               'Cmd': recovery.CANDIDATE_COMMAND, 'Entrypoint': None, 'Env': ['FIXTURE=value']},
-                    'HostConfig': {**{k: v[0] for k, v in HOST_PROFILE.items()}, 'MaskedPaths': sorted(MASKED_REQUIRED), 'ReadonlyPaths': sorted(READONLY_REQUIRED), 'PortBindings': copy.deepcopy(self.old['HostConfig']['PortBindings'])},
+                               'Cmd': recovery.CANDIDATE_COMMAND, 'Entrypoint': None, 'Env': ['FIXTURE=value'],
+                               'Healthcheck': reviewed_runtime(self.after['services']['caddy'])['healthcheck']},
+                    'HostConfig': {**{k: v[0] for k, v in HOST_PROFILE.items()}, 'MaskedPaths': sorted(MASKED_REQUIRED), 'ReadonlyPaths': sorted(READONLY_REQUIRED), 'PortBindings': copy.deepcopy(self.old['HostConfig']['PortBindings']), 'RestartPolicy': {'Name': 'unless-stopped', 'MaximumRetryCount': 0}},
                     'Mounts': mounts, 'State': {'Running': False, 'Status': 'created'}, 'NetworkSettings': {'Networks': {
                         'open-hax': {'IPAddress': '172.18.0.31', 'Aliases': ['caddy']},
                         'caddy-dev-ingress': {'IPAddress': '172.31.255.2'},
@@ -131,6 +134,9 @@ class SyntheticDocker:
                     return self.result()
                 if self.fault == 'candidate-privileged':
                     self.candidate['HostConfig']['Privileged'] = True
+                    return self.result()
+                if self.fault == 'candidate-health':
+                    self.candidate['Config']['Healthcheck']['Timeout'] = 1
                     return self.result()
                 if self.fault == 'interrupt':
                     raise KeyboardInterrupt()
@@ -203,7 +209,7 @@ class BootstrapE2E(unittest.TestCase):
             stack.enter_context(patch.object(recovery, 'settle_transition', lambda lease, target, verify: owner.settle_transition(lease, target, verify, selector)))
             stack.enter_context(patch.object(recovery, 'clear_bootstrap_pending', lambda lease, ident, target: owner.clear_bootstrap_pending(lease, ident, target, selector)))
             driver = boot.HostBootstrapDriver(Lease(), journal, execute=fake, boundary=lambda: True, qualification=lambda: True)
-            if fault in ('validator-drift', 'candidate-drift', 'validator-privileged', 'candidate-privileged'):
+            if fault in ('validator-drift', 'candidate-drift', 'validator-privileged', 'candidate-privileged', 'validator-restart', 'candidate-health'):
                 with self.assertRaisesRegex(IngressTransactionError, 'manual recovery'):
                     bootstrap_under_lease(driver.lease, journal, driver, plan, owner=0)
                 self.assertTrue(owner.bootstrap_guard_pending(selector / 'bootstrap-pending'))
@@ -255,6 +261,12 @@ class BootstrapE2E(unittest.TestCase):
 
     def test_privileged_candidate_never_executes(self):
         self.exercise('candidate-privileged')
+
+    def test_altered_validator_restart_never_executes(self):
+        self.exercise('validator-restart')
+
+    def test_altered_candidate_healthcheck_never_executes(self):
+        self.exercise('candidate-health')
 
     def test_complete_synthetic_adoption(self):
         self.exercise(False)

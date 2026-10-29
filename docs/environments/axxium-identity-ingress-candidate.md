@@ -313,6 +313,7 @@ unsupported runtime options. It also checks a conservative Docker security
 profile and required masked and read-only paths; unsupported Compose service
 options are refused before creating containers. The real isolated validator
 fixture exercises this profile. This is a restricted security contract, not a
-complete comparison of every Docker inspection field (for example healthcheck
-and restart-policy readback remain separate qualification work). Both production
-gates remain unconditionally false.
+complete comparison of every Docker inspection field. Healthcheck and restart
+policy are matched against the reviewed model, with unsupported health durations
+and policy formats refused. Other unmodeled Docker fields remain a qualification
+gap. Both production gates remain unconditionally false.

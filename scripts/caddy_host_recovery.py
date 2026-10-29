@@ -18,7 +18,7 @@ import sys
 from caddy_bootstrap_candidate import recover_under_lease, static_fingerprint
 from identity_ingress_transaction import IngressTransactionError
 from ingress_lock import ingress_lock
-from caddy_runtime_security import check_inspected_security
+from caddy_runtime_security import check_inspected_security, check_inspected_runtime
 from ingress_owner import DIRECTORY, _publish, _read_record, read_selection, settle_transition, clear_bootstrap_pending, bootstrap_guard_pending
 
 JOURNALS = Path('/var/lib/open-hax/ingress/bootstrap')
@@ -167,10 +167,19 @@ class HostRecoveryDriver:
                     stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 4096):
                 raise IngressTransactionError('Candidate runtime contract is unsafe')
             value = json.load(stream)
-        if (not isinstance(value, dict) or set(value) != {'command', 'entrypoint', 'environment_sha256'} or
+        if (not isinstance(value, dict) or set(value) != {'command', 'entrypoint', 'environment_sha256', 'healthcheck', 'restart'} or
                 value['command'] != CANDIDATE_COMMAND or value['entrypoint'] is not None or
                 not isinstance(value['environment_sha256'], str) or
-                re.fullmatch(r'[0-9a-f]{64}', value['environment_sha256']) is None):
+                re.fullmatch(r'[0-9a-f]{64}', value['environment_sha256']) is None or
+                not isinstance(value['healthcheck'], dict) or
+                set(value['healthcheck']) != {'Test', 'Interval', 'Timeout', 'StartPeriod', 'Retries'} or
+                not isinstance(value['healthcheck']['Test'], list) or
+                not all(isinstance(v, str) for v in value['healthcheck']['Test']) or
+                any(type(value['healthcheck'][key]) is not int or value['healthcheck'][key] <= 0
+                    for key in ('Interval', 'Timeout', 'StartPeriod', 'Retries')) or
+                value['restart'] not in ({'Name': 'no', 'MaximumRetryCount': 0},
+                                         {'Name': 'always', 'MaximumRetryCount': 0},
+                                         {'Name': 'unless-stopped', 'MaximumRetryCount': 0})):
             raise IngressTransactionError('Candidate runtime contract is invalid')
         return value
 
@@ -213,6 +222,7 @@ class HostRecoveryDriver:
             raise IngressTransactionError('Candidate identity, image or Compose ownership is unexpected')
         config = candidate.get('Config') or {}
         contract = self.runtime_contract()
+        check_inspected_runtime(candidate, contract)
         if (config.get('Cmd') != contract['command'] or config.get('Entrypoint') != contract['entrypoint'] or
                 environment_digest(config.get('Env')) != contract['environment_sha256']):
             raise IngressTransactionError('Candidate command, entrypoint or environment differs from reviewed model')
@@ -265,7 +275,9 @@ class HostRecoveryDriver:
                 config.get('Cmd') != ['validate', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile'] or
                 host.get('NetworkMode') != 'none' or host.get('PortBindings')):
             raise IngressTransactionError('Validation container identity or isolation differs')
-        if environment_digest(config.get('Env')) != self.runtime_contract()['environment_sha256']:
+        contract = self.runtime_contract()
+        check_inspected_runtime(validator, contract, validator=True)
+        if environment_digest(config.get('Env')) != contract['environment_sha256']:
             raise IngressTransactionError('Validation environment differs from reviewed model')
         mount_entries = validator.get('Mounts', [])
         mounts = {m.get('Destination'): (m.get('Source'), m.get('RW')) for m in mount_entries}

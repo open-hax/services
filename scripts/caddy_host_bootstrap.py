@@ -15,7 +15,7 @@ from axxium_identity_candidate import candidate as identity_candidate
 from caddy_bootstrap_candidate import production_plan, _event
 from caddy_host_recovery import HostRecoveryDriver, command, boundary_proven, VALIDATION, CANDIDATE_COMMAND, environment_digest
 from caddy_state_candidate import copy_verified, inventory
-from caddy_runtime_security import check_compose_security
+from caddy_runtime_security import check_compose_security, reviewed_runtime
 from identity_ingress_transaction import IngressTransactionError
 from ingress_owner import DIRECTORY, read_selection, begin_transition, settle_transition, mark_bootstrap_pending
 from ingress_pending import refuse_pending
@@ -53,6 +53,7 @@ def validate_candidate_models(legacy, candidate, plan):
     permitted = {'image', 'user', 'command', 'healthcheck', 'volumes', 'networks'}
     if {k: v for k, v in before.items() if k not in permitted} != {k: v for k, v in after.items() if k not in permitted}:
         raise IngressTransactionError('Compose changes unrelated service behavior')
+    reviewed_runtime(after)
     if after.get('image') != plan.incumbent_image or after.get('user') not in ('1000', '1000:1000'):
         raise IngressTransactionError('Candidate image or user is not pinned')
     if after.get('command') != ['caddy', 'run', '--config', '/etc/caddy/identity-ingress/Caddyfile', '--adapter', 'caddyfile']:
@@ -245,7 +246,8 @@ class HostBootstrapDriver(HostRecoveryDriver):
         if live['Config'].get('Entrypoint') is not None or new_model['services']['caddy'].get('entrypoint') is not None:
             raise IngressTransactionError('Caddy entrypoint is not the qualified image default')
         contract = {'command': CANDIDATE_COMMAND, 'entrypoint': None,
-                    'environment_sha256': environment_digest(live['Config'].get('Env'))}
+                    'environment_sha256': environment_digest(live['Config'].get('Env')),
+                    **reviewed_runtime(new_model['services']['caddy'])}
         contract_path = self.journal / 'candidate-runtime.json'
         try:
             fd = os.open(contract_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
