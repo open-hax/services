@@ -44,25 +44,6 @@
 {$CADDY_KNOXX_HOST} {
 	import common
 
-	# Single-operator Colab gateway. Its own bearer guard is mandatory; the
-	# dedicated Caddy bridge is the only admitted ingress to this listener.
-	@colab_oauth_discovery path /.well-known/oauth-protected-resource/colab/mcp /.well-known/oauth-authorization-server/colab
-	handle @colab_oauth_discovery {
-		reverse_proxy 172.31.255.1:18024 {
-			header_up -x-open-hax-bridge-auth
-		}
-	}
-
-	handle_path /colab/* {
-		request_body {
-			max_size 512KB
-		}
-		reverse_proxy 172.31.255.1:18024 {
-			header_up -x-open-hax-bridge-auth
-			flush_interval -1
-		}
-	}
-
 	# MCP discovery and transport must reach Fastify directly. Sending these
 	# through the frontend nginx layer risks buffering the SSE response and does
 	# not expose the root-level /.well-known discovery documents.

@@ -5,19 +5,26 @@ extracted from the uncommitted `open-hax/knoxx` `integrations/colab-mcp/`
 source. The existing production gateway's Python modules matched the initial
 extraction `335ca46fb6fc96e23faed6e979a6eb024358a2aa` on 2026-10-28; this is
 not proof its image was built from that Git revision. Later Cloud Cuckoo changes,
-including exact harness callbacks and the upstream resource-boundary fix merged
-as `000064ebf337e86292aa95bf200e4e0ca27c30a9`, are not yet deployed to the
-production gateway.
+including exact harness callbacks, resource-boundary forwarding, retryable
+revocation and serialized code exchange, are merged through
+`a2433edbe678ddd3ae042053e996737fd4c2eeb4` but are not yet deployed to the
+production gateway. Source-revision image labels are prepared in Cloud Cuckoo
+PR #6; that image change must be merged before selecting a new release artifact.
 
 This directory describes placement, processes and rollback; the package wraps
 the pinned official Google bridge, and the browser must run on Stealth.
 
-## Current deployment evidence (2026-10-28)
+## Current deployment evidence (2026-10-29)
 
 Production's `https://knoxx.promethean.rest/colab/mcp` returns HTTP 401 to an
 anonymous request. The Axxium production OIDC discovery endpoint returns 404,
 and the Colab authorization endpoint returns 503; production harness login is
 not established.
+
+The real ChatGPT App connection reaches the pending authorization page with
+the expected callback, resource and S256 PKCE, but still requests the obsolete
+`colab` scope. The current gateway requires `openid profile`; the owning App
+configuration needs reconciliation before a live grant can complete.
 
 A separate Axxium staging authority is active at
 `https://staging.axxium.promethean.rest/oidc`. An isolated Cloud Cuckoo staging
@@ -80,12 +87,21 @@ fixtures are not a real Axxium login or a ChatGPT-origin tool-call receipt.
 Keep the existing Colab Caddy routes and root Knoxx issuer unchanged. Recreate
 only this dedicated gateway after its package tests pass. The separately
 approved local backend activation already occurred; this identity correction
-requires no backend restart. Never restore the withdrawn key-entry login as an
+requires no backend restart. Runtime replacement remains subject to the
+Services production deployment contract; this inventory does not introduce a
+second deployment entry point. Never restore the withdrawn key-entry login as an
 operational fallback. Pre-OAuth snapshots remain protected recovery artifacts.
 
-## Install the candidate
+## Prepare the candidate artifact
 
-Build from the reviewed/pinned application source, then `docker compose up -d`.
+Build the reviewed immutable application revision using the Cloud Cuckoo
+repository's Git-archive instructions. Select its qualified image digest with
+`COLAB_MCP_IMAGE`; this Compose definition does not build mutable `./app` source
+or choose a floating candidate tag. Verify the image's OCI source/revision
+labels against the selected source and retain the actual image digest in the
+deployment receipt. Labels alone do not establish source custody or release
+qualification. `COLAB_MCP_STATE_DIR` selects the existing private state path.
+
 The Dockerfile runs as UID 1000. The gateway has no Docker socket, host files,
 Google credentials or notebook runtime. Network mode host permits it to reach
 the SSH relay on loopback; its HTTP bind is the dedicated Caddy bridge address.
@@ -111,8 +127,11 @@ handle_path /colab/* {
 }
 ```
 
-Insert before the site's catch-all `handle`; preserve its existing `/mcp` and
-OAuth routes. Do not add a second site block for the same hostname. Allow only
+This is a routing example for the source-owned ingress transition, not an
+instruction to edit the live Caddyfile from this inventory. It belongs before
+the site's catch-all `handle`, preserving its existing `/mcp` and OAuth routes.
+The shared Caddyfile is unchanged by this PR because the existing managed-site
+imports collide with it. Do not add a second site block for the same hostname. Allow only
 Caddy source `172.31.255.2` to the gateway's TCP 18024. Validate candidate Caddy
 configuration before reload and retain the original bytes as rollback. Keep
 production activation subject to the service promotion contract or an explicit

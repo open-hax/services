@@ -1,8 +1,6 @@
 services:
   gateway:
-    build:
-      context: ./app
-    image: knoxx-colab-mcp:candidate
+    image: ${COLAB_MCP_IMAGE:?Qualified Cloud Cuckoo image digest required}
     user: "1000:1000"
     restart: unless-stopped
     network_mode: host
