@@ -1,0 +1,43 @@
+name: Compare legacy deployment key fingerprint
+
+# Read-only credential identity check. This does not authenticate to a host,
+# grant access, upload an artifact or inspect any other secret.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  compare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 2
+    steps:
+      - name: Compare fingerprint without disclosing key material
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          set +x
+          umask 077
+          if [[ -z "${SSH_PRIVATE_KEY:-}" ]]; then
+            echo 'Key unavailable or inaccessible in this production context.' >&2
+            exit 2
+          fi
+          key_dir=$(mktemp -d)
+          trap 'rm -rf -- "$key_dir"' EXIT
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$key_dir/key"
+          unset SSH_PRIVATE_KEY
+          # The public key flows only through a pipe; log neither key nor fingerprint.
+          if ! fingerprint=$(timeout 10s ssh-keygen -y -P '' -f "$key_dir/key" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | awk 'NF >= 2 {print $2}'); then
+            echo 'Fingerprint derivation failed.' >&2
+            exit 2
+          fi
+          if [[ "$fingerprint" == 'SHA256:EydElJ66W2i1d+XTgpX92zQwv9F9I7+A5vFHfcj1wQs' ]]; then
+            echo 'MATCH'
+          else
+            echo 'MISMATCH'
+            exit 1
+          fi
