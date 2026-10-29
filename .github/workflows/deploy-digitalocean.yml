@@ -512,14 +512,14 @@ jobs:
             stage="$RUNTIME_PATH/.ingress-candidates/$run_key"
             ssh open-hax-target "umask 077; mkdir -p '$RUNTIME_PATH/.ingress-candidates'; mkdir '$stage'"
             scp "$SERVICE_DIR/Caddyfile" "$SERVICE_DIR/compose.yaml" "$SERVICE_DIR/verify.sh" \
-              "$SERVICE_DIR/env.template" scripts/ingress_lock.py scripts/ingress_owner.py scripts/identity_ingress_transaction.py \
+              "$SERVICE_DIR/env.template" scripts/ingress_lock.py scripts/ingress_owner.py scripts/ingress_pending.py scripts/identity_ingress_transaction.py \
               scripts/website_ingress_writer.py scripts/axxium_identity_candidate.py \
               scripts/caddy_bundle_transaction.py scripts/caddy_deployment_writer.py "open-hax-target:$stage/"
             scp rendered.env "open-hax-target:$stage/.env"
             # Verify all executable helpers and source files against the checkout
             # before allowing a host-side baseline capture or transaction.
             sums=$(cd "$SERVICE_DIR" && sha256sum Caddyfile compose.yaml verify.sh env.template)
-            helper_sums=$(cd scripts && sha256sum ingress_lock.py ingress_owner.py identity_ingress_transaction.py \
+            helper_sums=$(cd scripts && sha256sum ingress_lock.py ingress_owner.py ingress_pending.py identity_ingress_transaction.py \
               website_ingress_writer.py axxium_identity_candidate.py caddy_bundle_transaction.py caddy_deployment_writer.py)
             env_sum=$(sha256sum rendered.env | awk '{print $1}')
             ssh open-hax-target "cd '$stage'; chmod 600 Caddyfile compose.yaml verify.sh env.template .env *.py; \
@@ -622,22 +622,24 @@ jobs:
           transaction_sha=$(sha256sum scripts/identity_ingress_transaction.py | awk '{print $1}')
           writer_sha=$(sha256sum scripts/website_ingress_writer.py | awk '{print $1}')
           owner_sha=$(sha256sum scripts/ingress_owner.py | awk '{print $1}')
+          pending_sha=$(sha256sum scripts/ingress_pending.py | awk '{print $1}')
           # A run gets a new staging directory. Replays never replace a prior
           # candidate, and the uploaded files are verified before execution.
           # The substituted path components are fixed paths and numeric IDs.
           # shellcheck disable=SC2029
           ssh open-hax-target "mkdir -p '$RUNTIME_PATH/.ingress-candidates' && mkdir -m 700 '$staged'"
           scp "$snippet" "open-hax-target:$staged/website-staging.caddy.candidate"
-          scp scripts/ingress_lock.py scripts/ingress_owner.py scripts/identity_ingress_transaction.py scripts/website_ingress_writer.py "open-hax-target:$staged/"
+          scp scripts/ingress_lock.py scripts/ingress_owner.py scripts/ingress_pending.py scripts/identity_ingress_transaction.py scripts/website_ingress_writer.py "open-hax-target:$staged/"
           # Arguments are fixed paths, numeric IDs and sha256sum-produced hex.
           # shellcheck disable=SC2029
-          ssh open-hax-target "bash -euo pipefail -s -- '$staged' '$run_key' '$snippet_sha' '$lease_sha' '$transaction_sha' '$writer_sha' '$owner_sha'" <<'REMOTE'
+          ssh open-hax-target "bash -euo pipefail -s -- '$staged' '$run_key' '$snippet_sha' '$lease_sha' '$transaction_sha' '$writer_sha' '$owner_sha' '$pending_sha'" <<'REMOTE'
           {
-          staged=$1; run_key=$2; snippet_sha=$3; lease_sha=$4; transaction_sha=$5; writer_sha=$6; owner_sha=$7
+          staged=$1; run_key=$2; snippet_sha=$3; lease_sha=$4; transaction_sha=$5; writer_sha=$6; owner_sha=$7; pending_sha=$8
           cd "$staged"
-          chmod 644 website-staging.caddy.candidate ingress_lock.py ingress_owner.py identity_ingress_transaction.py website_ingress_writer.py
+          chmod 644 website-staging.caddy.candidate ingress_lock.py ingress_owner.py ingress_pending.py identity_ingress_transaction.py website_ingress_writer.py
           printf '%s  %s\n' "$snippet_sha" website-staging.caddy.candidate "$lease_sha" ingress_lock.py \
-            "$transaction_sha" identity_ingress_transaction.py "$writer_sha" website_ingress_writer.py "$owner_sha" ingress_owner.py | sha256sum -c -
+            "$transaction_sha" identity_ingress_transaction.py "$writer_sha" website_ingress_writer.py "$owner_sha" ingress_owner.py \
+            "$pending_sha" ingress_pending.py | sha256sum -c -
           python3 -B website_ingress_writer.py "$snippet_sha" "$run_key"
           } </dev/null
           REMOTE

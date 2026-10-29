@@ -84,6 +84,8 @@ jobs:
             scripts.tests.test_caddy_deployment_writer \
             scripts.tests.test_caddy_bootstrap_candidate \
             scripts.tests.test_ingress_owner \
+            scripts.tests.test_ingress_pending \
+            scripts.tests.test_provision_ingress_owner \
             scripts.tests.test_caddy_state_candidate \
             scripts.tests.test_website_ingress_writer \
             scripts.tests.test_axxium_identity_candidate

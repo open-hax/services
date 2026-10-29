@@ -16,6 +16,7 @@ import sys
 from ingress_lock import ingress_lock
 from identity_ingress_transaction import IngressTransactionError, replace_under_lease
 from ingress_owner import read_selection
+from ingress_pending import refuse_pending, JOURNALS, BOOTSTRAP_GUARD
 
 RUNTIME = Path("/srv/open-hax/services/staging/website-staging")
 MANAGED = Path("/srv/open-hax/state/caddy/managed")
@@ -108,15 +109,25 @@ def main():
         raise SystemExit("Expected reviewed candidate SHA-256 and numeric run-attempt ID")
     candidate_runtime = RUNTIME / ".ingress-candidates" / sys.argv[2]
     with ingress_lock() as lease:
-        selected = read_selection()
-        def selected_docker(arguments):
-            lease.recheck()
-            if read_selection() != selected:
-                raise IngressTransactionError('Ingress owner changed during website transaction')
-            return docker(arguments)
-        digest = run_under_lease(lease, sys.argv[1], runtime=candidate_runtime,
-                                 docker_run=selected_docker, container=selected[1])
+        digest = dispatch_under_lease(lease, sys.argv[1], runtime=candidate_runtime)
     print(json.dumps({"service": "website-staging", "sha256": digest, "status": "reloaded"}))
+
+
+def dispatch_under_lease(lease, expected_sha, *, runtime=RUNTIME, journals=JOURNALS, owner=None,
+                         bootstrap_guard=BOOTSTRAP_GUARD):
+    """Shared-lease entry: reject owner transitions and all unfinished bundles."""
+    lease.recheck()
+    selected = read_selection()
+    refuse_pending(journals, owner, bootstrap_guard=bootstrap_guard)
+    lease.recheck()
+    def selected_docker(arguments):
+        lease.recheck()
+        if read_selection() != selected:
+            raise IngressTransactionError('Ingress owner changed during website transaction')
+        refuse_pending(journals, owner, bootstrap_guard=bootstrap_guard)
+        return docker(arguments)
+    return run_under_lease(lease, expected_sha, runtime=runtime,
+                           docker_run=selected_docker, container=selected[1], owner=owner)
 
 
 if __name__ == "__main__":

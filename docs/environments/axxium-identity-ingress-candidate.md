@@ -208,3 +208,21 @@ callbacks needed to operate or recover them are not implemented. Existing
 uncoordinated old-project deploy paths must be retired or blocked before any
 cutover. Separate projects alone do not provide crash recovery, preserve the
 dev firewall peer, or qualify the production multi-network and TLS state.
+
+Both candidate writers now reject unfinished definition bundles and a durable,
+root-owned bootstrap guard, including the interval after owner selection has
+been committed but before the bootstrap terminal record is durable. Bootstrap
+journals persist the nonsecret incumbent identity, image, endpoint topology,
+and inspected-configuration fingerprint before any effects. Recovery rechecks
+that plan and never rolls back an already recorded successful adoption just
+because guard cleanup failed. The shared guard is not a substitute for a host
+Docker driver or for an enforced old-writer access boundary.
+
+`provision_ingress_owner.py` is a non-activated candidate for the initial
+selector and lock. It requires pre-existing administrator-controlled control
+directories, verifies the incumbent topology, and creates files exclusively;
+re-running it never replaces an existing lock inode. This does not install the
+selector helper, provision durable directories across reboot, or restrict
+earlier deployment workflows. In particular, a stale workflow with the existing
+deploy account's direct Docker and filesystem access can bypass this new source
+code. That access boundary must be addressed and tested before activation.

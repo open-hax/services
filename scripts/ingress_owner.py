@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import re
 import stat
 import sys
 
@@ -15,6 +16,7 @@ from identity_ingress_transaction import IngressTransactionError
 
 DIRECTORY = Path('/etc/open-hax/ingress')
 NAME = 'owner.json'
+PENDING = 'bootstrap-pending'
 PROJECTS = {'caddy': 'caddy-caddy-1', 'caddy-identity': 'caddy-identity-caddy-1'}
 
 
@@ -88,6 +90,51 @@ def begin_transition(lease, directory=DIRECTORY, *, owner=0):
     before = {'version': 1, 'phase': 'stable', 'project': 'caddy'}
     transition = {'version': 1, 'phase': 'transition', 'from': 'caddy', 'to': 'caddy-identity'}
     _publish(lease, directory, before, transition, owner)
+
+
+def mark_bootstrap_pending(lease, incumbent_id, directory=DIRECTORY, *, owner=0):
+    """Create a durable root-owned guard before any bootstrap side effect."""
+    if os.geteuid() != owner or not re.fullmatch(r'[0-9a-f]{64}', incumbent_id):
+        raise IngressTransactionError('Invalid bootstrap guard identity')
+    lease.recheck()
+    # Also verifies trusted root-owned directory and existing owner record.
+    _read_record(directory, owner=owner)
+    directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        fd = os.open(PENDING, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644, dir_fd=directory_fd)
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(incumbent_id + '\n')
+            stream.flush()
+            os.fchmod(stream.fileno(), 0o644)
+            os.fsync(stream.fileno())
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def clear_bootstrap_pending(lease, incumbent_id, target, directory=DIRECTORY, *, owner=0):
+    """Clear only after a terminal journal and verified stable selection."""
+    if os.geteuid() != owner or not re.fullmatch(r'[0-9a-f]{64}', incumbent_id):
+        raise IngressTransactionError('Invalid bootstrap guard identity')
+    lease.recheck()
+    if read_selection(directory, owner=owner)[0] != target:
+        raise IngressTransactionError('Ingress selector is not settled to verified target')
+    directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        fd = os.open(PENDING, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory_fd)
+        with os.fdopen(fd, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != owner or info.st_nlink != 1 or
+                    info.st_mode & 0o022 or stream.read(66) != (incumbent_id + '\n').encode()):
+                raise IngressTransactionError('Bootstrap guard identity changed')
+        lease.recheck()
+        current = os.stat(PENDING, dir_fd=directory_fd, follow_symlinks=False)
+        if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+            raise IngressTransactionError('Bootstrap guard was replaced')
+        os.unlink(PENDING, dir_fd=directory_fd)
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 
 def settle_transition(lease, target, verify, directory=DIRECTORY, *, owner=0):

@@ -8,7 +8,8 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 from identity_ingress_transaction import IngressTransactionError
-from ingress_owner import read_selection, begin_transition, settle_transition
+from ingress_owner import read_selection, begin_transition, settle_transition, mark_bootstrap_pending, clear_bootstrap_pending
+from ingress_pending import refuse_pending
 import website_ingress_writer
 
 
@@ -84,6 +85,7 @@ class OwnerTest(unittest.TestCase):
             return 'fixture'
         with patch.object(website_ingress_writer, 'ingress_lock', lock), \
              patch.object(website_ingress_writer, 'read_selection', return_value=('caddy-identity', 'caddy-identity-caddy-1')), \
+             patch.object(website_ingress_writer, 'refuse_pending'), \
              patch.object(website_ingress_writer, 'run_under_lease', writer), \
              patch('sys.argv', ['website_ingress_writer.py', 'a' * 64, '1-1']):
             website_ingress_writer.main()
@@ -107,6 +109,26 @@ class OwnerTest(unittest.TestCase):
         self.assertEqual(self.read(), ('caddy-identity', 'caddy-identity-caddy-1'))
         with self.assertRaisesRegex(IngressTransactionError, 'baseline changed'):
             begin_transition(lease, self.directory, owner=os.getuid())
+
+    def test_guard_survives_owner_commit_and_only_correct_identity_clears(self):
+        class Lease:
+            def recheck(self):
+                pass
+        lease = Lease()
+        old_id = 'a' * 64
+        self.put({'version': 1, 'phase': 'stable', 'project': 'caddy'})
+        mark_bootstrap_pending(lease, old_id, self.directory, owner=os.getuid())
+        begin_transition(lease, self.directory, owner=os.getuid())
+        settle_transition(lease, 'caddy-identity', lambda *_: True, self.directory, owner=os.getuid())
+        self.assertEqual(self.read()[0], 'caddy-identity')
+        journals = self.directory / 'journals'
+        journals.mkdir(mode=0o700)
+        with self.assertRaisesRegex(IngressTransactionError, 'bootstrap'):
+            refuse_pending(journals, os.getuid(), bootstrap_guard=self.directory / 'bootstrap-pending')
+        with self.assertRaisesRegex(IngressTransactionError, 'identity changed'):
+            clear_bootstrap_pending(lease, 'b'*64, 'caddy-identity', self.directory, owner=os.getuid())
+        clear_bootstrap_pending(lease, old_id, 'caddy-identity', self.directory, owner=os.getuid())
+        refuse_pending(journals, os.getuid(), bootstrap_guard=self.directory / 'bootstrap-pending')
 
 
 if __name__ == '__main__':

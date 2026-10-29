@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 import unittest
 
-from caddy_bootstrap_candidate import bootstrap_under_lease, production_plan
+from caddy_bootstrap_candidate import bootstrap_under_lease, production_plan, recover_under_lease
 from identity_ingress_transaction import IngressTransactionError
 
 
@@ -24,7 +24,7 @@ class Driver:
         return True
 
     def __getattr__(self, name):
-        return lambda _plan: self.call(name)
+        return lambda _plan, *_args: self.call(name)
 
 
 def container():
@@ -90,7 +90,7 @@ class BootstrapTest(unittest.TestCase):
             driver = Driver(fail=name)
             with self.assertRaisesRegex(IngressTransactionError, 'incumbent restored'):
                 self.run_bootstrap(driver, str(i))
-            self.assertEqual(driver.calls[-3:], ['rollback_to_same_incumbent', 'verify_incumbent_tls_routes_and_identity', 'restore_owner_selection'])
+            self.assertEqual(driver.calls[-4:], ['rollback_to_same_incumbent', 'verify_incumbent_tls_routes_and_identity', 'restore_owner_selection', 'clear_pending_guard'])
             self.assertTrue((self.root / str(i) / '11-rolled-back-and-verified.json').exists())
 
     def test_rollback_failure_leaves_pending_for_manual_recovery(self):
@@ -117,6 +117,45 @@ class BootstrapTest(unittest.TestCase):
         two = production_plan(value)
         self.assertNotEqual(one.inspected_fingerprint, two.inspected_fingerprint)
         self.assertNotIn('fixture-value', repr(one))
+
+    def test_interrupted_transaction_recovers_from_durable_original_plan(self):
+        driver = Driver()
+        driver.release_incumbent_endpoints = lambda _plan: (_ for _ in ()).throw(KeyboardInterrupt())
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_bootstrap(driver)
+        journal = self.root / 'j'
+        recovery = Driver()
+        self.assertEqual(recover_under_lease(Lease(), journal, recovery), 'recovered-and-verified')
+        self.assertEqual(recovery.calls, ['recovery_preflight', 'rollback_to_same_incumbent',
+                                         'verify_incumbent_tls_routes_and_identity', 'restore_owner_selection', 'clear_pending_guard'])
+        self.assertTrue((journal / '13-recovered-and-verified.json').exists())
+        self.assertEqual(recover_under_lease(Lease(), journal, recovery), 'rollback-confirmed')
+
+    def test_recovery_rejects_forged_plan_or_settled_adoption(self):
+        driver = Driver()
+        driver.stop_incumbent = lambda _plan: (_ for _ in ()).throw(KeyboardInterrupt())
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_bootstrap(driver)
+        journal = self.root / 'j'
+        path = journal / 'plan.json'
+        import json
+        value = json.loads(path.read_text())
+        value['identity_peer'][1] = '10.0.0.1'
+        path.write_text(json.dumps(value))
+        with self.assertRaisesRegex(IngressTransactionError, 'outside the fixed topology'):
+            recover_under_lease(Lease(), journal, Driver())
+
+    def test_guard_clear_failure_after_commit_never_rolls_back_verified_adoption(self):
+        driver = Driver(fail='clear_pending_guard')
+        with self.assertRaisesRegex(IngressTransactionError, 'guard requires recovery'):
+            self.run_bootstrap(driver)
+        self.assertNotIn('rollback_to_same_incumbent', driver.calls)
+        journal = self.root / 'j'
+        self.assertTrue((journal / '09-adopted-and-verified.json').exists())
+        self.assertFalse((journal / '11-rolled-back-and-verified.json').exists())
+        recovery = Driver()
+        self.assertEqual(recover_under_lease(Lease(), journal, recovery), 'adoption-confirmed')
+        self.assertNotIn('rollback_to_same_incumbent', recovery.calls)
 
 
 if __name__ == '__main__':

@@ -20,6 +20,7 @@ from caddy_bundle_transaction import BundleItem, apply_bundle_under_lease
 from website_ingress_writer import incumbent, selected_config
 from axxium_identity_candidate import candidate as identity_candidate
 from ingress_owner import read_selection
+from ingress_pending import private_dir, refuse_pending
 
 RUNTIME = Path('/srv/open-hax/services/caddy')
 MANAGED = Path('/srv/open-hax/state/caddy/managed')
@@ -32,12 +33,6 @@ STAGE_FILES = ('Caddyfile', 'compose.yaml', 'verify.sh', 'env.template', '.env')
 
 def sha(value):
     return hashlib.sha256(value).hexdigest() if value is not None else None
-
-
-def private_dir(path, owner):
-    info = path.lstat()
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != owner or stat.S_IMODE(info.st_mode) != 0o700:
-        raise IngressTransactionError('Directory must be private and operator-owned')
 
 
 def read_file(path, owner):
@@ -57,14 +52,6 @@ def managed_snapshot(managed, owner):
             raise IngressTransactionError('Unexpected managed ingress entry')
         result[path.name] = sha(read_file(path, owner))
     return result
-
-
-def refuse_pending(journals, owner):
-    private_dir(journals, owner)
-    for directory in journals.iterdir():
-        private_dir(directory, owner)
-        if (directory / 'pending').exists() or (directory / 'pending').is_symlink():
-            raise IngressTransactionError('Prior ingress transaction requires recovery')
 
 
 def capture(runtime, managed, owner, inspect):

@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import caddy_deployment_writer as writer
 from identity_ingress_transaction import IngressTransactionError
@@ -96,6 +97,18 @@ class DeploymentWriterTest(unittest.TestCase):
         with self.assertRaisesRegex(IngressTransactionError, 'Unrecognized'):
             self.run_transaction()
         self.assertEqual(self.calls, [])
+
+    def test_bootstrap_guard_blocks_caddy_before_any_write_or_recreate(self):
+        import ingress_pending
+        guard = self.stage.parent / 'bootstrap-pending'
+        guard.write_text('pending')
+        def guard_check(journals, owner):
+            return ingress_pending.refuse_pending(journals, owner, bootstrap_guard=guard)
+        with patch.object(writer, 'refuse_pending', guard_check):
+            with self.assertRaisesRegex(IngressTransactionError, 'bootstrap'):
+                self.run_transaction()
+        self.assertEqual(self.calls, [])
+        self.assertEqual(list(self.journals.iterdir()), [])
 
 
 if __name__ == '__main__':
