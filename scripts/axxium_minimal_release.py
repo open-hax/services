@@ -522,8 +522,18 @@ class NativeHost:
             '--mount','type=bind,src='+str(STATE/'google-client.json')+',dst=/run/axxium/google-client.json,readonly',
             '--mount','type=bind,src='+str(STATE/'oidc')+',dst=/run/axxium/oidc,readonly',image],effect=True)
         self.wait_app(name)
-        program='''const fs=require('fs');(async()=>{const d=JSON.parse(fs.readFileSync(0,'utf8'));const origin='http://127.0.0.1:8787';if(d.signup){const s=await fetch(origin+'/api/auth/signup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d.credentials)});if(s.status!==200)throw Error('signup');}const r=await fetch(origin+'/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d.credentials)});if(r.status!==200)throw Error('login');const b=await r.json();const cookie=r.headers.get('set-cookie')?.split(';')[0];if(!cookie||b.actor?.kind!=='human')throw Error('session');const m=await fetch(origin+'/api/actors/me',{headers:{cookie}});const body=await m.json();if(m.status!==200||body.actor?.id!==b.actor.id)throw Error('me');console.log('verified');})().catch(()=>process.exit(1));'''
-        self.command(['docker','exec','-i',name,'node','-e',program],data=json.dumps({'signup':signup,'credentials':credentials}).encode(),effect=True)
+        program='''const fs=require('fs');(async()=>{const d=JSON.parse(fs.readFileSync(0,'utf8'));const origin='http://127.0.0.1:8787';if(d.signup){const s=await fetch(origin+'/api/auth/signup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d.credentials)});if(s.status!==200)throw Error('signup');}const r=await fetch(origin+'/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d.credentials)});if(r.status!==200)throw Error('login');const b=await r.json();const cookie=r.headers.get('set-cookie')?.split(';')[0];if(!cookie||typeof b.actor?.id!=='string')throw Error('session');const m=await fetch(origin+'/api/actors/me',{headers:{cookie}});const body=await m.json();if(m.status!==200||body.actor?.id!==b.actor.id)throw Error('me');console.log(b.actor.id);})().catch(()=>process.exit(1));'''
+        raw=self.command(['docker','exec','-i',name,'node','-e',program],data=json.dumps({'signup':signup,'credentials':credentials}).encode(),effect=True)
+        # The login response is actors.*, while human kind is stored in its
+        # linked entity. Validate the generated actor ID before using it in the
+        # fixed SQL, and query only this rehearsal's isolated database.
+        try:actor=raw.decode('ascii').strip()
+        except UnicodeDecodeError:raise KnownFailure('Rehearsal actor identifier is invalid') from None
+        if not re.fullmatch(r'actor_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',actor):
+            raise KnownFailure('Rehearsal actor identifier is invalid')
+        query=("SELECT EXISTS(SELECT 1 FROM actors a JOIN entities e ON e.id=a.entity_id "
+               "WHERE a.id='"+actor+"' AND a.status='active' AND e.kind='human')")
+        if self.sql(database,query).strip()!=b't':raise KnownFailure('Rehearsal actor is not an active human')
         self.command(['docker','stop','--time','610',name],timeout=660,effect=True)
         self.command(['docker','rm',name],effect=True)
 
