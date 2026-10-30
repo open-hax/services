@@ -248,13 +248,71 @@ def _fixture_network_error(args, error):
     tree.body.append(helper)
 
 
-def transform(source, run_id, host_root, *, network_diagnostic=False):
+def use_precreated_networks(tree):
+    """Replace only the reviewed fixture's network-adoption and creation sites."""
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    preflight, setup = functions.get('preflight'), functions.get('setup')
+    if not preflight or not setup:
+        raise Refused('Fixture network functions differ')
+    expected_if = ast.dump(ast.parse("if names.intersection(NAMES) or networks.intersection(NETWORKS):\n raise FixtureError('Existing runtime names cannot be adopted')").body[0], include_attributes=False)
+    matches = [i for i, node in enumerate(preflight.body) if ast.dump(node, include_attributes=False) == expected_if]
+    if len(matches) != 1:
+        raise Refused('Fixture network preflight differs')
+    preflight.body[matches[0]:matches[0] + 1] = ast.parse("if names.intersection(NAMES):\n raise FixtureError('Existing runtime names cannot be adopted')\n_verify_precreated_networks(networks)").body
+    expected_loop = ast.dump(ast.parse("for network in NETWORKS:\n command('docker', 'network', 'create', '--internal', '--label', LABEL, network)\n if command('docker', 'network', 'inspect', '--format', '{{.Internal}}', network) != 'true':\n  raise FixtureError('Synthetic network is not internal')").body[0], include_attributes=False)
+    matches = [i for i, node in enumerate(setup.body) if ast.dump(node, include_attributes=False) == expected_loop]
+    if len(matches) != 1:
+        raise Refused('Fixture network creation differs')
+    setup.body[matches[0]:matches[0] + 1] = ast.parse('_verify_precreated_networks(set(NETWORKS))').body
+    tree.body.extend(ast.parse('''\
+def _verify_precreated_networks(names):
+    import ipaddress
+    import re
+    try:
+        expected = json.loads(os.environ['AXXIUM_FIXTURE_NETWORKS'])
+        if not isinstance(expected, dict) or set(expected) != set(NETWORKS) or not set(NETWORKS) <= names:
+            raise ValueError()
+        parsed_networks = []
+        ids = set()
+        for name in NETWORKS:
+            entry = expected[name]
+            if not isinstance(entry, dict) or set(entry) != {'id', 'subnet'}:
+                raise ValueError()
+            ident, subnet = entry['id'], entry['subnet']
+            if not isinstance(ident, str) or not re.fullmatch('[0-9a-f]{64}', ident):
+                raise ValueError()
+            parsed = ipaddress.ip_network(subnet, strict=True)
+            if parsed.version != 4 or parsed.prefixlen != 28:
+                raise ValueError()
+            if ident in ids or any(parsed.overlaps(other) for other in parsed_networks):
+                raise ValueError()
+            ids.add(ident)
+            parsed_networks.append(parsed)
+            records = json.loads(command('docker', 'network', 'inspect', name))
+            if not isinstance(records, list) or len(records) != 1:
+                raise ValueError()
+            item = records[0]
+            if (item.get('Id') != ident or item.get('Name') != name or
+                item.get('Internal') is not True or item.get('Driver') != 'bridge' or
+                item.get('Labels') != {'codex.axxium-recovery-fixture': LABEL.split('=', 1)[1]} or
+                (item.get('Containers') or {}) or
+                [config.get('Subnet') for config in item.get('IPAM', {}).get('Config', [])] != [subnet]):
+                raise ValueError()
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        raise FixtureError('Precreated fixture networks differ') from None
+''').body)
+
+
+def transform(source, run_id, host_root, *, network_diagnostic=False, network_precreated=False):
     tree = ast.parse(source)
     mapper = Rebind(run_id, host_root)
     tree = mapper.visit(tree)
     if network_diagnostic:
         instrument_network_failure(tree)
         mapper.mark('network-create-diagnostic')
+    if network_precreated:
+        use_precreated_networks(tree)
+        mapper.mark('precreated-networks')
     ast.fix_missing_locations(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, (str, bytes)):
@@ -297,8 +355,9 @@ def prepare(source_root, run_root, run_id):
                 'run_id': run_id, 'host_root': str(host_root), 'files': {}}
     for relative in FILES:
         raw = reviewed[relative]
+        network_fixture = relative == 'scripts/staging/axxium/network_fixture.py'
         transformed, counts = transform(raw.decode('utf-8'), run_id, host_root,
-            network_diagnostic=relative == 'scripts/staging/axxium/network_fixture.py')
+            network_diagnostic=network_fixture, network_precreated=network_fixture)
         target = destination / relative
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         target.write_text(transformed, encoding='utf-8')

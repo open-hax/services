@@ -7,6 +7,7 @@ Any failed or unavailable mutation leaves run resources for inspection.
 """
 import hashlib
 import importlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -25,7 +26,7 @@ SOURCE = Path('/home/err/Documents/Codex/2026-10-29/task/services-handoff')
 PARENT = Path('/home/err/Documents/Codex/2026-10-29/task/fixture-runs')
 ZIP = Path('/tmp/axxium-artifact-verify.dj8TOa9D/candidate.zip')
 EXPECTED_TOOLS = {
-    'stealth_rebind.py': '194543fe153ed0b40787a8b784cbfdef919ff941a1bc2779f4916695094f0298',
+    'stealth_rebind.py': '9c2687fc038ffbfcb3d84e294047847f392e0416f5ccf588474b6a7452b76e33',
     'derive_fixture_image.py': 'f695739e1f460eb60a533bec98f3874149cb266fd0fe7b30c31917b039c789e8',
     'stealth_docker_guard.py': '06529c35a7316930dd4222b68c85e0bc5c7907d07c94369bca579449b566dc3a',
 }
@@ -65,6 +66,86 @@ def image_info(reference):
     if not isinstance(records, list) or len(records) != 1:
         raise Refused('Image metadata unavailable')
     return records[0]
+
+
+def select_subnets(routes, networks):
+    """Select /28s avoiding every reported IPv4 route and Docker IPAM pool."""
+    if not isinstance(routes, list) or not isinstance(networks, list):
+        raise Refused('Network inventory is malformed')
+    occupied = []
+    try:
+        for route in routes:
+            if not isinstance(route, dict):
+                raise ValueError()
+            dst = route.get('dst', 'default')
+            if dst == 'default':
+                continue  # A default route covers all unallocated destinations.
+            net = ipaddress.ip_network(dst, strict=False)
+            if net.version != 4:
+                raise ValueError()
+            occupied.append(net)
+        for network in networks:
+            config = network['IPAM']['Config'] or []
+            if not isinstance(config, list):
+                raise ValueError()
+            for item in config:
+                subnet = item.get('Subnet')
+                if subnet is None:
+                    raise ValueError()
+                net = ipaddress.ip_network(subnet, strict=True)
+                if net.version == 4:
+                    occupied.append(net)
+    except (KeyError, TypeError, ValueError):
+        raise Refused('Network inventory is malformed') from None
+    selected = []
+    for net in ipaddress.ip_network('172.16.0.0/12').subnets(new_prefix=28):
+        if not any(net.overlaps(other) for other in occupied):
+            selected.append(str(net))
+            if len(selected) == 2:
+                return selected
+    raise Refused('No two non-overlapping fixture subnets are available')
+
+
+def network_inventory():
+    try:
+        routes = json.loads(subprocess.run(['/usr/sbin/ip', '-j', '-4', 'route', 'show', 'table', 'all'],
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30).stdout)
+        ids = docker(['network', 'ls', '-q', '--no-trunc']).splitlines()
+        if any(not re.fullmatch('[0-9a-f]{64}', value) for value in ids):
+            raise ValueError()
+        networks = json.loads(docker(['network', 'inspect', *ids])) if ids else []
+        if len(networks) != len(ids) or {item['Id'] for item in networks} != set(ids):
+            raise ValueError()
+        return select_subnets(routes, networks)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, KeyError, TypeError, ValueError):
+        raise Refused('Network inventory is unavailable or malformed') from None
+
+
+def create_fixture_networks(prefix, label, root):
+    match = re.fullmatch(r'axxium-fixture-([0-9a-f]{32})', prefix)
+    if not match or label != 'codex.axxium-recovery-fixture=' + match.group(1):
+        raise Refused('Fixture network identity differs')
+    result = {}
+    for index, suffix in enumerate(('-ingress', '-database')):
+        subnet = network_inventory()[0]
+        if any(ipaddress.ip_network(subnet).overlaps(ipaddress.ip_network(item['subnet']))
+               for item in result.values()):
+            raise Refused('Fixture network inventory omitted prior subnet')
+        name = prefix + suffix
+        write_record(root / f'04-network-{index}-pending.json', {'name': name, 'subnet': subnet, 'label': label})
+        ident = docker(['network', 'create', '--internal', '--label', label, '--subnet', subnet, name])
+        if not re.fullmatch('[0-9a-f]{64}', ident):
+            raise Refused('Created network identity unavailable; retain run state')
+        info = json.loads(docker(['network', 'inspect', name]))
+        if (not isinstance(info, list) or len(info) != 1 or info[0].get('Id') != ident or
+            info[0].get('Name') != name or info[0].get('Internal') is not True or
+            info[0].get('Driver') != 'bridge' or info[0].get('Labels') != {label.split('=', 1)[0]: label.split('=', 1)[1]} or
+            (info[0].get('Containers') or {}) or
+            [item.get('Subnet') for item in info[0].get('IPAM', {}).get('Config', [])] != [subnet]):
+            raise Refused('Created network metadata differs; retain run state')
+        result[name] = {'id': ident, 'subnet': subnet}
+        write_record(root / f'04-network-{index}-created.json', result[name])
+    return result
 
 
 def verify_tools():
@@ -161,6 +242,11 @@ def main():
             raise Refused('Loaded candidate image differs')
         write_record(root / '04-image-loaded.json', {'tag': tag, 'image_id': candidate_id})
 
+        # Inventory immediately before creation. Docker's own overlap check
+        # remains authoritative if another process races this selection.
+        fixture_networks = create_fixture_networks(prefix, label, root)
+        write_record(root / '04-networks-created.json', fixture_networks)
+
         # The executable wrapper validates expected CLI targets. It is not a
         # hard security boundary against arbitrary socket clients.
         binary = root / 'bin'
@@ -181,7 +267,8 @@ def main():
             'AXXIUM_FIXTURE_MODE': 'local-isolated-v1', 'AXXIUM_FIXTURE_HOST': 'stealth',
             'FIXTURE_HOST_NETNS_FD': '3', 'AXXIUM_FIXTURE_RUN_ID': run_id,
             'AXXIUM_FIXTURE_ROOT': str(host_root), 'AXXIUM_FIXTURE_CANDIDATE_ID': candidate_id,
-            'AXXIUM_FIXTURE_POSTGRES_ID': postgres['Id'], 'AXXIUM_FIXTURE_CADDY_ID': caddy['Id']}
+            'AXXIUM_FIXTURE_POSTGRES_ID': postgres['Id'], 'AXXIUM_FIXTURE_CADDY_ID': caddy['Id'],
+            'AXXIUM_FIXTURE_NETWORKS': json.dumps(fixture_networks, sort_keys=True)}
         invocation = ('exec 3</proc/self/ns/net; exec unshare --user --map-current-user '
                       '--net --keep-caps --fork --kill-child=TERM "$@"')
         write_record(root / '05-fixture-pending.json', {'status': 'running'})

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import tempfile
 import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -148,6 +149,43 @@ def command(*args):
             with self.subTest(text=text), self.assertRaises(module.Refused):
                 module.transform(text, RUN, Path('/tmp/synthetic-fixture/open-hax'))
 
+    def test_precreated_networks_refuse_mismatches(self):
+        source = (HERE / 'network_fixture.py').read_text()
+        output, counts = module.transform(source, RUN, Path('/tmp/synthetic-fixture/open-hax'),
+                                          network_diagnostic=True, network_precreated=True)
+        self.assertEqual(counts['precreated-networks'], 1)
+        with patch.object(sys, 'path', [str(HERE)] + sys.path):
+            namespace = {}
+            exec(compile(output, '<test>', 'exec'), namespace)
+        names = namespace['NETWORKS']
+        expected = {names[0]: {'id': 'a' * 64, 'subnet': '172.16.0.0/28'},
+                    names[1]: {'id': 'b' * 64, 'subnet': '172.16.0.16/28'}}
+        def info(name):
+            item = expected[name]
+            return {'Name': name, 'Id': item['id'], 'Internal': True, 'Driver': 'bridge',
+                    'Labels': {'codex.axxium-recovery-fixture': RUN}, 'Containers': {},
+                    'IPAM': {'Config': [{'Subnet': item['subnet']}]}}
+        records = {name: info(name) for name in names}
+        namespace['command'] = lambda *args: json.dumps([records[args[-1]]])
+        with patch.dict(os.environ, {'AXXIUM_FIXTURE_NETWORKS': json.dumps(expected)}):
+            namespace['_verify_precreated_networks'](set(names))
+            for field, bad in [('Id', 'c' * 64), ('Internal', False), ('Driver', 'host'),
+                               ('Labels', {}), ('Containers', {'foreign': {}}),
+                               ('IPAM', {'Config': [{'Subnet': '172.16.1.0/28'}]})]:
+                old = records[names[0]][field]
+                records[names[0]][field] = bad
+                with self.subTest(field=field), self.assertRaises(namespace['FixtureError']):
+                    namespace['_verify_precreated_networks'](set(names))
+                records[names[0]][field] = old
+            with self.assertRaises(namespace['FixtureError']):
+                namespace['_verify_precreated_networks']({names[0]})
+        for field in ('id', 'subnet'):
+            duplicate = {key: dict(value) for key, value in expected.items()}
+            duplicate[names[1]][field] = duplicate[names[0]][field]
+            with patch.dict(os.environ, {'AXXIUM_FIXTURE_NETWORKS': json.dumps(duplicate)}), \
+                 self.assertRaises(namespace['FixtureError']):
+                namespace['_verify_precreated_networks'](set(names))
+
     def test_invalid_run_and_nonprivate_root_refuse(self):
         with self.assertRaises(module.Refused):
             module.transform('X=1', 'bad', Path('/tmp/synthetic-fixture/open-hax'))
@@ -170,9 +208,7 @@ def command(*args):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 text = "VALUE = '/srv/open-hax/state'\n"
                 if relative == 'scripts/staging/axxium/network_fixture.py':
-                    text += ("def command(*args):\n"
-                             "    try: return args\n"
-                             "    except Exception as exc: raise RuntimeError('x') from exc\n")
+                    text = (HERE / 'network_fixture.py').read_text()
                 target.write_text(text)
                 inputs[relative] = hashlib.sha256(target.read_bytes()).hexdigest()
             plan = source / module.PLAN
