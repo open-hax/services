@@ -30,6 +30,62 @@ SOURCE = '58234df96ca86507e6cdd87f65aaa9ab35621415'
 CLONE = 'axxium_verify_0123456789abcdef01234567'
 ORPHAN = 'axxium-verify-0123456789abcdef01234567'
 
+# Only static guard messages may leave this synthetic fixture. Never print an
+# arbitrary exception, since it could contain process output or private data.
+SAFE_GUARD_REASONS = frozenset({
+    'Private operation file protections differ',
+    'Colab hold state is inaccessible or aliased',
+    'Colab production transition is held',
+    'Could not validate Docker target boundaries',
+    'Observed Knoxx Docker client boundaries differ',
+    'Process visibility is incomplete',
+    'A related Docker client remains active',
+    'Docker client arguments are unavailable',
+    'An active Docker client prevents bounded recovery',
+    'A related controller or Docker/database client remains active',
+    'Canonical owner and held lock required',
+    'Reviewed plan hash differs',
+    'Reviewed plan differs',
+    'Operation plan differs from reviewed plan',
+    'Production hold differs',
+    'Operation journal advanced or differs',
+    'Operation journal contents differ',
+    'Verified backup metadata or hash differs',
+    'Saved incumbent ingress differs',
+    'Restored public route differs',
+    'Caddy bind inode differs',
+    'Restored incumbent differs',
+    'Database rehearsal network is not isolated',
+    'Proxy network identity differs',
+    'Incumbent Axxium alias differs',
+    'Shared network inspection unavailable',
+    'Incumbent missing from proxy network',
+    'Unexpected Axxium network alias',
+    'Rehearsal identity, network, or database differs',
+    'Verification database clients differ',
+    'Rehearsal changed during observation',
+    'Public Axxium or PDS health differs',
+    'Insufficient private backup space',
+    'Existing identity is not complete',
+    'Release controller module unavailable',
+})
+
+
+def enable_fixture_guard_diagnostics(incident):
+    """Report only known static guard reasons, preserving every refusal."""
+    verify = incident.verify
+
+    def checked(*args, **kwargs):
+        try:
+            return verify(*args, **kwargs)
+        except incident.Blocked as error:
+            reason = str(error)
+            safe = reason if reason in SAFE_GUARD_REASONS else 'unclassified guard refusal'
+            print('Synthetic fixture incident guard: ' + safe, file=sys.stderr, flush=True)
+            raise
+
+    incident.verify = checked
+
 
 def fail(message):
     raise RuntimeError(message)
@@ -56,6 +112,11 @@ def private(path, data):
 
 def encode(value):
     return (json.dumps(value, sort_keys=True, separators=(',', ':')) + '\n').encode()
+
+
+def encode_hold(value):
+    """Match the native controller's exact pending-marker serialization."""
+    return json.dumps(value, sort_keys=True).encode()
 
 
 def inspect(name):
@@ -137,6 +198,7 @@ def main():
     sys.path.insert(0, str(controller / 'scripts'))
     release = importlib.import_module('axxium_minimal_release')
     incident = importlib.import_module('axxium_incident_guard')
+    enable_fixture_guard_diagnostics(incident)
     release.IMAGE = candidate_id
     host = release.NativeHost()
     plan = json.loads((source_root / 'digitalocean/services/axxium/minimal-production-plan.json').read_bytes())
@@ -204,7 +266,7 @@ def main():
         fail('Synthetic rehearsal did not become idle')
     hold = {'schema': 'axxium-production-pending/v1', 'operation': str(operation),
             'source_sha': SOURCE, 'plan_sha256': plan_hash}
-    private(release.PENDING, encode(hold))
+    private(release.PENDING, encode_hold(hold))
     host.http = lambda path: container_http(release.PROXY, path)
     original_command = host.command
     def command(args, **kwargs):
