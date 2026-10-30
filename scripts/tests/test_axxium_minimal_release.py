@@ -90,7 +90,7 @@ class MinimalTransitionTests(unittest.TestCase):
     def test_recovery_preflight_requires_complete_identity(self):
         guard=SimpleNamespace(verify=mock.Mock())
         h=release.NativeHost();h._preflight_shared=mock.Mock()
-        with mock.patch.dict(sys.modules,{'axxium_incident_guard':guard}):
+        with mock.patch.object(release.os,'getuid',return_value=1000), mock.patch.dict(sys.modules,{'axxium_incident_guard':guard}):
             for status in ('ready','recoverable'):
                 h.command=mock.Mock(return_value=json.dumps({'verified':True,'status':status}).encode())
                 with self.assertRaises(release.Refused):h.recovery_preflight(plan())
@@ -103,8 +103,17 @@ class MinimalTransitionTests(unittest.TestCase):
         guard=SimpleNamespace(verify=mock.Mock(side_effect=GuardBlocked('synthetic')),
                               Blocked=GuardBlocked)
         h=release.NativeHost();h._preflight_shared=mock.Mock()
-        with mock.patch.dict(sys.modules,{'axxium_incident_guard':guard}):
+        with mock.patch.object(release.os,'getuid',return_value=1000), mock.patch.dict(sys.modules,{'axxium_incident_guard':guard}):
             with self.assertRaises(release.Refused):h.recovery_preflight(plan())
+        h._preflight_shared.assert_not_called()
+        guard.verify.assert_called_once()
+
+    def test_recovery_preflight_refuses_wrong_uid_before_incident_check(self):
+        guard=SimpleNamespace(verify=mock.Mock())
+        h=release.NativeHost();h._preflight_shared=mock.Mock()
+        with mock.patch.object(release.os,'getuid',return_value=1001), mock.patch.dict(sys.modules,{'axxium_incident_guard':guard}):
+            with self.assertRaises(release.Refused):h.recovery_preflight(plan())
+        guard.verify.assert_not_called()
         h._preflight_shared.assert_not_called()
 
     def test_recovery_claim_failure_marks_uncertain_and_retains_marker(self):
