@@ -84,6 +84,8 @@ class GuardTests(unittest.TestCase):
         with self.assertRaises(guard_module.Refused):
             self.guard.validate(caddy)
         self.guard.validate(caddy[:-1] + ['--tmpfs', '/data:rw', '--tmpfs', '/config:rw'] + caddy[-1:])
+        with self.assertRaises(guard_module.Refused):
+            self.guard.validate(args[:-1] + [IMAGES[1]])
 
     def test_compose_closed_schema_blocks_ports_unknown_paths_and_host_network(self):
         runtime = self.root / 'services/axxium'; runtime.mkdir(parents=True)
@@ -118,6 +120,24 @@ class GuardTests(unittest.TestCase):
             del config['services']['axxium'][key]
         with self.assertRaises(guard_module.Refused):
             self.guard.validate(args[:-1] + ['other-service'])
+        config['services']['axxium-db'] = {'image': IMAGES[1], 'labels': {'codex.axxium-recovery-fixture': RUN},
+                                          'networks': ['database'], 'tmpfs': ['/var/lib/postgresql/data:rw',
+                                                                             '/var/run/postgresql:rw']}
+        path.write_text(json.dumps(config))
+        self.guard.validate(args)
+        config['services']['axxium-db']['tmpfs'] = ['/var/run/postgresql:rw']
+        path.write_text(json.dumps(config))
+        with self.assertRaises(guard_module.Refused):
+            self.guard.validate(args)
+        config['services']['axxium-db']['tmpfs'] = ['/var/lib/postgresql/data:rw', '/var/run/postgresql:rw']
+        config['services']['axxium-db']['image'] = IMAGES[2]
+        path.write_text(json.dumps(config))
+        with self.assertRaises(guard_module.Refused):
+            self.guard.validate(args)
+
+    def test_duplicate_role_images_are_refused(self):
+        with self.assertRaises(guard_module.Refused):
+            guard_module.Guard(RUN, self.root, [IMAGES[0], IMAGES[0], IMAGES[2]])
 
     def test_unknown_daemon_operations_fail_closed(self):
         for args in (['load'], ['system', 'prune'], ['network', 'rm', PREFIX + '-database'],

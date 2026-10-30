@@ -35,11 +35,14 @@ class Guard:
         info = root.stat()
         require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid() and
                 stat.S_IMODE(info.st_mode) == 0o700, 'Fixture root is not private')
-        require(len(images) == 3 and all(IMAGE.fullmatch(x) for x in images), 'Invalid pinned image IDs')
+        require(len(images) == 3 and len(set(images)) == 3 and all(IMAGE.fullmatch(x) for x in images),
+                'Invalid pinned image IDs')
         self.run = run_id
         self.prefix = 'axxium-fixture-' + run_id
         self.root = root
         self.images = set(images)
+        self.candidate_image = images[0]
+        self.postgres_image = images[1]
         self.caddy_image = images[2]
         self.networks = {self.prefix + '-ingress', self.prefix + '-database'}
         self.ownership = 'codex.axxium-recovery-fixture=' + run_id
@@ -147,7 +150,8 @@ class Guard:
                     'Duplicate Docker run option')
             options.setdefault(option, []).append(value)
             position += 2
-        require(position < len(args) and args[position] in self.images, 'Unpinned fixture image')
+        require(position < len(args) and args[position] in (self.candidate_image, self.caddy_image),
+                'Unpinned or unsupported direct-run image')
         names = options.get('--name', [])
         require(len(names) == 1 and names[0].startswith(self.prefix + '-') and
                 re.fullmatch(re.escape(self.prefix) + r'-[a-z0-9-]+', names[0]), 'Unsafe container name')
@@ -190,7 +194,8 @@ class Guard:
             allowed = {'image', 'environment', 'healthcheck', 'networks', 'labels', 'user',
                        'tmpfs', 'volumes', 'stop_grace_period'}
             require(isinstance(service, dict) and set(service) <= allowed, 'Unsafe compose service keys')
-            require(service.get('image') in self.images, 'Unpinned compose image')
+            expected_image = self.candidate_image if name == 'axxium' else self.postgres_image
+            require(service.get('image') == expected_image, 'Compose service image differs')
             if not overlay:
                 require(service.get('labels') == {'codex.axxium-recovery-fixture': self.run},
                         'Compose ownership label differs')
@@ -209,6 +214,10 @@ class Guard:
             for tmpfs in service.get('tmpfs', []):
                 require(isinstance(tmpfs, str) and tmpfs.split(':', 1)[0] in
                         ('/var/lib/postgresql/data', '/var/run/postgresql'), 'Unsafe compose tmpfs')
+            if name == 'axxium-db':
+                require({'/var/lib/postgresql/data', '/var/run/postgresql'} <=
+                        {value.split(':', 1)[0] for value in service.get('tmpfs', [])},
+                        'Fixture database requires both temporary mounts')
             if 'networks' in service:
                 require(not overlay and set(service['networks']) <= {'default', 'database'}, 'Unsafe compose networks')
                 if isinstance(service['networks'], dict):
