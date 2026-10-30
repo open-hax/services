@@ -40,6 +40,11 @@ on:
         required: false
         default: ''
         type: string
+      axxium_recover_interrupted:
+        description: Reconcile the held fixed Axxium operation
+        required: false
+        default: false
+        type: boolean
       colab_ref:
         description: Fixed immutable Cloud Cuckoo source; isolated colab-stage or colab scope
         required: false
@@ -105,6 +110,7 @@ jobs:
     with:
       source_sha: ${{ inputs.axxium_ref }}
       caller_holds_production_host_lock: true
+      recover_interrupted: ${{ inputs.axxium_recover_interrupted }}
     secrets: inherit
 
   # Build jobs may run while the host is prepared, but no production service

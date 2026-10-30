@@ -11,6 +11,10 @@ on:
       caller_holds_production_host_lock:
         required: true
         type: boolean
+      recover_interrupted:
+        required: false
+        default: false
+        type: boolean
     secrets:
       DIGITALOCEAN_SSH_PRIVATE_KEY:
         required: true
@@ -119,15 +123,26 @@ jobs:
             StrictHostKeyChecking yes
             UserKnownHostsFile ~/.ssh/known_hosts
             ConnectTimeout 10
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
           CONFIG
           chmod 600 ~/.ssh/config
       - name: Refuse an unresolved previous Axxium transition
-        run: ssh open-hax-target 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
+        env:
+          RECOVER_INTERRUPTED: ${{ inputs.recover_interrupted }}
+        run: |
+          set -euo pipefail
+          case "$RECOVER_INTERRUPTED" in
+            true) ssh open-hax-target 'sh -s -- --require-axxium-hold' < digitalocean/scripts/check-axxium-production-hold.sh ;;
+            false) ssh open-hax-target 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh ;;
+            *) exit 2 ;;
+          esac
       - name: Install reviewed controller and execute fixed app transaction
         env:
           CONTROLLER_SHA: ${{ github.sha }}
           PLAN_SHA256: ${{ needs.admit.outputs.plan_sha256 }}
           BINDING_JSON: ${{ secrets.AXXIUM_COLAB_BINDING_JSON }}
+          RECOVER_INTERRUPTED: ${{ inputs.recover_interrupted }}
         run: |
           set -euo pipefail
           umask 077
@@ -140,6 +155,8 @@ jobs:
           printf '%s' "$BINDING_JSON" > production-binding.json
           tar --mode=u=rw,go= -cf controller.tar \
             scripts/axxium_minimal_release.py \
+            scripts/axxium_interrupted_handoff.py \
+            scripts/axxium_incident_guard.py \
             scripts/axxium_oidc_ingress.py \
             scripts/provision_axxium_colab_identity.py \
             digitalocean/services/axxium/minimal-production-plan.json \
@@ -155,7 +172,17 @@ jobs:
           ssh open-hax-target "umask 077; mkdir -p '$OPEN_HAX_SERVICES_ROOT/axxium/controllers'; mkdir -m 700 '$controller'; tar --no-same-owner -xf - -C '$controller'" < controller.tar
           # Declared host paths and validated hexadecimal IDs intentionally expand locally.
           # shellcheck disable=SC2029
-          ssh open-hax-target "env PYTHONDONTWRITEBYTECODE=1 python3 '$controller/scripts/axxium_minimal_release.py' --plan '$controller/digitalocean/services/axxium/minimal-production-plan.json' --plan-sha256 '$PLAN_SHA256' --apply" </dev/null > release-receipt.json
+          # Keep the controller in the existing locked workflow, while retaining
+          # private host-side diagnostics if the SSH connection disappears.
+          # A missing status remains uncertain and never authorizes a retry.
+          case "$RECOVER_INTERRUPTED" in
+            true) mode=--recover-interrupted ;;
+            false) mode=--apply ;;
+            *) exit 2 ;;
+          esac
+          # Validated fixed paths, digest, and the two-valued mode expand locally.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "umask 077; env PYTHONDONTWRITEBYTECODE=1 python3 '$controller/scripts/axxium_minimal_release.py' --plan '$controller/digitalocean/services/axxium/minimal-production-plan.json' --plan-sha256 '$PLAN_SHA256' '$mode' >'$controller/release.stdout' 2>'$controller/release.stderr'; result=\$?; printf '%s\\n' \"\$result\" >'$controller/release-status.tmp' && mv '$controller/release-status.tmp' '$controller/release-status' || exit 1; cat '$controller/release.stdout' || exit 1; exit \"\$result\"" </dev/null > release-receipt.json
           jq -e '.status == "healthy"' release-receipt.json >/dev/null
       - name: Preserve sanitized deployment receipt
         if: always()

@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,8 @@ class FakeHost:
             raise (release.Uncertain if self.uncertain else release.KnownFailure)('fixture')
     def preflight(self,p):self.call('preflight')
     def claim(self,p):self.call('claim')
+    def recovery_preflight(self,p):self.call('recovery_preflight')
+    def recovery_claim(self,p):self.call('recovery_claim')
     def record(self,n,s):self.events.append((n,s))
     def fence(self,p):self.call('fence')
     def stop_app(self,p):self.call('stop')
@@ -70,6 +73,82 @@ class MinimalTransitionTests(unittest.TestCase):
             'rehearse_before_candidate_old','start','private_health','stop','backup_after',
             'rehearse_after_old','start','final_check','publish','public_health','commit','finish_healthy'])
         self.assertEqual(h.events[-1],('transaction','healthy'))
+
+    def test_exact_recovery_runs_fresh_backup_and_rehearsal_before_candidate(self):
+        h=FakeHost();self.assertEqual(release.execute(plan(),h,recover_interrupted=True),{'status':'healthy'})
+        self.assertEqual(h.calls[:8],['recovery_preflight','recovery_claim','fence','stop',
+            'backup_before','provision_identity','rehearse_before_candidate_old','start'])
+        self.assertNotIn('preflight',h.calls);self.assertNotIn('claim',h.calls)
+
+    def test_recovery_refusal_or_uncertainty_never_runs_deployment(self):
+        for step in ('recovery_preflight','recovery_claim'):
+            h=FakeHost(step,uncertain=True)
+            with self.assertRaises(release.Uncertain):release.execute(plan(),h,recover_interrupted=True)
+            self.assertNotIn('fence',h.calls);self.assertNotIn('start',h.calls)
+            self.assertEqual(h.events,[])
+
+    def test_recovery_preflight_requires_complete_identity(self):
+        guard=SimpleNamespace(verify=mock.Mock())
+        h=release.NativeHost();h._preflight_shared=mock.Mock()
+        with mock.patch.dict(sys.modules,{'axxium_incident_guard':guard}):
+            for status in ('ready','recoverable'):
+                h.command=mock.Mock(return_value=json.dumps({'verified':True,'status':status}).encode())
+                with self.assertRaises(release.Refused):h.recovery_preflight(plan())
+            h.command=mock.Mock(return_value=b'{"verified":true,"status":"complete"}')
+            h.recovery_preflight(plan())
+        self.assertEqual(guard.verify.call_count,4)
+
+    def test_recovery_preflight_refusal_does_not_proceed(self):
+        class GuardBlocked(RuntimeError):pass
+        guard=SimpleNamespace(verify=mock.Mock(side_effect=GuardBlocked('synthetic')),
+                              Blocked=GuardBlocked)
+        h=release.NativeHost();h._preflight_shared=mock.Mock()
+        with mock.patch.dict(sys.modules,{'axxium_incident_guard':guard}):
+            with self.assertRaises(release.Refused):h.recovery_preflight(plan())
+        h._preflight_shared.assert_not_called()
+
+    def test_recovery_claim_failure_marks_uncertain_and_retains_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp);runtime=base/'runtime';runtime.mkdir();state=base/'state';state.mkdir()
+            caddy=base/'Caddyfile';caddy.write_bytes(b'caddy')
+            (runtime/'compose.yaml').write_bytes(b'compose');(runtime/'.env').write_bytes(b'env')
+            h=release.NativeHost();h.operation=state/'operations'/release.SOURCE
+            h.pending_bytes=b'original hold';h.recheck_lock=mock.Mock()
+            handoff=SimpleNamespace(handoff_files=mock.Mock(side_effect=OSError('synthetic')))
+            with mock.patch.multiple(release,RUNTIME=runtime,STATE=state,CADDY=caddy), mock.patch.dict(sys.modules,{'axxium_interrupted_handoff':handoff}):
+                with self.assertRaises(release.Uncertain):h.recovery_claim(plan())
+            self.assertTrue(h.uncertain);self.assertEqual(h.pending_bytes,b'original hold')
+            self.assertFalse(h.require_existing_identity)
+
+    def test_recovery_claim_archives_prior_backup_and_initializes_fresh_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp);runtime=base/'runtime';runtime.mkdir();state=base/'state';state.mkdir()
+            ops=state/'operations';ops.mkdir(mode=0o700);old=ops/release.SOURCE;old.mkdir(mode=0o700)
+            caddy=base/'Caddyfile';caddy.write_bytes(b'caddy')
+            (runtime/'compose.yaml').write_bytes(b'compose');(runtime/'.env').write_bytes(b'env')
+            pending=runtime/'pending';pending.write_bytes(b'hold');pending.chmod(0o600)
+            dump=old/'before.pgdump';dump.write_bytes(b'backup');dump.chmod(0o600)
+            backup=old/'before-backup.json';backup.write_text(json.dumps({'path':str(dump),
+                'sha256':hashlib.sha256(b'backup').hexdigest()}));backup.chmod(0o600)
+            h=release.NativeHost();h.operation=old;h.pending_bytes=b'hold';h.recheck_lock=mock.Mock()
+            with mock.patch.multiple(release,RUNTIME=runtime,STATE=state,CADDY=caddy,PENDING=pending):
+                h.recovery_claim(plan())
+            manifest=json.loads((old/'parent-handoff.json').read_text())
+            self.assertEqual(Path(manifest['archived_backup_path']).read_bytes(),b'backup')
+            self.assertEqual(json.loads((old/'plan.json').read_text()),plan())
+            self.assertEqual((old/'incumbent.env').read_bytes(),b'env')
+            self.assertEqual(h.sequence,0);self.assertEqual(h.backups,{})
+            self.assertTrue(h.require_existing_identity);self.assertEqual(pending.read_bytes(),b'hold')
+
+    def test_recovery_provisioning_passes_require_existing(self):
+        h=release.NativeHost();h.operation=Path('/synthetic');h.lock_fd=7
+        h.backups={'before':{'sha256':'synthetic'}};h.require_existing_identity=True
+        h.unchanged_dependencies=mock.Mock();h.recheck_lock=mock.Mock();h.identity_check=mock.Mock()
+        h.command=mock.Mock(return_value=b'')
+        h.provision_identity(plan())
+        args=h.command.call_args.args[0]
+        self.assertIn('--require-existing',args)
+        self.assertEqual(h.command.call_args.kwargs['pass_fds'],(7,))
 
     def test_preflight_failure_does_not_claim_or_change_runtime(self):
         h=FakeHost('preflight')

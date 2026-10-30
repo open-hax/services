@@ -123,12 +123,16 @@ def validate_plan(plan):
     return plan
 
 
-def execute(plan, host):
+def execute(plan, host, *, recover_interrupted=False):
     """Order the native transaction; uncertain effects never authorize rollback."""
     validate_plan(plan)
     with host.lock():
-        host.preflight(plan)
-        host.claim(plan)
+        if recover_interrupted:
+            host.recovery_preflight(plan)
+            host.recovery_claim(plan)
+        else:
+            host.preflight(plan)
+            host.claim(plan)
         candidate_attempted = False
         stopped = False
         def step(name, action):
@@ -184,6 +188,7 @@ class NativeHost:
         self.original = None; self.backups = {}; self.before_data = None
         self.plan_digest=plan_digest
         self.pending_bytes=None
+        self.require_existing_identity=False
         self.candidate_id=None
         self.incumbent_image_id=None;self.rollback_id=None
 
@@ -278,9 +283,11 @@ class NativeHost:
         if self.operation is None or self.lock_fd is None or 'before' not in self.backups:
             raise Uncertain('Provisioning requires a locked, verified backup operation')
         binding=Path(__file__).resolve().parents[1]/'production-binding.json'
-        self.command([sys.executable,str(Path(__file__).with_name('provision_axxium_colab_identity.py')),
-                      '--provision','--binding-input',str(binding),'--lock-fd',str(self.lock_fd),
-                      '--operation-path',str(self.operation)],timeout=120,effect=True,
+        args=[sys.executable,str(Path(__file__).with_name('provision_axxium_colab_identity.py')),
+              '--provision','--binding-input',str(binding),'--lock-fd',str(self.lock_fd),
+              '--operation-path',str(self.operation)]
+        if self.require_existing_identity:args.append('--require-existing')
+        self.command(args,timeout=120,effect=True,
                      pass_fds=(self.lock_fd,))
         self.recheck_lock()
         try:
@@ -296,6 +303,9 @@ class NativeHost:
         try:PENDING.lstat()
         except FileNotFoundError:pass
         else:raise Refused('Production operation requires independent recovery')
+        self._preflight_shared(plan)
+
+    def _preflight_shared(self,plan):
         self.unchanged_dependencies(plan);self.identity_preflight()
         old=self.inspect(APP);e=plan['expected']
         if (old['Id']!=e['app_container_id'] or old['Image']!=e['app_image_id']
@@ -317,6 +327,47 @@ class NativeHost:
         self.original_layer(plan)
         size=int(self.sql('axxium',"SELECT pg_database_size(current_database())").strip())
         if shutil.disk_usage(STATE).free<max(1024**3,size*4):raise Refused('Insufficient private backup space')
+
+    def recovery_preflight(self,plan):
+        """Accept only the exact interrupted operation, with its hold retained."""
+        if os.getuid()!=1000:raise Refused('The canonical deploy UID1000 is required')
+        import axxium_incident_guard as incident
+        try:incident.verify(self,plan)
+        except incident.Blocked:raise Refused('The interrupted operation did not match') from None
+        self._preflight_shared(plan)
+        binding=Path(__file__).resolve().parents[1]/'production-binding.json'
+        raw=self.command([sys.executable,str(Path(__file__).with_name('provision_axxium_colab_identity.py')),
+                          '--preflight','--binding-input',str(binding)])
+        if json.loads(raw)!={'verified':True,'status':'complete'}:
+            raise Refused('A complete existing identity is required for recovery')
+        # Recheck the incident after the ordinary preflight, immediately before
+        # handoff; no phase mutator runs if either observation differs.
+        try:incident.verify(self,plan)
+        except incident.Blocked:raise Refused('The interrupted operation did not match') from None
+
+    def recovery_claim(self,plan):
+        import axxium_interrupted_handoff as handoff
+        self.recheck_lock()
+        if self.pending_bytes is None or self.operation != STATE/'operations'/SOURCE:
+            raise Uncertain('Interrupted operation was not validated')
+        snapshots={name:source.read_bytes() for source,name in (
+            (RUNTIME/'compose.yaml','incumbent.compose.yaml'),
+            (RUNTIME/'.env','incumbent.env'),(CADDY,'incumbent.Caddyfile'))}
+        raw=(json.dumps(plan,sort_keys=True,separators=(',',':'))+'\n').encode()
+        try:
+            handoff.handoff_files(operations=STATE/'operations',pending=PENDING,
+                expected_hold=self.pending_bytes,plan=raw,snapshots=snapshots,recheck=self.recheck_lock)
+        except BaseException as error:
+            # A failed durable rename may have taken effect. Never retry or
+            # compensate automatically, and preserve the original hold.
+            self.uncertain=True
+            raise Uncertain('Interrupted-operation handoff requires inspection') from error
+        self.operation=STATE/'operations'/SOURCE
+        self.incumbent_image_id=plan['expected']['app_image_id']
+        self.sequence=0
+        self.backups={}
+        self.require_existing_identity=True
+        self.recheck_lock()
 
     def private_write(self,path,data):
         flags=os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW|os.O_CLOEXEC|os.O_EXCL
@@ -623,13 +674,14 @@ def main():
     parser.add_argument('--plan-sha256',required=True)
     mode=parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--apply',action='store_true');mode.add_argument('--check',action='store_true')
+    mode.add_argument('--recover-interrupted',action='store_true')
     args=parser.parse_args();raw=private_read(args.plan)
     if digest(raw)!=args.plan_sha256:raise Refused('Controller plan digest differs')
     plan=validate_plan(json.loads(raw));host=NativeHost(args.plan_sha256)
     if args.check:
         with host.lock():host.preflight(plan)
         print(json.dumps({'status':'preflight_passed','source_sha':SOURCE,'image_id':IMAGE}));return 0
-    result=execute(plan,host);print(json.dumps(result,sort_keys=True))
+    result=execute(plan,host,recover_interrupted=args.recover_interrupted);print(json.dumps(result,sort_keys=True))
     return 0 if result['status']=='healthy' else 3
 
 
