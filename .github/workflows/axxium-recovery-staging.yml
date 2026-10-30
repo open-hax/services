@@ -1,0 +1,53 @@
+name: Axxium recovery staging
+
+# Disposable GitHub-hosted VM only. This checks candidate OIDC and the handoff
+# filesystem primitive; it is not a complete recovery-controller rehearsal.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/axxium_interrupted_handoff.py'
+      - 'scripts/axxium_incident_guard.py'
+      - 'scripts/axxium_minimal_release.py'
+      - 'scripts/provision_axxium_colab_identity.py'
+      - 'scripts/staging/axxium/**'
+      - '.github/workflows/deploy-axxium-minimal.yml'
+      - '.github/workflows/axxium-recovery-staging.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  synthetic-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Validate fixture orchestrator
+        run: |
+          set -euo pipefail
+          bash -n scripts/staging/axxium/run.sh
+          shellcheck scripts/staging/axxium/run.sh
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/staging/axxium -p 'test_*.py'
+      - name: Download and verify fixed candidate artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          timeout --kill-after=5s 120s gh api repos/open-hax/axxium/actions/artifacts/12911496785/zip > "$RUNNER_TEMP/candidate.zip"
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/staging/axxium/prepare_candidate.py \
+            --plan digitalocean/services/axxium/minimal-production-plan.json \
+            --archive "$RUNNER_TEMP/candidate.zip" --output "$RUNNER_TEMP/images.tar"
+          docker load --input "$RUNNER_TEMP/images.tar"
+          docker pull postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+      - name: Exercise synthetic OIDC and held handoff
+        run: |
+          set -euo pipefail
+          scripts/staging/axxium/run.sh \
+            sha256:6aed20a3439dc29c6bcb43cf3f1e0bf41f65a72734975eb2db922898c45e4652 \
+            sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
