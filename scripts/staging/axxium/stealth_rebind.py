@@ -208,10 +208,53 @@ class Rebind(ast.NodeTransformer):
         return node
 
 
-def transform(source, run_id, host_root):
+def instrument_network_failure(tree):
+    """Add fixed-category diagnostics to the synthetic network-create path."""
+    matches = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'command']
+    if len(matches) != 1:
+        raise Refused('Fixture command function differs from reviewed shape')
+    handlers = [handler for node in ast.walk(matches[0]) if isinstance(node, ast.Try)
+                for handler in node.handlers if handler.name == 'exc']
+    if len(handlers) != 1:
+        raise Refused('Fixture command error handler differs from reviewed shape')
+    helper = ast.parse('''\
+def _fixture_network_error(args, error):
+    if args[:3] != ('docker', 'network', 'create'):
+        return
+    import sys
+    raw = getattr(error, 'stderr', b'')
+    if isinstance(raw, str):
+        raw = raw.encode('utf-8', 'replace')
+    if not isinstance(raw, bytes):
+        raw = b''
+    raw = raw[:8192].lower()
+    if (b'guard refused' in raw or
+            b'docker staging operation refused; no command forwarded' in raw):
+        category = 'guard refused'
+    elif (b'could not find an available, non-overlapping ipv4 address pool' in raw or
+          b'all predefined address pools have been fully subnetted' in raw or
+          b'default address pool exhausted' in raw):
+        category = 'default pool exhausted'
+    elif b'pool overlaps with other one' in raw or b'address space overlap' in raw:
+        category = 'overlap'
+    elif b'permission denied' in raw or b'operation not permitted' in raw:
+        category = 'permission denied'
+    else:
+        category = 'unclassified (redacted)'
+    print('Synthetic network creation: ' + category, file=sys.stderr, flush=True)
+''').body[0]
+    emit = ast.parse('_fixture_network_error(args, exc)').body[0]
+    handlers[0].body.insert(0, emit)
+    tree.body.append(helper)
+
+
+def transform(source, run_id, host_root, *, network_diagnostic=False):
     tree = ast.parse(source)
     mapper = Rebind(run_id, host_root)
     tree = mapper.visit(tree)
+    if network_diagnostic:
+        instrument_network_failure(tree)
+        mapper.mark('network-create-diagnostic')
     ast.fix_missing_locations(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, (str, bytes)):
@@ -254,7 +297,8 @@ def prepare(source_root, run_root, run_id):
                 'run_id': run_id, 'host_root': str(host_root), 'files': {}}
     for relative in FILES:
         raw = reviewed[relative]
-        transformed, counts = transform(raw.decode('utf-8'), run_id, host_root)
+        transformed, counts = transform(raw.decode('utf-8'), run_id, host_root,
+            network_diagnostic=relative == 'scripts/staging/axxium/network_fixture.py')
         target = destination / relative
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         target.write_text(transformed, encoding='utf-8')

@@ -1,11 +1,14 @@
 """No daemon, network, privileged host path, or production writes."""
 import ast
+from contextlib import redirect_stderr
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -102,6 +105,44 @@ def start(): return command('docker', 'run', '-d', '--name', CADDY, 'image')
         self.assertIn('/config:rw,nosuid,nodev,size=16m', args)
         self.assertEqual(counts['caddy-tmpfs'], 1)
 
+    def test_network_failure_diagnostics_are_fixed_and_preserve_cause(self):
+        source = """\
+import subprocess
+class FixtureError(RuntimeError): pass
+def command(*args):
+    try:
+        return subprocess.run(args, check=True, capture_output=True)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise FixtureError('unchanged') from exc
+"""
+        output, counts = module.transform(source, RUN, Path('/tmp/synthetic-fixture/open-hax'),
+                                          network_diagnostic=True)
+        result = {}
+        exec(compile(output, '<test>', 'exec'), result)
+        self.assertEqual(counts['network-create-diagnostic'], 1)
+        cases = ((b'GUARD REFUSED secret', 'guard refused'),
+                 (b'Docker staging operation refused; no command forwarded', 'guard refused'),
+                 (b'could not find an available, non-overlapping IPv4 address pool', 'default pool exhausted'),
+                 (b'Pool overlaps with other one on this address space', 'overlap'),
+                 (b'Permission denied secret', 'permission denied'),
+                 (b'private-token-not-for-output', 'unclassified (redacted)'))
+        for raw, label in cases:
+            error = subprocess.CalledProcessError(1, ['docker'], stderr=raw)
+            capture = io.StringIO()
+            with self.subTest(label=label), patch.object(subprocess, 'run', side_effect=error), \
+                    redirect_stderr(capture), self.assertRaises(result['FixtureError']) as raised:
+                result['command']('docker', 'network', 'create', 'fixture')
+            self.assertIs(raised.exception.__cause__, error)
+            self.assertEqual(capture.getvalue(), 'Synthetic network creation: ' + label + '\n')
+            self.assertNotIn('secret', capture.getvalue())
+            self.assertNotIn('private-token', capture.getvalue())
+        error = subprocess.CalledProcessError(1, ['docker'], stderr=b'private-token-not-for-output')
+        capture = io.StringIO()
+        with patch.object(subprocess, 'run', side_effect=error), redirect_stderr(capture), \
+                self.assertRaises(result['FixtureError']):
+            result['command']('docker', 'network', 'inspect', 'fixture')
+        self.assertEqual(capture.getvalue(), '')
+
     def test_unknown_embedded_original_targets_fail_closed(self):
         for text in ("X='--network=axxium_database'", "X='prefix-axxium-axxium-1-suffix'"):
             with self.subTest(text=text), self.assertRaises(module.Refused):
@@ -127,7 +168,12 @@ def start(): return command('docker', 'run', '-d', '--name', CADDY, 'image')
             for relative in module.FILES:
                 target = source / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text("VALUE = '/srv/open-hax/state'\n")
+                text = "VALUE = '/srv/open-hax/state'\n"
+                if relative == 'scripts/staging/axxium/network_fixture.py':
+                    text += ("def command(*args):\n"
+                             "    try: return args\n"
+                             "    except Exception as exc: raise RuntimeError('x') from exc\n")
+                target.write_text(text)
                 inputs[relative] = hashlib.sha256(target.read_bytes()).hexdigest()
             plan = source / module.PLAN
             plan.parent.mkdir(parents=True, exist_ok=True)
