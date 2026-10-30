@@ -13,7 +13,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent
 CANDIDATE = 'sha256:6aed20a3439dc29c6bcb43cf3f1e0bf41f65a72734975eb2db922898c45e4652'
+CONFIG = 'sha256:c45e58aadb02622183ccf60a971da2669fc033231b677c12e963920234b9b542'
 POSTGRES = 'sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685'
+DB_CONFIG = 'sha256:' + '2' * 64
 RUN_ID = 'f' * 32
 NETWORK_ID, DB_ID, APP_ID = 'a' * 64, 'b' * 64, 'c' * 64
 
@@ -27,8 +29,16 @@ state_path = root/'state.json'
 state = json.loads(state_path.read_text()) if state_path.exists() else {}
 def save(): state_path.write_text(json.dumps(state))
 def arg(name): return a[a.index(name)+1]
-if a[:2] == ['image','inspect']:
-    print(a[-1])
+if a[:2] == ['context','show']:
+    print('other' if scenario == 'other_context' else 'default')
+elif a[:2] == ['context','inspect']:
+    print('tcp://host:2375' if scenario == 'remote_context' else 'unix:///var/run/docker.sock')
+elif a[:2] == ['image','inspect']:
+    if a[-1].startswith('promethean-axxium:'):
+        print('__CONFIG__' if scenario == 'config_ids' else 'sha256:'+'1'*64 if scenario == 'image_mismatch_candidate' else '__CANDIDATE__')
+    elif a[-1] == 'postgres@__POSTGRES__':
+        print('sha256:'+'1'*64 if scenario == 'image_mismatch_db' else '__DB_CONFIG__' if scenario == 'config_ids' else '__POSTGRES__')
+    else: sys.exit(4)
 elif a[:2] == ['network','create']:
     if scenario == 'unknown_network': sys.exit(124)
     state['network_name'] = a[-1]; state['label'] = arg('--label').split('=',1)[1]; save(); print('__NETWORK__')
@@ -36,7 +46,8 @@ elif a[0] == 'run':
     name = arg('--name'); is_app = name.startswith('axxium-oidc-app-')
     if is_app and scenario == 'unknown_app': sys.exit(124)
     ident = '__APP__' if is_app else '__DB__'
-    state[ident] = {'name':name, 'label':arg('--label').split('=',1)[1]}; save()
+    image = a[a.index('--entrypoint')+2] if is_app else a[-1]
+    state[ident] = {'name':name, 'label':arg('--label').split('=',1)[1], 'image':image}; save()
     pathlib.Path(arg('--cidfile')).write_text(ident)
     print(ident)
 elif a[0] == 'exec':
@@ -48,7 +59,7 @@ elif a[0] == 'inspect':
     elif '.HostConfig.PortBindings' in fmt: print('{"8787/tcp":[{"HostIp":"0.0.0.0"}]}' if scenario == 'public_binding' else 'null')
     elif '.HostConfig.PublishAllPorts' in fmt: print('true' if scenario == 'publish_all' else 'false')
     elif '.NetworkSettings.Ports' in fmt: print('{"8787/tcp":[{"HostIp":"127.0.0.1","HostPort":"1234"}]}' if scenario == 'network_port_map' else '{"8787/tcp":null}')
-    elif '.Image' in fmt: print(ident, '/' + item['name'], label, 'sha256:6aed20a3439dc29c6bcb43cf3f1e0bf41f65a72734975eb2db922898c45e4652', '1')
+    elif '.Image' in fmt: print(ident, '/' + item['name'], label, item['image'], '1')
     elif 'with index .NetworkSettings.Networks' in fmt: print('__NETWORK__','172.29.0.3' if scenario != 'bad_ip' else '127.0.0.1')
     else:
         if scenario == 'foreign_app_label' and ident == '__APP__': label='unowned'
@@ -68,7 +79,7 @@ elif a[0] == 'rm' or a[:2] == ['network','rm']:
     if scenario == 'uncertain_remove' and a[-1] == '__APP__': sys.exit(124)
 else:
     print('unexpected docker call',file=sys.stderr); sys.exit(2)
-'''.replace('__PYTHON__', sys.executable).replace('__NETWORK__', NETWORK_ID).replace('__DB__', DB_ID).replace('__APP__', APP_ID)
+'''.replace('__PYTHON__', sys.executable).replace('__NETWORK__', NETWORK_ID).replace('__DB__', DB_ID).replace('__APP__', APP_ID).replace('__CONFIG__', CONFIG).replace('__CANDIDATE__', CANDIDATE).replace('__POSTGRES__', POSTGRES).replace('__DB_CONFIG__', DB_CONFIG)
 
 PYTHON = r'''#!__PYTHON__
 import os, pathlib, sys
@@ -86,14 +97,16 @@ elif a and a[0].endswith('/probe.py'):
     if a[a.index('--base')+1]!='http://127.0.0.1:8787' or a[a.index('--transport-ip')+1]!='172.29.0.3': sys.exit(6)
     print('synthetic probe passed')
 elif a and a[0].endswith('/handoff_probe.py'):
-    if a[1:] != ['--db-id', '__DB__', '--app-id', '__APP__', '--network-id', '__NETWORK__', '--run-id', '__RUN_ID__']: sys.exit(7)
+    app_image='__CONFIG__' if os.environ.get('FAKE_SCENARIO')=='config_ids' else '__CANDIDATE__'
+    db_image='__DB_CONFIG__' if os.environ.get('FAKE_SCENARIO')=='config_ids' else '__POSTGRES__'
+    if a[1:] != ['--db-id', '__DB__', '--app-id', '__APP__', '--network-id', '__NETWORK__', '--run-id', '__RUN_ID__', '--app-image-id', app_image, '--db-image-id', db_image]: sys.exit(7)
     print('synthetic handoff passed')
 else: sys.exit(5)
-'''.replace('__PYTHON__', sys.executable).replace('__RUN_ID__', RUN_ID).replace('__DB__', DB_ID).replace('__APP__', APP_ID).replace('__NETWORK__', NETWORK_ID)
+'''.replace('__PYTHON__', sys.executable).replace('__RUN_ID__', RUN_ID).replace('__DB__', DB_ID).replace('__APP__', APP_ID).replace('__NETWORK__', NETWORK_ID).replace('__CONFIG__', CONFIG).replace('__CANDIDATE__', CANDIDATE).replace('__POSTGRES__', POSTGRES).replace('__DB_CONFIG__', DB_CONFIG)
 
 
 class OrchestrationTests(unittest.TestCase):
-    def run_harness(self, scenario='', candidate=CANDIDATE, optimized=False):
+    def run_harness(self, scenario='', candidate=CANDIDATE, postgres=POSTGRES, optimized=False):
         with tempfile.TemporaryDirectory(prefix='axxium-harness-unit-') as temporary:
             root = Path(temporary)
             binary = root / 'bin'
@@ -105,9 +118,11 @@ class OrchestrationTests(unittest.TestCase):
             env = {'PATH': str(binary) + ':/usr/bin:/bin', 'FAKE_DOCKER_DIR': str(root),
                    'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted',
                    'FAKE_SCENARIO': scenario, 'LANG': 'C.UTF-8'}
+            if scenario in ('DOCKER_HOST', 'DOCKER_CONTEXT'):
+                env[scenario] = 'remote'
             if optimized:
                 env['PYTHONOPTIMIZE'] = '1'
-            result = subprocess.run(['bash', str(ROOT/'run.sh'), candidate, POSTGRES],
+            result = subprocess.run(['bash', str(ROOT/'run.sh'), candidate, postgres],
                                     env=env, capture_output=True, text=True, timeout=15)
             calls_path = root/'calls.jsonl'
             calls = [json.loads(line) for line in calls_path.read_text().splitlines()] if calls_path.exists() else []
@@ -140,6 +155,28 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(removals, [['rm', '--force', APP_ID], ['rm', '--force', DB_ID]])
         self.assertIn(['network', 'rm', NETWORK_ID], calls)
         self.assertLess(calls.index(['network', 'rm', NETWORK_ID]), len(calls))
+
+    def test_verified_config_image_ids_work_on_classic_image_store(self):
+        result, calls = self.run_harness('config_ids', candidate=CONFIG, postgres=DB_CONFIG)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(any(c[0] == 'run' and CONFIG in c for c in calls))
+        self.assertTrue(any(c[0] == 'run' and DB_CONFIG in c for c in calls))
+
+    def test_mismatched_image_refs_refused_before_resources(self):
+        for scenario in ('image_mismatch_candidate', 'image_mismatch_db'):
+            with self.subTest(scenario=scenario):
+                result, calls = self.run_harness(scenario)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any(c[0] == 'run' or c[:2] == ['network', 'create'] for c in calls))
+
+    def test_remote_contexts_refused_before_resources(self):
+        for scenario in ('DOCKER_HOST', 'DOCKER_CONTEXT', 'other_context', 'remote_context'):
+            with self.subTest(scenario=scenario):
+                result, calls = self.run_harness(scenario)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any(c[0] == 'run' or c[:2] == ['network', 'create'] for c in calls))
+                if scenario in ('DOCKER_HOST', 'DOCKER_CONTEXT'):
+                    self.assertEqual(calls, [])
 
     def test_foreign_container_label_is_never_removed(self):
         result, calls = self.run_harness('foreign_app_label')
