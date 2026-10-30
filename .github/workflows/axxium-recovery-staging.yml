@@ -66,18 +66,18 @@ jobs:
       - name: Exercise recovery controller in an isolated network namespace
         run: |
           set -euo pipefail
-          test "$GITHUB_ACTIONS" = true
-          test "$RUNNER_ENVIRONMENT" = github-hosted
-          test ! -e /srv/open-hax
-          test -z "${DOCKER_HOST:-}"
-          test -z "${DOCKER_CONTEXT:-}"
-          test "$(docker context show)" = default
-          test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock
-          command -v setfacl >/dev/null
-          command -v setpriv >/dev/null
-          command -v unshare >/dev/null
+          test "$GITHUB_ACTIONS" = true || { echo '::error::Not a GitHub Actions runner'; exit 1; }
+          test "$RUNNER_ENVIRONMENT" = github-hosted || { echo '::error::Runner is not GitHub-hosted'; exit 1; }
+          test ! -e /srv/open-hax || { echo '::error::Fixture host path already exists'; exit 1; }
+          test -z "${DOCKER_HOST:-}" || { echo '::error::Docker host override present'; exit 1; }
+          test -z "${DOCKER_CONTEXT:-}" || { echo '::error::Docker context override present'; exit 1; }
+          test "$(docker context show)" = default || { echo '::error::Docker context is not default'; exit 1; }
+          test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock || { echo '::error::Docker endpoint is not local'; exit 1; }
+          command -v setfacl >/dev/null || { echo '::error::setfacl is unavailable'; exit 1; }
+          command -v setpriv >/dev/null || { echo '::error::setpriv is unavailable'; exit 1; }
+          command -v unshare >/dev/null || { echo '::error::unshare is unavailable'; exit 1; }
           sudo setpriv --reuid=1000 --regid=1000 --clear-groups \
-            test -r "$GITHUB_WORKSPACE/scripts/staging/axxium/full_recovery_probe.py"
+            test -r "$GITHUB_WORKSPACE/scripts/staging/axxium/full_recovery_probe.py" || { echo '::error::UID 1000 cannot read fixture'; exit 1; }
           sudo mkdir -m 700 /srv/open-hax
           sudo chown 1000:1000 /srv/open-hax
           sudo setfacl -m u:1000:rw /var/run/docker.sock
