@@ -15,13 +15,23 @@ lock, held marker, backup and journal. The handoff checks confirm that the
 marker remains present, the old backup and journal survive archival, and the
 archive manifest names the correct path and hash.
 
-**Scope:** The handoff fixture does not invoke the complete
-`--recover-interrupted` controller, its production-specific incident guard,
-identity provisioner, fresh backup and two-image rollback rehearsal, Caddy,
-the production host queue, or a real disconnect. It uses a synthetic marker,
-plan, environment and database. It does not verify old-image compatibility or
-establish production recovery readiness. Existing staging candidate OIDC
-evidence and this fixture's result must be attributed separately.
+The workflow additionally attempts the real `--recover-interrupted` phase
+sequence with a synthetic incident journal, identity, PDS, Caddy, database,
+backup and orphan container. It runs the controller as UID 1000 in a fresh
+loopback-only network namespace, with separate internal container networks;
+the GitHub runner remains outside that namespace. The fixture-only driver
+rebinds the incident plan and container IDs and does not contain production
+credentials. Failure is a failure of the job; no automatic production action
+follows.
+
+**Scope:** The full-controller fixture uses the candidate as its incumbent and
+substitutes the production `verify.sh` public HTTPS checks with fixture-local
+OIDC discovery. It cannot prove compatibility with the former production image,
+the real public TLS and PDS verification gate, production host queue behavior,
+or behavior on an actual SSH disconnect. It uses a synthetic marker, plan,
+environment and database. It does not establish production recovery readiness.
+Existing staging candidate OIDC evidence and this fixture's result must be
+attributed separately.
 
 Before execution, review the harness and run `bash -n scripts/staging/axxium/run.sh`,
 `shellcheck scripts/staging/axxium/run.sh`, and `PYTHONDONTWRITEBYTECODE=1

@@ -1,7 +1,7 @@
 name: Axxium recovery staging
 
-# Disposable GitHub-hosted VM only. This checks candidate OIDC and the handoff
-# filesystem primitive; it is not a complete recovery-controller rehearsal.
+# Disposable GitHub-hosted VM only. Recovery uses synthetic identity and
+# substitutes its final public verifier; it is not production verification.
 on:
   workflow_dispatch:
   pull_request:
@@ -21,7 +21,7 @@ permissions:
 jobs:
   synthetic-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
@@ -55,6 +55,7 @@ jobs:
             --archive "$RUNNER_TEMP/candidate.zip" --output "$RUNNER_TEMP/images.tar"
           docker load --input "$RUNNER_TEMP/images.tar"
           docker pull postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+          docker pull caddy@sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17
       - name: Exercise synthetic OIDC and held handoff
         run: |
           set -euo pipefail
@@ -62,3 +63,23 @@ jobs:
           postgres=$(docker image inspect --format '{{.Id}}' postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685)
           scripts/staging/axxium/run.sh \
             "$candidate" "$postgres"
+      - name: Exercise recovery controller in an isolated network namespace
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test ! -e /srv/open-hax
+          test -z "${DOCKER_HOST:-}"
+          test -z "${DOCKER_CONTEXT:-}"
+          test "$(docker context show)" = default
+          test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock
+          command -v setfacl >/dev/null
+          command -v setpriv >/dev/null
+          command -v unshare >/dev/null
+          sudo mkdir -m 700 /srv/open-hax
+          sudo chown 1000:1000 /srv/open-hax
+          sudo setfacl -m u:1000:rw /var/run/docker.sock
+          sudo unshare --net --fork setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env -i PATH="$PATH" HOME=/tmp GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted \
+              DOCKER_HOST=unix:///var/run/docker.sock PYTHONDONTWRITEBYTECODE=1 \
+              python3 "$GITHUB_WORKSPACE/scripts/staging/axxium/full_recovery_probe.py"
