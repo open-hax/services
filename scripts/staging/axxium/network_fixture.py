@@ -6,6 +6,7 @@ GitHub-hosted disposable runner, in a separate network namespace, and refuses
 to adopt existing names, networks or host state.  All service containers use
 internal networks and no published ports.  It must never run on a shared host.
 """
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -75,6 +76,23 @@ def private_write(path, data, mode=0o600):
         os.fsync(stream.fileno())
 
 
+def require_separate_namespace():
+    """Compare with the PID 1 network namespace opened before dropping root."""
+    if os.environ.get('FIXTURE_HOST_NETNS_FD') != '3':
+        raise FixtureError('Host network namespace descriptor is unavailable')
+    try:
+        # Linux NS_GET_NSTYPE returns CLONE_NEWNET for a network namespace.
+        if fcntl.ioctl(3, 0xb703) != 0x40000000:
+            raise FixtureError('Host descriptor is not a network namespace')
+        host = os.fstat(3)
+        current = os.stat('/proc/self/ns/net')
+    except OSError as exc:
+        raise FixtureError('Network namespace comparison is unavailable') from exc
+    if (host.st_dev, host.st_ino) == (current.st_dev, current.st_ino):
+        raise FixtureError('Fixture driver must have a separate network namespace')
+    os.close(3)
+
+
 def preflight(root, image_ids):
     if (Path(root) != ROOT or os.getuid() != 1000 or
         os.environ.get('GITHUB_ACTIONS') != 'true' or
@@ -92,8 +110,7 @@ def preflight(root, image_ids):
     # A network namespace without host interfaces prevents the driver and its
     # child processes from reaching the production issuer directly. The daemon
     # remains accessible only through its local Unix socket.
-    if os.readlink('/proc/self/ns/net') == os.readlink('/proc/1/ns/net'):
-        raise FixtureError('Fixture driver must have a separate network namespace')
+    require_separate_namespace()
     try:
         fixture_netns.require_isolated()
     except (OSError, RuntimeError, ValueError):

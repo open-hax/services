@@ -98,7 +98,12 @@ jobs:
           sudo mkdir -m 700 /srv/open-hax
           sudo chown 1000:1000 /srv/open-hax
           sudo setfacl -m u:1000:rw /var/run/docker.sock
-          sudo unshare --net --fork setpriv --reuid=1000 --regid=1000 --clear-groups \
-            env -i PATH="$PATH" HOME=/tmp GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted \
-              DOCKER_HOST=unix:///var/run/docker.sock PYTHONDONTWRITEBYTECODE=1 \
-              python3 "$fixture_source/scripts/staging/axxium/full_recovery_probe.py"
+          # Open PID 1's network namespace before dropping privileges, then
+          # pass only that descriptor into the isolated fixture process.
+          sudo sh -c '
+            exec 3</proc/1/ns/net
+            exec unshare --net --fork setpriv --reuid=1000 --regid=1000 --clear-groups \
+              env -i PATH="$2" HOME=/tmp GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted \
+                DOCKER_HOST=unix:///var/run/docker.sock PYTHONDONTWRITEBYTECODE=1 FIXTURE_HOST_NETNS_FD=3 \
+                python3 "$1"
+          ' sh "$fixture_source/scripts/staging/axxium/full_recovery_probe.py" "$PATH"

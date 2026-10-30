@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('network_fixture_under_test', HERE / 'network_fixture.py')
@@ -18,6 +19,31 @@ ingress_spec.loader.exec_module(ingress)
 
 
 class NetworkFixtureTests(unittest.TestCase):
+    def test_host_namespace_descriptor_must_be_valid_and_distinct(self):
+        host = SimpleNamespace(st_dev=1, st_ino=10)
+        other = SimpleNamespace(st_dev=1, st_ino=11)
+        with patch.dict(os.environ, {'FIXTURE_HOST_NETNS_FD': '3'}, clear=True), \
+                patch.object(fixture.fcntl, 'ioctl', return_value=0x40000000), \
+                patch.object(fixture.os, 'fstat', return_value=host), \
+                patch.object(fixture.os, 'stat', return_value=other), \
+                patch.object(fixture.os, 'close') as close:
+            fixture.require_separate_namespace()
+            close.assert_called_once_with(3)
+        for fd, kind, current in (('3', 0x40000000, host), ('3', 0, other), ('4', 0x40000000, other)):
+            with self.subTest(fd=fd, kind=kind, current=current.st_ino), \
+                    patch.dict(os.environ, {'FIXTURE_HOST_NETNS_FD': fd}, clear=True), \
+                    patch.object(fixture.fcntl, 'ioctl', return_value=kind), \
+                    patch.object(fixture.os, 'fstat', return_value=host), \
+                    patch.object(fixture.os, 'stat', return_value=current), \
+                    patch.object(fixture.os, 'close') as close:
+                with self.assertRaises(fixture.FixtureError):
+                    fixture.require_separate_namespace()
+                close.assert_not_called()
+        with patch.dict(os.environ, {'FIXTURE_HOST_NETNS_FD': '3'}, clear=True), \
+                patch.object(fixture.fcntl, 'ioctl', side_effect=OSError('missing')):
+            with self.assertRaises(fixture.FixtureError):
+                fixture.require_separate_namespace()
+
     def test_caddy_fixture_matches_actual_ingress_transform(self):
         expected = hashlib.sha256(fixture.CADDYFILE).hexdigest()
         updated = ingress.prepare(fixture.CADDYFILE, expected)
