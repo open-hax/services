@@ -1,0 +1,7 @@
+{
+  "schema": "axxium-fixture-assertion-measurement/v1",
+  "process_exit_code": 1,
+  "passed_named_assertion_calls_by_file": {},
+  "failed_named_assertion_calls_by_file": {},
+  "count_scope": "Successful named node:assert/strict calls attributed to archived scripts; bare assert calls excluded"
+}

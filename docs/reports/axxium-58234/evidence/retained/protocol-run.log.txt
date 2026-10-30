@@ -1,0 +1,23 @@
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: pg_ctl failed: pg_ctl: could not start server
+Examine the log output.
+
+
+1 !== 0
+
+    at assert.<computed> [as equal] (file:///home/err/.local/share/codex-work/axxium-sso/qualification-source-58234-evidence/count-assertions.mjs:22:30)
+    at run (file:///home/err/.local/share/codex-work/axxium-sso/qualification-source-58234-evidence/source/scripts/oidc-store.integration.mjs:25:10)
+    at file:///home/err/.local/share/codex-work/axxium-sso/qualification-source-58234-evidence/source/scripts/oidc-store.integration.mjs:29:3
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 1,
+  expected: 0,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v22.23.3

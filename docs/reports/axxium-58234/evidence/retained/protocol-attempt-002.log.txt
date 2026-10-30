@@ -1,0 +1,4 @@
+PASS durable authority: shared synthetic login, PKCE, state/nonce/audience, code replay refusal, own-client introspection, disabled actor refusal and revocation
+PASS mounted RFC8628: authenticated atomic polling/backoff, explicit root approval/denial, browser Origin/XSRF, expiry/retry caps, single redemption, actor/client binding and root logout
+PASS mounted Fastify authority: discovery, root-session consent, Origin/CSRF refusal, token exchange and parent-session revocation
+PASS isolated PostgreSQL: model isolation, lookup, concurrent single consumption, durable state, bounded expired-record/binding reclamation, replay retention and grant revocation

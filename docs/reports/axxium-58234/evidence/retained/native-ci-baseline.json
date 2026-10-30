@@ -1,0 +1,41 @@
+{
+  "completed_at": "2026-10-29T15:54:31Z",
+  "event": "push",
+  "job_id": 123559513396,
+  "protocol_completion_markers": [
+    "2026-10-29T15:54:27.3731776Z PASS durable authority: shared synthetic login, PKCE, state/nonce/audience, code replay refusal, own-client introspection, disabled actor refusal and revocation",
+    "2026-10-29T15:54:27.9584405Z PASS mounted RFC8628: authenticated atomic polling/backoff, explicit root approval/denial, browser Origin/XSRF, expiry/retry caps, single redemption, actor/client binding and root logout",
+    "2026-10-29T15:54:28.0045022Z PASS mounted Fastify authority: discovery, root-session consent, Origin/CSRF refusal, token exchange and parent-session revocation",
+    "2026-10-29T15:54:28.0054015Z PASS isolated PostgreSQL: model isolation, lookup, concurrent single consumption, durable state, bounded expired-record/binding reclamation, replay retention and grant revocation"
+  ],
+  "raw_log_bytes": 62614,
+  "raw_log_sha256": "62489edc46c9c104bcbfd899d47a8d780b58778f1a55be2d93f2b21a99eab683",
+  "repository": "open-hax/axxium",
+  "run_attempt": 1,
+  "run_id": 40905641072,
+  "schema": "axxium-native-ci-baseline-observation/v1",
+  "scope": "Native exact-source CI baseline and real-PG/HTTP protocol completion; surrounding infrastructure warnings retained; no human-login or mutation qualification claim",
+  "source_sha": "58234df96ca86507e6cdd87f65aaa9ab35621415",
+  "started_at": "2026-10-29T15:50:45Z",
+  "status": "passed",
+  "suite": {
+    "cljs_assertions_per_execution": 521,
+    "cljs_suite_executions": 2,
+    "cljs_tests_per_execution": 95,
+    "compiler_warnings": 0,
+    "compose_tests": 5,
+    "node_tests": 23,
+    "test_errors": 0,
+    "test_failures": 0,
+    "test_skips": 0
+  },
+  "surrounding_action_warnings": [
+    "2026-10-29T15:50:49.4634128Z ##[warning]setup-java v4 is deprecated and will no longer receive updates. Please migrate to actions/setup-java@v5.",
+    "2026-10-29T15:50:49.4694569Z (node:2254) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.",
+    "2026-10-29T15:50:49.7013115Z (node:2266) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.",
+    "2026-10-29T15:54:28.3636946Z (node:3148) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.",
+    "2026-10-29T15:54:28.5389830Z (node:3156) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.",
+    "2026-10-29T15:54:28.8412773Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-java@v4, actions/setup-node@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/"
+  ],
+  "workflow_path": ".github/workflows/ci.yml"
+}

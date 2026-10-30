@@ -1,0 +1,5 @@
+shadow-cljs - config: /home/err/Documents/Codex/2026-10-29/task/evidence/independent/source/shadow-cljs.edn
+shadow-cljs - updating dependencies
+shadow-cljs - dependencies updated
+[:oidc-store-fixture] Compiling ...
+[:oidc-store-fixture] Build completed. (68 files, 18 compiled, 0 warnings, 6.96s)

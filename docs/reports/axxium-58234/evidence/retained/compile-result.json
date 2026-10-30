@@ -1,0 +1,12 @@
+{
+  "command": [
+    "node_modules/.bin/shadow-cljs",
+    "release",
+    "oidc-store-fixture"
+  ],
+  "elapsed_seconds": 132.212,
+  "exit_code": 0,
+  "node_version": "v22.23.3",
+  "started_at": "2026-10-29T19:47:06.303479+00:00",
+  "timed_out": false
+}

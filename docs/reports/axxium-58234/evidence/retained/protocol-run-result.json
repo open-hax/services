@@ -1,0 +1,15 @@
+{
+  "command": [
+    "node",
+    "--import",
+    "/home/err/.local/share/codex-work/axxium-sso/qualification-source-58234-evidence/count-assertions.mjs",
+    "scripts/oidc-store.integration.mjs"
+  ],
+  "completed_at": "2026-10-29T19:49:39.042700+00:00",
+  "credential_environment": "minimal allowlist; no provider/GitHub/database credentials",
+  "elapsed_seconds": 8.435,
+  "exit_code": 1,
+  "node_version": "v22.23.3",
+  "started_at": "2026-10-29T19:49:30.607942+00:00",
+  "timed_out": false
+}

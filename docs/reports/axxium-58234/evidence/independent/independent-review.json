@@ -1,0 +1,57 @@
+{
+  "schema": "axxium-independent-local-evidence-review/v1",
+  "reviewed_at": "2026-10-30T13:21:11.988407+00:00",
+  "repository": "open-hax/axxium",
+  "source_sha": "58234df96ca86507e6cdd87f65aaa9ab35621415",
+  "status": "partial-local-evidence-not-admitted",
+  "integration": {
+    "source_sha": "58234df96ca86507e6cdd87f65aaa9ab35621415",
+    "status": "passed",
+    "assertions": 22,
+    "timed_out": false,
+    "warnings": [],
+    "scope": "synthetic isolated PostgreSQL storage fixture",
+    "count_scope": "successful named node:assert/strict calls; bare calls excluded"
+  },
+  "e2e": {
+    "source_sha": "58234df96ca86507e6cdd87f65aaa9ab35621415",
+    "status": "passed",
+    "assertions": 400,
+    "timed_out": false,
+    "warnings": [],
+    "scope": "synthetic protocol, mounted HTTP and device fixtures on loopback",
+    "count_scope": "successful named node:assert/strict calls; bare calls excluded"
+  },
+  "mutation_batches": [],
+  "candidate_archive_sha256": "95498d307aea2818b7f18122032dab8354e28e2b9f5ecb7abf9d90a4e5594f41",
+  "observations": {
+    "git_archive_sha256_matches": true,
+    "archive_manifest_files_checked": 128,
+    "extracted_source_files_unchanged_after_test": true,
+    "retained_partial_referenced_hashes_match": true,
+    "compile_exit_code": 0,
+    "compile_warnings": 0,
+    "protocol_exit_code": 0,
+    "initial_sandbox_attempt": "failed on loopback bind EPERM; isolated rerun passed under approved local test access",
+    "named_assertions_by_file": {
+      "scripts/oidc-store.integration.mjs": 22,
+      "scripts/oidc-protocol.fixture.mjs": 258,
+      "scripts/oidc-http.fixture.mjs": 22,
+      "scripts/oidc-device.fixture.mjs": 120
+    },
+    "failed_named_assertion_calls_by_file": {},
+    "node_version": "22.23.3",
+    "application_dependencies": "linked to retained local node_modules; dependency files were not independently hashed or reinstalled",
+    "compiled_bundle_sha256_different_from_previous": "The two local builds differ byte-for-byte; no binary equivalence claimed",
+    "authority": "The report is not a canonical Services-main qualification or production admission; no real user, production identity, ChatGPT callback, or mutation qualification was exercised."
+  },
+  "artifacts_sha256": {
+    "compile.log": "3d52933b26ec08902545bcdb43a24e6deb6a8087415c4991d300879711c3a3b2",
+    "protocol.log": "dd4d05b3884fbbfece71e6cc20cc58973d72d515cee0d22dfe92c9885a743e14",
+    "assertions.json": "18c01b32bb6fc5dd9c9656d99b661a88faf6acb80f951aaf735be296455c734e",
+    "count-assertions.mjs": "3ff6b63b2d846734895b67d287b25abd74455c6ba46f23212c66e919c0975452",
+    "protocol-sandbox.log": "e219251cc3d32ec65b10741847d66cc366bd9ed42f1423bb7bd1ff7835ec0246",
+    "assertions-sandbox.json": "037edf80130be0235a6e08f2ecd2d0ab3a5b9c1b04a1b966e578d7af0f40359f",
+    "source/target/oidc-store/store.js": "a28053141af3ad12e88bf270adb03be8e06773d296f208767f7ae7d0e7aaae6b"
+  }
+}
