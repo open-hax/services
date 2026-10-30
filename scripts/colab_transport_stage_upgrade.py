@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""One fixed healthy19e Stage upgrade; unresolved candidate pins refuse apply.
+"""One fixed healthy19e Stage upgrade to the accepted c42 public image.
 
 The existing Deploy Stack queue and native source admission enclose this
 controller. Preserve old/new bytes on uncertainty, never retry host effects,
@@ -148,7 +148,20 @@ def snapshot_state(source, destination):
 
 
 PLAN_PATH = 'digitalocean/services/colab-mcp/transport-stage-upgrade-plan.json'
-CANDIDATE = None
+CANDIDATE = {
+    'artifact_digest': 'sha256:29b5e67fefb344d2d0707c2c65ec2366570da464390667fa2d248b2878a86f99',
+    'artifact_id': 12951989895,
+    'image_id': 'sha256:d0af3901ccf8326b7211bca5eb238bb05fe46052fb0110ce06626c32b9199e84',
+    'image_reference': 'ghcr.io/open-hax/cloud-cuckoo@sha256:1b3c33e9fa6c86524e82219bc700c161d514e58188c3de33d8dae1eae51819de',
+    'license_sha256': '3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986',
+    'publisher_attempt': 1,
+    'publisher_controller_sha': 'c42e9311586c03f81f0bf2f36f441bc1a8f01e8c',
+    'publisher_run_id': 40999281958,
+    'runtime_image_id': 'sha256:1b3c33e9fa6c86524e82219bc700c161d514e58188c3de33d8dae1eae51819de',
+    'source_pr': 20,
+    'source_sha': 'c42e9311586c03f81f0bf2f36f441bc1a8f01e8c',
+    'tests': 220,
+}
 OLD = {
     'source_sha': '19e1adadb1b24eacca993de92f6370b400cf3d33',
     'image_id': 'sha256:6b107b5c77b2f3c780160bedf0fc0e11cc2b801b4639f740f9e8b690161bfc8c',
