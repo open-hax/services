@@ -52,6 +52,30 @@ class WaiverTests(unittest.TestCase):
         result = self.admit(evidence())
         self.assertEqual("owner-decision", result["qualification"])
         self.assertIs(result["mutationCampaignPassed"], False)
+        self.assertEqual({"admitted": False, "reason": "four completed mutation batches are required"},
+                         result["waivedMutationVerdict"])
+
+    def test_present_mutation_evidence_is_not_silently_waived(self):
+        batch = {"source_sha": SOURCE, "status": "passed", "baseline": "passed", "batch_index": 0,
+                 "mutants": [{"fingerprint": f"synthetic-0-{i}", "status": "killed", "phase": "test"}
+                             for i in range(250)]}
+        batch["mutants"][0]["status"] = "survived"
+        four_batches = [deepcopy(batch) for _ in range(4)]
+        for index, item in enumerate(four_batches):
+            item["batch_index"] = index
+        for batches, reason in [([batch], "explicitly empty batch list"),
+                                (four_batches, "survived, duplicate, invalid or unevaluated mutation"),
+                                (None, "explicitly empty batch list")]:
+            with self.subTest(batch_count=len(batches) if batches is not None else None):
+                proof = evidence()
+                proof["mutation_batches"] = batches
+                with self.assertRaisesRegex(q.Refusal, reason):
+                    self.admit(proof)
+
+    def test_unrelated_denial_is_not_waived(self):
+        with patch.object(q, "production_admission", return_value={"admitted": False, "reason": "unrelated gate refused"}):
+            with self.assertRaisesRegex(q.Refusal, "unrelated gate refused"):
+                self.admit(evidence())
 
     def test_bad_receipts_never_bypass(self):
         for name, field, value in [("integration", "status", "failed"),

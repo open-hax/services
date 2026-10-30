@@ -239,13 +239,14 @@ def verify_archive(plan, archive):
     return plan["image_id"]
 
 
-def verify_mutation_exception(plan, plan_bytes, proof):
+def verify_mutation_exception(plan, plan_bytes, proof, verdict):
     """Admit only the reviewed mutation waiver; never assert mutation success.
 
-    A missing-batches verdict is used solely to confirm the existing shared
-    policy has accepted integration and e2e. No synthetic mutation evidence is
-    supplied. The exact shared policy bytes are pinned to prevent later policy
-    changes from being silently skipped by this candidate-only exception.
+    The actual missing-batches verdict confirms that the existing shared policy
+    accepted integration and e2e. Only an explicitly empty mutation-batch list
+    is in scope: submitted partial or invalid results must not be discarded.
+    The exact shared policy bytes are pinned to prevent later policy changes
+    from being silently skipped by this candidate-only exception.
     """
     policy_path = Path(__file__).with_name("environment_policy.py")
     require(hashlib.sha256(policy_path.read_bytes()).hexdigest() == WAIVER_POLICY_SHA256,
@@ -267,10 +268,12 @@ def verify_mutation_exception(plan, plan_bytes, proof):
             and isinstance(exception.get("owner_decision_reference"), str)
             and bool(exception["owner_decision_reference"].strip()),
             "reviewed candidate-specific mutation exception unavailable")
-    result = production_admission(plan["source_sha"], proof.get("integration"), proof.get("e2e"), None)
-    require(result == {"admitted": False, "reason": "four completed mutation batches are required"},
-            "integration or e2e evidence missing or invalid")
-    return {"qualification": "owner-decision", "mutationCampaignPassed": False}
+    require(verdict == {"admitted": False, "reason": "four completed mutation batches are required"},
+            verdict.get("reason", "canonical production qualification refused"))
+    require(isinstance(proof.get("mutation_batches"), list) and proof["mutation_batches"] == [],
+            "mutation exception requires an explicitly empty batch list")
+    return {"qualification": "owner-decision", "mutationCampaignPassed": False,
+            "waivedMutationVerdict": verdict}
 
 
 def admit(plan_bytes, controller_sha, archive, *, now=None):
@@ -295,7 +298,7 @@ def admit(plan_bytes, controller_sha, archive, *, now=None):
                                    proof.get("e2e"), proof.get("mutation_batches"))
     exception_verdict = {}
     if verdict.get("admitted") is not True:
-        exception_verdict = verify_mutation_exception(plan, plan_bytes, proof)
+        exception_verdict = verify_mutation_exception(plan, plan_bytes, proof, verdict)
     # Re-read mutable native custody after archive inspection and policy admission.
     main_ancestor(SERVICES, controller_sha)
     verify_native_stage(plan, fixed_time or datetime.now(timezone.utc))
