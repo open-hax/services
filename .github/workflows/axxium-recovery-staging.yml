@@ -76,6 +76,8 @@ jobs:
           command -v setfacl >/dev/null
           command -v setpriv >/dev/null
           command -v unshare >/dev/null
+          sudo setpriv --reuid=1000 --regid=1000 --clear-groups \
+            test -r "$GITHUB_WORKSPACE/scripts/staging/axxium/full_recovery_probe.py"
           sudo mkdir -m 700 /srv/open-hax
           sudo chown 1000:1000 /srv/open-hax
           sudo setfacl -m u:1000:rw /var/run/docker.sock
