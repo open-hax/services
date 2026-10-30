@@ -1,0 +1,14 @@
+{
+  "candidate": null,
+  "predecessor": {
+    "compose_sha256": "56c036014af9dbb894fa675041c0175b9555dc847d706a6c1d2ed2408a648557",
+    "image_id": "sha256:6b107b5c77b2f3c780160bedf0fc0e11cc2b801b4639f740f9e8b690161bfc8c",
+    "image_reference": "ghcr.io/open-hax/cloud-cuckoo@sha256:8cd5bf61555d7c1096a053715ab39b78d028958ed62f0e20555e158096d7c767",
+    "plan_sha256": "5c396ae3a3a82268347e34d4cf6effed2fb3850be3463cb632ee8c8666cadc86",
+    "receipt_sha256": "846f661916bf94e0fcc8fcf420b0c8e4f049bf08c4e4a8f2fe5a69f6607ca7a4",
+    "runtime_image_id": "sha256:8cd5bf61555d7c1096a053715ab39b78d028958ed62f0e20555e158096d7c767",
+    "services_sha": "215fe1969b99c3bc4a10a90e110b18d9a36e950d",
+    "source_sha": "19e1adadb1b24eacca993de92f6370b400cf3d33"
+  },
+  "schema": "colab-transport-stage-upgrade/v1"
+}

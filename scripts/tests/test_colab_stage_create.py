@@ -13,6 +13,7 @@ class CanaryTests(unittest.TestCase):
         calls = []
         project = None
         image = json.loads((m.ROOT / 'digitalocean/services/colab-mcp/transport-stage-plan.json').read_text())['image_reference']
+        ids = ['a' * 64, 'b' * 64, 'c' * 64]
         def command(args, **kwargs):
             nonlocal project
             calls.append(args)
@@ -29,14 +30,18 @@ class CanaryTests(unittest.TestCase):
                     self.assertNotIn('/srv/', service['volumes'][0]['source'])
                 return b''
             if 'ps' in args:
-                return b'' if any('rm' in c for c in calls) else b'a\nb\nc\n'
+                if args[:2] == ['docker', 'ps']:
+                    self.assertIn('--no-trunc', args)
+                    self.assertEqual(args[-1], 'label=com.docker.compose.project=' + project)
+                return b'' if any('rm' in c for c in calls) else ('\n'.join(ids) + '\n').encode()
             if args[:2] == ['docker', 'inspect']:
-                return json.dumps([{'State': {'Running': False, 'Status': 'created'},
+                return json.dumps([{'Id': identifier, 'State': {'Running': False, 'Status': 'created'},
                     'Config': {'Image': image, 'Labels': {'com.docker.compose.project': project}},
-                    'HostConfig': {'Tmpfs': {'/tmp': 'size=32m,mode=1777'}}} for _ in range(3)]).encode()
+                    'HostConfig': {'Tmpfs': {'/tmp': 'size=32m,mode=1777'}}} for identifier in ids]).encode()
             return b''
         result = m.check(command)
         self.assertTrue(result['passed'])
+        self.assertTrue(result['full_container_ids_verified'])
         self.assertFalse(result['application_started'])
         self.assertTrue(any('create' in c for c in calls))
         self.assertFalse(any(set(c) & {'start', 'up', 'build', 'push', 'login'} for c in calls))

@@ -8,7 +8,7 @@ and host identity, preserves the exact quiesced private state and a restore copy
 and never restarts a legacy image as an authentication fallback.
 """
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 import fcntl
 import hashlib
 import json
@@ -286,7 +286,7 @@ class Host:
         require(file_hash(RUNTIME / 'compose.yaml', private=False) == expected['compose_sha256'])
         self.old = self.inspect(expected['container_id'])
         validate_incumbent(self.old, expected)
-        ids = run(['docker', 'ps', '-aq', '--filter', 'label=com.docker.compose.project=' + PROJECT], timeout=20).decode().split()
+        ids = run(['docker', 'ps', '-aq', '--no-trunc', '--filter', 'label=com.docker.compose.project=' + PROJECT], timeout=20).decode().split()
         require(ids == [expected['container_id']], 'Colab project membership changed')
         self.identity()
         proof = json.loads(private_read(self.proof, maximum=2 * 1024 * 1024))
@@ -333,7 +333,7 @@ class Host:
         copy_state(restore, verify, self.protected)
         # SQLite may update its private SHM bookkeeping; only a disposable
         # verification copy is opened, leaving both exact copies untouched.
-        with sqlite3.connect('file:' + str(verify / 'oauth/oauth.sqlite3') + '?mode=ro', uri=True) as database:
+        with closing(sqlite3.connect('file:' + str(verify / 'oauth/oauth.sqlite3') + '?mode=ro', uri=True)) as database:
             require(database.execute('PRAGMA integrity_check').fetchall() == [('ok',)])
         require(state_inventory(backup) == state_inventory(restore) == self.protected)
 

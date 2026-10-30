@@ -1,5 +1,11 @@
 # Cloud Cuckoo transport staging
 
+The healthy source 19e deployment remains the predecessor for the prepared
+[closed Stage upgrade](colab-transport-stage-upgrade.md). Its future candidate
+pins are unresolved; the updated `colab-stage` route refuses activation until
+actual native publication is pinned. The historical first-adoption and recovery
+evidence below remains intact and grants no later-source qualification.
+
 The `colab-stage` scope in **Deploy Stack** stages the exact accepted source and
 GHCR digest in `digitalocean/services/colab-mcp/transport-stage-plan.json`. Set
 `colab_ref` to that full source SHA. The main controller, existing
