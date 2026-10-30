@@ -74,7 +74,9 @@ jobs:
     needs: admit
     if: needs.admit.outputs.admitted == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The transaction may perform five sequential 610-second graceful stops,
+    # plus verified backups, health checks, and a bounded rollback on failure.
+    timeout-minutes: 120
     environment: production
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
