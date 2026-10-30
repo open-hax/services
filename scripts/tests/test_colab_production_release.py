@@ -14,6 +14,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import colab_production_release as m
+import colab_production_admission
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -210,6 +211,42 @@ class ReleaseTests(unittest.TestCase):
 
     def test_image_validation_reuses_accepted_manifest_config_and_license_boundary(self):
         self.assertIs(m.Host.image, m.StageHost.image)
+
+    def test_actual_preflight_compares_pinned_full_id_to_untruncated_native_listing(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(m, 'OWNER_UID', os.getuid()):
+            root = Path(temporary)
+            runtime, controller = root / 'runtime', root / 'controller'
+            runtime.mkdir(mode=0o700)
+            controller.mkdir(mode=0o700)
+            compose = runtime / 'compose.yaml'
+            compose.write_text('synthetic-incumbent-compose')
+            compose.chmod(0o664)
+            record = self.record()
+            expected = {**colab_production_admission.PREDECESSOR,
+                'compose_sha256': m.digest(compose.read_bytes()), 'environment_sha256': m.environment_hash(record)}
+            record.update(Id=expected['container_id'], Image=expected['image_id'], Name='/colab-mcp-gateway-1')
+            record['Config']['Image'] = expected['image_reference']
+            host = object.__new__(m.Host)
+            host.full_plan, host.plan = {'predecessor': expected}, self.candidate()
+            host.pending, host.environment = runtime / '.pending', controller / '.env'
+            host.proof = controller / 'proof.json'
+            host.proof.write_text(json.dumps({'repository': 'open-hax/cloud-cuckoo', 'source_sha': host.plan['source_sha']}))
+            host.proof.chmod(0o600)
+            host.inspect = lambda selector: record
+            host.identity = lambda: None
+            host.inventory = lambda: {}
+            def command(args, **kwargs):
+                self.assertEqual(args[:3], ['docker', 'ps', '-aq'])
+                identifier = expected['container_id'] if '--no-trunc' in args else expected['container_id'][:12]
+                return identifier.encode() + b'\n'
+            def private(path, **kwargs):
+                return host.proof.read_bytes() if path == host.proof else b'synthetic-legacy-credential-long-enough'
+            with patch.object(m, 'RUNTIME', runtime), patch.object(m, 'file_hash', return_value=expected['compose_sha256']), \
+                 patch.object(m, 'run', side_effect=command) as run, patch.object(m, 'private_read', side_effect=private), \
+                 patch.object(m, 'production_admission', return_value={'admitted': True}), \
+                 patch.object(m, 'state_inventory', return_value={}), patch.object(m.socket, 'socket'):
+                host.preflight()
+                self.assertIn('--no-trunc', run.call_args.args[0])
 
 
 if __name__ == '__main__': unittest.main()

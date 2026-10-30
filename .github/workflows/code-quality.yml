@@ -85,6 +85,7 @@ jobs:
           python3 -m unittest scripts.tests.test_enroll_colab_transport_stage
           python3 -m unittest scripts.tests.test_colab_stage_empty_start_recovery scripts.tests.test_colab_stage_create
           python3 -m unittest scripts.tests.test_colab_production_admission scripts.tests.test_colab_production_release scripts.tests.test_colab_production_workflow
+          python3 -m unittest scripts.tests.test_colab_stage_upgrade scripts.tests.test_colab_stage_upgrade_admission scripts.tests.test_colab_stage_upgrade_workflow
       - name: Validate isolated Colab Stage create without starting applications
         run: python3 scripts/check_colab_stage_create.py
       - name: Test Colab image, identity and discovery release gate

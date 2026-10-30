@@ -2,6 +2,7 @@
 """Create, inspect and remove an isolated CI canary; never start application code."""
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import tempfile
@@ -43,7 +44,11 @@ def check(command=run):
             ids = command(compose + ['ps', '-aq'], env=env, timeout=20).decode().split()
             require(len(ids) == 3)
             records = json.loads(command(['docker', 'inspect', *ids], env=env, timeout=20))
-            require(len(records) == 3)
+            full = command(['docker', 'ps', '-aq', '--no-trunc', '--filter',
+                            'label=com.docker.compose.project=' + project], env=env, timeout=20).decode().split()
+            require(len(records) == 3 and len(full) == 3 and all(re.fullmatch(r'[0-9a-f]{64}', value) for value in full)
+                    and set(ids) == set(full) == {record.get('Id') for record in records},
+                    'Native full Docker IDs differ from created and inspected containers')
             for record in records:
                 require(record.get('State', {}).get('Running') is False and
                         record.get('State', {}).get('Status') == 'created' and
@@ -54,6 +59,7 @@ def check(command=run):
             command(compose + ['rm', '--force'], env=env, timeout=60)
             require(not command(compose + ['ps', '-aq'], env=env, timeout=20).strip(), 'Canary cleanup requires attention')
     return {'schema': 'colab-stage-create-canary/v1', 'passed': True, 'created_containers': 3,
+            'full_container_ids_verified': True,
             'application_started': False, 'owned_containers_removed': True, 'google_credentials_used': False}
 
 

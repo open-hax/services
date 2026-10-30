@@ -1,4 +1,4 @@
-name: Deploy fixed Cloud Cuckoo transport stage
+name: Upgrade fixed Cloud Cuckoo transport stage
 
 # Only Deploy Stack's existing locked chain can call this body. The source
 # publisher's native evidence is admitted before any host credential is used.
@@ -30,9 +30,10 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Test fixed staging boundaries without host capabilities
-        run: python3 -m unittest scripts.tests.test_colab_transport_stage scripts.tests.test_colab_stage_admission scripts.tests.test_colab_stage_oauth_smoke
+        run: python3 -m unittest scripts.tests.test_colab_transport_stage scripts.tests.test_colab_stage_admission scripts.tests.test_colab_stage_oauth_smoke scripts.tests.test_colab_stage_upgrade scripts.tests.test_colab_stage_upgrade_admission scripts.tests.test_colab_stage_upgrade_workflow
       - name: Admit existing caller and published merged source
         id: evidence
         env:
@@ -50,11 +51,12 @@ jobs:
           test "$CALLER_REF" = refs/heads/main
           test "$CALLER_WORKFLOW" = 'open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main'
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          plan=digitalocean/services/colab-mcp/transport-stage-plan.json
-          test "$SOURCE_SHA" = "$(jq -er .source_sha "$plan")"
-          artifact_id=$(jq -er '.artifact_id | select(type == "number" and . > 0 and floor == .)' "$plan")
+          plan=digitalocean/services/colab-mcp/transport-stage-upgrade-plan.json
+          PYTHONPATH=scripts python3 -c 'import json; from colab_transport_stage_upgrade import validate_plan; validate_plan(json.load(open("digitalocean/services/colab-mcp/transport-stage-upgrade-plan.json")))'
+          test "$SOURCE_SHA" = "$(jq -er .candidate.source_sha "$plan")"
+          artifact_id=$(jq -er '.candidate.artifact_id | select(type == "number" and . > 0 and floor == .)' "$plan")
           timeout --kill-after=5s 120s gh api "repos/open-hax/cloud-cuckoo/actions/artifacts/${artifact_id}/zip" > release.zip
-          python3 scripts/colab_stage_admission.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --artifact release.zip > admission.json
+          python3 scripts/colab_stage_upgrade_admission.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --artifact release.zip > admission.json
           jq -e '.admitted == true and .production_qualified == false and .synthetic_upstreams == true' admission.json >/dev/null
           jq -r '"admitted=true", "plan_sha256=" + .plan_sha256' admission.json >> "$GITHUB_OUTPUT"
 
@@ -69,6 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Recheck native evidence before receiving SSH capability
         env:
@@ -79,11 +82,11 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          plan=digitalocean/services/colab-mcp/transport-stage-plan.json
+          plan=digitalocean/services/colab-mcp/transport-stage-upgrade-plan.json
           test "$(sha256sum "$plan" | cut -d' ' -f1)" = "$EXPECTED_PLAN"
-          artifact_id=$(jq -er .artifact_id "$plan")
+          artifact_id=$(jq -er .candidate.artifact_id "$plan")
           timeout --kill-after=5s 120s gh api "repos/open-hax/cloud-cuckoo/actions/artifacts/${artifact_id}/zip" > release.zip
-          python3 scripts/colab_stage_admission.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --artifact release.zip > admission.json
+          python3 scripts/colab_stage_upgrade_admission.py --plan "$plan" --controller-sha "$CONTROLLER_SHA" --artifact release.zip > admission.json
           jq -e '.admitted == true' admission.json >/dev/null
       - name: Configure canonical pinned SSH trust
         env:
@@ -111,7 +114,9 @@ jobs:
             ConnectTimeout 10
           CONFIG
           chmod 600 ~/.ssh/config
-      - name: Install reviewed controller and deploy the fixed synthetic stage
+      - name: Refuse any unresolved canonical production hold before Stage writes
+        run: ssh open-hax-target 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
+      - name: Install reviewed controller and upgrade only the fixed synthetic stage
         env:
           CONTROLLER_SHA: ${{ github.sha }}
           PLAN_SHA256: ${{ needs.admit.outputs.plan_sha256 }}
@@ -124,18 +129,20 @@ jobs:
           load_host_contract production
           controller="$OPEN_HAX_SERVICES_ROOT/colab-transport-stage/controllers/$CONTROLLER_SHA"
           tar --mode=u=rw,go= -cf controller.tar \
+            scripts/colab_transport_stage_upgrade.py scripts/colab_stage_upgrade_admission.py \
             scripts/colab_stage_admission.py scripts/colab_transport_stage.py \
+            scripts/enroll_colab_transport_stage.py \
             scripts/colab_stage_oauth_smoke.py scripts/axxium_production_qualification.py \
             scripts/environment_policy.py scripts/github_environment_admission.py \
             digitalocean/services/colab-mcp/compose.transport-stage.yaml \
-            digitalocean/services/colab-mcp/transport-stage-plan.json
+            digitalocean/services/colab-mcp/transport-stage-upgrade-plan.json
           # Fixed host-contract paths and validated SHA intentionally expand locally.
           # shellcheck disable=SC2029
           ssh open-hax-target "umask 077; mkdir -p '$OPEN_HAX_SERVICES_ROOT/colab-transport-stage/controllers'; mkdir -m 700 '$controller'; tar --no-same-owner -xf - -C '$controller'" < controller.tar
           # Fixed host-contract paths and validated SHA intentionally expand locally.
           # shellcheck disable=SC2029
-          ssh open-hax-target "env PYTHONDONTWRITEBYTECODE=1 python3 '$controller/scripts/colab_transport_stage.py' --plan '$controller/digitalocean/services/colab-mcp/transport-stage-plan.json' --controller-sha '$CONTROLLER_SHA' --plan-sha256 '$PLAN_SHA256' --apply" </dev/null > stage-receipt.json
-          jq -e '.health == "success" and .phase == "staging" and .synthetic_upstreams == true and .oauth_flow_verified == true and .gateway_forwarding_verified == true and .session_revoked == true and .google_execution_verified == false and .production_qualified == false' stage-receipt.json >/dev/null
+          ssh open-hax-target "env PYTHONDONTWRITEBYTECODE=1 python3 '$controller/scripts/colab_transport_stage_upgrade.py' --plan '$controller/digitalocean/services/colab-mcp/transport-stage-upgrade-plan.json' --controller-sha '$CONTROLLER_SHA' --plan-sha256 '$PLAN_SHA256' --apply" </dev/null > stage-receipt.json
+          jq -e '.health == "success" and .phase == "staging" and .synthetic_upstreams == true and .oauth_flow_verified == true and .gateway_forwarding_verified == true and .session_revoked == true and .restore_copy_verified == true and .google_execution_verified == false and .production_qualified == false' stage-receipt.json >/dev/null
       - name: Preserve sanitized stage receipt
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
