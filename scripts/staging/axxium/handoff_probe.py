@@ -19,7 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import axxium_interrupted_handoff as handoff
 
 APP_IMAGE = 'sha256:6aed20a3439dc29c6bcb43cf3f1e0bf41f65a72734975eb2db922898c45e4652'
+APP_CONFIG = 'sha256:c45e58aadb02622183ccf60a971da2669fc033231b677c12e963920234b9b542'
 DB_IMAGE = 'sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685'
+APP_REF = 'promethean-axxium:58234df96ca86507e6cdd87f65aaa9ab35621415'
+DB_REF = 'postgres@' + DB_IMAGE
 LABEL = 'codex.staging-test.id'
 
 
@@ -31,19 +34,24 @@ def inspect_lines(arguments, count):
     return [json.loads(line) for line in lines]
 
 
-def verify_fixture(db, app, network, run):
+def verify_fixture(db, app, network, run, app_image, db_image):
     """Verify projected, nonsecret ownership and isolation before pg_dump."""
     for item in (db, app, network):
         check(bool(re.fullmatch(r'[0-9a-f]{64}', item)), 'An exact Docker ID is required')
     check(bool(re.fullmatch(r'[0-9a-f]{32}', run)), 'An exact run ID is required')
     check(len({db, app, network}) == 3, 'Fixture IDs must be distinct')
+    check(app_image in (APP_IMAGE, APP_CONFIG) and
+          bool(re.fullmatch(r'sha256:[0-9a-f]{64}', db_image)), 'Unexpected fixture image IDs')
+    for reference, expected in ((APP_REF, app_image), (DB_REF, db_image)):
+        values = inspect_lines(['image', 'inspect', '--format', '{{json .Id}}', reference], 1)
+        check(values == [expected], 'Fixture image reference differs')
     network_name = 'axxium-oidc-test-' + run
     container_template = '\n'.join('{{json ' + field + '}}' for field in (
         '.Id', '.Name', '.Image', '.Config.Labels', '.NetworkSettings.Networks',
         '.Mounts', '.HostConfig.PortBindings', '.NetworkSettings.Ports',
         '.HostConfig.PublishAllPorts'))
-    for ident, name, image in ((db, 'axxium-oidc-db-' + run, DB_IMAGE),
-                               (app, 'axxium-oidc-app-' + run, APP_IMAGE)):
+    for ident, name, image in ((db, 'axxium-oidc-db-' + run, db_image),
+                               (app, 'axxium-oidc-app-' + run, app_image)):
         values = inspect_lines(['inspect', '--format', container_template, ident], 9)
         actual, cname, actual_image, labels, networks, mounts, bindings, ports, publish_all = values
         check(actual == ident and cname == '/' + name and actual_image == image,
@@ -86,14 +94,25 @@ def main():
           os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted' and
           not Path('/srv/open-hax').exists(),
           'A separate empty GitHub-hosted VM is required')
+    check(not os.environ.get('DOCKER_HOST') and not os.environ.get('DOCKER_CONTEXT'),
+          'Docker host or context override is present')
+    context = subprocess.run(['docker', 'context', 'show'], check=True, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, timeout=20, text=True).stdout.strip()
+    check(context == 'default', 'Docker context is not the local default')
+    endpoint = subprocess.run(['docker', 'context', 'inspect', 'default', '--format',
+                               '{{.Endpoints.docker.Host}}'], check=True, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, timeout=20, text=True).stdout.strip()
+    check(endpoint == 'unix:///var/run/docker.sock', 'Docker default endpoint is not local')
     parser = argparse.ArgumentParser()
     parser.add_argument('--db-id', required=True)
     parser.add_argument('--app-id', required=True)
     parser.add_argument('--network-id', required=True)
     parser.add_argument('--run-id', required=True)
+    parser.add_argument('--app-image-id', required=True)
+    parser.add_argument('--db-image-id', required=True)
     args = parser.parse_args()
     db = args.db_id
-    verify_fixture(db, args.app_id, args.network_id, args.run_id)
+    verify_fixture(db, args.app_id, args.network_id, args.run_id, args.app_image_id, args.db_image_id)
     dump = subprocess.run(['docker', 'exec', db, 'pg_dump', '-U', 'fixture',
                            '-d', 'fixture', '-Fc'], check=True,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60).stdout
@@ -148,7 +167,7 @@ def main():
             check(json.loads((old / 'parent-handoff.json').read_bytes()) == receipt, 'Manifest differs')
         finally:
             os.close(lock_fd)
-    print('PASS synthetic handoff of verified disposable PostgreSQL backup')
+    print('PASS synthetic handoff of listed disposable PostgreSQL archive')
 
 
 if __name__ == '__main__':

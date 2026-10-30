@@ -11,11 +11,17 @@ if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_ENVIRONMENT:-}" != github-hoste
   printf '%s\n' 'Refused: the synthetic integration requires an empty GitHub-hosted VM.' >&2
   exit 2
 fi
+if [[ -n "${DOCKER_HOST:-}" || -n "${DOCKER_CONTEXT:-}" ]]; then
+  printf '%s\n' 'Refused: Docker host or context override is present.' >&2
+  exit 2
+fi
 
 candidate_expected='sha256:6aed20a3439dc29c6bcb43cf3f1e0bf41f65a72734975eb2db922898c45e4652'
-postgres_expected='sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685'
-if [[ $# != 2 || "$1" != "$candidate_expected" || "$2" != "$postgres_expected" ]]; then
-  printf '%s\n' 'Refused: require the fixed candidate and PostgreSQL image IDs.' >&2
+candidate_config='sha256:c45e58aadb02622183ccf60a971da2669fc033231b677c12e963920234b9b542'
+candidate_ref='promethean-axxium:58234df96ca86507e6cdd87f65aaa9ab35621415'
+postgres_ref='postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685'
+if [[ $# != 2 || ( "$1" != "$candidate_expected" && "$1" != "$candidate_config" ) || ! "$2" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  printf '%s\n' 'Refused: require the verified candidate and PostgreSQL image IDs.' >&2
   exit 2
 fi
 candidate=$1
@@ -23,9 +29,11 @@ postgres=$2
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 test -f "$script_dir/probe.py"
 command -v docker >/dev/null
+[[ $(timeout --kill-after=3s 20s docker context show) == default ]]
+[[ $(timeout --kill-after=3s 20s docker context inspect default --format '{{.Endpoints.docker.Host}}') == unix:///var/run/docker.sock ]]
 python3 -c 'from cryptography.hazmat.primitives.asymmetric import rsa, padding' >/dev/null
-[[ $(timeout --kill-after=3s 20s docker image inspect --format '{{.Id}}' "$candidate") == "$candidate" ]]
-[[ $(timeout --kill-after=3s 20s docker image inspect --format '{{.Id}}' "$postgres") == "$postgres" ]]
+[[ $(timeout --kill-after=3s 20s docker image inspect --format '{{.Id}}' "$candidate_ref") == "$candidate" ]]
+[[ $(timeout --kill-after=3s 20s docker image inspect --format '{{.Id}}' "$postgres_ref") == "$postgres" ]]
 
 # Randomized names and an unguessable private label bind cleanup to this run.
 run_id=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
@@ -258,5 +266,5 @@ if timeout --kill-after=3s 20s docker exec "$app_id" node -e 'const fs=require("
 fi
 chmod 600 "$private_dir/client-secret"
 python3 "$script_dir/probe.py" --base "$base" --transport-ip "$transport_ip" --client-id synthetic-staging-probe --client-secret-file "$private_dir/client-secret"
-python3 "$script_dir/handoff_probe.py" --db-id "$db_id" --app-id "$app_id" --network-id "$network_id" --run-id "$run_id"
+python3 "$script_dir/handoff_probe.py" --db-id "$db_id" --app-id "$app_id" --network-id "$network_id" --run-id "$run_id" --app-image-id "$candidate" --db-image-id "$postgres"
 printf 'PASS synthetic OIDC integration against fixed candidate image; run ID %s\n' "$run_id"

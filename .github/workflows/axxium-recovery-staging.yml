@@ -32,6 +32,16 @@ jobs:
           bash -n scripts/staging/axxium/run.sh
           shellcheck scripts/staging/axxium/run.sh
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/staging/axxium -p 'test_*.py'
+      - name: Refuse a shared or remote Docker host
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test ! -e /srv/open-hax
+          test -z "${DOCKER_HOST:-}"
+          test -z "${DOCKER_CONTEXT:-}"
+          test "$(docker context show)" = default
+          test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock
       - name: Download and verify fixed candidate artifact
         env:
           GH_TOKEN: ${{ github.token }}
@@ -48,6 +58,7 @@ jobs:
       - name: Exercise synthetic OIDC and held handoff
         run: |
           set -euo pipefail
+          candidate=$(docker image inspect --format '{{.Id}}' promethean-axxium:58234df96ca86507e6cdd87f65aaa9ab35621415)
+          postgres=$(docker image inspect --format '{{.Id}}' postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685)
           scripts/staging/axxium/run.sh \
-            sha256:6aed20a3439dc29c6bcb43cf3f1e0bf41f65a72734975eb2db922898c45e4652 \
-            sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+            "$candidate" "$postgres"
