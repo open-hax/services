@@ -290,8 +290,8 @@ class Host(stage.Host):
         # the quiesced logical store, not an impossible equality with its live
         # physical representation. Static fixture credentials cannot change.
         stopped = tree_manifest(stage.STATE)
-        require(all(stopped.get(name) == value for name, value in self.state_before.items()
-                    if not name.startswith('oauth/')))
+        require({name: value for name, value in stopped.items() if not name.startswith('oauth/')}
+                == {name: value for name, value in self.state_before.items() if not name.startswith('oauth/')})
         self.backup = snapshot_state(stage.STATE, self.transaction / 'backup')
         require(self.backup['manifest'] == stopped)
         verification = self.transaction / 'sqlite-verification'
@@ -304,7 +304,8 @@ class Host(stage.Host):
                 and tree_manifest(self.transaction / 'backup/restored') == stopped)
 
     def select(self):
-        require(_read(self.environment)[0] == self.old_selector and tree_manifest(stage.STATE) == self.state_before)
+        require(_read(self.environment)[0] == self.old_selector
+                and tree_manifest(stage.STATE) == self.backup['manifest'])
         staged = self.transaction / 'new-environment'
         _write(staged, ('COLAB_MCP_IMAGE=' + self.plan['image_reference'] + '\n').encode())
         os.replace(staged, self.environment)

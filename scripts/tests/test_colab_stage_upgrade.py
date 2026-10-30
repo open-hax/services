@@ -179,6 +179,7 @@ class UpgradeTests(unittest.TestCase):
         host.transaction.mkdir(mode=0o700)
         host.state_before = upgrade.tree_manifest(self.state)
         with patch.object(upgrade.stage, 'STATE', self.state), patch.object(upgrade.stage, 'RUNTIME', self.root):
+            host.snapshot()
             host.select()
         self.assertEqual(host.environment.read_bytes(), ('COLAB_MCP_IMAGE=' + host.plan['image_reference'] + '\n').encode())
         self.assertEqual(upgrade.tree_manifest(self.state), host.state_before)
@@ -199,7 +200,14 @@ class UpgradeTests(unittest.TestCase):
         self.assertNotEqual(upgrade.tree_manifest(self.state), host.state_before)
         host.transaction = self.root / 'transaction'
         host.transaction.mkdir(mode=0o700)
-        with patch.object(upgrade.stage, 'STATE', self.state): host.snapshot()
+        host.plan, host.old_selector = self.candidate(), upgrade.OLD_SELECTOR
+        host.environment = self.root / 'environment'
+        host.environment.write_bytes(host.old_selector)
+        host.environment.chmod(0o600)
+        with patch.object(upgrade.stage, 'STATE', self.state), patch.object(upgrade.stage, 'RUNTIME', self.root):
+            host.snapshot()
+            host.select()
+        self.assertEqual(host.environment.read_bytes(), ('COLAB_MCP_IMAGE=' + host.plan['image_reference'] + '\n').encode())
         restored = host.transaction / 'sqlite-verification/oauth/cache.db'
         with closing(sqlite3.connect(restored.absolute().as_uri() + '?mode=ro', uri=True)) as database:
             self.assertEqual(database.execute('SELECT value FROM original').fetchall(), [('preserve-committed-value',)])
@@ -212,6 +220,16 @@ class UpgradeTests(unittest.TestCase):
         host.transaction = self.root / 'transaction'
         host.transaction.mkdir(mode=0o700)
         (self.state / 'fixture-token').write_bytes(b'changed-credential')
+        with patch.object(upgrade.stage, 'STATE', self.state), self.assertRaises(upgrade.Refused): host.snapshot()
+        self.assertFalse((host.transaction / 'backup').exists())
+
+    def test_new_non_oauth_file_is_not_accepted_as_a_checkpoint_namespace_change(self):
+        host = object.__new__(upgrade.Host)
+        host.state_before = upgrade.tree_manifest(self.state)
+        host.transaction = self.root / 'transaction'
+        host.transaction.mkdir(mode=0o700)
+        (self.state / 'unexpected-root-file').write_bytes(b'unexpected-fixture')
+        (self.state / 'unexpected-root-file').chmod(0o600)
         with patch.object(upgrade.stage, 'STATE', self.state), self.assertRaises(upgrade.Refused): host.snapshot()
         self.assertFalse((host.transaction / 'backup').exists())
 
