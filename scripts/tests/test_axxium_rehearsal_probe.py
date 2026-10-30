@@ -82,8 +82,9 @@ class RehearsalProbeTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(len(host.queries), 1)
         self.assertEqual(host.queries[0][0], CLONE)
-        self.assertIn(ACTOR, host.queries[0][1])
-        self.assertIn('human', host.queries[0][1])
+        self.assertEqual(host.queries[0][1],
+            "SELECT EXISTS(SELECT 1 FROM actors a JOIN entities e ON e.id=a.entity_id "
+            "WHERE a.id='" + ACTOR + "' AND a.status='active' AND e.kind='human')")
         self.assertTrue(any(cmd[:2] == ['docker', 'stop'] for cmd in host.commands))
         self.assertTrue(any(cmd[:2] == ['docker', 'rm'] for cmd in host.commands))
 
@@ -108,6 +109,16 @@ class RehearsalProbeTests(unittest.TestCase):
                 self.assertIsNotNone(error)
                 self.assertEqual(host.queries, [])
                 self.assertFalse(any(cmd[:2] in (['docker', 'stop'], ['docker', 'rm']) for cmd in host.commands))
+
+    def test_production_database_selection_refused_before_probe(self):
+        self.rehearsal_env.stop()
+        host = FakeHost(self.root)
+        host.old_environment = {'DB_HOST': 'axxium-db', 'DB_PORT': '5432', 'DB_NAME': 'axxium',
+                                'DB_USER': 'axxium', 'DB_PASSWORD': 'synthetic'}
+        with self.assertRaises(release.Refused):
+            host.probe({}, 'axxium', 'fixture-image', {'email': 'synthetic', 'password': 'synthetic'}, True)
+        self.assertEqual(host.commands, [])
+        self.assertEqual(host.queries, [])
 
 
 if __name__ == '__main__': unittest.main()
