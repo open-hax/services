@@ -5,13 +5,26 @@ containers. **Deploy Stack** keeps its `colab-stage` scope and existing complete
 production-host queue. There is no additional trigger, queue, receiver,
 credential enrollment, identity reload, or production capability.
 
-The new plan and its compiled candidate pin are deliberately unresolved. Native
-publisher custody and the accepted Services plan are checked before SSH; the
-same evidence is rechecked before receiving the host key. The shared canonical
-guard refuses either an Axxium or Colab production hold before any Stage write.
-A future reviewed pin must select an actual accepted new source and public
-immutable image. Source 19e's warning-bearing baseline and historical Stage
-receipt supply no new-candidate execution or production qualification.
+The plan and compiled candidate select accepted Cloud Cuckoo source
+`c42e9311586c03f81f0bf2f36f441bc1a8f01e8c` from merged source PR20. Canonical
+publisher run `40999281958/1` succeeded with 220 source tests and retained release
+artifact `12951989895`; its exact ZIP digest is pinned in the plan. The public
+immutable image is
+`ghcr.io/open-hax/cloud-cuckoo@sha256:1b3c33e9fa6c86524e82219bc700c161d514e58188c3de33d8dae1eae51819de`.
+Its classic image configuration is
+`sha256:d0af3901ccf8326b7211bca5eb238bb05fe46052fb0110ce06626c32b9199e84`;
+the registry manifest and Docker runtime identity are the image reference's
+`1b3c33` digest. Native publication reports public metadata, an anonymous digest
+pull and the full GPL-3.0-or-later license hash verified. These are publication
+observations, with no new Stage or production qualification claim.
+
+Native publisher custody and the accepted Services plan are checked before SSH;
+the same evidence is rechecked before receiving the host key. The shared
+canonical guard refuses either an Axxium or Colab production hold before any
+Stage write. Source 19e's warning-bearing baseline and historical Stage receipt
+supply no new-candidate execution or production qualification. The candidate
+must earn a fresh Stage receipt through this existing upgrade path; full normal
+application qualification remains mandatory before production.
 
 The predecessor is the exact healthy source `19e` tuple from native run
 `40963569096/1`: source `19e`, classic image configuration `6b107`, runtime/registry
