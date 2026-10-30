@@ -77,7 +77,7 @@ def select_subnets(routes, networks):
         for route in routes:
             if not isinstance(route, dict):
                 raise ValueError()
-            dst = route.get('dst', 'default')
+            dst = route['dst']
             if dst == 'default':
                 continue  # A default route covers all unallocated destinations.
             net = ipaddress.ip_network(dst, strict=False)
