@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Provision the fixed Colab client for an existing, privately bound human.
 
-Run as the existing trusted deploy UID. --check reads only. --provision creates
-only an entirely absent authority/client pair and never repairs or overwrites a
-partial pair. The binding is an operator attestation, not a new human account;
+Run as the existing trusted deploy UID. --check and --preflight read only.
+--provision resumes only its own durable transaction and never overwrites an
+existing or unowned partial configuration. The binding is an operator attestation, not a new human account;
 the existing active human is independently checked in Axxium's database.
 The caller must admit the controller, source and image before provisioning;
 this helper grants no deployment or human-session authority.
 """
 import argparse
+import base64
 from datetime import datetime, timezone
+import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -29,6 +32,11 @@ CONTROLLER_BINDING_SOURCE = Path(__file__).resolve().parents[1] / 'production-bi
 ISSUER = 'https://axxium.promethean.rest/oidc'
 CLIENT_ID = 'knoxx-colab'
 CALLBACK = 'https://knoxx.promethean.rest/colab/auth/callback'
+APPROVED_ACTOR = 'actor_ed43270c-5c06-43e6-9667-4c585fa63430'
+SOURCE = '58234df96ca86507e6cdd87f65aaa9ab35621415'
+RUNTIME = Path('/srv/open-hax/services/axxium')
+LOCK = RUNTIME / '.axxium-production.lock'
+PENDING = RUNTIME / '.axxium-production-pending'
 ACTOR = re.compile(r'actor_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z')
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
 
@@ -87,13 +95,14 @@ def unique_object(pairs):
     return result
 
 
-def read_bytes(path, *, private=True):
+def read_bytes(path, *, private=True, max_links=1):
     no_symlinks(path)
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         info = os.fstat(fd)
         mode = stat.S_IMODE(info.st_mode)
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != OWNER_UID or info.st_size > 65536 or
+                not 1 <= info.st_nlink <= max_links or
                 (mode != 0o600 if private else bool(mode & 0o022))):
             raise Refusal('A fixed configuration file has unexpected ownership, mode or size')
         data = os.read(fd, 65537)
@@ -116,7 +125,8 @@ def validate_binding(binding):
     if (not isinstance(binding, dict) or set(binding) != expected or binding['schema'] != 'axxium-colab-production-binding/v1' or
             binding['issuer'] != ISSUER or binding['actor_kind'] != 'human' or
             binding['actor_status'] != 'active' or not isinstance(binding['actor_id'], str) or
-            not ACTOR.fullmatch(binding['actor_id']) or not isinstance(binding['evidence_sha256'], str) or
+            not ACTOR.fullmatch(binding['actor_id']) or binding['actor_id'] != APPROVED_ACTOR or
+            not isinstance(binding['evidence_sha256'], str) or
             not SHA256.fullmatch(binding['evidence_sha256'])):
         raise Refusal('The preexisting verified human binding is invalid')
     try:
@@ -264,57 +274,260 @@ def make_private_directory(path):
     for directory in reversed(missing):
         directory.mkdir(mode=0o700)
         directory.chmod(0o700)
+        sync_directory(directory.parent)
     private_directory(path)
 
 
-def install_binding(binding_input, material_present):
-    if Path(binding_input).absolute() != CONTROLLER_BINDING_SOURCE:
-        raise Refusal('Only the admitted controller binding input is supported')
-    incoming_bytes = read_bytes(CONTROLLER_BINDING_SOURCE)
-    incoming = validate_binding(json.loads(incoming_bytes, object_pairs_hook=unique_object))
-    if BINDING.exists() or BINDING.is_symlink():
-        load_binding()
-        if incoming_bytes != read_bytes(BINDING):
-            raise Refusal('Existing human binding differs; never overwrite it')
-        return
-    if material_present:
-        raise Refusal('Identity material exists without its binding; recovery is required')
-    if not existing_human_verified(incoming):
-        raise Refusal('The selected existing human could not be verified')
-    make_private_directory(BINDING.parent)
-    write_new_bytes(BINDING, incoming_bytes)
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
-def provision(binding_input=None):
-    require_owner()
-    present = [path.exists() or path.is_symlink() for path in (AUTHORITY, GATEWAY_CLIENT)]
-    if any(present) and not all(present):
-        raise Refusal('Partial identity material exists; recovery is required, never overwrite it')
-    if binding_input is not None:
-        install_binding(binding_input, any(present))
-    binding = load_binding()
+def require_transaction_context(lock_fd, operation_path):
+    """Refuse direct provisioning without the controller's live lock and backup."""
+    if type(lock_fd) is not int or lock_fd < 0:
+        raise Refusal('The live controller lock is required')
+    no_symlinks(LOCK)
+    current = LOCK.lstat()
+    held = os.fstat(lock_fd)
+    if (not stat.S_ISREG(current.st_mode) or current.st_uid != OWNER_UID or
+            current.st_nlink != 1 or stat.S_IMODE(current.st_mode) != 0o600 or
+            (held.st_dev, held.st_ino) != (current.st_dev, current.st_ino)):
+        raise Refusal('The controller lock identity is invalid')
+    probe = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        try:
+            fcntl.flock(probe, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            fcntl.flock(probe, fcntl.LOCK_UN)
+            raise Refusal('The controller lock is not held')
+    finally:
+        os.close(probe)
+    try:
+        # A separate opener being blocked proves some lock exists. Reacquiring
+        # through the inherited open-file description proves it is that lock.
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise Refusal('The inherited controller lock is not held') from None
+    expected = STATE_ROOT / 'axxium' / 'operations' / SOURCE
+    if operation_path is None or Path(operation_path).absolute() != expected:
+        raise Refusal('The fixed production operation is required')
+    private_directory(expected)
+    marker = read_json(PENDING)
+    plan_digest = hashlib.sha256(read_bytes(PLAN, private=False)).hexdigest()
+    if marker != {'schema': 'axxium-production-pending/v1', 'operation': str(expected),
+                  'source_sha': SOURCE, 'plan_sha256': plan_digest}:
+        raise Refusal('The production hold does not match this operation')
+    phase_sequences = []
+    for phase, status in [('verified_before_backup', 'succeeded'), ('provision_identity', 'pending')]:
+        files = list(expected.glob('*-' + phase + '-' + status + '.json'))
+        if len(files) != 1:
+            raise Refusal('The required controller phase is absent')
+        record = read_json(files[0])
+        match = re.fullmatch(r'([0-9]+)-' + phase + '-' + status + r'\.json', files[0].name)
+        if (not match or type(record.get('sequence')) is not int or
+                record['sequence'] != int(match.group(1)) or
+                record.get('phase') != phase or record.get('status') != status):
+            raise Refusal('The controller phase is invalid')
+        phase_sequences.append(record['sequence'])
+    records = [int(match.group(1)) for path in expected.iterdir()
+               if (match := re.fullmatch(r'([0-9]+)-[a-z][a-z0-9_]*-(?:pending|succeeded|known_failure|healthy|rolled_back)\.json', path.name))]
+    if (not records or len(records) != len(set(records)) or
+            not phase_sequences[0] < phase_sequences[1] or phase_sequences[1] != max(records)):
+        raise Refusal('The controller phase order is invalid')
+    backup = read_json(expected / 'before-backup.json')
+    dump = expected / 'before.pgdump'
+    if (backup.get('path') != str(dump) or not isinstance(backup.get('sha256'), str)
+            or not SHA256.fullmatch(backup['sha256']) or not isinstance(backup.get('database'), str)
+            or not re.fullmatch(r'axxium_verify_[0-9a-f]{24}', backup['database'])):
+        raise Refusal('The verified backup record is invalid')
+    no_symlinks(dump)
+    fd = os.open(dump, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != OWNER_UID or info.st_nlink != 1
+                or stat.S_IMODE(info.st_mode) != 0o600):
+            raise Refusal('The verified backup has unexpected protection')
+        with os.fdopen(fd, 'rb', closefd=False) as stream:
+            actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+    finally:
+        os.close(fd)
+    if actual != backup['sha256']:
+        raise Refusal('The verified backup bytes changed')
+
+
+def present(path):
+    return path.exists() or path.is_symlink()
+
+
+def stage_path(path):
+    return path.parent / ('.' + path.name + '.provision-stage')
+
+
+def transaction_path():
+    return BINDING.parent / '.axxium-colab-provision-transaction.json'
+
+
+def encoded_json(value):
+    return (json.dumps(value, sort_keys=True, separators=(',', ':')) + '\n').encode()
+
+
+def verify_publication_state(path, data):
+    """Read-only proof that existing target/stage are exact owned transaction bytes."""
+    stage = stage_path(path)
+    target_info = path.lstat() if present(path) else None
+    stage_info = stage.lstat() if present(stage) else None
+    same = (target_info is not None and stage_info is not None and
+            (target_info.st_dev, target_info.st_ino) == (stage_info.st_dev, stage_info.st_ino))
+    if target_info is not None:
+        if read_bytes(path, max_links=2) != data or (target_info.st_nlink != 1 and not same):
+            raise Refusal('Existing identity material differs; never overwrite it')
+    if stage_info is not None:
+        if (read_bytes(stage, max_links=2) != data or
+                (stage_info.st_nlink != 1 and not same) or
+                (target_info is not None and not same)):
+            raise Refusal('Incomplete or conflicting staging requires manual recovery')
+
+
+def requested_binding(binding_input):
+    if binding_input is None:
+        data = read_bytes(BINDING)
+    else:
+        if Path(binding_input).absolute() != CONTROLLER_BINDING_SOURCE:
+            raise Refusal('Only the admitted controller binding input is supported')
+        data = read_bytes(CONTROLLER_BINDING_SOURCE)
+    binding = validate_binding(json.loads(data, object_pairs_hook=unique_object))
     if not existing_human_verified(binding):
         raise Refusal('The selected existing human could not be verified')
-    if any(present):
-        result = check()
-        return {**result, 'status': 'unchanged'}
-    private_directory(AUTHORITY.parent)
+    return data, binding
+
+
+def transaction_contents(path, binding_bytes, binding):
+    journal = json.loads(read_bytes(path, max_links=2), object_pairs_hook=unique_object)
+    if (not isinstance(journal, dict) or set(journal) != {'schema', 'binding', 'authority', 'gateway'}
+            or journal['schema'] != 'axxium-colab-provision-transaction/v1'):
+        raise Refusal('The provisioning transaction is invalid')
+    try:
+        values = [base64.b64decode(journal[key], validate=True)
+                  for key in ('binding', 'authority', 'gateway')]
+        if values[0] != binding_bytes:
+            raise Refusal('The transaction binding differs from the approved input')
+        authority = json.loads(values[1], object_pairs_hook=unique_object)
+        gateway = json.loads(values[2], object_pairs_hook=unique_object)
+        validate_pair(authority, gateway, binding)
+    except (ValueError, TypeError, KeyError):
+        raise Refusal('The provisioning transaction is invalid') from None
+    return dict(zip((BINDING, AUTHORITY, GATEWAY_CLIENT), values))
+
+
+def publish_identity_file(path, data):
+    """Publish a complete fsynced file without replacing any existing inode."""
+    stage = stage_path(path)
+    no_symlinks(stage)
+    if present(path) and present(stage):
+        current, staged = path.lstat(), stage.lstat()
+        if (current.st_dev, current.st_ino) == (staged.st_dev, staged.st_ino):
+            if read_bytes(stage, max_links=2) != data:
+                raise Refusal('Published transaction bytes changed')
+            stage.unlink()
+            sync_directory(stage.parent)
+        else:
+            raise Refusal('Conflicting staging material requires manual recovery')
+    if present(path):
+        if read_bytes(path) != data:
+            raise Refusal('Existing identity material differs; never overwrite it')
+        return
+    if present(stage):
+        # A validated durable transaction makes this dedicated private staging
+        # file recoverable even if its previous write was interrupted.
+        info = stage.lstat()
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != OWNER_UID or
+                stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+            raise Refusal('Unowned staging material requires manual recovery')
+        if read_bytes(stage) != data:
+            raise Refusal('Incomplete or conflicting staging requires manual recovery')
+    if not present(stage):
+        write_new_bytes(stage, data)
+    try:
+        os.link(stage, path, follow_symlinks=False)
+    except FileExistsError:
+        if read_bytes(path) != data:
+            raise Refusal('Existing identity material differs; never overwrite it') from None
+    sync_directory(path.parent)
+    if read_bytes(stage, max_links=2) != data:
+        raise Refusal('Staged transaction bytes changed')
+    stage.unlink()
+    sync_directory(stage.parent)
+
+
+def preflight(binding_input):
+    """Validate the protected binding and current state without writing."""
+    require_owner()
+    binding_bytes, binding = requested_binding(binding_input)
+    journal, unfinished = transaction_path(), stage_path(transaction_path())
+    if present(journal) or present(unfinished):
+        path = journal if present(journal) else unfinished
+        values = transaction_contents(path, binding_bytes, binding)
+        verify_publication_state(journal, read_bytes(path, max_links=2))
+        for target, expected in values.items():
+            verify_publication_state(target, expected)
+        return {'verified': True, 'status': 'recoverable'}
+    if any(present(stage_path(target)) for target in (BINDING, AUTHORITY, GATEWAY_CLIENT)):
+        raise Refusal('Unowned staging material requires manual recovery')
+    materials = [present(AUTHORITY), present(GATEWAY_CLIENT)]
+    if any(materials) and (not all(materials) or not present(BINDING)):
+        raise Refusal('Partial identity material exists; recovery is required, never overwrite it')
+    if present(BINDING) and read_bytes(BINDING) != binding_bytes:
+        raise Refusal('Existing human binding differs; never overwrite it')
+    if all(materials):
+        private_directory(AUTHORITY.parent)
+        private_directory(GATEWAY_CLIENT.parent)
+        validate_pair(read_json(AUTHORITY), read_json(GATEWAY_CLIENT), binding)
+    return {'verified': True, 'status': 'complete' if all(materials) else 'ready'}
+
+
+def provision(binding_input=None, *, lock_fd=None, operation_path=None):
+    require_owner()
+    require_transaction_context(lock_fd, operation_path)
+    state = preflight(binding_input)
+    binding_bytes, binding = requested_binding(binding_input)
+    journal, unfinished = transaction_path(), stage_path(transaction_path())
+    if state['status'] == 'complete' and not present(journal) and not present(unfinished):
+        return {**check(), 'status': 'unchanged'}
+    make_private_directory(BINDING.parent)
     make_private_directory(GATEWAY_CLIENT.parent)
-    client_secret = secrets.token_urlsafe(48)
-    signing_key = native_crypto('generate')
-    if not isinstance(signing_key, dict):
-        raise Refusal('Native signing-key generation returned an invalid shape')
-    signing_key.update({'alg': 'RS256', 'use': 'sig', 'kid': 'axxium-colab-' + secrets.token_hex(12)})
-    authority = {'issuer': ISSUER, 'clients': [{'id': CLIENT_ID, 'secret': client_secret,
-                 'redirect-uris': [CALLBACK], 'refresh-enabled?': True, 'device-enabled?': False}],
-                 'cookie-keys': [secrets.token_urlsafe(48), secrets.token_urlsafe(48)],
-                 'jwks': {'keys': [signing_key]}}
-    gateway = {'issuer': ISSUER, 'client_id': CLIENT_ID, 'client_secret': client_secret,
-               'allowed_subjects': [binding['actor_id']]}
-    validate_pair(authority, gateway, binding)
-    write_new(AUTHORITY, authority)
-    write_new(GATEWAY_CLIENT, gateway)
+    if present(journal) or present(unfinished):
+        selected = journal if present(journal) else unfinished
+        values = transaction_contents(selected, binding_bytes, binding)
+        publish_identity_file(journal, read_bytes(selected, max_links=2))
+    else:
+        client_secret = secrets.token_urlsafe(48)
+        signing_key = native_crypto('generate')
+        if not isinstance(signing_key, dict):
+            raise Refusal('Native signing-key generation returned an invalid shape')
+        signing_key.update({'alg': 'RS256', 'use': 'sig', 'kid': 'axxium-colab-' + secrets.token_hex(12)})
+        authority = {'issuer': ISSUER, 'clients': [{'id': CLIENT_ID, 'secret': client_secret,
+                     'redirect-uris': [CALLBACK], 'refresh-enabled?': True, 'device-enabled?': False}],
+                     'cookie-keys': [secrets.token_urlsafe(48), secrets.token_urlsafe(48)],
+                     'jwks': {'keys': [signing_key]}}
+        gateway = {'issuer': ISSUER, 'client_id': CLIENT_ID, 'client_secret': client_secret,
+                   'allowed_subjects': [binding['actor_id']]}
+        validate_pair(authority, gateway, binding)
+        values = {BINDING: binding_bytes, AUTHORITY: encoded_json(authority), GATEWAY_CLIENT: encoded_json(gateway)}
+        record = {'schema': 'axxium-colab-provision-transaction/v1', **{
+            key: base64.b64encode(values[path]).decode('ascii') for key, path in
+            [('binding', BINDING), ('authority', AUTHORITY), ('gateway', GATEWAY_CLIENT)]}}
+        publish_identity_file(journal, encoded_json(record))
+    for target, data in values.items():
+        publish_identity_file(target, data)
     result = check()
+    journal.unlink()
+    sync_directory(journal.parent)
     return {**result, 'status': 'created'}
 
 
@@ -322,13 +535,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--check', action='store_true')
+    mode.add_argument('--preflight', action='store_true')
     mode.add_argument('--provision', action='store_true')
     parser.add_argument('--binding-input', help='the fixed admitted controller production-binding.json')
+    parser.add_argument('--lock-fd', type=int, help='inherited held native controller lock')
+    parser.add_argument('--operation-path', help='fixed native operation path with verified backup')
     args = parser.parse_args()
     try:
-        if args.check and args.binding_input:
+        if args.check and (args.binding_input or args.lock_fd is not None or args.operation_path):
             raise Refusal('Binding installation is not allowed during read-only verification')
-        result = check() if args.check else provision(args.binding_input)
+        if args.preflight and (not args.binding_input or args.lock_fd is not None or args.operation_path):
+            raise Refusal('Preflight requires only the fixed binding input')
+        result = (check() if args.check else preflight(args.binding_input) if args.preflight else
+                  provision(args.binding_input, lock_fd=args.lock_fd, operation_path=args.operation_path))
         print(json.dumps(result, sort_keys=True))
         return 0
     except (Refusal, OSError, ValueError, TypeError, KeyError):

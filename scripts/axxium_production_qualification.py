@@ -31,6 +31,13 @@ MAX_ZIP = 256 * 1024 * 1024
 MAX_TAR = 512 * 1024 * 1024
 MAX_JSON = 1024 * 1024
 
+# This exception is deliberately bound to one candidate and one exact plan.
+# A plan or shared-policy change requires a new review; it cannot silently
+# expand the waiver or invalidate the interpretation of the receipt check.
+WAIVER_SOURCE = "58234df96ca86507e6cdd87f65aaa9ab35621415"
+WAIVER_PLAN_SHA256 = "6025ff0257a28711cc7847ca6935b97ffc3b11e4ccef76c3eb27a89f16bcafe1"
+WAIVER_POLICY_SHA256 = "b32748ae2d103cacb9ccdecf17119659aac9c0797461e32d5ce96b2e1ce58b33"
+
 
 class Refusal(ValueError):
     """A static, credential-free explanation of missing admission evidence."""
@@ -232,6 +239,40 @@ def verify_archive(plan, archive):
     return plan["image_id"]
 
 
+def verify_mutation_exception(plan, plan_bytes, proof):
+    """Admit only the reviewed mutation waiver; never assert mutation success.
+
+    A missing-batches verdict is used solely to confirm the existing shared
+    policy has accepted integration and e2e. No synthetic mutation evidence is
+    supplied. The exact shared policy bytes are pinned to prevent later policy
+    changes from being silently skipped by this candidate-only exception.
+    """
+    policy_path = Path(__file__).with_name("environment_policy.py")
+    require(hashlib.sha256(policy_path.read_bytes()).hexdigest() == WAIVER_POLICY_SHA256,
+            "shared policy changed; mutation exception needs review")
+    plan_hash = hashlib.sha256(plan_bytes).hexdigest()
+    require(plan.get("source_sha") == WAIVER_SOURCE and plan_hash == WAIVER_PLAN_SHA256,
+            "mutation exception does not apply to this candidate")
+    exception = proof.get("mutation_exception")
+    require(isinstance(exception, dict)
+            and exception.get("schema") == "axxium-mutation-exception/v1"
+            and exception.get("status") == "approved"
+            and exception.get("scope") == "mutation-only"
+            and exception.get("source_sha") == WAIVER_SOURCE
+            and exception.get("plan_sha256") == plan_hash
+            and exception.get("image_id") == plan.get("image_id")
+            and exception.get("stage_run_id") == plan.get("stage_run_id")
+            and exception.get("artifact_sha256") == plan.get("artifact_sha256")
+            and exception.get("mutation_campaign_passed") is False
+            and isinstance(exception.get("owner_decision_reference"), str)
+            and bool(exception["owner_decision_reference"].strip()),
+            "reviewed candidate-specific mutation exception unavailable")
+    result = production_admission(plan["source_sha"], proof.get("integration"), proof.get("e2e"), None)
+    require(result == {"admitted": False, "reason": "four completed mutation batches are required"},
+            "integration or e2e evidence missing or invalid")
+    return {"qualification": "owner-decision", "mutationCampaignPassed": False}
+
+
 def admit(plan_bytes, controller_sha, archive, *, now=None):
     fixed_time = now
     now = now or datetime.now(timezone.utc)
@@ -252,12 +293,14 @@ def admit(plan_bytes, controller_sha, archive, *, now=None):
             and proof.get("source_sha") == plan["source_sha"], "qualification source binding mismatch")
     verdict = production_admission(plan["source_sha"], proof.get("integration"),
                                    proof.get("e2e"), proof.get("mutation_batches"))
-    require(verdict.get("admitted") is True, verdict.get("reason", "canonical production qualification refused"))
+    exception_verdict = {}
+    if verdict.get("admitted") is not True:
+        exception_verdict = verify_mutation_exception(plan, plan_bytes, proof)
     # Re-read mutable native custody after archive inspection and policy admission.
     main_ancestor(SERVICES, controller_sha)
     verify_native_stage(plan, fixed_time or datetime.now(timezone.utc))
     return {"admitted": True, "source_sha": plan["source_sha"], "image_id": plan["image_id"],
-            "plan_sha256": hashlib.sha256(plan_bytes).hexdigest()}
+            "plan_sha256": hashlib.sha256(plan_bytes).hexdigest(), **exception_verdict}
 
 
 def main():
