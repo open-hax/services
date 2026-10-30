@@ -155,9 +155,6 @@ jobs:
           ssh open-hax-target "umask 077; mkdir -p '$OPEN_HAX_SERVICES_ROOT/axxium/controllers'; mkdir -m 700 '$controller'; tar --no-same-owner -xf - -C '$controller'" < controller.tar
           # Declared host paths and validated hexadecimal IDs intentionally expand locally.
           # shellcheck disable=SC2029
-          ssh open-hax-target "env PYTHONDONTWRITEBYTECODE=1 python3 '$controller/scripts/provision_axxium_colab_identity.py' --provision --binding-input '$controller/production-binding.json'" </dev/null
-          # Declared host paths and validated hexadecimal IDs intentionally expand locally.
-          # shellcheck disable=SC2029
           ssh open-hax-target "env PYTHONDONTWRITEBYTECODE=1 python3 '$controller/scripts/axxium_minimal_release.py' --plan '$controller/digitalocean/services/axxium/minimal-production-plan.json' --plan-sha256 '$PLAN_SHA256' --apply" </dev/null > release-receipt.json
           jq -e '.status == "healthy"' release-receipt.json >/dev/null
       - name: Preserve sanitized deployment receipt
@@ -165,7 +162,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: axxium-minimal-production-receipt
-          path: release-receipt.json
+          path: |
+            release-receipt.json
+            admission.json
           if-no-files-found: ignore
       - name: Remove runner credential copies
         if: always()

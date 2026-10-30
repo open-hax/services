@@ -88,6 +88,12 @@ class FixedAxxiumWorkflowTests(unittest.TestCase):
         self.assertIn('StrictHostKeyChecking yes', text)
         self.assertIn('PYTHONDONTWRITEBYTECODE=1', text)
 
+    def test_workflow_cannot_provision_outside_native_locked_transaction(self):
+        runs = '\n'.join(step.get('run', '') for step in self.body['jobs']['deploy']['steps'])
+        self.assertNotIn('provision_axxium_colab_identity.py\' --provision', runs)
+        self.assertNotIn('provision_axxium_colab_identity.py" --provision', runs)
+        self.assertIn('axxium_minimal_release.py\' --plan', runs)
+
     def test_checkout_cannot_leave_its_token_in_controller_tree(self):
         for job in self.body['jobs'].values():
             checkouts = [s for s in job['steps'] if str(s.get('uses', '')).startswith('actions/checkout@')]

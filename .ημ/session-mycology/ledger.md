@@ -261,3 +261,21 @@
   spore: none
   receipt-refs: 334fbdaf3c079eeba7348a51f95f0fc913834aaa,sha256:e1727b923d219219d57b1b4e0c48eb71d18c7cae64faa9e52047b531a7426bf6
   note: Use the exact current callable workflow in local actionlint fixtures to prove the real undeclared-name failure and optional-interface compatibility; preserve the entire old callee outside the declaration. Run the actual registered suite, retain genuine expected failure versus helper refusal separately, and keep source/provenance commits distinct. An optional-interface bridge enables source ordering but does not repair the old chained shell preflight, settle a future caller promise or authorize deployment. Keep existing owner state and complete ledger prefixes; new source still needs personal review/adoption and final required-secret safeguards. Candidate0/no spore.
+- ts: 2026-10-30T13:20:09.551244470Z
+  session: /home/err/Documents/Codex/2026-10-29/task/services-waiver
+  task: Reconcile Axxium mutation-only waiver against Services main
+  p-efficiency: 0.85
+  p-friction: 0.2
+  p-skill-candidate: 0.15
+  spore: none
+  receipt-refs: 2026-10-30T13:20:00Z
+  note: Pinned plan and policy hashes keep a narrow waiver from silently crossing later changes; separately verify owner decision and real evidence.
+- ts: 2026-10-30T13:38:07.749162397Z
+  session: /home/err/Documents/Codex/2026-10-29/task/services-waiver
+  task: Test safe Axxium identity transaction
+  p-efficiency: 0.75
+  p-friction: 0.55
+  p-skill-candidate: 0.45
+  spore: none
+  receipt-refs: 2026-10-30T13:37:58Z
+  note: Test recovery only for owned durable staging and preserve unknown partial files.

@@ -1,0 +1,76 @@
+{
+  "e2e": {
+    "application_source_unchanged": true,
+    "assertion_count_kind": "Measured successful named node:assert/strict calls; bare assert calls excluded",
+    "assertion_files": {
+      "scripts/oidc-device.fixture.mjs": 120,
+      "scripts/oidc-http.fixture.mjs": 22,
+      "scripts/oidc-protocol.fixture.mjs": 258
+    },
+    "assertions": 400,
+    "compile_warnings": 0,
+    "completed_at": "2026-10-29T19:50:37.423282+00:00",
+    "evidence_sha256": {
+      "compile-result.json": "40618f7d22304f23c23dc6cbd6992e65e4e37e3038485baa1a3233afc56b2aac",
+      "compile.log": "3a0ab6bf4ec482763d752c23882e57f68861202311b3000c15be92cd30b7291a",
+      "count-assertions.mjs": "3ff6b63b2d846734895b67d287b25abd74455c6ba46f23212c66e919c0975452",
+      "native-ci-baseline.json": "d8e3c036e47ac4159c73218900fbeac491b2a0de419e5122635ccee2adbfee25",
+      "protocol-attempt-002-assertions.json": "18c01b32bb6fc5dd9c9656d99b661a88faf6acb80f951aaf735be296455c734e",
+      "protocol-attempt-002-result.json": "7a60eabad6c23ee30a830c4d6e95cbe0c8f7708a6b29c07d942a40805b175945",
+      "protocol-attempt-002.log": "dd4d05b3884fbbfece71e6cc20cc58973d72d515cee0d22dfe92c9885a743e14",
+      "source-manifest.json": "0d8f4b1ea254302ed39fb31121d18bf4e98d8ebb26bb4976686bde21f367ee89",
+      "source.tar": "95498d307aea2818b7f18122032dab8354e28e2b9f5ecb7abf9d90a4e5594f41"
+    },
+    "kind": "e2e",
+    "native_ci_job_id": 123559513396,
+    "native_ci_run_id": 40905641072,
+    "node_version": "v22.23.3",
+    "repository": "open-hax/axxium",
+    "schema": "axxium-source-verification/v1",
+    "scope_limit": "Synthetic identities and owned empty PostgreSQL/loopback HTTP only; no production human sign-in, ChatGPT callback, production token or mutation qualification claim",
+    "source_sha": "58234df96ca86507e6cdd87f65aaa9ab35621415",
+    "started_at": "2026-10-29T19:50:32.193038+00:00",
+    "status": "passed",
+    "timed_out": false,
+    "tracked_files_verified": 128,
+    "warnings": []
+  },
+  "integration": {
+    "application_source_unchanged": true,
+    "assertion_count_kind": "Measured successful named node:assert/strict calls; bare assert calls excluded",
+    "assertion_files": {
+      "scripts/oidc-store.integration.mjs": 22
+    },
+    "assertions": 22,
+    "compile_warnings": 0,
+    "completed_at": "2026-10-29T19:50:37.423282+00:00",
+    "evidence_sha256": {
+      "compile-result.json": "40618f7d22304f23c23dc6cbd6992e65e4e37e3038485baa1a3233afc56b2aac",
+      "compile.log": "3a0ab6bf4ec482763d752c23882e57f68861202311b3000c15be92cd30b7291a",
+      "count-assertions.mjs": "3ff6b63b2d846734895b67d287b25abd74455c6ba46f23212c66e919c0975452",
+      "native-ci-baseline.json": "d8e3c036e47ac4159c73218900fbeac491b2a0de419e5122635ccee2adbfee25",
+      "protocol-attempt-002-assertions.json": "18c01b32bb6fc5dd9c9656d99b661a88faf6acb80f951aaf735be296455c734e",
+      "protocol-attempt-002-result.json": "7a60eabad6c23ee30a830c4d6e95cbe0c8f7708a6b29c07d942a40805b175945",
+      "protocol-attempt-002.log": "dd4d05b3884fbbfece71e6cc20cc58973d72d515cee0d22dfe92c9885a743e14",
+      "source-manifest.json": "0d8f4b1ea254302ed39fb31121d18bf4e98d8ebb26bb4976686bde21f367ee89",
+      "source.tar": "95498d307aea2818b7f18122032dab8354e28e2b9f5ecb7abf9d90a4e5594f41"
+    },
+    "kind": "integration",
+    "native_ci_job_id": 123559513396,
+    "native_ci_run_id": 40905641072,
+    "node_version": "v22.23.3",
+    "repository": "open-hax/axxium",
+    "schema": "axxium-source-verification/v1",
+    "scope_limit": "Synthetic identities and owned empty PostgreSQL/loopback HTTP only; no production human sign-in, ChatGPT callback, production token or mutation qualification claim",
+    "source_sha": "58234df96ca86507e6cdd87f65aaa9ab35621415",
+    "started_at": "2026-10-29T19:50:32.193038+00:00",
+    "status": "passed",
+    "timed_out": false,
+    "tracked_files_verified": 128,
+    "warnings": []
+  },
+  "mutation_batches": [],
+  "repository": "open-hax/axxium",
+  "source_sha": "58234df96ca86507e6cdd87f65aaa9ab35621415",
+  "status": "partial"
+}

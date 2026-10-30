@@ -35,6 +35,7 @@ class FakeHost:
     def fence(self,p):self.call('fence')
     def stop_app(self,p):self.call('stop')
     def backup(self,p,label):self.call('backup_'+label)
+    def provision_identity(self,p):self.call('provision_identity')
     def rehearse(self,p,label,*,candidate):self.call('rehearse_'+label+('_candidate_old' if candidate else '_old'))
     def start_candidate(self,p):self.call('start')
     def private_health(self,p):self.call('private_health')
@@ -65,7 +66,7 @@ class MinimalTransitionTests(unittest.TestCase):
 
     def test_fenced_backup_rehearsal_precedes_candidate_and_publication(self):
         h=FakeHost();self.assertEqual(release.execute(plan(),h),{'status':'healthy'})
-        self.assertEqual(h.calls,['preflight','claim','fence','stop','backup_before',
+        self.assertEqual(h.calls,['preflight','claim','fence','stop','backup_before','provision_identity',
             'rehearse_before_candidate_old','start','private_health','stop','backup_after',
             'rehearse_after_old','start','final_check','publish','public_health','commit','finish_healthy'])
         self.assertEqual(h.events[-1],('transaction','healthy'))

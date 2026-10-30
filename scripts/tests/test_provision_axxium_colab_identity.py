@@ -43,7 +43,7 @@ class PrivateIdentityProvisionTests(unittest.TestCase):
                         'evidence_sha256': 'e' * 64, 'observed_at': '2026-01-01T00:00:00Z'}
         self.write(self.binding_path, self.binding)
         self.write(self.plan, {'schema': 'axxium-minimal-production/v1', 'image_id': 'sha256:' + 'a' * 64})
-        for name, value in [('OWNER_UID', os.getuid()), ('STATE_ROOT', self.root), ('AUTHORITY', self.authority),
+        for name, value in [('APPROVED_ACTOR', ACTOR), ('OWNER_UID', os.getuid()), ('STATE_ROOT', self.root), ('AUTHORITY', self.authority),
                             ('BINDING', self.binding_path), ('GATEWAY_CLIENT', self.gateway), ('PLAN', self.plan),
                             ('CONTROLLER_BINDING_SOURCE', self.controller_binding)]:
             item = patch.object(identity, name, value)
@@ -52,6 +52,7 @@ class PrivateIdentityProvisionTests(unittest.TestCase):
         self.human = patch.object(identity, 'existing_human_verified', return_value=True).start()
         self.addCleanup(patch.stopall)
         self.crypto = patch.object(identity, 'native_crypto', side_effect=self.local_crypto).start()
+        self.context = patch.object(identity, 'require_transaction_context').start()
 
     @staticmethod
     def write(path, value):
@@ -108,6 +109,50 @@ class PrivateIdentityProvisionTests(unittest.TestCase):
                 self.assertFalse(self.authority.exists())
         self.crypto.assert_not_called()
 
+    def test_distinct_active_human_cannot_replace_approved_actor(self):
+        other = 'actor_00000000-0000-4000-8000-000000000002'
+        self.write(self.binding_path, {**self.binding, 'actor_id': other})
+        with self.assertRaises(identity.Refusal):
+            identity.provision()
+        self.assertFalse(self.authority.exists())
+        self.assertFalse(self.gateway.exists())
+        self.crypto.assert_not_called()
+
+    def test_incoming_mismatched_actor_cannot_install_binding(self):
+        self.binding_path.unlink()
+        self.write(self.controller_binding, {**self.binding,
+            'actor_id': 'actor_00000000-0000-4000-8000-000000000002'})
+        with self.assertRaises(identity.Refusal):
+            identity.provision(self.controller_binding)
+        self.assertFalse(self.binding_path.exists())
+        self.assertFalse(self.authority.exists())
+        self.assertFalse(self.gateway.exists())
+        self.crypto.assert_not_called()
+
+    def test_preflight_is_read_only_for_first_install(self):
+        self.binding_path.unlink()
+        self.write(self.controller_binding, self.binding)
+        before = {str(path.relative_to(self.root)): path.read_bytes()
+                  for path in self.root.rglob('*') if path.is_file()}
+        self.assertEqual(identity.preflight(self.controller_binding),
+                         {'verified': True, 'status': 'ready'})
+        after = {str(path.relative_to(self.root)): path.read_bytes()
+                 for path in self.root.rglob('*') if path.is_file()}
+        self.assertEqual(before, after)
+        self.assertFalse(self.gateway.parent.exists())
+        self.crypto.assert_not_called()
+
+    def test_preflight_rejects_other_active_human_without_writes(self):
+        self.binding_path.unlink()
+        self.write(self.controller_binding, {**self.binding,
+            'actor_id': 'actor_00000000-0000-4000-8000-000000000002'})
+        with self.assertRaises(identity.Refusal):
+            identity.preflight(self.controller_binding)
+        self.assertFalse(self.binding_path.exists())
+        self.assertFalse(self.authority.exists())
+        self.assertFalse(self.gateway.parent.exists())
+        self.crypto.assert_not_called()
+
     def test_partial_pair_is_preserved_and_never_repaired(self):
         self.write(self.authority, {'partial': 'preserve-exactly'})
         before = self.authority.read_bytes()
@@ -117,19 +162,184 @@ class PrivateIdentityProvisionTests(unittest.TestCase):
         self.assertFalse(self.gateway.exists())
         self.crypto.assert_not_called()
 
-    def test_interrupted_pair_creation_is_refused_on_next_attempt(self):
-        writer = identity.write_new
+    def test_owned_interrupted_pair_resumes_identical_material_and_is_idempotent(self):
+        publish = identity.publish_identity_file
         def interrupted(path, value):
             if path == self.gateway:
-                raise OSError('fixture interruption')
-            writer(path, value)
-        with patch.object(identity, 'write_new', side_effect=interrupted):
+                raise OSError('synthetic interruption')
+            publish(path, value)
+        with patch.object(identity, 'publish_identity_file', side_effect=interrupted):
             with self.assertRaises(OSError):
                 identity.provision()
+        authority_bytes = self.authority.read_bytes()
+        self.assertTrue(identity.transaction_path().exists())
+        self.assertFalse(self.gateway.exists())
+        self.assertEqual(identity.provision()['status'], 'created')
+        self.assertEqual(self.authority.read_bytes(), authority_bytes)
+        gateway_bytes = self.gateway.read_bytes()
+        self.assertFalse(identity.transaction_path().exists())
+        self.assertEqual(identity.provision()['status'], 'unchanged')
+        self.assertEqual(self.gateway.read_bytes(), gateway_bytes)
+        self.assertEqual(sum(call.args[0] == 'generate' for call in self.crypto.call_args_list), 1)
+
+    def test_owned_interrupted_binding_resumes_same_prepared_transaction(self):
+        self.binding_path.unlink()
+        self.write(self.controller_binding, self.binding)
+        publish = identity.publish_identity_file
+        def interrupted(path, value):
+            if path == self.binding_path:
+                raise OSError('synthetic interruption')
+            publish(path, value)
+        with patch.object(identity, 'publish_identity_file', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                identity.provision(self.controller_binding)
+        self.assertTrue(identity.transaction_path().exists())
+        self.assertFalse(self.binding_path.exists())
+        self.assertEqual(identity.provision(self.controller_binding)['status'], 'created')
+        self.assertEqual(self.binding_path.read_bytes(), self.controller_binding.read_bytes())
+        self.assertEqual(identity.provision(self.controller_binding)['status'], 'unchanged')
+        self.assertEqual(sum(call.args[0] == 'generate' for call in self.crypto.call_args_list), 1)
+
+    def test_owned_interrupted_authority_resumes_same_prepared_transaction(self):
+        self.binding_path.unlink()
+        self.write(self.controller_binding, self.binding)
+        publish = identity.publish_identity_file
+        def interrupted(path, value):
+            if path == self.authority:
+                raise OSError('synthetic interruption')
+            publish(path, value)
+        with patch.object(identity, 'publish_identity_file', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                identity.provision(self.controller_binding)
+        self.assertTrue(identity.transaction_path().exists())
+        before = self.binding_path.read_bytes()
+        self.assertFalse(self.authority.exists())
+        self.assertEqual(identity.provision(self.controller_binding)['status'], 'created')
+        self.assertEqual(self.binding_path.read_bytes(), before)
+        self.assertEqual(sum(call.args[0] == 'generate' for call in self.crypto.call_args_list), 1)
+
+    def test_partial_stage_bytes_are_preserved_for_manual_recovery(self):
+        writer = identity.write_new_bytes
+        interrupted_stage = identity.stage_path(self.gateway)
+        def interrupted(path, value):
+            if path == interrupted_stage:
+                writer(path, b'partial-synthetic-data')
+                raise OSError('synthetic partial stage write')
+            writer(path, value)
+        with patch.object(identity, 'write_new_bytes', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                identity.provision()
+        self.assertTrue(identity.transaction_path().exists())
+        self.assertEqual(interrupted_stage.read_bytes(), b'partial-synthetic-data')
+        with self.assertRaises(identity.Refusal):
+            identity.provision()
+        self.assertEqual(interrupted_stage.read_bytes(), b'partial-synthetic-data')
+        self.assertTrue(identity.transaction_path().exists())
+        self.assertEqual(sum(call.args[0] == 'generate' for call in self.crypto.call_args_list), 1)
+
+    def exercise_interruption_after_link(self, target_name):
+        self.binding_path.unlink()
+        self.write(self.controller_binding, self.binding)
+        targets = {'journal': identity.transaction_path(), 'binding': self.binding_path,
+                   'authority': self.authority, 'gateway': self.gateway}
+        target = targets[target_name]
+        original_link = os.link
+        def interrupted(source, dest, **kwargs):
+            original_link(source, dest, **kwargs)
+            if Path(dest) == target:
+                raise OSError('synthetic interruption after link')
+        with patch.object(identity.os, 'link', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                identity.provision(self.controller_binding)
+        self.assertTrue(target.exists())
+        self.assertTrue(identity.stage_path(target).exists())
+        published = target.read_bytes()
+        self.assertEqual(identity.provision(self.controller_binding)['status'], 'created')
+        if target != identity.transaction_path():
+            self.assertEqual(target.read_bytes(), published)
+        self.assertFalse(identity.stage_path(target).exists())
+        self.assertEqual(identity.provision(self.controller_binding)['status'], 'unchanged')
+        self.assertEqual(sum(call.args[0] == 'generate' for call in self.crypto.call_args_list), 1)
+
+    def test_interrupted_journal_link_recovers_idempotently(self):
+        self.exercise_interruption_after_link('journal')
+
+    def test_interrupted_binding_link_recovers_idempotently(self):
+        self.exercise_interruption_after_link('binding')
+
+    def test_interrupted_authority_link_recovers_idempotently(self):
+        self.exercise_interruption_after_link('authority')
+
+    def test_interrupted_gateway_link_recovers_idempotently(self):
+        self.exercise_interruption_after_link('gateway')
+
+    def test_changed_partial_material_refuses_owned_retry_without_overwrite(self):
+        publish = identity.publish_identity_file
+        def interrupted(path, value):
+            if path == self.gateway:
+                raise OSError('synthetic interruption')
+            publish(path, value)
+        with patch.object(identity, 'publish_identity_file', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                identity.provision()
+        self.write(self.authority, {'foreign': 'preserve'})
         before = self.authority.read_bytes()
-        with self.assertRaisesRegex(identity.Refusal, 'Partial'):
+        with self.assertRaises(identity.Refusal):
             identity.provision()
         self.assertEqual(self.authority.read_bytes(), before)
+        self.assertFalse(self.gateway.exists())
+
+    def test_unowned_stage_without_journal_is_refused_and_preserved(self):
+        stage = identity.stage_path(self.authority)
+        stage.write_bytes(b'unknown-existing-private-material')
+        stage.chmod(0o600)
+        before = stage.read_bytes()
+        self.assertFalse(identity.transaction_path().exists())
+        with self.assertRaises(identity.Refusal):
+            identity.provision()
+        self.assertEqual(stage.read_bytes(), before)
+        self.assertFalse(identity.transaction_path().exists())
+        self.assertFalse(self.authority.exists())
+        self.assertFalse(self.gateway.exists())
+        self.crypto.assert_not_called()
+
+    def test_preflight_refuses_conflicting_target_stage_before_fence(self):
+        self.write(self.controller_binding, self.binding)
+        publish = identity.publish_identity_file
+        def interrupted(path, value):
+            if path == self.gateway:
+                raise OSError('synthetic interruption')
+            publish(path, value)
+        with patch.object(identity, 'publish_identity_file', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                identity.provision(self.controller_binding)
+        stage = identity.stage_path(self.gateway)
+        stage.write_bytes(b'foreign-private-fixture')
+        stage.chmod(0o600)
+        before = stage.read_bytes()
+        with self.assertRaises(identity.Refusal):
+            identity.preflight(self.controller_binding)
+        self.assertEqual(stage.read_bytes(), before)
+        self.assertFalse(self.gateway.exists())
+
+    def test_preflight_refuses_conflicting_journal_stage_before_fence(self):
+        self.write(self.controller_binding, self.binding)
+        publish = identity.publish_identity_file
+        def interrupted(path, value):
+            if path == self.gateway:
+                raise OSError('synthetic interruption')
+            publish(path, value)
+        with patch.object(identity, 'publish_identity_file', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                identity.provision(self.controller_binding)
+        stage = identity.stage_path(identity.transaction_path())
+        stage.write_bytes(b'foreign-private-fixture')
+        stage.chmod(0o600)
+        before = stage.read_bytes()
+        with self.assertRaises(identity.Refusal):
+            identity.preflight(self.controller_binding)
+        self.assertEqual(stage.read_bytes(), before)
+        self.assertTrue(identity.transaction_path().exists())
 
     def test_existing_material_never_overwrites_drift(self):
         identity.provision()

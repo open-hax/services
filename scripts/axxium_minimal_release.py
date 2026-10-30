@@ -148,6 +148,11 @@ def execute(plan, host):
             stopped = True
             step('stop_incumbent',lambda:host.stop_app(plan))
             step('verified_before_backup',lambda:host.backup(plan,'before'))
+            # Provision only after the operation has acquired its native lock,
+            # installed its durable hold, and verified the quiescent backup.
+            # Any unavailable/unsuccessful mutator outcome is uncertain: keep
+            # the hold and journal rather than guessing whether to roll back.
+            step('provision_identity',lambda:host.provision_identity(plan))
             step('candidate_rollback_rehearsal',lambda:host.rehearse(plan,'before',candidate=True))
             candidate_attempted = True
             step('start_candidate',lambda:host.start_candidate(plan))
@@ -182,10 +187,10 @@ class NativeHost:
         self.candidate_id=None
         self.incumbent_image_id=None;self.rollback_id=None
 
-    def command(self,args,*,data=None,timeout=60,output=None,effect=False):
+    def command(self,args,*,data=None,timeout=60,output=None,effect=False,pass_fds=()):
         try:
             result=subprocess.run(args,input=data,stdout=output or subprocess.PIPE,
-                                  stderr=subprocess.PIPE,timeout=timeout)
+                                  stderr=subprocess.PIPE,timeout=timeout,pass_fds=pass_fds)
         except (OSError,subprocess.TimeoutExpired):
             self.uncertain=True; raise Uncertain('Native command outcome unavailable') from None
         if result.returncode:
@@ -261,12 +266,37 @@ class NativeHost:
     def identity_check(self):
         self.command([sys.executable,str(Path(__file__).with_name('provision_axxium_colab_identity.py')),'--check'])
 
+    def identity_preflight(self):
+        # This mode checks the protected, controller-owned incoming binding and
+        # current human/configuration state without installing identity files.
+        binding=Path(__file__).resolve().parents[1]/'production-binding.json'
+        self.command([sys.executable,str(Path(__file__).with_name('provision_axxium_colab_identity.py')),
+                      '--preflight','--binding-input',str(binding)])
+
+    def provision_identity(self,plan):
+        self.unchanged_dependencies(plan)
+        if self.operation is None or self.lock_fd is None or 'before' not in self.backups:
+            raise Uncertain('Provisioning requires a locked, verified backup operation')
+        binding=Path(__file__).resolve().parents[1]/'production-binding.json'
+        self.command([sys.executable,str(Path(__file__).with_name('provision_axxium_colab_identity.py')),
+                      '--provision','--binding-input',str(binding),'--lock-fd',str(self.lock_fd),
+                      '--operation-path',str(self.operation)],timeout=120,effect=True,
+                     pass_fds=(self.lock_fd,))
+        self.recheck_lock()
+        try:
+            self.identity_check()
+        except BaseException:
+            # The provisioner has already run: even a failed observation must
+            # retain the hold for independent inspection of the identity files.
+            self.uncertain=True
+            raise Uncertain('Provisioned identity could not be independently verified') from None
+
     def preflight(self,plan):
         if os.getuid()!=1000:raise Refused('The canonical deploy UID1000 is required')
         try:PENDING.lstat()
         except FileNotFoundError:pass
         else:raise Refused('Production operation requires independent recovery')
-        self.unchanged_dependencies(plan);self.identity_check()
+        self.unchanged_dependencies(plan);self.identity_preflight()
         old=self.inspect(APP);e=plan['expected']
         if (old['Id']!=e['app_container_id'] or old['Image']!=e['app_image_id']
                 or old['State'].get('Health',{}).get('Status')!='healthy'

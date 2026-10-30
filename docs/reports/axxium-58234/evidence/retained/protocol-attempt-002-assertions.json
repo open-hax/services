@@ -1,0 +1,12 @@
+{
+  "schema": "axxium-fixture-assertion-measurement/v1",
+  "process_exit_code": 0,
+  "passed_named_assertion_calls_by_file": {
+    "scripts/oidc-store.integration.mjs": 22,
+    "scripts/oidc-protocol.fixture.mjs": 258,
+    "scripts/oidc-http.fixture.mjs": 22,
+    "scripts/oidc-device.fixture.mjs": 120
+  },
+  "failed_named_assertion_calls_by_file": {},
+  "count_scope": "Successful named node:assert/strict calls attributed to archived scripts; bare assert calls excluded"
+}

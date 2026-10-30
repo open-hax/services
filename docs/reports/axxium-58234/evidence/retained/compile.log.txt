@@ -1,0 +1,5 @@
+shadow-cljs - config: /home/err/.local/share/codex-work/axxium-sso/qualification-source-58234-evidence/source/shadow-cljs.edn
+shadow-cljs - updating dependencies
+shadow-cljs - dependencies updated
+[:oidc-store-fixture] Compiling ...
+[:oidc-store-fixture] Build completed. (68 files, 18 compiled, 0 warnings, 79.10s)
