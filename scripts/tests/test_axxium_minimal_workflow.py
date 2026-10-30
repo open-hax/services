@@ -54,6 +54,14 @@ class FixedAxxiumWorkflowTests(unittest.TestCase):
         self.assertIn('deploy-stack.yml@refs/heads/main', text)
         self.assertIn('jq -e', text)
 
+    def test_recovery_staging_tracks_fixture_contract_inputs(self):
+        staging = workflow('axxium-recovery-staging.yml')
+        triggers = staging.get('on', staging.get(True))
+        paths = triggers['pull_request']['paths']
+        self.assertTrue({'scripts/axxium_oidc_ingress.py',
+                         'digitalocean/services/axxium/minimal-production-plan.json',
+                         'digitalocean/scripts/check-axxium-production-hold.sh'} <= set(paths))
+
     def test_production_capability_requires_admission_and_fresh_recheck(self):
         deploy = self.body['jobs']['deploy']
         self.assertEqual(deploy['needs'], 'admit')
