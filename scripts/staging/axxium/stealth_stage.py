@@ -25,7 +25,7 @@ SOURCE = Path('/home/err/Documents/Codex/2026-10-29/task/services-handoff')
 PARENT = Path('/home/err/Documents/Codex/2026-10-29/task/fixture-runs')
 ZIP = Path('/tmp/axxium-artifact-verify.dj8TOa9D/candidate.zip')
 EXPECTED_TOOLS = {
-    'stealth_rebind.py': 'b54a0b06b2264b21d082b22ace1374bb2347bc4dcb67b599dba9526450899512',
+    'stealth_rebind.py': '194543fe153ed0b40787a8b784cbfdef919ff941a1bc2779f4916695094f0298',
     'derive_fixture_image.py': 'f695739e1f460eb60a533bec98f3874149cb266fd0fe7b30c31917b039c789e8',
     'stealth_docker_guard.py': '06529c35a7316930dd4222b68c85e0bc5c7907d07c94369bca579449b566dc3a',
 }
