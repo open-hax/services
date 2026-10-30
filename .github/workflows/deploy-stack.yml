@@ -26,6 +26,11 @@ on:
         description: Immutable staged Axxium source required for its fixed production adoption plan
         required: false
         type: string
+      axxium_recover_interrupted:
+        description: Reconcile the held Axxium operation before its specifically approved retry
+        required: false
+        default: false
+        type: boolean
       colab_ref:
         description: Exact accepted Cloud Cuckoo source in its fixed Stage or production plan
         required: false
@@ -78,6 +83,7 @@ jobs:
           PROXX_SHA: ${{ inputs.proxx_ref }}
           KNOXX_SHA: ${{ inputs.knoxx_ref }}
           AXXIUM_SHA: ${{ inputs.axxium_ref }}
+          AXXIUM_RECOVER: ${{ inputs.axxium_recover_interrupted }}
           COLAB_SHA: ${{ inputs.colab_ref }}
           CALLER_REF: ${{ github.ref }}
           EVENT_NAME: ${{ github.event_name }}
@@ -88,6 +94,10 @@ jobs:
           set -euo pipefail
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$AXXIUM_RECOVER" = true ] && [ "$DEPLOY_SCOPE" != axxium ]; then
+              echo '::error::Interrupted Axxium recovery requires isolated Axxium scope.' >&2
+              exit 2
+            fi
             case "$DEPLOY_SCOPE" in
               stack|website|proxx|axxium|colab-stage|colab) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
@@ -153,6 +163,7 @@ jobs:
       proxx_ref: ${{ inputs.proxx_ref || '3ed25eec53a5bed6dc224f108323ea5d20420a22' }}
       knoxx_ref: ${{ inputs.knoxx_ref }}
       axxium_ref: ${{ inputs.axxium_ref }}
+      axxium_recover_interrupted: ${{ inputs.axxium_recover_interrupted || false }}
       colab_ref: ${{ inputs.colab_ref }}
       # Keep the production default in one place. Nested reusable workflows
       # require this input instead of carrying independent, drift-prone pins.

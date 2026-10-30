@@ -35,6 +35,12 @@ class FixedAxxiumWorkflowTests(unittest.TestCase):
         self.assertNotIn('concurrency', selected)
         self.assertTrue(all('concurrency' not in j for j in self.body['jobs'].values()))
 
+    def test_deployment_budget_covers_graceful_stops_and_recovery_headroom(self):
+        # The successful path can wait for five sequential 610-second stops;
+        # allow substantial additional time for backup, health, and rollback.
+        budget = self.body['jobs']['deploy']['timeout-minutes']
+        self.assertGreaterEqual(budget * 60, 5 * 610 + 30 * 60)
+
     def test_no_new_mutation_trigger_and_no_host_secret_in_admission(self):
         triggers = self.body.get('on', self.body.get(True))
         self.assertEqual(set(triggers), {'workflow_call'})
@@ -47,6 +53,14 @@ class FixedAxxiumWorkflowTests(unittest.TestCase):
         self.assertIn('refs/heads/main', text)
         self.assertIn('deploy-stack.yml@refs/heads/main', text)
         self.assertIn('jq -e', text)
+
+    def test_recovery_staging_tracks_fixture_contract_inputs(self):
+        staging = workflow('axxium-recovery-staging.yml')
+        triggers = staging.get('on', staging.get(True))
+        paths = triggers['pull_request']['paths']
+        self.assertTrue({'scripts/axxium_oidc_ingress.py',
+                         'digitalocean/services/axxium/minimal-production-plan.json',
+                         'digitalocean/scripts/check-axxium-production-hold.sh'} <= set(paths))
 
     def test_production_capability_requires_admission_and_fresh_recheck(self):
         deploy = self.body['jobs']['deploy']

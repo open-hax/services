@@ -86,6 +86,50 @@ class PrivateIdentityProvisionTests(unittest.TestCase):
         self.assertEqual(before, [path.read_bytes() for path in (self.authority, self.gateway)])
         self.assertEqual(sum(call.args[0] == 'generate' for call in self.crypto.call_args_list), 1)
 
+    def test_require_existing_reuses_complete_identity_without_any_write(self):
+        identity.provision()
+        paths = (self.binding_path, self.authority, self.gateway)
+        before = [(path.stat().st_ino, path.read_bytes()) for path in paths]
+        self.crypto.reset_mock()
+        with patch.object(identity, 'publish_identity_file', side_effect=AssertionError('unexpected write')):
+            self.assertEqual(identity.provision(require_existing=True),
+                             {'verified': True, 'status': 'unchanged'})
+        self.assertEqual(before, [(path.stat().st_ino, path.read_bytes()) for path in paths])
+        self.assertFalse(any(call.args[0] == 'generate' for call in self.crypto.call_args_list))
+
+    def test_require_existing_refuses_ready_state_without_writes(self):
+        with patch.object(identity, 'publish_identity_file', side_effect=AssertionError('unexpected write')):
+            with self.assertRaisesRegex(identity.Refusal, 'complete existing identity'):
+                identity.provision(require_existing=True)
+        self.assertFalse(self.authority.exists())
+        self.assertFalse(self.gateway.exists())
+        self.crypto.assert_not_called()
+
+    def test_require_existing_refuses_recoverable_transaction_without_repair(self):
+        publish = identity.publish_identity_file
+        def interrupted(path, value):
+            if path == self.gateway:
+                raise OSError('synthetic interruption')
+            publish(path, value)
+        with patch.object(identity, 'publish_identity_file', side_effect=interrupted):
+            with self.assertRaises(OSError):
+                identity.provision()
+        files = [p for p in self.root.rglob('*') if p.is_file()]
+        before = {p: p.read_bytes() for p in files}
+        self.crypto.reset_mock()
+        with patch.object(identity, 'publish_identity_file', side_effect=AssertionError('unexpected repair')):
+            with self.assertRaisesRegex(identity.Refusal, 'complete existing identity'):
+                identity.provision(require_existing=True)
+        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
+        self.assertFalse(any(call.args[0] == 'generate' for call in self.crypto.call_args_list))
+
+    def test_require_existing_requires_valid_transaction_context(self):
+        with patch.object(identity, 'require_transaction_context', side_effect=identity.Refusal('no lock')):
+            with self.assertRaises(identity.Refusal):
+                identity.provision(require_existing=True)
+        self.assertFalse(self.authority.exists())
+        self.assertFalse(self.gateway.exists())
+
     def test_missing_or_unverified_human_binding_writes_nothing(self):
         self.human.return_value = False
         with self.assertRaises(identity.Refusal):
@@ -470,6 +514,28 @@ class PrivateIdentityProvisionTests(unittest.TestCase):
             self.assertEqual(identity.main(), 1)
         self.assertFalse(self.binding_path.exists())
         self.assertFalse(self.authority.exists())
+
+    def test_require_existing_option_is_only_for_provision(self):
+        for mode in ('--check', '--preflight'):
+            with self.subTest(mode=mode):
+                args = [str(SCRIPT), mode, '--require-existing']
+                if mode == '--preflight':
+                    self.write(self.controller_binding, self.binding)
+                    args += ['--binding-input', str(self.controller_binding)]
+                output = io.StringIO()
+                with patch('sys.argv', args), contextlib.redirect_stdout(output):
+                    self.assertEqual(identity.main(), 1)
+                self.assertEqual(json.loads(output.getvalue()), {'verified': False, 'status': 'refused'})
+                self.assertFalse(self.authority.exists())
+
+    def test_provision_cli_passes_require_existing_flag(self):
+        output = io.StringIO()
+        args = [str(SCRIPT), '--provision', '--require-existing']
+        with patch('sys.argv', args), contextlib.redirect_stdout(output):
+            self.assertEqual(identity.main(), 1)
+        self.assertEqual(json.loads(output.getvalue()), {'verified': False, 'status': 'refused'})
+        self.assertFalse(self.authority.exists())
+        self.assertFalse(self.gateway.exists())
 
 
 class ExistingHumanProbeTests(unittest.TestCase):

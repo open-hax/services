@@ -491,10 +491,16 @@ def preflight(binding_input):
     return {'verified': True, 'status': 'complete' if all(materials) else 'ready'}
 
 
-def provision(binding_input=None, *, lock_fd=None, operation_path=None):
+def provision(binding_input=None, *, lock_fd=None, operation_path=None, require_existing=False):
     require_owner()
     require_transaction_context(lock_fd, operation_path)
     state = preflight(binding_input)
+    if require_existing:
+        # Interrupted rollout handoffs are authorized to reuse the complete
+        # identity only. Never create or repair credential material here.
+        if state != {'verified': True, 'status': 'complete'}:
+            raise Refusal('A complete existing identity is required')
+        return {**check(), 'status': 'unchanged'}
     binding_bytes, binding = requested_binding(binding_input)
     journal, unfinished = transaction_path(), stage_path(transaction_path())
     if state['status'] == 'complete' and not present(journal) and not present(unfinished):
@@ -540,14 +546,16 @@ def main():
     parser.add_argument('--binding-input', help='the fixed admitted controller production-binding.json')
     parser.add_argument('--lock-fd', type=int, help='inherited held native controller lock')
     parser.add_argument('--operation-path', help='fixed native operation path with verified backup')
+    parser.add_argument('--require-existing', action='store_true', help='reuse only a complete existing identity')
     args = parser.parse_args()
     try:
-        if args.check and (args.binding_input or args.lock_fd is not None or args.operation_path):
+        if args.check and (args.binding_input or args.lock_fd is not None or args.operation_path or args.require_existing):
             raise Refusal('Binding installation is not allowed during read-only verification')
-        if args.preflight and (not args.binding_input or args.lock_fd is not None or args.operation_path):
+        if args.preflight and (not args.binding_input or args.lock_fd is not None or args.operation_path or args.require_existing):
             raise Refusal('Preflight requires only the fixed binding input')
         result = (check() if args.check else preflight(args.binding_input) if args.preflight else
-                  provision(args.binding_input, lock_fd=args.lock_fd, operation_path=args.operation_path))
+                  provision(args.binding_input, lock_fd=args.lock_fd, operation_path=args.operation_path,
+                            require_existing=args.require_existing))
         print(json.dumps(result, sort_keys=True))
         return 0
     except (Refusal, OSError, ValueError, TypeError, KeyError):

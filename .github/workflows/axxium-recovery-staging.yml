@@ -1,0 +1,112 @@
+name: Axxium recovery staging
+
+# Disposable GitHub-hosted VM only. Recovery uses synthetic identity and
+# substitutes its final public verifier; it is not production verification.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/axxium_interrupted_handoff.py'
+      - 'scripts/axxium_incident_guard.py'
+      - 'scripts/axxium_minimal_release.py'
+      - 'scripts/provision_axxium_colab_identity.py'
+      - 'scripts/axxium_oidc_ingress.py'
+      - 'digitalocean/services/axxium/minimal-production-plan.json'
+      - 'digitalocean/scripts/check-axxium-production-hold.sh'
+      - 'scripts/staging/axxium/**'
+      - '.github/workflows/deploy-axxium-minimal.yml'
+      - '.github/workflows/axxium-recovery-staging.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  synthetic-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Validate fixture orchestrator
+        run: |
+          set -euo pipefail
+          bash -n scripts/staging/axxium/run.sh
+          shellcheck scripts/staging/axxium/run.sh
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/staging/axxium -p 'test_*.py'
+      - name: Refuse a shared or remote Docker host
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test ! -e /srv/open-hax
+          test -z "${DOCKER_HOST:-}"
+          test -z "${DOCKER_CONTEXT:-}"
+          test "$(docker context show)" = default
+          test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock
+      - name: Download and verify fixed candidate artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          timeout --kill-after=5s 120s gh api repos/open-hax/axxium/actions/artifacts/12911496785/zip > "$RUNNER_TEMP/candidate.zip"
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/staging/axxium/prepare_candidate.py \
+            --plan digitalocean/services/axxium/minimal-production-plan.json \
+            --archive "$RUNNER_TEMP/candidate.zip" --output "$RUNNER_TEMP/images.tar"
+          docker load --input "$RUNNER_TEMP/images.tar"
+          docker pull postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+          docker pull caddy@sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17
+      - name: Exercise synthetic OIDC and held handoff
+        run: |
+          set -euo pipefail
+          candidate=$(docker image inspect --format '{{.Id}}' promethean-axxium:58234df96ca86507e6cdd87f65aaa9ab35621415)
+          postgres=$(docker image inspect --format '{{.Id}}' postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685)
+          scripts/staging/axxium/run.sh \
+            "$candidate" "$postgres"
+      - name: Exercise recovery controller in an isolated network namespace
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true || { echo '::error::Not a GitHub Actions runner'; exit 1; }
+          test "$RUNNER_ENVIRONMENT" = github-hosted || { echo '::error::Runner is not GitHub-hosted'; exit 1; }
+          test ! -e /srv/open-hax || { echo '::error::Fixture host path already exists'; exit 1; }
+          test -z "${DOCKER_HOST:-}" || { echo '::error::Docker host override present'; exit 1; }
+          test -z "${DOCKER_CONTEXT:-}" || { echo '::error::Docker context override present'; exit 1; }
+          test "$(docker context show)" = default || { echo '::error::Docker context is not default'; exit 1; }
+          test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock || { echo '::error::Docker endpoint is not local'; exit 1; }
+          command -v setfacl >/dev/null || { echo '::error::setfacl is unavailable'; exit 1; }
+          command -v setpriv >/dev/null || { echo '::error::setpriv is unavailable'; exit 1; }
+          command -v unshare >/dev/null || { echo '::error::unshare is unavailable'; exit 1; }
+          # The hosted checkout can be private to the runner user. Copy only
+          # the reviewed fixture/controller inputs into a new private tree;
+          # keep /srv/open-hax empty until the fixture starts.
+          fixture_source=$(mktemp -d /tmp/axxium-recovery-workspace.XXXXXXXX)
+          install -d -m 700 "$fixture_source/scripts/staging/axxium" "$fixture_source/digitalocean/services/axxium"
+          for file in axxium_minimal_release.py axxium_incident_guard.py axxium_interrupted_handoff.py axxium_oidc_ingress.py provision_axxium_colab_identity.py; do
+            test -f "$GITHUB_WORKSPACE/scripts/$file" && test ! -L "$GITHUB_WORKSPACE/scripts/$file"
+            install -m 600 "$GITHUB_WORKSPACE/scripts/$file" "$fixture_source/scripts/$file"
+          done
+          for file in full_recovery_probe.py identity_fixture.py network_fixture.py fixture_netns.py; do
+            test -f "$GITHUB_WORKSPACE/scripts/staging/axxium/$file" && test ! -L "$GITHUB_WORKSPACE/scripts/staging/axxium/$file"
+            install -m 600 "$GITHUB_WORKSPACE/scripts/staging/axxium/$file" "$fixture_source/scripts/staging/axxium/$file"
+          done
+          plan="$GITHUB_WORKSPACE/digitalocean/services/axxium/minimal-production-plan.json"
+          test -f "$plan" && test ! -L "$plan"
+          install -m 600 "$plan" "$fixture_source/digitalocean/services/axxium/minimal-production-plan.json"
+          sudo chown -R 1000:1000 "$fixture_source"
+          sudo setpriv --reuid=1000 --regid=1000 --clear-groups \
+            test -r "$fixture_source/scripts/staging/axxium/full_recovery_probe.py" || { echo '::error::UID 1000 cannot read private fixture'; exit 1; }
+          sudo mkdir -m 700 /srv/open-hax
+          sudo chown 1000:1000 /srv/open-hax
+          sudo setfacl -m u:1000:rw /var/run/docker.sock
+          # Open PID 1's network namespace before dropping privileges, then
+          # pass only that descriptor into the isolated fixture process.
+          sudo sh -c '
+            exec 3</proc/1/ns/net
+            exec unshare --net --fork setpriv --reuid=1000 --regid=1000 --clear-groups \
+              env -i PATH="$2" HOME=/tmp GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted \
+                DOCKER_HOST=unix:///var/run/docker.sock PYTHONDONTWRITEBYTECODE=1 FIXTURE_HOST_NETNS_FD=3 \
+                python3 "$1"
+          ' sh "$fixture_source/scripts/staging/axxium/full_recovery_probe.py" "$PATH"
