@@ -123,7 +123,7 @@ class WebsiteDeploymentTests(unittest.TestCase):
             with self.subTest(scope=scope, include=include), tempfile.TemporaryDirectory() as temporary:
                 output = Path(temporary) / "outputs"
                 result = subprocess.run(["bash", "-c", decide["run"]], cwd=ROOT,
-                    env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": scope,
+                    env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": scope, "AXXIUM_RECOVER": "false",
                          "INCLUDE_WEBSITE": include, "WEBSITE_IMAGE": "", "KNOXX_SHA": "a" * 40,
                          "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
                 self.assertEqual(status, result.returncode, result.stdout + result.stderr)
@@ -141,7 +141,7 @@ class WebsiteDeploymentTests(unittest.TestCase):
             with self.subTest(source=source, website=website), tempfile.TemporaryDirectory() as temporary:
                 output = Path(temporary) / "outputs"
                 result = subprocess.run(["bash", "-c", command], cwd=ROOT,
-                    env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": "proxx",
+                    env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": "proxx", "AXXIUM_RECOVER": "false",
                          "INCLUDE_WEBSITE": website, "WEBSITE_IMAGE": "", "KNOXX_SHA": "",
                          "PROXX_SHA": source, "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
                 self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
@@ -172,14 +172,14 @@ class WebsiteDeploymentTests(unittest.TestCase):
             with self.subTest(scope=scope, candidate=candidate), tempfile.TemporaryDirectory() as temporary:
                 output = Path(temporary) / "outputs"
                 result = subprocess.run(["bash", "-c", command], cwd=ROOT,
-                    env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": scope,
+                    env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": scope, "AXXIUM_RECOVER": "false",
                          "INCLUDE_WEBSITE": "false", "WEBSITE_IMAGE": "", "KNOXX_SHA": candidate,
                          "GITHUB_OUTPUT": str(output)}, text=True, capture_output=True)
                 self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
                 self.assertEqual(expected == 0, output.exists())
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "outputs"
-            environment = {**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": "stack",
+            environment = {**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": "stack", "AXXIUM_RECOVER": "false",
                            "INCLUDE_WEBSITE": "false", "WEBSITE_IMAGE": "", "GITHUB_OUTPUT": str(output)}
             environment.pop("KNOXX_SHA", None)
             missing = subprocess.run(["bash", "-c", command], cwd=ROOT,
@@ -613,7 +613,7 @@ sys.exit(subprocess.run([os.environ['REAL_RSYNC'], *a[:-2], str(source)+'/', str
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "outputs"
             result = subprocess.run(["bash", "-c", command], cwd=ROOT,
-                env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": "stack",
+                env={**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": "stack", "AXXIUM_RECOVER": "false",
                      "INCLUDE_WEBSITE": "false", "WEBSITE_IMAGE": "nonempty", "GITHUB_OUTPUT": str(output)},
                 text=True, capture_output=True)
             self.assertEqual(2, result.returncode)
