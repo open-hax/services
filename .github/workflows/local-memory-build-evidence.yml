@@ -1,0 +1,113 @@
+name: Local memory stack build evidence
+
+# Non-deploying build of the exact source revisions below. A PR changing this
+# workflow runs the build without merging; manual dispatch remains available
+# after the workflow exists on the default branch. No ingestion or providers.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/local-memory-build-evidence.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Checkout OpenPlanner
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/openplanner
+          ref: 07085d6557b75834ce6f50e6c54b8ca47e1c7c08
+          path: openplanner
+          persist-credentials: false
+      - name: Checkout Knoxx
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/knoxx
+          ref: 3409977bca4ba35e09967f9a99d50867a679a73c
+          path: knoxx
+          persist-credentials: false
+      - name: Checkout Proxx
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/proxx
+          ref: 88471efd7f8cd27f64fc733a1c31369f00a6d432
+          path: proxx
+          persist-credentials: false
+      - name: Checkout Osmos
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: open-hax/osmos
+          ref: 30e48e75e25d7dd9b63a7566fe276e14804c7871
+          path: osmos
+          persist-credentials: false
+      - name: Set up Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 10.20.0
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Set up Clojure CLI
+        uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # v13.6.1
+        with:
+          cli: 1.12.5.1664
+      - name: Build OpenPlanner and SDK
+        working-directory: openplanner
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm run build
+      - name: Build Knoxx backend and test
+        working-directory: knoxx
+        env:
+          KNOXX_DISABLE_EVENT_RUNTIMES: '1'
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm -C backend install --frozen-lockfile
+          pnpm -C backend typecheck
+          pnpm -C backend exec node scripts/run-shadow-tests-ci.mjs
+      - name: Build Proxx
+        working-directory: proxx
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm run build
+      - name: Build Osmos uberjar and run unit tests
+        working-directory: osmos
+        run: |
+          set -euo pipefail
+          clojure -M:uberjar
+          clojure -M:test
+      - name: Package built outputs and exact source provenance
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          for repo in openplanner knoxx proxx osmos; do
+            printf '%s %s\n' "$repo" "$(git -C "$repo" rev-parse HEAD)" >> evidence/source-commits.txt
+          done
+          { node --version; pnpm --version; java -version 2>&1; clojure --version; } > evidence/toolchain.txt
+          # Compiled outputs only: this is build evidence, not a self-contained
+          # runtime or an assertion that integration, ingestion or auth works.
+          tar -czf evidence/compiled-outputs.tar.gz \
+            openplanner/dist openplanner/packages/openplanner-sdk/dist \
+            knoxx/backend/dist proxx/dist osmos/target/kms-ingestion.jar
+          (cd evidence && sha256sum source-commits.txt toolchain.txt compiled-outputs.tar.gz > SHA256SUMS)
+      - name: Upload build evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: local-memory-build-evidence
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 7
