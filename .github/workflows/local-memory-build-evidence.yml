@@ -100,10 +100,18 @@ jobs:
           { node --version; pnpm --version; java -version 2>&1; clojure --version; } > evidence/toolchain.txt
           # Compiled outputs only: this is build evidence, not a self-contained
           # runtime or an assertion that integration, ingestion or auth works.
-          tar -czf evidence/compiled-outputs.tar.gz \
-            openplanner/dist openplanner/packages/openplanner-sdk/dist \
-            knoxx/backend/dist proxx/dist osmos/target/kms-ingestion.jar
-          (cd evidence && sha256sum source-commits.txt toolchain.txt compiled-outputs.tar.gz > SHA256SUMS)
+          test -f proxx/dist/cljs/proxx-runtime.js
+          test -f openplanner/packages/openplanner-sdk/dist/index.js
+          # Preserve every built workspace package, not only the SDK: the SDK
+          # imports document-hydration and other workspace packages at runtime.
+          find openplanner/packages -type d -name dist -prune -print0 > evidence/package-dist-paths.nul
+          printf '%s\0' openplanner/dist knoxx/backend/dist proxx/dist osmos/target/kms-ingestion.jar \
+            openplanner/package.json openplanner/pnpm-lock.yaml proxx/package.json proxx/pnpm-lock.yaml \
+            knoxx/backend/package.json knoxx/backend/pnpm-lock.yaml osmos/deps.edn >> evidence/package-dist-paths.nul
+          tar --null -T evidence/package-dist-paths.nul -czf evidence/compiled-outputs.tar.gz
+          tr '\0' '\n' < evidence/package-dist-paths.nul > evidence/packaged-paths.txt
+          rm evidence/package-dist-paths.nul
+          (cd evidence && sha256sum source-commits.txt toolchain.txt packaged-paths.txt compiled-outputs.tar.gz > SHA256SUMS)
       - name: Upload build evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
