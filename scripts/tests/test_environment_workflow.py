@@ -177,7 +177,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
             archive = b"synthetic image archive\x00with inert bytes\n"
             (root/"artifact/images.tar").write_bytes(archive)
             calls = root / "ssh-calls.json"
-            result = subprocess.run(["bash", "-euo", "pipefail", "-c", step["run"]],
+            result = subprocess.run(["bash", "--noprofile", "--norc", "-euo", "pipefail", "-c", step["run"]],
                 cwd=root, env={"HOME": str(root), "PATH": str(binary)+os.pathsep+os.defpath,
                     "SERVICE": service, "ENVIRONMENT": environment, "SOURCE_SHA": "c"*40,
                     "DEPLOY_SSH_KEY": key, "DEPLOY_KNOWN_HOSTS": known_hosts,
