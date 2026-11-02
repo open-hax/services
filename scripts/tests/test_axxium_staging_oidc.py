@@ -30,7 +30,7 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         base, staging = json.loads(base_result.stdout), json.loads(staging_result.stdout)
         app = staging['services']['axxium']
         self.assertEqual(app['environment'].pop('AXXIUM_OIDC_CONFIG_FILE'), '/run/axxium/oidc/authority.json')
-        self.assertEqual(app['environment'].pop('AXXIUM_TRUST_PROXY'), '172.17.0.1')
+        self.assertEqual(app['environment']['AXXIUM_TRUST_PROXY'], '172.17.0.1')
         mount = [v for v in app['volumes'] if v['target'] == '/run/axxium/oidc']
         self.assertEqual(len(mount), 1)
         self.assertTrue(mount[0]['read_only'])
