@@ -16,4 +16,9 @@
                    (law/approval-valid? (v "plan") (v "approval") (v "policy")
                                         (v "plan_hash") (v "root_hash")
                                         (v "policy_hash") (v "now"))))))
+  "current"
+  (let [v (json/parse-string (slurp *in*))]
+    (println (json/generate-string
+               (and (= (set (keys v)) #{"current" "terminal"})
+                    (law/current-state-valid? (v "current") (v "terminal"))))))
   (throw (ex-info "Unsupported law operation" {})))

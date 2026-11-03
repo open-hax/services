@@ -234,3 +234,40 @@ class EngineEdgeTest(unittest.TestCase):
                     self.assertEqual(before, fixtures.fixture_snapshot(f.root))
                 finally:
                     f.doCleanups()
+
+    def test_first_selection_sigkill_recovers_absence_without_caller_plan(self):
+        f = self.fixture
+        f.kill_selection()
+        with fixtures.fs.Engine(f.policy, f.revision) as fresh:
+            result = fresh.recover()
+        self.assertEqual(result['status'], 'failed-restored', result)
+        self.assertIsNone(f.selection())
+        self.assertEqual(list((f.root / 'generations').iterdir()), [])
+        with fixtures.fs.Engine(f.policy, f.revision) as fresh:
+            self.assertEqual(fresh.recover()['status'], 'checked')
+        f.apply('next')
+        self.assertEqual(f.selection()['generation'], 'next')
+
+    def test_post_rename_xattrs_are_not_adopted_as_accepted_metadata(self):
+        f = self.fixture
+        f.apply('a')
+        metadata = f.engine._selection()[3]
+        request = f.request(f.plan('b'))
+        original = fixtures.os.rename
+        changed = []
+        def rename(src, dst, **kwargs):
+            result = original(src, dst, **kwargs)
+            if dst == 'current' and not changed:
+                fixtures.os.setxattr(f.root / 'current', 'user.fixture-postrename', b'foreign')
+                changed.append(True)
+            return result
+        with mock.patch.object(fixtures.os, 'rename', side_effect=rename):
+            result = f.engine.execute(request)
+        self.assertTrue(changed)
+        self.assertIn(result['status'], ('failed-restored', 'held'), result)
+        self.assertEqual(result['first_failure']['code'], 'current-drift', result)
+        if result['status'] == 'failed-restored':
+            self.assertEqual(f.selection()['generation'], 'a')
+            self.assertEqual(f.engine._selection()[3], metadata)
+        else:
+            self.assertIsNone(result['after'])

@@ -30,14 +30,14 @@ SCHEMAS = None
 
 
 class Denial(Exception):
-    def __init__(self, code='dirty', stage='admission', hold=False):
+    def __init__(self, code='dirty', stage='admission', hold=None):
         super().__init__(code)
         self.code, self.stage = code, stage
         self.hold = hold
 
 
 def law(operation, value=None):
-    """Only two fixed inert operations; bounded response and hard runtime cap."""
+    """Three fixed inert law operations; bounded response and hard runtime cap."""
     # Output is limited by the fixed program, not by caller-selected code.
     completed = subprocess.run(
         ['/usr/local/bin/bb', '-cp', str(HERE.parent / 'src'),
@@ -105,6 +105,12 @@ def stable(identity):
     return {k: identity[k] for k in ('device', 'inode', 'mode', 'uid', 'gid')}
 
 
+def rename_identity(identity):
+    # Rename may change ctime, but no other identity fact. Complete accepted
+    # metadata, including xattrs, is checked separately against the source.
+    return None if identity is None else {k: v for k, v in identity.items() if k != 'ctime_ns'}
+
+
 def failure(exc, stage='admission'):
     return {'code': (exc.code if isinstance(exc, Denial) else
                      getattr(exc, 'code', 'shape') if isinstance(exc, ValueError) else
@@ -140,6 +146,7 @@ class Engine:
         self.known_generations = set()
         self.record_identities = {}
         self.setup_capsule_identity = None
+        self.authoritative_current = None
         self.source_hashes = {p: sha(p.read_bytes()) for p in (
             HERE / 'local_generation_fs.py', HERE / 'local_generation_wire.py',
             HERE / 'local_generation_edn.py', HERE / 'local-generation-laws.clj',
@@ -425,6 +432,8 @@ class Engine:
     def _observe(self, manifest, operation):
         self._chain_check()
         selection, current, raw, metadata = self._selection()
+        if self.authoritative_current is not None and self.authoritative_current != {'selection': selection, 'identity': current}:
+            raise Denial('current-drift', self.stage)
         old_tree = self._tree(selection)
         destination = self._named_identity(self.fds['generations'], manifest['generation'])
         if operation == 'apply':
@@ -685,10 +694,18 @@ class Engine:
         name = 'journal-next'
         if self._named_identity(parent, name) is not None:
             raise Denial('recovery-uncertain', self.stage)
-        self._new_file(parent, name, wire.encode(self.journal, wire.CAPSULE_LIMIT), 'journal')
+        expected = self._new_file(parent, name, wire.encode(self.journal, wire.CAPSULE_LIMIT), 'journal')
+        with self._open(parent, name) as source:
+            source_metadata = self._metadata(source)
         def renamed():
             os.rename(name, 'journal', src_dir_fd=parent, dst_dir_fd=parent)
-            self.journal_identity = self._named_identity(parent, 'journal')
+            actual = self._named_identity(parent, 'journal')
+            if rename_identity(actual) != rename_identity(expected):
+                raise Denial('recovery-uncertain', self.stage)
+            with self._open(parent, 'journal') as destination:
+                if self._metadata(destination) != source_metadata:
+                    raise Denial('recovery-uncertain', self.stage)
+            self.journal_identity = actual
             self.journal_temp_identity = None
         self._native('journal-rename', renamed)
         self._sync(parent, 'journal-parent-fsync')
@@ -785,7 +802,9 @@ class Engine:
 
     def _transaction(self, plan, approval):
         self.stage = 'prepared'
-        self.tx = 'tx-' + plan['nonce'][:50]
+        # Consume the complete nonce in the journal; never truncate caller
+        # identity into an aliasing filesystem name.
+        self.tx = 'tx-' + os.urandom(16).hex()
         candidate = {'schema': 'services.local-selection/v1', 'owner': plan['owner'],
                      'generation': plan['manifest']['generation'], 'manifest_sha256': wire.digest(plan['manifest'])}
         capsule = {'schema': 'services.local-recovery/v1', 'transaction': self.tx, 'plan': plan,
@@ -905,12 +924,19 @@ class Engine:
         # The pending rename records the exact already-known source identity.
         # A fresh process can distinguish old current, our renamed inode, and
         # foreign current without adopting observations as new authority.
+        with self._open(txfd, label) as source:
+            source_metadata = self._metadata(source)
         def rename():
             os.rename(label, 'current', src_dir_fd=txfd, dst_dir_fd=self.root)
-            self.current_expected = self._named_identity(self.root, 'current')
-            self.current_raw = raw
+            actual = self._named_identity(self.root, 'current')
+            if rename_identity(actual) != rename_identity(identity):
+                raise Denial('current-drift', self.stage)
             with self._open(self.root, 'current') as fd:
-                self.current_metadata = self._metadata(fd)
+                if self._metadata(fd) != source_metadata:
+                    raise Denial('current-drift', self.stage)
+            self.current_expected = actual
+            self.current_raw = raw
+            self.current_metadata = source_metadata
             return self.current_expected
         self._recorded('rename', ['current'], 'current-rename', rename,
                        before=self.current_expected, anticipated=identity)
@@ -945,7 +971,8 @@ class Engine:
         except Denial as exc:
             # An invalid *operational record* is not merely a bad new request.
             # Preserve its first cause while blocking every new admission.
-            exc.hold = True
+            if exc.hold is None:
+                exc.hold = True
             raise
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             raise Denial(failure(exc, self.stage)['code'], self.stage, hold=True) from exc
@@ -955,7 +982,9 @@ class Engine:
         seen = set()
         self.known_generations = set()
         self.record_identities = {}
+        self.authoritative_current = None
         pending = []
+        terminal = []
         for tx in sorted(os.listdir(self.fds['transactions'])):
             if not re.fullmatch('tx-[a-z0-9-]{1,50}', tx):
                 raise Denial('recovery-uncertain')
@@ -1022,7 +1051,7 @@ class Engine:
                     actual = self._tree(journal['candidate'])
                     if ({tuple(e['path']) for e in actual['entries']} != set(accepted) or
                             any(e['identity'] != accepted[tuple(e['path'])] for e in actual['entries'])):
-                        raise Denial('dirty')
+                        raise Denial('dirty', self.stage, hold=False)
                 seen.add(journal['nonce'])
                 if journal['stage'] != 'restored':
                     self.known_generations.add(plan['manifest']['generation'])
@@ -1035,8 +1064,31 @@ class Engine:
                     if not recover or journal['stage'] == 'held':
                         raise Denial('recovery-uncertain')
                     pending.append((tx, journal, capsule))
+                else:
+                    selected = journal['candidate'] if journal['stage'] == 'committed' else capsule['before']
+                    operations = [op for op in journal['operations'] if op['state'] == 'succeeded' and
+                                  op['path'] == ['current'] and op['kind'] in ('rename', 'unlink')]
+                    if journal['stage'] == 'committed' and (not operations or operations[-1]['kind'] != 'rename'):
+                        raise Denial('recovery-uncertain')
+                    identity = operations[-1]['after'] if operations else capsule['before_current']
+                    if (selected is None) != (identity is None):
+                        raise Denial('recovery-uncertain')
+                    if selected is not None:
+                        raw = wire.encode(selected) if journal['stage'] == 'committed' else wire.unb64(capsule['before_current_bytes_b64'])
+                        if identity['sha256'] != sha(raw):
+                            raise Denial('recovery-uncertain')
+                    terminal.append({'state': {'selection': selected, 'identity': identity},
+                                     'committed': journal['stage'] == 'committed'})
         if set(os.listdir(self.fds['generations'])) - self.known_generations:
             raise Denial('dirty')
+        if len(pending) > 1:
+            raise Denial('recovery-uncertain')
+        if not pending:
+            selection, identity, _, _ = self._selection()
+            observed = {'selection': selection, 'identity': identity}
+            if not law('current', {'current': observed, 'terminal': terminal}):
+                raise Denial('dirty', self.stage, hold=False)
+            self.authoritative_current = observed
         for tx, journal, capsule in pending:
             self.tx, self.journal, self.capsule = tx, journal, capsule
             self.fds[tx] = os.open(tx, DIRECTORY, dir_fd=self.fds['transactions'])
@@ -1070,8 +1122,6 @@ class Engine:
                 # rename changes ctime on some filesystems; it never changes
                 # byte hash/mtime/ownership/size or the already-recorded inode.
                 allowed.append(op['after'])
-        def rename_identity(i):
-            return None if i is None else {k: v for k, v in i.items() if k != 'ctime_ns'}
         if not any(rename_identity(current) == rename_identity(i) for i in allowed):
             raise Denial('recovery-uncertain', 'restoring')
         self.current_expected = current

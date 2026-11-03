@@ -77,8 +77,10 @@
                "descriptor_b64" :string "descriptor_sha256" :sha256}
    "manifest" (record "services.local-manifest/v1"
                       {"owner" :id "generation" :id "artifacts" [:vector "artifact"]})
-   "selection" (record "services.local-selection/v1"
-                       {"owner" :id "generation" :id "manifest_sha256" :sha256})
+    "selection" (record "services.local-selection/v1"
+                        {"owner" :id "generation" :id "manifest_sha256" :sha256})
+    "current-state" {"selection" (nullable "selection") "identity" (nullable "identity")}
+    "terminal-current" {"state" "current-state" "committed" [:enum false true]}
    "xattr" {"name_b64" :string "value_b64" :string}
    "metadata" {"mode" :int "uid" :int "gid" :int "mtime_ns" :ns64 "xattrs" [:vector "xattr"]}
     "tree-entry" {"path" [:vector :component 17] "identity" "identity" "metadata" "metadata"}
@@ -185,6 +187,21 @@
                    fail)
          fail)
        :else fail))))
+
+(defn current-state-valid?
+  "A native observation is not new authority: selected current must match a
+  durable terminal identity. V1 never clears a committed selection."
+  [current terminal]
+  (let [coupled? (fn [state] (= (nil? (get state "selection"))
+                                (nil? (get state "identity"))))]
+    (and (empty? (errors "current-state" current))
+         (empty? (errors [:vector "terminal-current" max-int] terminal))
+         (coupled? current)
+         (every? #(and (coupled? (get % "state"))
+                       (or (not (get % "committed")) (some? (get-in % ["state" "selection"])))) terminal)
+         (if (nil? (get current "selection"))
+           (not-any? #(get % "committed") terminal)
+           (boolean (some #(= current (get % "state")) terminal))))))
 
 (defn destination-valid?
   "Operation law only; runtime must independently re-observe actual custody."

@@ -440,7 +440,7 @@ class LocalGenerationTest(unittest.TestCase):
         def allow_law(argv, **kwargs):
             self.assertEqual(argv[:3], ['/usr/local/bin/bb', '-cp', str(SCRIPTS.parent / 'src')])
             self.assertEqual(argv[3], str(SCRIPTS / 'local-generation-laws.clj'))
-            self.assertIn(argv[4], ('schemas', 'approval'))
+            self.assertIn(argv[4], ('schemas', 'approval', 'current'))
             self.assertFalse(kwargs.get('shell', False))
             self.assertEqual(kwargs['timeout'], 10)
             seen.append(argv[4])
@@ -597,6 +597,7 @@ class LocalGenerationTest(unittest.TestCase):
                 before = fixture.selection()
                 trees = {g: fixture_snapshot(fixture.root / 'generations' / g) for g in ('a', 'b')}
                 request = fixture.request(fixture.plan('c' if operation == 'apply' else 'a', operation))
+                transactions_before = set((fixture.root / 'transactions').iterdir())
                 environment = {'PATH': os.environ['PATH'], 'PYTHONPATH': str(SCRIPTS), 'PYTHONDONTWRITEBYTECODE': '1'}
                 killed = subprocess.run([sys.executable, '-c', kill_worker, str(index)],
                     input=json.dumps([fixture.policy, request]), text=True, capture_output=True,
@@ -613,9 +614,12 @@ class LocalGenerationTest(unittest.TestCase):
                 if result['status'] == 'failed-restored':
                     self.assertEqual(fixture.selection(), before, (case, result))
                 elif result['status'] == 'checked':
-                    tx = fixture.root / 'transactions' / ('tx-' + request['plan']['nonce'][:50])
-                    if tx.exists():
-                        self.assertEqual(json.loads((tx / 'journal').read_bytes())['stage'], 'committed', case)
+                    created = set((fixture.root / 'transactions').iterdir()) - transactions_before
+                    if created:
+                        self.assertEqual(len(created), 1, case)
+                        journal = json.loads((next(iter(created)) / 'journal').read_bytes())
+                        self.assertEqual(journal['stage'], 'committed', case)
+                        self.assertEqual(journal['nonce'], request['plan']['nonce'], case)
                         self.assertEqual(fixture.selection()['generation'], request['plan']['manifest']['generation'], case)
                     else:
                         self.assertEqual(fixture.selection(), before, case)

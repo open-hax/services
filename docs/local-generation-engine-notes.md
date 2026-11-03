@@ -40,7 +40,7 @@ are therefore still visible to the strict native decoder. Empty request bytes
 mean recovery-only; otherwise the child recovers before request admission.
 The child independently checks the complete source table. No source paths,
 commands, import names or executable flags are accepted as data. Native calls
-to portable laws invoke only the fixed BB schema/approval script with a ten
+to portable laws invoke only the fixed BB schema/approval/current-state script with a ten
 second deadline. The facade bounds both input streams to 16 MiB and ten seconds
 each, the worker to thirty seconds, output to 16 MiB and stderr to 4096 bytes.
 A timeout cannot prove whether an effect happened: it returns held with unknown
@@ -164,6 +164,29 @@ re-entry resets volatile transaction references before loading durable state.
 Neither correction grants cleanup authority over the reproduced foreign tree.
 Final exact-head verification reports, rather than these earlier checkpoints,
 govern the independent-review candidate.
+
+The `2321abf9771dff44c88e643b9bf6f28a1fa5af32` matrix again passed all 642
+occurrence kills, but its aggregate correctly remained RED: the operational
+hold classifier also converted a previously required retained-tree metadata
+denial into held. The original denial assertion is unchanged. The classifier
+now distinguishes explicit prewrite tree/current admission denials from malformed
+operational-record holds rather than relaxing that test.
+
+Further actual RED cases demonstrated full-length nonce truncation collisions,
+same-byte foreign current/journal inodes adopted between rename and readback,
+and current metadata/replacement drift accepted before a fresh preview.
+Transaction directory names are now independent 128-bit random IDs; the complete
+caller nonce remains the consumed capability. Rename postconditions are derived
+from the already-owned source identity and full metadata, not a fresh named
+destination observation. Terminal current identities are projected from existing
+durable journal outcomes and checked by a portable `.cljc` predicate through the
+third fixed inert law operation. Observations cannot become new selection
+authority; a lifetime that has committed a selection cannot silently restart at
+absence. Ambiguous multiple incomplete records hold before compensation.
+No new public request/Plan/journal/capsule fields, extra ledger, installation or
+caller-controlled operation were introduced. The crash fixture discovers the
+new transaction by before/after owned-directory inventory and additionally
+checks its complete nonce, rather than guessing an internal name algorithm.
 
 The first isolated Python facade prototype ignored the environment's bytecode
 suppression and created small local `scripts/__pycache__` artifacts. The fixed
