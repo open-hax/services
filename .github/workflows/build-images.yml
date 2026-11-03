@@ -230,6 +230,8 @@ jobs:
           # :none emits a multi-file ESM tree; the Dockerfile COPYs all of dist.
           test -f backend/dist/server.js
           test -d backend/dist/cljs-runtime
+          runtime_js=$(find backend/dist/cljs-runtime -type f -name '*.js' -print -quit)
+          test -n "$runtime_js"
 
       # The workflow repository itself is NOT implicitly present on the
       # runner of a reusable workflow call. Dockerfile.backend-sdk lives in
