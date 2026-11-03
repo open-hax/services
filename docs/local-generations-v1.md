@@ -69,7 +69,9 @@ Nullable values explicitly use `null`; absent is not null. Wire keys are ASCII
 strings; pure Clojure maps may use corresponding unqualified keywords only at
 the facade edge. JSON rejects duplicate keys, NaN, floats, trailing data and
 non-UTF-8. No tags, executable reader forms or native host objects. Integer
-range is 0..9007199254740991. Strings exclude NUL and unpaired surrogates.
+range is 0..9007199254740991 **only for fields typed `int`**. Native wide
+observations use the lossless decimal-string types below, never JSON numbers.
+Strings exclude NUL and unpaired surrogates.
 Inputs are bounded: 64 artifacts, 1 MiB per file, 8 MiB total decoded payload,
 16 MiB wire, 16 path components, 128 bytes per component; oversized inputs deny
 before target writes. IDs are nonempty ASCII `[a-z0-9][a-z0-9-]{0,63}`.
@@ -79,12 +81,19 @@ Types (closed recursively):
 | Type | Exact fields and constraints |
 | --- | --- |
 | Pin | `id:ID, repo:string, revision:SHA40, digest:SHA256` |
-| Identity | `device:int, inode:int, mode:int, uid:int, gid:int, size:int, mtime_ns:int, ctime_ns:int, sha256:SHA256-or-null` |
+| U64 | canonical decimal string, `0` or `[1-9][0-9]{0,19}`, numeric range 0..18446744073709551615 |
+| NS64 | canonical signed decimal string, `0` or `-?[1-9][0-9]{0,18}`, numeric range -9223372036854775808..9223372036854775807 |
+| Identity | `device:U64, inode:U64, mode:int, uid:int, gid:int, size:int, mtime_ns:NS64, ctime_ns:NS64, sha256:SHA256-or-null` |
 | Anchor | `components:[string], identities:[Identity]` equal-length chain from `/`, no symlink; component identities bind device/inode/type/uid/gid/mode, not directory size/timestamps |
 | Artifact | `path:[component], format:"edn"|"bash-env", bytes_b64:string, sha256:SHA256, mode:384, renderer:Pin, validator:Pin, descriptor_b64:string, descriptor_sha256:SHA256` |
 | Manifest | `schema:"services.local-manifest/v1", owner:ID, generation:ID, artifacts:[Artifact]` |
 | Selection | `schema:"services.local-selection/v1", owner:ID, generation:ID, manifest_sha256:SHA256` |
-| Observation | `anchor:Anchor, envelope:Identity, lock:Identity, current:Identity-or-null, selection:Selection-or-null, owned_tree_sha256:SHA256, destination:Identity-or-null` |
+| Metadata | `mode:int, uid:int, gid:int, mtime_ns:NS64, xattrs:[{name_b64:string,value_b64:string}]` sorted by raw attribute name; includes ACL xattrs |
+| TreeEntry | `path:[component], identity:Identity, metadata:Metadata` for every node, including generation root at empty path |
+| TreeProof | `selection:Selection, root_identity:Identity, entries:[TreeEntry], tree_sha256:SHA256` with complete path-sorted inventory, no missing/extra nodes |
+| NewDestination | `kind:"new", identity:null` |
+| RetainedDestination | `kind:"retained", proof:TreeProof` |
+| Observation | `anchor:Anchor, envelope:Identity, lock:Identity, current:Identity-or-null, selection:Selection-or-null, owned_tree_sha256:SHA256, destination:NewDestination-or-RetainedDestination` |
 | Plan | `schema:"services.local-plan/v1", operation:"apply"|"rollback", owner:ID, root:[component], services:Pin, policy_sha256:SHA256, manifest:Manifest, expected:Observation, prior_manifest_sha256:SHA256-or-null, created_at:int, expires_at:int, nonce:ID` |
 | Approval | `schema:"services.local-approval/v1", plan_sha256:SHA256, services_revision:SHA40, owner:ID, root_sha256:SHA256, operation:"apply"|"rollback", expected_generation:ID-or-null, policy_sha256:SHA256, issued_at:int, expires_at:int, approver:ID, nonce:ID` |
 | Seed | `owner:ID, root:[component], services:Pin, policy_sha256:SHA256, manifest:Manifest, operation:"apply"|"rollback", expected_generation:ID-or-null, created_at:int, expires_at:int, nonce:ID` |
@@ -96,8 +105,17 @@ Types (closed recursively):
 Action enum is `preview, check, apply, rollback`. Base64 is canonical RFC4648
 standard alphabet with required padding and no whitespace; decode/re-encode
 equality is mandatory. SHA40/SHA256 mean lowercase exact-length hex, never
-branch names. Times are
-UTC Unix milliseconds. `mode:384` means 0600, not a caller-selectable mode.
+branch names. Plan/approval/clock fields typed `int` are nonnegative UTC Unix
+milliseconds; native `mtime_ns`/`ctime_ns` are signed UTC Unix **nanoseconds**
+as NS64 strings, including exact pre-epoch values. No negative zero, leading
+plus/zeros, whitespace, exponents, clamping, rounding or millisecond downgrade.
+Outside NS64/U64 bounds is unsupported and denies before target mutation.
+Python converts native integers directly to canonical decimal strings; BB
+preserves those strings through JSON, comparison and hashing, never via double
+or JS Number. NS64/U64 hash as the ordinary `S` string encoding below, not `I`.
+Device/inode use full unsigned 64-bit range; mode/uid/gid fit `int` unchanged.
+Native sizes must fit `int` and the admitted byte limits; out-of-range sizes
+deny rather than truncate. `mode:384` means 0600, not a caller-selectable mode.
 Components reject empty, `.`, `..`, slash, backslash, control characters;
 artifact paths are distinct, prefix-free, case-sensitive and relative only to
 payload. Reserved envelope names cannot be artifact paths. No links, devices,
@@ -108,6 +126,13 @@ mode/uid/gid/mtime and xattrs, including ACL xattrs where present. It excludes
 atime/ctime/inode as restoration equality, but records them as drift evidence.
 Atime is neither promised stable on read nor restored. Unknown/unreadable
 metadata, nested mounts or inability to restore accepted metadata denies.
+TreeProof is limited to 1100 nodes and 1 MiB total decoded xattr names/values;
+each xattr value is at most 64 KiB. Unrepresentable or oversized existing trees
+deny at preview/admission, not after starting a transaction. Each entry binds
+byte hash/type/identity and exact accepted Metadata, not just manifest intent.
+Tree hash is computed from the path-sorted entries' path, type, byte hash and
+Metadata, excluding physical identity fields as restoration equality; complete
+Identity remains separately mandatory for pre-mutation drift detection.
 
 Hashing is versioned domain-specific data encoding, **not** ambient JSON order
 or Clojure `hash`: null=`N`; false=`F`; true=`T`; integer=`I<decimal>;`;
@@ -173,7 +198,15 @@ verification. `current` is a regular file containing Selection, **not a
 symlink**. The one atomic selection point is replacement of `current` inside
 its anchored envelope. There is no multi-file in-place overwrite of consumer
 destinations. A previous generation is retained untouched; v1 has no GC API.
-Rollback selects a previously retained and fully verified generation only.
+Rollback selects a previously retained and fully verified generation only,
+distinct from the current generation. Apply binds `destination:NewDestination`
+and requires its proposed name absent. Rollback binds
+`destination:RetainedDestination` with the complete existing target proof;
+Plan.manifest must exactly equal that retained target's manifest. It requires
+the target present and matching, never absent. Both observations are covered
+by the plan hash and therefore exact approval; operation/target proof changes
+invalidate approval. Rollback never creates, rebuilds, rewrites or deletes its
+retained target. Only current selection and transaction-owned state may change.
 Observation `owned_tree_sha256` covers the selected generation's manifest,
 payload and accepted metadata only (a fixed hash of null when unselected),
 not changing lock/journal state. Candidate destination is the proposed
@@ -201,14 +234,20 @@ descriptor-relative opens; verify fstat against lstat from its held parent.
 Keep all ancestor descriptors and the stable lock descriptor alive throughout
 the transaction. Take exclusive `flock` before selecting or mutating owned
 state. Revalidate the entire chain, marker, lock name/inode, current inode/
-bytes/metadata, prior complete generation tree and candidate destination absence
+bytes/metadata, prior complete generation tree and operation-specific destination
 after acquiring the lock and **immediately before each mutating syscall**.
 Revalidate after it too. Legitimate changes made by this transaction update a
 tracked expected state, not a blanket drift bypass. Never reopen via resolved
 absolute strings, follow a symlink or trust a preview's cached descriptor.
 
-The destination generation must be absent at preview and write admission;
-an already present name is not an idempotent success. Existing current/ancestor/
+For apply the destination generation must be absent at preview and write
+admission; an already present name is not an idempotent success or implicit
+rollback. After its own exclusive creation, only its recorded transaction-owned
+identity may exist. For rollback the complete retained target identity, byte
+hashes and accepted metadata must match the bound TreeProof at preview,
+admission, every final mutation check and postcheck; same bytes/new inode still
+deny. There is no destination creation/build stage in rollback.
+Existing current/ancestor/
 destination replacement, even with identical bytes, denies before the next
 otherwise-working write. Partial path creation uses exclusive mkdir/open;
 final state uses descriptor-relative rename only within held directories.
@@ -232,15 +271,44 @@ after preview and just before the final check to prove real write-edge denial.
 
 ## 6. Durable transaction and actual recovery
 
-All mutation requires a durable transaction record before the first artifact
-write. Journal shape is closed `services.local-journal/v1` with exact keys:
+All mutation requires a durable recovery capsule and transaction record before
+the first artifact or selection mutation. RecoveryCapsule is closed
+`services.local-recovery/v1` with exact keys: `schema, transaction:ID,
+plan:Plan, approval:Approval, policy:Policy, plan_sha256:SHA256,
+approval_sha256:SHA256, policy_sha256:SHA256, services:Pin,
+before:Selection-or-null, before_current:Identity-or-null,
+before_current_bytes_b64:string-or-null, before_metadata:Metadata-or-null,
+old_tree:TreeProof-or-null, rollback_target:TreeProof-or-null`.
+Policy is the complete closed owner policy from §3. `old_tree` is null only
+when unselected; otherwise it must agree with Plan.expected.selection and
+owned_tree_sha256. `rollback_target` is null for apply, and must equal the
+Plan.expected retained destination proof for rollback. Current bytes/metadata
+are the exact admitted snapshot, not re-collected recovery authority. Hashes,
+source/policy pin, root/owner/operation, old selection and all duplicated proof
+fields must agree; capsule approval was validated before persistence. Bound
+capsule wire size is 32 MiB including its embedded Plan/approval/policy/proofs;
+oversize denies before mutation. No recovery record may embed unbounded data.
+
+Under the exclusive stable lock, exclusively create a transaction directory,
+write its immutable `recovery` capsule with no-follow/exclusive open, fsync
+capsule, then transaction directory and `transactions/`. Before any generation
+or selection write, persist/fsync the initial journal binding the capsule's
+exact hash and Identity, then fsync its parent. Only transaction setup/state
+writes may precede this boundary; any capsule persistence/fsync failure leaves
+old selection/trees untouched and refuses normal work. Incomplete setup is an
+explicit hold, not an adopted transaction. Capsule owner/mode/single-link and
+anchored directory custody must match policy. No capsule replacement or GC:
+retain it for the entire journal/nonce lifetime, including committed/restored
+transactions. Journal updates never edit capsule bytes.
+
+Journal shape is closed `services.local-journal/v1` with exact keys:
 `schema, transaction:ID, plan_sha256, approval_sha256, nonce, owner, services:Pin,
-policy_sha256, before:Selection-or-null, before_current:Identity-or-null,
+policy_sha256, capsule_sha256:SHA256, capsule_identity:Identity,
+before:Selection-or-null, before_current:Identity-or-null,
 before_current_bytes_b64:string-or-null, before_metadata:Metadata-or-null,
 candidate:Selection, stage, operations:[Operation], first_failure:Failure-or-null,
 recovery_failures:[Failure], last_time:int`.
-Metadata has `mode, uid, gid, mtime_ns, xattrs:[{name_b64,value_b64}]` sorted by
-raw name, preserving ACLs as bytes. Operation has `index:int, kind:enum,
+Metadata is the closed lossless type in §3. Operation has `index:int, kind:enum,
 path:[component], before:Identity-or-null, after:Identity-or-null,
 state:"pending"|"succeeded"|"failed"|"uncertain"`.
 Stage enum: `prepared, building, verified, selecting, selected, committed,
@@ -252,25 +320,39 @@ anchored exclusive temporary names; failure handling must not recurse forever.
 | Stage/effect | Required action and compensation |
 | --- | --- |
 | Admission | No target writes on denial; no journal before valid approval and drift checks. |
-| Prepared | Persist old selection bytes/metadata and exact immutable generation proof; reserve nonce durably. Interrupted preparation never changes selection. |
-| Building | Create only recorded candidate subtree, write all manifest/payload files, preserve old tree unchanged. A partial write/fsync/mkdir failure restores old selection and removes only verified transaction-owned new entries. |
-| Verified | Read back all hashes, metadata and validator outcomes; fsync files and directories bottom-up. Candidate is not selected. Failure has the same compensation. |
+| Prepared | Durably bind the complete recovery capsule, old selection/tree and operation-specific target proof; reserve nonce durably. Interrupted preparation never changes selection. |
+| Building | Apply only: create the recorded new candidate subtree and write manifest/payload, preserving old tree unchanged. On partial failure restore old selection and remove only verified transaction-created entries. Rollback skips Building entirely and must not create/rebuild/delete either retained tree. |
+| Verified | Apply: read back hashes/metadata/validators and fsync files/directories bottom-up. Rollback: reverify the complete retained target against its capsule proof without writing that tree. Target is not yet selected. Failure compensates to the old selection. |
 | Selecting | Persist pending selection intent; exclusive temp current with old metadata policy where required, fsync it, revalidate chain/current, rename current, fsync envelope. Failure after rename still requires restoration, not presumed success. |
 | Selected | Verify exact new selection and candidate, old retained tree and chain; durably record commit. If any verification/commit durability fails, restore exact old selection. |
 | Committed | Return applied/rolled-back only after durable record and verified postconditions. Retain nonce/journal; never clear the only evidence to make retry possible. |
-| Restoring | Under the same lock restore old current bytes and accepted metadata via anchored exclusive temp/rename/fsync; first apply restores **absence**, not a made-up generation. Verify old tree hash and selection; then clean only proved transaction-owned candidate files. |
+| Restoring | Under the same lock restore old current bytes/accepted metadata via anchored exclusive temp/rename/fsync; first apply restores **absence**. On failed rollback A from B, restore B, never rewrite A/B trees. Verify old tree and selection against capsule proof. Cleanup authority is only proved transaction-created temporaries and, for apply alone, its proved newly created candidate entries; never a retained rollback target. |
 | Restored | Return failed-restored with immutable first cause plus recovery evidence. Previous owned generation content/metadata/selection restored; transaction journal/consumed nonce intentionally remain. |
 | Held | If identity/custody, rollback, journal or fsync outcome is uncertain, stop normal writes and block all subsequent mutations. Never overwrite foreign/replaced current to force recovery; record failures separately if durable reporting remains possible. |
 
 Startup/re-entry takes the same lock and inspects every known incomplete owner
-journal before admission. A valid pending operation is resolved by comparing
+journal before admission, with **no original caller Plan/approval required**.
+The fixed trusted launcher supplies its pinned policy/source custody, not new
+mutation approval. Load the anchored immutable capsule named by the journal;
+verify its recorded inode/device/type/mode/uid/gid/hash, complete closed shape,
+all duplicated bindings, and exact trusted policy/Services revision. Missing,
+torn, unknown, replaced (even identical bytes/new inode), unreadable or wrong-pin
+capsule holds before normal work. The journal's originally validated approval
+is historical recovery evidence; expiry/replay blocks new work but does not
+prevent compensation of its own interrupted transaction. A valid pending
+operation is resolved by comparing
 the exact recorded pre/post identities and bytes; only a unique proven outcome
 permits recovery. Kill at each pending/completed boundary must run real
 restoration on re-entry, not simply report refusal. Ambiguous/torn/malformed
 journal, missing old generation, foreign files or unreadable metadata holds;
 no automated clear/retry/force API. Successful recovery does not authorize the
-interrupted new selection. Recovery uses the journal's already-admitted plan,
-not a fresh approval of new work. Independent rollback after committed success
+interrupted new selection. Recovery uses only the capsule's admitted Plan,
+approval and persisted old-tree/retained-target proof, never current observations
+as new authority. Compare old payload mtime/xattrs/bytes/physical identities to
+pre-crash proof before restoring current; changed retained facts hold, not adopt
+or repair an unknown writer's state. An otherwise unchanged retained tree allows
+actual selection/metadata restoration after crash, from persisted bytes alone.
+Independent rollback after committed success
 is a new approved transaction selecting retained old bytes.
 
 Restoration equality means selected generation ID, all previous owned payload
@@ -311,9 +393,16 @@ a validator proving malformed Bash.
    bytes/hash/descriptor/manifest mismatches, bounds, Unicode and canonical hash
    agreement in BB and Python. Every approval field independently changed;
    wrong revision, forged policy, null approval, expiry/clock reversal/replay.
+   Include BB/Python identical roundtrip/hash of native timestamp
+   `1793735800379596064` and its adjacent nanoseconds; pre-epoch negative NS64,
+   zero, both signed bounds and full U64 device/inode bounds. Reject malformed
+   decimals, overflow and numeric rather than string wide fields. Prove adjacent
+   nanoseconds change drift/plan identity; positive real stat admission must not
+   modify the observed timestamp to fit the schema.
 2. Positive inert EDN fixture: preview/check zero mutation calls, apply creates
    exact payload, selects it, then second distinct apply and explicitly approved
-   rollback select the original. Assert all bytes/accepted metadata and old
+   rollback select retained A at its original name after A→B, without rebuilding
+   A. Assert all bytes/accepted metadata and old
    generation retention. Future Bash positive only with separately reviewed
    parent-supplied shx renderer/validator pins and entry; never mock availability.
 3. Dirty owned tree/current/metadata, malformed marker/journal, symlink/hardlink,
@@ -324,6 +413,8 @@ a validator proving malformed Bash.
    check. Pair every refusal with an otherwise identical successful write.
    Include rename to same bytes/new inode, lock replacement and concurrent
    Services processes: one serial winner, stale loser; no split lock admission.
+   Rollback target bytes/mtime/xattrs/inode replacement refuses paired with
+   otherwise-working rollback; pre-existing apply destination still denies.
 5. Fault **every mutating operation and durability boundary**: short writes,
    interrupted writes, file/dir fsync, metadata restoration, temp open, mkdir,
    rename, unlink and journal update; inject failure before and after native
@@ -333,6 +424,12 @@ a validator proving malformed Bash.
    automatic repeat and no unrelated mutation. Journal-creation failure before
    durable intent must leave old selection unchanged; commit-record ambiguity
    must never become an implicit retry. Test both apply and rollback paths.
+   Every rollback selection/durability failure must restore B and preserve both
+   retained A and B. SIGKILL after durable intent and current rename must recover
+   in a fresh process given no original request/Plan, using capsule proof only.
+   Drift old retained mtime/xattrs after kill and assert hold without adopting
+   them. Absent/torn/replaced capsule holds; capsule write/fsync failure precedes
+   artifact/selection mutation and leaves the old selection unchanged.
 6. Prove zero lifecycle effects via denied process/network call instrumentation;
    fixed facade/validator transport is explicitly allowlisted in the harness.
    No Bash eval/syntax subprocess is needed for opaque byte validation.
@@ -353,6 +450,19 @@ coverage so mocked syscalls cannot be the sole rollback evidence.
    tests; GREEN smallest fixed adapter. A discovered impossibility or need for
    API change returns to planning review, not an undocumented implementation
    choice. Run tests, owner static gates and independent adversarial code review.
+   **Known environment blocker is not waived:** planning acceptance permits
+   RED/new implementation while the missing verified Caddy tool stays separately
+   tracked. FINAL GREEN qualification, owner acceptance and consumer handoff
+   remain blocked until the authorized environment supplies verified
+   `CADDY_TEST_BINARY` and the full required owner environment suite is rerun
+   on the exact final candidate with zero failures/errors, executing both
+   `EnvironmentCaddyTest` and `ManagedAxxiumCaddyTest`. Record actual final test
+   and class counts, not an assumed historical 123. Focused 29-test/static/
+   370-resource BB evidence is not a waiver or aggregate full-suite pass.
+   Required JVM workflow/static gates likewise remain required; an unavailable
+   tool is an explicit blocker, never a pass. No automatic tool download/install
+   is authorized; changing required gates needs separate explicit owner
+   disposition. No such waiver is supplied here.
 3. Qualification handoff must contain full Services source SHA, contract v1,
    exact facade and OS-edge entry/argv/protocol, policy/adapter hashes, available
    format list, independent validator/source pins, exact fixture commands/results,
@@ -374,6 +484,10 @@ On the base above, before edits:
   'test_environment*.py'`: 123 tests run; **FAILED, 2 setUpClass errors** because
   verified `CADDY_TEST_BINARY` is unavailable. No network download/install was
   attempted. This is not a passing full owner baseline.
+  This unresolved environment blocker explicitly prevents FINAL GREEN
+  qualification/owner acceptance/handoff as specified in §9, though independently
+  accepted planning may admit RED/new implementation. No automatic download or
+  install is permitted to clear it.
 * Deployment boundary self-test and scan, immutable source-pin check and
   deploy-chain check: passed. `clj-kondo --lint scripts/check-edn-contracts.clj`:
   0 errors, 0 warnings. `bash -n` on existing DO library/scripts/service scripts:
@@ -393,8 +507,29 @@ errors. The static gates above passed again, as did `git diff --check` and
 additional offline parser check, not a claim that the workflow's JVM invocation
 or the missing Caddy gate ran. No deploy/network/install commands were run.
 
-Planning reviewer must explicitly accept or revise: envelope-only selection
-versus arbitrary file installation; cooperative/private sandbox race limits;
-logical metadata restoration rather than inode/ctime/atime equality; trusted
-approval-channel rather than signatures; BB pure facade plus Python OS edge.
-These are deliberate bounded proposals, not implicit operator approvals.
+Independent v1 review found envelope-only selection, cooperative/private sandbox
+race limits, logical restoration rather than inode/ctime/atime equality, trusted
+approval channel and BB/Python runtime appropriate for this scope. Those choices
+remain unchanged. Its four correction findings still require exact revised-head
+confirmation before implementation; accepted choices are not overall approval.
+
+## 11. Planning review correction trace
+
+Independent review `services-generation-plan-review-v1.edn` requested changes
+on `ebe5a49f00cfc3fb1501955d8707e6076cf7dc81`; this revision addresses only its
+four findings, without granting implementation or claiming reviewer acceptance:
+
+* **LG-P1-1:** §3 U64/NS64 lossless canonical strings and hashing; §8.1 parity,
+  adjacent-nanosecond/bounds/pre-epoch/real-stat acceptance tests.
+* **LG-P1-2:** §3 operation-specific Destination proofs; §4/§5 admission;
+  §6 Building/Verified/Restoring distinguish new apply from retained rollback;
+  §8.2/4/5 require actual A→B→rollback-A and preservation of both trees.
+* **LG-P1-3:** §6 immutable bounded RecoveryCapsule, custody/fsync/lifetime,
+  fresh-process proof-only compensation and unknown/replaced/torn holds;
+  §8.5 crash, metadata drift and persistence-failure tests.
+* **LG-P2-4:** §9 exact-candidate full-suite/Caddy/JVM/static qualification
+  blocker and no implicit waiver; §10 keeps the failing baseline visible.
+
+Parent standalone prerequisite card is `3f5d0052-dda2-4089-971d-8603e385bd77`;
+parent owns its state/admission. Same independent reviewer must confirm this
+revised plan before RED/GREEN. No new user decision is requested by these fixes.
