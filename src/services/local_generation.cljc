@@ -139,7 +139,7 @@
                       "before_current_bytes_b64" (nullable :string) "before_metadata" (nullable "metadata")
                       "candidate" "selection" "stage" (enum "prepared" "building" "verified" "selecting" "selected"
                                                                "committed" "restoring" "restored" "held")
-                      "operations" [:vector "operation"] "first_failure" (nullable "failure")
+                       "operations" [:vector "operation" 10000] "first_failure" (nullable "failure")
                       "recovery_failures" [:vector "failure"] "last_time" :int})})
 
 (defn- component? [s]
@@ -179,7 +179,7 @@
        (case (first shape)
          :enum (if (some #(= value %) (rest shape)) [] fail)
          :or (if (some #(empty? (errors % value path)) (rest shape)) [] fail)
-         :vector (if (and (vector? value) (<= (count value) 1100))
+          :vector (if (and (vector? value) (<= (count value) (get shape 2 1100)))
                    (into [] (mapcat (fn [[i v]] (errors (second shape) v (conj path i)))) (map-indexed vector value))
                    fail)
          fail)

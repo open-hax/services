@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from scripts.tests.test_local_generation_law import canonical
 
@@ -162,7 +163,11 @@ class LocalGenerationTest(unittest.TestCase):
         cases = [dict(request, approval=None), dict(request, unexpected=True)]
         for key in request["approval"]:
             bad = copy.deepcopy(request)
-            bad["approval"][key] = None
+            # First apply legitimately has expected_generation:null. Assigning
+            # null again did not mutate that approval and contradicted the
+            # positive fixture. Every case must actually change its field.
+            bad["approval"][key] = None if request["approval"][key] is not None else "forged-generation"
+            self.assertNotEqual(bad, request)
             cases.append(bad)
         for bad in cases:
             before = fixture_snapshot(self.root)
@@ -212,6 +217,38 @@ class LocalGenerationTest(unittest.TestCase):
             cwd=SCRIPTS.parent, timeout=15, check=True)
         self.assertEqual(json.loads(process.stdout), [canonical(v) for v in values])
 
+    def test_fixed_bb_facade_real_positive_and_source_custody(self):
+        from local_generation_runner import SOURCES
+        owner = {"schema": "services.local-launch/v1", "policy": self.policy,
+                 "revision": self.revision,
+                 "sources": [{"id": name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+                             for name, path in sorted(SOURCES.items())],
+                 "python_sha256": hashlib.sha256(Path('/usr/bin/python3').read_bytes()).hexdigest()}
+        def invoke(request, launch):
+            with tempfile.TemporaryFile() as channel:
+                channel.write(json_bytes(launch))
+                channel.seek(0)
+                descriptor = channel.fileno()
+                return subprocess.run(['bb', str(SCRIPTS / 'local-generation.clj')],
+                    input=json_bytes(request), capture_output=True, timeout=45,
+                    pass_fds=(descriptor, 3), preexec_fn=lambda: os.dup2(descriptor, 3))
+        request = {"schema": "services.local-preview/v1", "action": "preview", "seed": self.seed('facade')}
+        before = fixture_snapshot(self.root)
+        result = invoke(request, owner)
+        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        self.assertEqual(result.stderr, b'')
+        plan = json.loads(result.stdout)['plan']
+        self.assertEqual(before, fixture_snapshot(self.root))
+        bad = copy.deepcopy(owner)
+        bad['sources'][0]['sha256'] = '0' * 64
+        result = invoke(self.request(plan), bad)
+        self.assertEqual(result.returncode, 5, result.stdout)
+        self.assertEqual(before, fixture_snapshot(self.root))
+        result = invoke(self.request(plan), owner)
+        self.assertEqual(result.returncode, 0, (result.stdout, result.stderr))
+        self.assertEqual(json.loads(result.stdout)['status'], 'applied')
+        self.assertEqual(self.selection()['generation'], 'facade')
+
     def test_each_partial_effect_restores_or_holds_without_losing_retained_trees(self):
         for operation in ("apply", "rollback"):
             probe = LocalGenerationTest()
@@ -250,6 +287,246 @@ class LocalGenerationTest(unittest.TestCase):
                         self.assertEqual(trees[generation], fixture_snapshot(fixture.root / "generations" / generation), event)
                 finally:
                     fixture.doCleanups()
+
+    def kill_selection(self, operation='apply'):
+        request = self.request(self.plan('a' if operation == 'rollback' else 'killed', operation))
+        worker = ('import json, os, signal, sys\nfrom local_generation_fs import Engine\n'
+                  'p, r = json.load(sys.stdin)\ne = Engine(p, p["services"]["revision"])\n'
+                  'def stop(event):\n'
+                  '    if event == "after:current-rename": os.kill(os.getpid(), signal.SIGKILL)\n'
+                  'e._test_hook = stop\ne.execute(r)\n')
+        process = subprocess.run([sys.executable, '-c', worker],
+            input=json.dumps([self.policy, request]), text=True, capture_output=True,
+            env={'PATH': os.environ['PATH'], 'PYTHONPATH': str(SCRIPTS), 'PYTHONDONTWRITEBYTECODE': '1'}, timeout=20)
+        self.assertEqual(process.returncode, -9, process.stderr)
+
+    def test_killed_rollback_restores_b_preserves_both_retained_trees(self):
+        self.apply('a')
+        self.apply('b')
+        before = self.selection()
+        trees = {g: fixture_snapshot(self.root / 'generations' / g) for g in ('a', 'b')}
+        self.kill_selection('rollback')
+        with fs.Engine(self.policy, self.revision) as fresh:
+            result = fresh.recover()
+        self.assertEqual(result['status'], 'failed-restored', result)
+        self.assertEqual(before, self.selection())
+        for generation, tree in trees.items():
+            self.assertEqual(tree, fixture_snapshot(self.root / 'generations' / generation))
+
+    def test_durable_old_proof_refuses_mtime_and_xattr_adoption_after_kill(self):
+        for mutation in ('mtime', 'xattr'):
+            fixture = LocalGenerationTest()
+            fixture.setUp()
+            try:
+                fixture.apply('a')
+                fixture.kill_selection()
+                path = fixture.root / 'generations/a/payload/config.edn'
+                if mutation == 'mtime':
+                    s = path.stat()
+                    os.utime(path, ns=(s.st_atime_ns, s.st_mtime_ns + 1))
+                else:
+                    os.setxattr(path, 'user.fixture-drift', b'foreign')
+                before = fixture_snapshot(fixture.root)
+                with fs.Engine(fixture.policy, fixture.revision) as fresh:
+                    result = fresh.recover()
+                self.assertEqual(result['status'], 'held', (mutation, result))
+                self.assertIsNone(result['target_writes'])
+                self.assertEqual(before, fixture_snapshot(fixture.root))
+            finally:
+                fixture.doCleanups()
+
+    def test_capsule_missing_torn_or_identical_replacement_holds(self):
+        for mutation in ('missing', 'torn', 'replaced'):
+            fixture = LocalGenerationTest()
+            fixture.setUp()
+            try:
+                fixture.apply('a')
+                fixture.kill_selection()
+                path = next(p / 'recovery' for p in (fixture.root / 'transactions').iterdir()
+                            if json.loads((p / 'journal').read_bytes())['stage'] == 'selecting')
+                if mutation == 'missing':
+                    path.unlink()
+                elif mutation == 'torn':
+                    path.write_bytes(b'{')
+                else:
+                    replacement = path.parent / 'fixture-replacement'
+                    replacement.write_bytes(path.read_bytes())
+                    replacement.chmod(0o600)
+                    os.replace(replacement, path)
+                before = fixture_snapshot(fixture.root)
+                with fs.Engine(fixture.policy, fixture.revision) as fresh:
+                    result = fresh.recover()
+                self.assertEqual(result['status'], 'held', (mutation, result))
+                self.assertEqual(before, fixture_snapshot(fixture.root))
+            finally:
+                fixture.doCleanups()
+
+    def test_final_ancestor_lock_and_destination_races_pair_with_positive(self):
+        for mutation in ('ancestor', 'lock', 'destination'):
+            fixture = LocalGenerationTest()
+            fixture.setUp()
+            try:
+                fixture.apply('a')
+                request = fixture.request(fixture.plan('b'))
+                fired = []
+                def replace(event):
+                    if event != 'before:transaction-mkdir' or fired:
+                        return
+                    fired.append(event)
+                    if mutation == 'ancestor':
+                        os.rename(fixture.root, fixture.root.parent / 'displaced')
+                        fixture.root.mkdir(mode=0o700)
+                    elif mutation == 'lock':
+                        replacement = fixture.root / 'fixture-lock'
+                        replacement.touch(mode=0o600)
+                        os.replace(replacement, fixture.root / 'lock')
+                    else:
+                        (fixture.root / 'generations/b').mkdir(mode=0o700)
+                fixture.engine._test_hook = replace
+                result = fixture.engine.execute(request)
+                self.assertTrue(fired)
+                self.assertEqual(result['status'], 'denied', (mutation, result))
+                self.assertEqual(result['target_writes'], 0)
+                self.assertEqual(fixture.unrelated.read_bytes(), b'not-services-owned')
+            finally:
+                fixture.doCleanups()
+        # Identical non-raced baseline is an actual write, not a refusal stub.
+        self.apply('a')
+        self.apply('b')
+
+    def test_concurrent_cooperating_workers_have_one_serial_winner(self):
+        request = self.request(self.plan('race'))
+        worker = ('import json, sys\nfrom local_generation_fs import Engine\n'
+                  'p, r = json.load(sys.stdin)\n'
+                  'with Engine(p, p["services"]["revision"]) as e:\n'
+                  '    print(json.dumps(e.execute(r)))\n')
+        workers = [subprocess.Popen([sys.executable, '-c', worker], stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            env={'PATH': os.environ['PATH'], 'PYTHONPATH': str(SCRIPTS), 'PYTHONDONTWRITEBYTECODE': '1'}) for _ in range(2)]
+        try:
+            for process in workers:
+                process.stdin.write(json.dumps([self.policy, request]))
+                process.stdin.close()
+                process.stdin = None
+            results = []
+            for process in workers:
+                output, error = process.communicate(timeout=30)
+                self.assertEqual(process.returncode, 0, error)
+                self.assertEqual(error, '')
+                results.append(json.loads(output))
+            self.assertEqual(sorted(r['status'] for r in results), ['applied', 'denied'])
+            self.assertEqual(next(r['target_writes'] for r in results if r['status'] == 'denied'), 0)
+            self.assertEqual(self.selection()['generation'], 'race')
+        finally:
+            for process in workers:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+
+    def test_no_network_shell_or_general_subprocess_on_actual_apply(self):
+        original = subprocess.run
+        seen = []
+        def allow_law(argv, **kwargs):
+            self.assertEqual(argv[:3], ['/usr/local/bin/bb', '-cp', str(SCRIPTS.parent / 'src')])
+            self.assertEqual(argv[3], str(SCRIPTS / 'local-generation-laws.clj'))
+            self.assertIn(argv[4], ('schemas', 'approval'))
+            self.assertFalse(kwargs.get('shell', False))
+            self.assertEqual(kwargs['timeout'], 10)
+            seen.append(argv[4])
+            return original(argv, **kwargs)
+        with mock.patch('subprocess.run', side_effect=allow_law), \
+             mock.patch('socket.socket', side_effect=AssertionError('network forbidden')), \
+             mock.patch('os.system', side_effect=AssertionError('shell forbidden')):
+            self.apply('instrumented')
+        self.assertIn('approval', seen)
+
+    def test_unknown_generation_is_not_adopted_as_owned_state(self):
+        foreign = self.root / 'generations/foreign'
+        foreign.mkdir(mode=0o700)
+        before = fixture_snapshot(self.root)
+        result = self.engine.preview(self.seed('a'))
+        self.assertIn(result['status'], ('denied', 'held'), result)
+        self.assertEqual(result['target_writes'], 0)
+        self.assertEqual(before, fixture_snapshot(self.root))
+
+    def test_independent_native_syscall_recorder_matches_effect_count(self):
+        plan = self.plan('recorded')
+        request = self.request(plan)
+        calls = []
+        def owned(fd):
+            try:
+                path = os.readlink('/proc/self/fd/' + str(fd))
+                return path == str(self.root) or path.startswith(str(self.root) + '/')
+            except OSError:
+                return False
+        def wrap(name):
+            original = getattr(os, name)
+            def observed(*args, **kwargs):
+                target = kwargs.get('dir_fd', kwargs.get('src_dir_fd'))
+                if name in ('pwrite', 'write', 'fsync', 'fchmod', 'fchown', 'setxattr', 'removexattr'):
+                    target = args[0]
+                elif name == 'utime' and isinstance(args[0], int):
+                    target = args[0]
+                mutating = name != 'open' or bool(args[1] & (os.O_CREAT | os.O_TRUNC))
+                if target is not None and owned(target) and mutating:
+                    calls.append(name)
+                return original(*args, **kwargs)
+            return observed
+        with mock.patch.multiple(os, **{name: wrap(name) for name in (
+                'open', 'mkdir', 'pwrite', 'write', 'fsync', 'rename', 'unlink', 'rmdir',
+                'fchmod', 'fchown', 'utime', 'setxattr', 'removexattr')}):
+            preview = self.engine.preview(self.seed('another'))
+            checked = self.engine.execute({'schema': 'services.local-request/v1', 'action': 'check',
+                'plan': plan, 'approval': None, 'plan_sha256': digest(plan)})
+            self.assertEqual(preview['status'], 'previewed', preview)
+            self.assertEqual(checked['status'], 'checked', checked)
+            self.assertEqual(calls, [])
+            result = self.engine.execute(request)
+            self.assertEqual(result['status'], 'applied', result)
+            self.assertGreater(len(calls), 20)
+            self.assertEqual(result['target_writes'], len(calls), calls)
+
+    def test_short_native_writes_are_completed_without_payload_truncation(self):
+        original = os.pwrite
+        shortened = []
+        def short(fd, raw, offset):
+            if not shortened and len(raw) > 1:
+                shortened.append(True)
+                return original(fd, raw[:1], offset)
+            return original(fd, raw, offset)
+        with mock.patch('os.pwrite', side_effect=short):
+            self.apply('short')
+        self.assertTrue(shortened)
+        self.assertEqual((self.root / 'generations/short/payload/config.edn').read_bytes(),
+                         b'{:fixture/value "short"}\n')
+
+    def test_transaction_directory_replacement_never_receives_capsule(self):
+        request = self.request(self.plan('a'))
+        replaced = []
+        def replace(event):
+            if event == 'after:transaction-mkdir' and not replaced:
+                path = next((self.root / 'transactions').iterdir())
+                os.rename(path, path.with_name('foreign-displaced'))
+                path.mkdir(mode=0o700)
+                replaced.append(path)
+        self.engine._test_hook = replace
+        result = self.engine.execute(request)
+        self.assertTrue(replaced)
+        self.assertIn(result['status'], ('denied', 'held'), result)
+        self.assertEqual(list(replaced[0].iterdir()), [])
+        self.assertFalse((self.root / 'current').exists())
+        self.assertEqual(list((self.root / 'generations').iterdir()), [])
+
+    def test_retained_metadata_drift_before_new_preview_is_not_fresh_authority(self):
+        self.apply('a')
+        path = self.root / 'generations/a/payload/config.edn'
+        s = path.stat()
+        os.utime(path, ns=(s.st_atime_ns, s.st_mtime_ns + 1))
+        before = fixture_snapshot(self.root)
+        result = self.engine.preview(self.seed('b'))
+        self.assertIn(result['status'], ('denied', 'held'), result)
+        self.assertEqual(result['target_writes'], 0)
+        self.assertEqual(before, fixture_snapshot(self.root))
 
     def test_actual_sigkill_fresh_process_recovery_without_original_request(self):
         self.apply("a")
