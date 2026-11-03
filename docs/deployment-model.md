@@ -23,7 +23,7 @@ repo had no answer to "what is a service" that survives a service which:
 Writing the answer down is what let `digitalocean/services/website/` be a
 declaration rather than a bespoke script.
 
-## 1. One lane
+## 1. One service deployment lane
 
 Every service is declared for the DigitalOcean lane and deployed to the droplet
 in `digitalocean/hosts/production.yaml` (`open-hax-services-production`,
@@ -50,6 +50,20 @@ active configuration may reintroduce it.
 
 **Model rule 1.** A service is deployable here or not at all. There is no second
 lane to fall back to, and adding one is a change to this document first.
+
+### Proposed bounded local-artifact exception — not activated
+
+The owner expansion proposed in [Local generations v1](local-generations-v1.md)
+is a separate, sandbox-only artifact orchestration boundary. It is not another
+service deployment lane, an OCI receiver extension, or a production exception.
+After independent planning acceptance, Services may implement only explicit
+owned-generation bytes, selection, approval admission and filesystem recovery.
+It does not own shell meaning, application policy, a shared semantic kernel,
+board state, workstation installation or lifecycle commands. Independent code
+review and fixture qualification are separately required before an explicit
+consumer handoff; neither planning acceptance nor that handoff authorizes live
+installation. Until these gates are met, this is proposed architecture only.
+No existing workflow, host, image, receiver or production gate changes.
 
 **Delivery is an image.** `build-images.yml` builds one service image and pushes
 it to GHCR; the host pulls it. Nothing is built on the host and no working tree
@@ -159,11 +173,16 @@ the check exists to catch.
 ## 3. Lifecycle and promotion
 
 ```text
-dev         developer machine; this repo owns nothing
+dev         developer machine; no service runtime ownership
 testing     PR head, shared slot, label-gated exclusive two-hour lease
 staging     successful main merge commit, while still current main
 production  qualified merged application revision, explicitly dispatched
 ```
+
+The proposed local-artifact exception above would own only a specifically
+admitted private sandbox generation envelope, never the developer machine or
+its service runtime. It grants no writes to home configuration or application
+state. The lifecycle and promotion rules below continue to govern services only.
 
 For production stack deployment, use **Run workflow** on `Deploy Stack` with
 `scope: stack` and `knoxx_ref` set to the merged candidate's full 40-character

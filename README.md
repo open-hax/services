@@ -8,6 +8,14 @@ This repository owns the single active production deployment contract for the
 OpenHax service stack: image builds, DigitalOcean host inventory, pinned SSH
 trust, Compose definitions, ingress, deployment order, and live verification.
 
+**Proposed owner boundary (planning only):** the separately scoped
+[sandbox local-generation contract](docs/local-generations-v1.md) proposes
+Services ownership of bounded artifact selection and recovery, not application
+configuration policy. It requires independent owner planning approval before
+implementation and independent code qualification before consumer handoff.
+There is no callable local-generation entry or installed promotion authority yet.
+The DigitalOcean production contract below is unchanged.
+
 Application repositories own application code and tests:
 
 - `open-hax/proxx` — model proxy and credential broker
