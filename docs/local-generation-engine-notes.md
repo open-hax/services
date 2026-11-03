@@ -152,6 +152,19 @@ fresh recovery child, checks every original occurrence and all original
 assertions, and kills only its own native child. No production worker API or
 caller-controlled synchronization was added.
 
+At `7621c985a44c9b7d27ffdb82bf4a74f7c6d1feff`, the expanded aggregate passed
+32 tests, including all 642 occurrence kills with the same 248 restored /
+386 held / 8 checked outcomes. Two additional actual RED cases then exposed
+operational-journal shape failures being reported as ordinary request denials,
+and a restored apply's old intent authorizing a later foreign tree at that
+name. Operational-record failures now retain their first diagnostic cause but
+force a hold/uncertain result. A restored intent no longer supplies retained
+generation ownership. Preview does not emit a stale cached journal hash;
+re-entry resets volatile transaction references before loading durable state.
+Neither correction grants cleanup authority over the reproduced foreign tree.
+Final exact-head verification reports, rather than these earlier checkpoints,
+govern the independent-review candidate.
+
 The first isolated Python facade prototype ignored the environment's bytecode
 suppression and created small local `scripts/__pycache__` artifacts. The fixed
 argv now explicitly uses `-B` and a root-owned absent cache prefix prevents

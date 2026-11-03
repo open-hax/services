@@ -30,9 +30,10 @@ SCHEMAS = None
 
 
 class Denial(Exception):
-    def __init__(self, code='dirty', stage='admission'):
+    def __init__(self, code='dirty', stage='admission', hold=False):
         super().__init__(code)
         self.code, self.stage = code, stage
+        self.hold = hold
 
 
 def law(operation, value=None):
@@ -462,7 +463,7 @@ class Engine:
                   'plan': plan, 'plan_sha256': plan_hash, 'services_revision': self.revision,
                   'before': before, 'after': after, 'target_writes': self.writes,
                   'recovery': recovery, 'first_failure': first, 'recovery_failures': errors or [],
-                  'journal_sha256': wire.digest(self.journal) if self.journal else None}
+                  'journal_sha256': wire.digest(self.journal) if self.journal and action != 'preview' else None}
         shape('result', result)
         return result
 
@@ -487,6 +488,7 @@ class Engine:
 
     def preview(self, seed):
         self.writes = 0
+        self.stage = 'preview'
         try:
             self._seed(seed)
             with self._locked(False):
@@ -501,9 +503,10 @@ class Engine:
                 return self._result('preview', 'previewed', plan, wire.digest(plan),
                                     observed['selection'], observed['selection'])
         except (Denial, OSError, ValueError, subprocess.SubprocessError) as exc:
-            status = ('held' if getattr(exc, 'code', '') == 'recovery-uncertain' else
+            status = ('held' if getattr(exc, 'hold', False) or getattr(exc, 'code', '') == 'recovery-uncertain' else
                       'unavailable' if getattr(exc, 'code', '') == 'unsupported' else 'denied')
-            return self._result('preview', status, first=failure(exc, 'preview'))
+            return self._result('preview', status, first=failure(exc, 'preview'),
+                                recovery='uncertain' if status == 'held' else 'not-needed')
 
     def _hook(self, name):
         if self._test_hook is not None:
@@ -704,6 +707,7 @@ class Engine:
 
     def execute(self, request):
         self.writes = 0
+        self.stage = 'admission'
         if self.tx in self.fds:
             os.close(self.fds.pop(self.tx))
         self.journal = self.capsule = None
@@ -773,11 +777,11 @@ class Engine:
                         return result
         except (Denial, OSError, ValueError, subprocess.SubprocessError) as exc:
             first = failure(exc, self.stage if self.stage != 'input' else 'admission')
-            held = self.writes or getattr(exc, 'code', '') == 'recovery-uncertain'
+            held = self.writes or getattr(exc, 'hold', False) or getattr(exc, 'code', '') == 'recovery-uncertain'
             status = 'held' if held else 'unavailable' if getattr(exc, 'code', '') == 'unsupported' else 'denied'
             return self._result(action, status,
                                 plan_hash=plan_hash, before=before, after=None if held else before, first=first,
-                                recovery='uncertain' if self.writes else 'not-needed')
+                                recovery='uncertain' if held else 'not-needed')
 
     def _transaction(self, plan, approval):
         self.stage = 'prepared'
@@ -936,6 +940,17 @@ class Engine:
         return self._identity(fd)
 
     def _records(self, recover):
+        try:
+            return self._records_checked(recover)
+        except Denial as exc:
+            # An invalid *operational record* is not merely a bad new request.
+            # Preserve its first cause while blocking every new admission.
+            exc.hold = True
+            raise
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            raise Denial(failure(exc, self.stage)['code'], self.stage, hold=True) from exc
+
+    def _records_checked(self, recover):
         """Incomplete setup or malformed/unknown owner state never disappears."""
         seen = set()
         self.known_generations = set()
@@ -1009,7 +1024,8 @@ class Engine:
                             any(e['identity'] != accepted[tuple(e['path'])] for e in actual['entries'])):
                         raise Denial('dirty')
                 seen.add(journal['nonce'])
-                self.known_generations.add(plan['manifest']['generation'])
+                if journal['stage'] != 'restored':
+                    self.known_generations.add(plan['manifest']['generation'])
                 if capsule['before'] is not None:
                     self.known_generations.add(capsule['before']['generation'])
                 self.record_identities[tx] = {'directory': stable(self._identity(txfd)),
@@ -1137,6 +1153,13 @@ class Engine:
 
     def recover(self):
         self.writes = 0
+        self.stage = 'restoring'
+        if self.tx in self.fds:
+            os.close(self.fds.pop(self.tx))
+        self.tx = self.journal = self.capsule = None
+        self.journal_identity = self.journal_temp_identity = self.setup_capsule_identity = None
+        self.created = {}
+        self.candidate_verified = self.pending_plan = None
         try:
             with self._locked(True):
                 self._records(True)

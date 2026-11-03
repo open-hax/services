@@ -133,6 +133,8 @@ class EngineEdgeTest(unittest.TestCase):
         result = f.engine.execute(request)
         self.assertEqual(preview['status'], 'held', preview)
         self.assertEqual(result['status'], 'held', result)
+        self.assertEqual(preview['recovery'], 'uncertain', preview)
+        self.assertEqual(result['recovery'], 'uncertain', result)
         self.assertEqual(preview['target_writes'], 0)
         self.assertEqual(result['target_writes'], 0)
         self.assertEqual(before, fixtures.fixture_snapshot(f.root))
