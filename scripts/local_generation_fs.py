@@ -243,7 +243,7 @@ class Engine:
                  'size': before.st_size, 'mtime_ns': str(before.st_mtime_ns),
                  'ctime_ns': str(before.st_ctime_ns),
                  'sha256': sha(self._bytes(fd)) if stat.S_ISREG(before.st_mode) else None}
-        if os.fstat(fd) != before:
+        if stat.S_ISREG(before.st_mode) and os.fstat(fd) != before:
             # atime can legitimately change on a read; compare relevant fields.
             after = os.fstat(fd)
             if any(getattr(before, k) != getattr(after, k) for k in
@@ -374,6 +374,8 @@ class Engine:
             def walk(fd, path):
                 nonlocal attr_bytes
                 identity, metadata = self._identity(fd), self._metadata(fd)
+                if any(identity[key] != metadata[key] for key in ('mode', 'uid', 'gid', 'mtime_ns')):
+                    raise Denial('dirty')
                 if (int(identity['device']) != self.device or self._mount_id(fd) != self.mount or identity['uid'] != os.getuid() or
                         identity['mode'] & 0o111 and stat.S_ISREG(identity['mode'])):
                     raise Denial('ownership')
@@ -389,6 +391,10 @@ class Engine:
                         s = os.stat(name, dir_fd=fd, follow_symlinks=False)
                         with self._open(fd, name, stat.S_ISDIR(s.st_mode)) as child:
                             walk(child, path + [name])
+                # Retained tree directories DO require complete stable native
+                # observations. Operational ancestors such as /tmp do not.
+                if self._identity(fd) != identity:
+                    raise Denial('dirty')
             walk(tree, [])
             manifest = wire.decode(self._read(tree, 'manifest'))
             self._manifest(manifest)

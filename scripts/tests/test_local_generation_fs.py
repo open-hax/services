@@ -12,6 +12,7 @@ import time
 import unittest
 from unittest import mock
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 from scripts.tests.test_local_generation_law import canonical
 
@@ -528,6 +529,24 @@ class LocalGenerationTest(unittest.TestCase):
         self.assertIn(result['status'], ('denied', 'held'), result)
         self.assertEqual(result['target_writes'], 0)
         self.assertEqual(before, fixture_snapshot(self.root))
+
+    def test_operational_directory_identity_does_not_require_stable_timestamps(self):
+        descriptor = self.engine.chain[1][1]
+        original = os.fstat
+        s = original(descriptor)
+        changed = SimpleNamespace(**{name: getattr(s, name) for name in dir(s) if name.startswith('st_')})
+        changed.st_mtime_ns += 1
+        changed.st_ctime_ns += 1
+        calls = []
+        def observe(fd):
+            if fd == descriptor:
+                calls.append(fd)
+                return s if len(calls) == 1 else changed
+            return original(fd)
+        with mock.patch('os.fstat', side_effect=observe):
+            identity = self.engine._identity(descriptor)
+        self.assertEqual(identity['inode'], str(s.st_ino))
+        self.assertEqual(identity['mtime_ns'], str(s.st_mtime_ns))
 
     def test_fresh_process_sigkill_at_every_positive_native_occurrence(self):
         cases = []

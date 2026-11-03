@@ -100,10 +100,28 @@ object replacement at every final write check. Expand those adversarial
 combinations rather than treating checkpoint discovery alone as full coverage.
 No independent implementation review has occurred in this implementer session.
 
-The checksum-verified Caddy tool and exact required workflow JVM/CLI gates are
-still unavailable. The actual full environment suite remains 123 tests with
-two Caddy setup errors, not a pass. Docker/network/install gates have no new
-authorization. No owner acceptance, consumer handoff or S1B credit follows.
+The original full environment baseline was 123 tests with two Caddy setup
+errors, not a pass. During continuation the owner separately supplied an
+authorized isolated, checksum-verified Caddy 2.8.4 cache. At candidate
+`139cc352ea8dd70fa3191cdfb83945dd17fec7b5`, the actual full environment suite
+then ran 134 tests with zero failures/errors, including both Caddy classes.
+That clears the dependency baseline only, not native-engine or consumer
+qualification; the final candidate still needs its own exact-head rerun.
+The exact required workflow JVM/CLI gate remains unavailable. No system
+installation, daemon/listener start, unrelated network or Docker authority
+follows from the isolated fixture dependency. No owner acceptance, consumer
+handoff or S1B credit follows.
+
+The expanded all-occurrence worker-kill matrix initially found a real
+parallel-fixture failure: 3 of 48 otherwise valid applies failed because the
+native identity reader required `/tmp` timestamps to remain unchanged between
+two fstats. The frozen contract explicitly excludes operational ancestor
+timestamps from custody. A deterministic RED reproduces this exact error.
+The identity reader now uses a single directory observation for operational
+custody, while immutable tree inventory separately checks complete directory
+identity before/after walking and identity/metadata agreement. The deterministic
+case and all 48 disjoint concurrent applies then pass, without weakening
+retained-tree drift checks or the all-occurrence SIGKILL assertions.
 
 The first isolated Python facade prototype ignored the environment's bytecode
 suppression and created small local `scripts/__pycache__` artifacts. The fixed
