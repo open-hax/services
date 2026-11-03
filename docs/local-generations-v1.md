@@ -81,7 +81,7 @@ Types (closed recursively):
 | Pin | `id:ID, repo:string, revision:SHA40, digest:SHA256` |
 | Identity | `device:int, inode:int, mode:int, uid:int, gid:int, size:int, mtime_ns:int, ctime_ns:int, sha256:SHA256-or-null` |
 | Anchor | `components:[string], identities:[Identity]` equal-length chain from `/`, no symlink; component identities bind device/inode/type/uid/gid/mode, not directory size/timestamps |
-| Artifact | `path:[component], format:"edn"|"bash-env", bytes_b64:string, sha256:SHA256, mode:384, renderer:Pin, validator:Pin, descriptor_sha256:SHA256` |
+| Artifact | `path:[component], format:"edn"|"bash-env", bytes_b64:string, sha256:SHA256, mode:384, renderer:Pin, validator:Pin, descriptor_b64:string, descriptor_sha256:SHA256` |
 | Manifest | `schema:"services.local-manifest/v1", owner:ID, generation:ID, artifacts:[Artifact]` |
 | Selection | `schema:"services.local-selection/v1", owner:ID, generation:ID, manifest_sha256:SHA256` |
 | Observation | `anchor:Anchor, envelope:Identity, lock:Identity, current:Identity-or-null, selection:Selection-or-null, owned_tree_sha256:SHA256, destination:Identity-or-null` |
@@ -115,12 +115,17 @@ string=`S<UTF8-byte-length>:<UTF8-bytes>`; vector=`V<count>:` plus encoded
 members; map=`M<count>:` plus encoded key/value pairs sorted by ASCII schema
 key. No whitespace/separators beyond those stated; numbers have no leading
 zero (except 0). Hash is SHA256 of UTF8 `services.local/v1\n` followed by that
-encoding. Hash an Artifact for descriptor identity with `bytes_b64` and
-`descriptor_sha256` omitted; bytes hash is raw decoded bytes. All other hashes
-cover the complete named value, including pins and manifest bytes. No cyclic
+encoding. Artifact `sha256` hashes raw decoded payload bytes;
+`descriptor_sha256` hashes raw decoded descriptor bytes, not a Services
+reinterpretation. The independent format validator consumes that original
+descriptor and payload through its qualified fixed data boundary. Descriptor
+bytes count against the same per-file and aggregate limits; no opaque
+descriptor grants execution authority. All other hashes cover the complete
+named value, including pins and manifest bytes. No cyclic
 hash fields: plan hash is external; root hash covers `root` and `expected.anchor`.
-Missing/extra keys in the descriptor preimage are rejected by its own fixed
-shape. Cross-language vectors must cover Unicode, zero, null, empty vectors,
+Descriptor shape and intent are admitted by the pinned format validator,
+never inferred from its hash alone. Cross-language vectors must cover Unicode,
+zero, null, empty vectors,
 reordered wire keys and all rejection cases before effect implementation.
 
 Owner policy is trusted explicit invocation data, never selected by the
@@ -169,6 +174,12 @@ symlink**. The one atomic selection point is replacement of `current` inside
 its anchored envelope. There is no multi-file in-place overwrite of consumer
 destinations. A previous generation is retained untouched; v1 has no GC API.
 Rollback selects a previously retained and fully verified generation only.
+Observation `owned_tree_sha256` covers the selected generation's manifest,
+payload and accepted metadata only (a fixed hash of null when unselected),
+not changing lock/journal state. Candidate destination is the proposed
+`generations/<generation>` name. Journals and nonce state have separate
+admission checks; a changed operational record cannot be ignored merely
+because the old generation tree hash still matches.
 
 Preview constructs the proposed plan from Seed and read observations, rejecting
 an unexpected prior generation, and returns that complete Plan in Result.
