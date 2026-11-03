@@ -119,3 +119,49 @@ class EngineEdgeTest(unittest.TestCase):
         self.assertEqual(result['first_failure']['code'], 'unsupported', result)
         self.assertEqual(result['target_writes'], 0)
         self.assertEqual(before, fixtures.fixture_snapshot(f.root))
+
+    def test_unknown_closed_journal_field_holds_before_new_admission(self):
+        f = self.fixture
+        f.apply('a')
+        request = f.request(f.plan('b'))
+        journal = next((f.root / 'transactions').iterdir()) / 'journal'
+        value = fixtures.json.loads(journal.read_bytes())
+        value['unknown'] = True
+        journal.write_bytes(fixtures.json_bytes(value))
+        before = fixtures.fixture_snapshot(f.root)
+        preview = f.engine.preview(f.seed('b'))
+        result = f.engine.execute(request)
+        self.assertEqual(preview['status'], 'held', preview)
+        self.assertEqual(result['status'], 'held', result)
+        self.assertEqual(preview['target_writes'], 0)
+        self.assertEqual(result['target_writes'], 0)
+        self.assertEqual(before, fixtures.fixture_snapshot(f.root))
+
+    def test_restored_apply_intent_does_not_authorize_foreign_retained_generation(self):
+        f = self.fixture
+        f.apply('a')
+        request = f.request(f.plan('b'))
+        fired = []
+        def fail(event):
+            if event == 'before:candidate-mkdir' and not fired:
+                fired.append(event)
+                raise OSError(5, 'fixture before candidate creation')
+        f.engine._test_hook = fail
+        self.assertEqual(f.engine.execute(request)['status'], 'failed-restored')
+        f.engine._test_hook = None
+        # A fully valid foreign tree still is not a *retained committed* tree.
+        # A failed transaction's old intent cannot supply ownership authority.
+        root = f.root / 'generations/b'
+        root.mkdir(mode=0o700)
+        (root / 'payload').mkdir(mode=0o700)
+        manifest = request['plan']['manifest']
+        (root / 'manifest').write_bytes(fixtures.json_bytes(manifest))
+        (root / 'manifest').chmod(0o600)
+        payload = root / 'payload/config.edn'
+        payload.write_bytes(fixtures.base64.b64decode(manifest['artifacts'][0]['bytes_b64']))
+        payload.chmod(0o600)
+        before = fixtures.fixture_snapshot(f.root)
+        result = f.engine.preview(f.seed('b', 'rollback'))
+        self.assertIn(result['status'], ('denied', 'held'), result)
+        self.assertEqual(result['target_writes'], 0)
+        self.assertEqual(before, fixtures.fixture_snapshot(f.root))
