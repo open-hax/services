@@ -11,6 +11,7 @@ import tempfile
 import time
 import unittest
 from unittest import mock
+from concurrent.futures import ThreadPoolExecutor
 
 from scripts.tests.test_local_generation_law import canonical
 
@@ -527,6 +528,83 @@ class LocalGenerationTest(unittest.TestCase):
         self.assertIn(result['status'], ('denied', 'held'), result)
         self.assertEqual(result['target_writes'], 0)
         self.assertEqual(before, fixture_snapshot(self.root))
+
+    def test_fresh_process_sigkill_at_every_positive_native_occurrence(self):
+        cases = []
+        for operation in ('apply', 'rollback'):
+            probe = LocalGenerationTest()
+            probe.setUp()
+            try:
+                probe.apply('a')
+                probe.apply('b')
+                request = probe.request(probe.plan('c' if operation == 'apply' else 'a', operation))
+                trace = []
+                probe.engine._test_hook = trace.append
+                self.assertIn(probe.engine.execute(request)['status'], ('applied', 'rolled-back'))
+                # Occurrences, NOT merely distinct labels: repeated journal
+                # and file fsync boundaries each get a real owned worker kill.
+                cases.extend((operation, index, event) for index, event in enumerate(trace))
+            finally:
+                probe.doCleanups()
+        self.assertGreater(len(cases), 300)
+        kill_worker = ('import json, os, signal, sys\nfrom local_generation_fs import Engine\n'
+            'p, r = json.load(sys.stdin)\ne = Engine(p, p["services"]["revision"])\ni = 0\n'
+            'def stop(event):\n'
+            '    global i\n'
+            '    if i == int(sys.argv[1]):\n'
+            '        print(event, flush=True)\n'
+            '        os.kill(os.getpid(), signal.SIGKILL)\n'
+            '    i += 1\n'
+            'e._test_hook = stop\ne.execute(r)\n')
+        recovery_worker = ('import json, sys\nfrom local_generation_fs import Engine\n'
+            'p = json.load(sys.stdin)\nwith Engine(p, p["services"]["revision"]) as e:\n'
+            '    print(json.dumps(e.recover()))\n')
+        def run_case(case):
+            operation, index, event = case
+            fixture = LocalGenerationTest()
+            fixture.setUp()
+            try:
+                fixture.apply('a')
+                fixture.apply('b')
+                before = fixture.selection()
+                trees = {g: fixture_snapshot(fixture.root / 'generations' / g) for g in ('a', 'b')}
+                request = fixture.request(fixture.plan('c' if operation == 'apply' else 'a', operation))
+                environment = {'PATH': os.environ['PATH'], 'PYTHONPATH': str(SCRIPTS), 'PYTHONDONTWRITEBYTECODE': '1'}
+                killed = subprocess.run([sys.executable, '-c', kill_worker, str(index)],
+                    input=json.dumps([fixture.policy, request]), text=True, capture_output=True,
+                    env=environment, timeout=30)
+                self.assertEqual(killed.returncode, -9, (case, killed.stderr, killed.stdout))
+                self.assertEqual(killed.stdout.strip(), event, case)
+                # This fresh process gets ONLY trusted launcher policy, never
+                # the original caller request, Plan or approval.
+                recovered = subprocess.run([sys.executable, '-c', recovery_worker],
+                    input=json.dumps(fixture.policy), text=True, capture_output=True,
+                    env=environment, timeout=30, check=True)
+                result = json.loads(recovered.stdout)
+                self.assertIn(result['status'], ('checked', 'failed-restored', 'held'), (case, result))
+                if result['status'] == 'failed-restored':
+                    self.assertEqual(fixture.selection(), before, (case, result))
+                elif result['status'] == 'checked':
+                    tx = fixture.root / 'transactions' / ('tx-' + request['plan']['nonce'][:50])
+                    if tx.exists():
+                        self.assertEqual(json.loads((tx / 'journal').read_bytes())['stage'], 'committed', case)
+                        self.assertEqual(fixture.selection()['generation'], request['plan']['manifest']['generation'], case)
+                    else:
+                        self.assertEqual(fixture.selection(), before, case)
+                else:
+                    self.assertIsNone(result['target_writes'], (case, result))
+                for generation, tree in trees.items():
+                    self.assertEqual(tree, fixture_snapshot(fixture.root / 'generations' / generation), case)
+                self.assertEqual(fixture.unrelated.read_bytes(), b'not-services-owned', case)
+                return result['status']
+            finally:
+                fixture.doCleanups()
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            outcomes = list(pool.map(run_case, cases))
+        self.assertIn('failed-restored', outcomes)
+        self.assertIn('held', outcomes)
+        print('native SIGKILL occurrence matrix:', len(cases),
+              {status: outcomes.count(status) for status in sorted(set(outcomes))}, flush=True)
 
     def test_actual_sigkill_fresh_process_recovery_without_original_request(self):
         self.apply("a")
