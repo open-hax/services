@@ -83,10 +83,11 @@ def shape(name, value):
             return wire.u64(v)
         if spec == 'ns64':
             return wire.ns64(v)
+        if spec == 'component':
+            return (type(v) is str and 1 <= len(v.encode()) <= 128 and v not in ('.', '..') and
+                    not re.search(r'[/\\\x00-\x1f\x7f]', v))
         if spec == 'path':
-            return (type(v) is list and len(v) <= 16 and all(type(x) is str and
-                    1 <= len(x.encode()) <= 128 and x not in ('.', '..') and
-                    not re.search(r'[/\\\x00-\x1f\x7f]', x) for x in v))
+            return type(v) is list and len(v) <= 16 and all(valid('component', x) for x in v)
         return False
     wire.canonical(value)
     if not valid(name, value):
@@ -104,7 +105,9 @@ def stable(identity):
 
 
 def failure(exc, stage='admission'):
-    return {'code': exc.code if isinstance(exc, Denial) else 'io',
+    return {'code': (exc.code if isinstance(exc, Denial) else
+                     getattr(exc, 'code', 'shape') if isinstance(exc, ValueError) else
+                     'unsupported' if isinstance(exc, subprocess.SubprocessError) else 'io'),
             'stage': exc.stage if isinstance(exc, Denial) else stage,
             'detail': 'Local generation operation refused.'}
 
@@ -498,7 +501,9 @@ class Engine:
                 return self._result('preview', 'previewed', plan, wire.digest(plan),
                                     observed['selection'], observed['selection'])
         except (Denial, OSError, ValueError, subprocess.SubprocessError) as exc:
-            return self._result('preview', 'held' if getattr(exc, 'code', '') == 'recovery-uncertain' else 'denied', first=failure(exc, 'preview'))
+            status = ('held' if getattr(exc, 'code', '') == 'recovery-uncertain' else
+                      'unavailable' if getattr(exc, 'code', '') == 'unsupported' else 'denied')
+            return self._result('preview', status, first=failure(exc, 'preview'))
 
     def _hook(self, name):
         if self._test_hook is not None:
@@ -506,6 +511,8 @@ class Engine:
 
     def _guard(self):
         self._chain_check()
+        if self.journal is not None and int(time.time() * 1000) < self.journal['last_time']:
+            raise Denial('expiry', self.stage)
         allowed_transactions = set(self.record_identities)
         if self.tx in self.fds:
             allowed_transactions.add(self.tx)
@@ -666,7 +673,10 @@ class Engine:
                 os.close(fd)
 
     def _save_journal(self):
-        self.journal['last_time'] = max(self.journal['last_time'], int(time.time() * 1000))
+        now = int(time.time() * 1000)
+        if now < self.journal['last_time']:
+            raise Denial('expiry', self.stage)
+        self.journal['last_time'] = now
         shape('journal', self.journal)
         parent = self.fds[self.tx]
         name = 'journal-next'
@@ -714,6 +724,7 @@ class Engine:
             seed['expected_generation'] = (plan['expected']['selection'] or {}).get('generation')
             self._seed(seed)
             with self._locked(action != 'check'):
+                before = self._selection()[0]
                 consumed = self._records(False)
                 if plan['nonce'] in consumed and action != 'check':
                     raise Denial('replay')
@@ -762,8 +773,10 @@ class Engine:
                         return result
         except (Denial, OSError, ValueError, subprocess.SubprocessError) as exc:
             first = failure(exc, self.stage if self.stage != 'input' else 'admission')
-            return self._result(action, 'held' if self.writes or getattr(exc, 'code', '') == 'recovery-uncertain' else 'denied',
-                                plan_hash=plan_hash, before=before, after=before, first=first,
+            held = self.writes or getattr(exc, 'code', '') == 'recovery-uncertain'
+            status = 'held' if held else 'unavailable' if getattr(exc, 'code', '') == 'unsupported' else 'denied'
+            return self._result(action, status,
+                                plan_hash=plan_hash, before=before, after=None if held else before, first=first,
                                 recovery='uncertain' if self.writes else 'not-needed')
 
     def _transaction(self, plan, approval):

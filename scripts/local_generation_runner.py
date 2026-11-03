@@ -37,7 +37,7 @@ def main():
             raise ValueError('shape')
         length = int(header)
         if not 0 < length <= wire.WIRE_LIMIT:
-            raise ValueError('limit')
+            raise wire.WireError('limit')
         owner_raw = sys.stdin.buffer.read(length)
         if len(owner_raw) != length:
             raise ValueError('shape')
@@ -48,16 +48,16 @@ def main():
         expected = [{'id': name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
                     for name, path in sorted(SOURCES.items())]
         if owner['sources'] != expected or owner['python_sha256'] != hashlib.sha256(Path('/usr/bin/python3').read_bytes()).hexdigest():
-            raise ValueError('pin')
+            raise wire.WireError('pin')
         import local_generation_fs as fs
         fs.shape('policy', owner['policy'])
         revision = owner['revision']
         if not isinstance(revision, str) or not fs.re.fullmatch('[a-f0-9]{40}', revision):
             revision = '0' * 40
-            raise ValueError('pin')
+            raise wire.WireError('pin')
         request_raw = sys.stdin.buffer.read(wire.WIRE_LIMIT + 1)
         if len(request_raw) > wire.WIRE_LIMIT:
-            raise ValueError('limit')
+            raise wire.WireError('limit')
         with fs.Engine(owner['policy'], revision) as engine:
             recovered = engine.recover()
             if recovered['status'] != 'checked' or not request_raw:
@@ -73,17 +73,24 @@ def main():
         sys.stdout.buffer.write(raw)
         return {'previewed': 0, 'checked': 0, 'applied': 0, 'rolled-back': 0,
                 'denied': 2, 'unavailable': 3, 'failed-restored': 4, 'held': 5}[result['status']]
-    except Exception:
+    except Exception as exc:
         # No path, payload or exception text crosses the fixed boundary.
         uncertain = engine is not None and engine.writes != 0
-        result = {'schema': 'services.local-result/v1', 'action': 'check', 'status': 'held' if uncertain else 'denied',
+        code = getattr(exc, 'code', 'unsupported' if isinstance(exc, OSError) else 'shape')
+        if code not in ('shape', 'limit', 'pin', 'validator', 'approval', 'expiry', 'replay', 'unsupported',
+                        'ownership', 'dirty', 'ancestor-drift', 'destination-drift', 'current-drift', 'lock', 'io',
+                        'interrupted', 'recovery-uncertain'):
+            code = 'shape'
+        unavailable = code == 'unsupported'
+        result = {'schema': 'services.local-result/v1', 'action': 'check',
+                  'status': 'held' if uncertain else 'unavailable' if unavailable else 'denied',
                   'plan': None, 'plan_sha256': None, 'services_revision': revision, 'before': None, 'after': None,
                   'target_writes': None if uncertain else 0, 'recovery': 'uncertain' if uncertain else 'not-needed',
-                  'first_failure': {'code': 'recovery-uncertain' if uncertain else 'shape', 'stage': 'input',
+                  'first_failure': {'code': 'recovery-uncertain' if uncertain else code, 'stage': 'input',
                                     'detail': 'Fixed local boundary refused input.'},
                   'recovery_failures': [], 'journal_sha256': None}
         sys.stdout.buffer.write(json.dumps(result, separators=(',', ':')).encode())
-        return 5 if uncertain else 2
+        return 5 if uncertain else 3 if unavailable else 2
 
 
 if __name__ == '__main__':

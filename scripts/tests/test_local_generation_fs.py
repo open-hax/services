@@ -11,7 +11,8 @@ import tempfile
 import time
 import unittest
 from unittest import mock
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
 from types import SimpleNamespace
 
 from scripts.tests.test_local_generation_law import canonical
@@ -19,6 +20,14 @@ from scripts.tests.test_local_generation_law import canonical
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 import local_generation_fs as fs
+
+# Linux-only test workers inherit this fixed closure through fork. Native
+# SIGKILL targets remain separately spawned owned children, not pool workers.
+_matrix_case = None
+
+
+def _run_matrix_case(case):
+    return _matrix_case(case)
 
 
 def digest(value):
@@ -618,8 +627,13 @@ class LocalGenerationTest(unittest.TestCase):
                 return result['status']
             finally:
                 fixture.doCleanups()
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            outcomes = list(pool.map(run_case, cases))
+        global _matrix_case
+        _matrix_case = run_case
+        try:
+            with ProcessPoolExecutor(max_workers=8, mp_context=multiprocessing.get_context('fork')) as pool:
+                outcomes = list(pool.map(_run_matrix_case, cases))
+        finally:
+            _matrix_case = None
         self.assertIn('failed-restored', outcomes)
         self.assertIn('held', outcomes)
         print('native SIGKILL occurrence matrix:', len(cases),

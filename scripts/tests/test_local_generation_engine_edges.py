@@ -50,3 +50,72 @@ class EngineEdgeTest(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             wire.encode('too-long', limit=1)
         self.assertEqual(getattr(caught.exception, 'code', None), 'limit')
+
+    def test_compensation_failure_preserves_first_cause_and_durable_hold(self):
+        f = self.fixture
+        f.apply('a')
+        old_tree = fixtures.fixture_snapshot(f.root / 'generations/a')
+        request = f.request(f.plan('b'))
+        fired = []
+        def fail(event):
+            if event == 'after:current-rename' and not fired:
+                fired.append('selection')
+                raise OSError(5, 'fixture selection failure')
+            if event == 'before:restoration-file-open' and fired == ['selection']:
+                fired.append('compensation')
+                raise OSError(28, 'fixture compensation failure')
+        f.engine._test_hook = fail
+        result = f.engine.execute(request)
+        self.assertEqual(fired, ['selection', 'compensation'])
+        self.assertEqual(result['status'], 'held', result)
+        self.assertIsNone(result['after'])
+        self.assertIsNone(result['target_writes'])
+        self.assertEqual(result['first_failure']['stage'], 'selecting', result)
+        self.assertEqual(result['recovery_failures'][0]['stage'], 'restoring', result)
+        self.assertEqual(old_tree, fixtures.fixture_snapshot(f.root / 'generations/a'))
+        before = fixtures.fixture_snapshot(f.root)
+        with fixtures.fs.Engine(f.policy, f.revision) as fresh:
+            calls = []
+            fresh._test_hook = calls.append
+            held = fresh.recover()
+        self.assertEqual(held['status'], 'held', held)
+        self.assertEqual(calls, [])
+        self.assertEqual(before, fixtures.fixture_snapshot(f.root))
+
+    def test_historical_expiry_does_not_block_capsule_only_compensation(self):
+        f = self.fixture
+        f.apply('a')
+        before = f.selection()
+        f.kill_selection()
+        future = time.time() + 3600
+        with mock.patch('time.time', return_value=future):
+            with fixtures.fs.Engine(f.policy, f.revision) as fresh:
+                result = fresh.recover()
+        self.assertEqual(result['status'], 'failed-restored', result)
+        self.assertEqual(f.selection(), before)
+
+    def test_full_sixteen_component_artifact_path_has_bounded_internal_paths(self):
+        f = self.fixture
+        seed = f.seed('deep')
+        artifact = seed['manifest']['artifacts'][0]
+        artifact['path'] = ['d%02d' % n for n in range(15)] + ['config.edn']
+        preview = f.engine.preview(seed)
+        self.assertEqual(preview['status'], 'previewed', preview)
+        result = f.engine.execute(f.request(preview['plan']))
+        self.assertEqual(result['status'], 'applied', result)
+        path = f.root / 'generations/deep/payload'
+        for part in artifact['path']:
+            path = path / part
+        self.assertEqual(path.read_bytes(), b'{:fixture/value "deep"}\n')
+
+    def test_unqualified_bash_is_unavailable_not_a_fake_validator_verdict(self):
+        f = self.fixture
+        seed = f.seed('bash')
+        seed['manifest']['artifacts'][0]['format'] = 'bash-env'
+        before = fixtures.fixture_snapshot(f.root)
+        with mock.patch.object(fixtures.fs.edn, 'validate', side_effect=AssertionError('no Bash validator')):
+            result = f.engine.preview(seed)
+        self.assertEqual(result['status'], 'unavailable', result)
+        self.assertEqual(result['first_failure']['code'], 'unsupported', result)
+        self.assertEqual(result['target_writes'], 0)
+        self.assertEqual(before, fixtures.fixture_snapshot(f.root))

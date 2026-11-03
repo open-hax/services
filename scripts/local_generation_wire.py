@@ -12,8 +12,14 @@ WIRE_LIMIT = 16 * 1024 * 1024
 CAPSULE_LIMIT = 32 * 1024 * 1024
 
 
+class WireError(ValueError):
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+
 def _reject(*_):
-    raise ValueError('shape')
+    raise WireError('shape')
 
 
 def _pairs(pairs):
@@ -59,8 +65,10 @@ def canonical(value, depth=0):
 
 
 def decode(raw, limit=WIRE_LIMIT):
-    if type(raw) is not bytes or len(raw) > limit:
+    if type(raw) is not bytes:
         _reject()
+    if len(raw) > limit:
+        raise WireError('limit')
     try:
         value = json.loads(raw.decode('utf-8', 'strict'), object_pairs_hook=_pairs,
                            parse_int=_integer, parse_float=_reject, parse_constant=_reject)
@@ -74,7 +82,7 @@ def encode(value, limit=WIRE_LIMIT):
     canonical(value)
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
     if len(raw) > limit:
-        _reject()
+        raise WireError('limit')
     return raw
 
 

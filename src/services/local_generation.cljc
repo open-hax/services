@@ -81,7 +81,7 @@
                        {"owner" :id "generation" :id "manifest_sha256" :sha256})
    "xattr" {"name_b64" :string "value_b64" :string}
    "metadata" {"mode" :int "uid" :int "gid" :int "mtime_ns" :ns64 "xattrs" [:vector "xattr"]}
-   "tree-entry" {"path" :path "identity" "identity" "metadata" "metadata"}
+    "tree-entry" {"path" [:vector :component 17] "identity" "identity" "metadata" "metadata"}
    "tree-proof" {"selection" "selection" "root_identity" "identity"
                  "entries" [:vector "tree-entry"] "tree_sha256" :sha256}
    "new-destination" {"kind" [:enum "new"] "identity" :null}
@@ -130,7 +130,7 @@
                       "before_current_bytes_b64" (nullable :string) "before_metadata" (nullable "metadata")
                       "old_tree" (nullable "tree-proof") "rollback_target" (nullable "tree-proof")})
    "operation" {"index" :int "kind" (enum "mkdir" "write" "fsync" "rename" "unlink" "restore-metadata")
-                "path" :path "before" (nullable "identity") "after" (nullable "identity")
+                 "path" [:vector :component 19] "before" (nullable "identity") "after" (nullable "identity")
                 "state" (enum "pending" "succeeded" "failed" "uncertain")}
    "journal" (record "services.local-journal/v1"
                      {"transaction" :id "plan_sha256" :sha256 "approval_sha256" :sha256 "nonce" :id
@@ -156,6 +156,7 @@
     :sha256 (and (string? value) (boolean (re-matches #"[a-f0-9]{64}" value)))
     :u64 (u64? value)
     :ns64 (ns64? value)
+    :component (component? value)
     :path (and (vector? value) (<= (count value) 16) (every? component? value))
     false))
 

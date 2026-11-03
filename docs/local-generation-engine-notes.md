@@ -123,6 +123,35 @@ identity before/after walking and identity/metadata agreement. The deterministic
 case and all 48 disjoint concurrent applies then pass, without weakening
 retained-tree drift checks or the all-occurrence SIGKILL assertions.
 
+At `348b95ee566ee520eb566ca0779c0c177e4cefff`, the full positive-occurrence
+SIGKILL matrix passed all 642 owned-worker interruptions: 248 restored,
+386 held, and 8 checked (no effect yet, or a fully durable committed record).
+Each recovery child received only trusted policy, never the original caller
+request. Every case verifies both retained trees and unrelated siblings; checked
+new selections additionally require a complete committed journal. These are
+normal-transaction occurrence tests, not a claim that every possible interrupted
+compensation combination has been independently reviewed.
+
+Further deterministic RED tests found and corrected clock rollback hidden by
+`max(last_time, now)`, replay denial reporting null instead of the observed
+selection, and wire-limit failures losing their distinct diagnostic code.
+Clock reversal now holds before generation writes rather than inventing a
+monotonic clock. Additional positives prove failed compensation persists a hold
+without automatic repeat and expired historical approval still permits its own
+capsule-only compensation. The full 16-component artifact path also exposed
+incorrect reuse of the external path bound for derived paths. External paths
+remain bounded to 16 components; tree paths allow the fixed payload prefix (17),
+and journal paths the fixed generations/generation/payload prefix (19). Pure
+tests check each exact upper bound and rejection immediately above it. Bash
+without a qualified binding now reports unavailable/unsupported, not a pretend
+validator judgment. Final exact-head reruns remain mandatory after these fixes.
+
+The all-occurrence test uses eight forked Linux **test** workers to avoid Python
+thread GIL serialization. Each case still spawns a separate native child and a
+fresh recovery child, checks every original occurrence and all original
+assertions, and kills only its own native child. No production worker API or
+caller-controlled synchronization was added.
+
 The first isolated Python facade prototype ignored the environment's bytecode
 suppression and created small local `scripts/__pycache__` artifacts. The fixed
 argv now explicitly uses `-B` and a root-owned absent cache prefix prevents

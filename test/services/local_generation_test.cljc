@@ -87,6 +87,14 @@
     (is (not (law/destination-valid? (assoc rollback "operation" "apply"))))
     (is (not (law/destination-valid? (assoc plan "operation" "rollback"))))))
 
+(deftest external-and-derived-owned-path-bounds
+  (doseq [[type limit] [[:path 16]
+                       [(get-in law/schemas ["tree-entry" "path"]) 17]
+                       [(get-in law/schemas ["operation" "path"]) 19]]]
+    (is (empty? (law/errors type (vec (repeat limit "part")))))
+    (is (seq (law/errors type (vec (repeat (inc limit) "part")))))
+    (is (seq (law/errors type [".."])))))
+
 (let [{:keys [fail error]} (run-tests)]
   (when (pos? (+ fail error))
     #?(:clj (System/exit 1) :cljs (set! (.-exitCode js/process) 1))))
