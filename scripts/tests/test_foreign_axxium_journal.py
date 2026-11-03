@@ -39,12 +39,16 @@ def test_lock(path):
         os.close(fd)
 
 
+def journal_fixture_directory(home):
+    """Own and clean a private child; journal validation checks its ancestors."""
+    return tempfile.TemporaryDirectory(prefix='adoption-journal-test-', dir=home)
+
+
 class NativeJournalTests(unittest.TestCase):
     def setUp(self):
         # /tmp is intentionally an untrusted writable ancestor. The storage
         # contract requires a controller-owned hierarchy for these tests too.
-        self.tmp = tempfile.TemporaryDirectory(prefix='adoption-journal-test-',
-                                               dir=Path.home()/'.local/share')
+        self.tmp = journal_fixture_directory(Path.home())
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name)
         self.directory = self.base/'journal'; self.directory.mkdir(mode=0o700)
@@ -57,6 +61,29 @@ class NativeJournalTests(unittest.TestCase):
     def new_journal(self, factory=None, owner=None):
         return DurableAdoptionJournal(factory or (lambda: test_lock(self.lock_path)),
             self.directory, owner=os.getuid() if owner is None else owner)
+
+    def test_fixture_needs_no_share_and_preserves_parent_checks(self):
+        home = self.base/'fixture-home'; home.mkdir(mode=0o700)
+        self.assertFalse((home/'.local/share').exists())
+        with journal_fixture_directory(home) as root:
+            root = Path(root)
+            directory = root/'journal'; directory.mkdir(mode=0o700)
+            journal = DurableAdoptionJournal(lambda: test_lock(self.lock_path),
+                                             directory, owner=os.getuid())
+            with journal.lock(): pass
+            home.chmod(0o777)
+            try:
+                with self.assertRaises(Refused):
+                    with journal.lock(): pass
+            finally:
+                home.chmod(0o700)
+            alias = self.base/'home-alias'; alias.symlink_to(home, target_is_directory=True)
+            linked = DurableAdoptionJournal(lambda: test_lock(self.lock_path),
+                                            alias/root.name/'journal', owner=os.getuid())
+            with self.assertRaises(OSError):
+                with linked.lock(): pass
+        self.assertFalse(root.exists())
+        self.assertFalse((home/'.local/share').exists())
 
     def test_fsync_backed_plan_and_ordered_immutable_records(self):
         self.assertEqual(execute(self.raw, self.backend, self.journal), 'healthy')
