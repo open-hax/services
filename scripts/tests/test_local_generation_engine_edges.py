@@ -210,3 +210,27 @@ class EngineEdgeTest(unittest.TestCase):
                 self.assertEqual(old, fixtures.fixture_snapshot(f.root / 'generations/a'), target)
             finally:
                 f.doCleanups()
+
+    def test_prepreview_current_drift_is_not_fresh_authority(self):
+        for kind in ('mtime', 'replacement'):
+            with self.subTest(kind=kind):
+                f = fixtures.LocalGenerationTest()
+                f.setUp()
+                try:
+                    f.apply('a')
+                    current = f.root / 'current'
+                    if kind == 'mtime':
+                        s = current.stat()
+                        fixtures.os.utime(current, ns=(s.st_atime_ns, s.st_mtime_ns + 1))
+                    else:
+                        replacement = f.root / 'fixture-current'
+                        replacement.write_bytes(current.read_bytes())
+                        replacement.chmod(0o600)
+                        fixtures.os.replace(replacement, current)
+                    before = fixtures.fixture_snapshot(f.root)
+                    result = f.engine.preview(f.seed('b'))
+                    self.assertIn(result['status'], ('denied', 'held'), result)
+                    self.assertEqual(result['target_writes'], 0)
+                    self.assertEqual(before, fixtures.fixture_snapshot(f.root))
+                finally:
+                    f.doCleanups()

@@ -95,6 +95,18 @@
     (is (seq (law/errors type (vec (repeat (inc limit) "part")))))
     (is (seq (law/errors type [".."])))))
 
+(deftest current-state-needs-durable-terminal-identity
+  (let [current {"selection" (sample "selection") "identity" (sample "identity")}
+        empty-current {"selection" nil "identity" nil}
+        terminal [{"state" current "committed" true}]]
+    (is (law/current-state-valid? current terminal))
+    (is (law/current-state-valid? empty-current []))
+    (is (not (law/current-state-valid? empty-current terminal)))
+    (is (not (law/current-state-valid? current [])))
+    (is (not (law/current-state-valid? (assoc-in current ["identity" "mtime_ns"] "1") terminal)))
+    (is (not (law/current-state-valid? (assoc current "selection" nil) terminal)))
+    (is (not (law/current-state-valid? current [(assoc (first terminal) "unknown" true)])))))
+
 (let [{:keys [fail error]} (run-tests)]
   (when (pos? (+ fail error))
     #?(:clj (System/exit 1) :cljs (set! (.-exitCode js/process) 1))))
