@@ -167,3 +167,46 @@ class EngineEdgeTest(unittest.TestCase):
         self.assertIn(result['status'], ('denied', 'held'), result)
         self.assertEqual(result['target_writes'], 0)
         self.assertEqual(before, fixtures.fixture_snapshot(f.root))
+
+    def test_distinct_full_length_nonces_do_not_alias_transaction_names(self):
+        f = self.fixture
+        for generation, nonce in (('a', 'n' + 'a' * 63), ('b', 'n' + 'a' * 62 + 'b')):
+            seed = f.seed(generation)
+            seed['nonce'] = nonce
+            preview = f.engine.preview(seed)
+            self.assertEqual(preview['status'], 'previewed', preview)
+            result = f.engine.execute(f.request(preview['plan']))
+            self.assertEqual(result['status'], 'applied', result)
+        self.assertEqual(f.selection()['generation'], 'b')
+        self.assertEqual(len(list((f.root / 'transactions').iterdir())), 2)
+
+    def test_post_rename_identity_is_derived_from_owned_source_not_adopted(self):
+        for target in ('current', 'journal'):
+            f = fixtures.LocalGenerationTest()
+            f.setUp()
+            try:
+                f.apply('a')
+                old = fixtures.fixture_snapshot(f.root / 'generations/a')
+                request = f.request(f.plan('b'))
+                original = fixtures.os.rename
+                replaced = []
+                def rename(src, dst, **kwargs):
+                    result = original(src, dst, **kwargs)
+                    if dst == target and not replaced:
+                        path = (f.root / 'current' if target == 'current' else
+                                f.root / 'transactions' / f.engine.tx / 'journal')
+                        temporary = path.parent / 'fixture-replacement'
+                        temporary.write_bytes(path.read_bytes())
+                        temporary.chmod(0o600)
+                        fixtures.os.replace(temporary, path)
+                        replaced.append((path, fixtures.native_identity(path)))
+                    return result
+                with mock.patch.object(fixtures.os, 'rename', side_effect=rename):
+                    result = f.engine.execute(request)
+                self.assertTrue(replaced)
+                self.assertEqual(result['status'], 'held', (target, result))
+                self.assertIsNone(result['after'])
+                self.assertEqual(fixtures.native_identity(replaced[0][0]), replaced[0][1], target)
+                self.assertEqual(old, fixtures.fixture_snapshot(f.root / 'generations/a'), target)
+            finally:
+                f.doCleanups()
