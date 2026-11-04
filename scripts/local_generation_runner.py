@@ -59,8 +59,8 @@ def main():
         if len(request_raw) > wire.WIRE_LIMIT:
             raise wire.WireError('limit')
         # Closed classification is not admission: malformed input and reads
-        # must never cause compensation. Each read checks records under its
-        # own shared lease and holds when recovery remains pending.
+        # must never cause compensation. Nonempty requests check records under
+        # their operation's lease and hold when recovery remains pending.
         request = wire.decode(request_raw) if request_raw else None
         if request_raw:
             if type(request) is dict and request.get('action') == 'preview':
@@ -72,11 +72,8 @@ def main():
                 result = engine.recover()
             elif request['action'] == 'preview':
                 result = engine.preview(request['seed'])
-            elif request['action'] == 'check':
-                result = engine.execute(request)
             else:
-                recovered = engine.recover()
-                result = recovered if recovered['status'] != 'checked' else engine.execute(request)
+                result = engine.execute(request)
         raw = wire.encode(result)
         sys.stdout.buffer.write(raw)
         return {'previewed': 0, 'checked': 0, 'applied': 0, 'rolled-back': 0,
