@@ -1,0 +1,155 @@
+{:report/id :local-generation-final-verification-20261104
+ :kind :implementation-evidence-for-independent-review
+ :observed-at "2026-11-04T00:57:09Z"
+ :context :世 :confidence 1.0
+ :tested-source-head "b39d8058ad886879304bd9866e537fdcbd418edf"
+ :source-frozen-during-all-executions true
+ :native-aggregate-completed-via-automatic-notification true
+ :native-matrix-relaunched-for-tooling false
+ :evidence-commit-only true
+ :self-qualification false :owner-release false :consumer-handoff false :s1b-credit false
+ :task "3f5d0052-dda2-4089-971d-8603e385bd77"
+ :spec {:path "docs/local-generations-v1.md"
+        :sha256 "500be9073f22ae74e880e50a55627802274911a136059f92dcf53ac023bcf112"
+        :unchanged true}
+ :previous-implementation-report
+ {:path "/home/err/spaces/foresight/.worktrees/plan/oikos-execution-20261103/.ημ/runs/oikos-program-20261103/reviews/services-generation-engine-v2.edn"
+  :sha256 "f077d5ac0405292d7e33acfeadee2a584f4bd08a566b073eb94a651fc1ee4ab2"
+  :preserved true
+  :previous-missing-pinned-cli-hold :cleared-by-actual-executions-below
+  :implementation-scope-and-os-limits :unchanged}
+ :native-suite
+ {:command "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.tests.test_local_generation_boundary scripts.tests.test_local_generation_fs scripts.tests.test_local_generation_law scripts.tests.test_local_generation_engine_edges"
+  :head "b39d8058ad886879304bd9866e537fdcbd418edf"
+  :tests 39 :seconds 1036.359 :failures 0 :errors 0
+  :sigkill {:actual-owned-worker-occurrences 642 :restored 248 :held 386 :checked 8
+            :apply-and-rollback true :fresh-process-recovery true
+            :original-caller-request-plan-approval-provided-to-recovery false
+            :checked-semantics "No new transaction yet, or complete durable committed record with exact nonce/selection; never implicit success for an incomplete transaction."
+            :retained-a-b-and-unrelated-sibling-checks true}
+  :additional-controls ["Every discovered before/after native partial-effect checkpoint"
+                         "First selection restores absence after actual SIGKILL"
+                         "Compensation failure preserves first cause and persists hold without automatic repeat"
+                         "Retained mtime/xattr drift refuses from durable proof"
+                         "Missing/torn/replaced capsule holds"
+                         "Ancestor/lock/destination/current replacement with actual working positives"
+                         "Post-rename current/journal identity and metadata are not adopted"
+                         "Pre-preview current and retained-tree drift refuse without writes"
+                         "Unknown generation and restored-intent foreign adoption refuse"
+                         "Independent native syscall count; short pwrite completion"
+                         "Concurrent cooperating processes have one serial winner"
+                         "Clock reversal, historical expiry, replay, full nonces and bounded derived paths"]}
+ :environment-suite
+ {:command "CADDY_TEST_BINARY=/tmp/opencode/oikos-test-tools/caddy-2.8.4-12fac7e8-ed63-49cc-b3b3-773bf3841773/caddy PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_environment*.py'"
+  :head "b39d8058ad886879304bd9866e537fdcbd418edf"
+  :tests 134 :seconds 100.317 :failures 0 :errors 0
+  :both-caddy-classes-executed true
+  :caddy-archive-sha256 "a7e8306c54138cf88e371c5ec0caf7baf142ecc1d60a30897dfb67d65d3748c8"
+  :caddy-binary-sha256 "d3491373b2d78e4eaa3f498b42852d399d404b0df3f274bbee66d62c12084be0"
+  :no-daemon-listener-or-system-install true}
+ :pinned-jvm
+ {:authorization "/home/err/spaces/foresight/.worktrees/plan/oikos-execution-20261103/.ημ/runs/oikos-program-20261103/decisions/services-pinned-clojure-cli-cache-authorization.edn"
+  :tool-report "/home/err/spaces/foresight/.worktrees/plan/oikos-execution-20261103/.ημ/runs/oikos-program-20261103/reviews/services-clojure-cli-test-cache-v1.edn"
+  :authorization-and-entire-report-read true
+  :launcher "/tmp/opencode/oikos-test-tools/clojure-cli-1.12.5.1664-bc3e31cd-0a7d-464f-9cc0-a482c6a3f72a/private/bin/clojure"
+  :version "1.12.5.1664"
+  :archive-bytes 12323589
+  :archive-sha256 "77dd6868948074adcc93e83a796f8e8f15a1a92bcb1b9002d715fd2210e476f3"
+  :launcher-sha256 "48d008bbc38fbb6ba55f7c913ff914163707cdd4e0366b05ff436c62289b583f"
+  :actual-archive-and-launcher-rehashed-before-use true
+  :launcher-change :approved-fixed-private-prefix-only
+  :normal-path-or-global-install-changed false
+  :cwd "/home/err/spaces/foresight/services/.worktrees/feat/oikos-local-generations-20261103"
+  :checks [{:argv ["<absolute-pinned-launcher>" "-M" "scripts/check-edn-contracts.clj"]
+            :exit 0 :stderr "" :seconds 1.519 :edn-resources 370}
+           {:argv ["<absolute-pinned-launcher>" "-M" "digitalocean/services/knoxx/document-anchor-inventory.cljc"]
+            :environment {"KNOXX_DOCUMENTS_DIR" "contracts/knoxx/documents"}
+            :exit 0 :stderr "" :seconds 0.519 :inventory-entries 19}
+           {:argv ["<absolute-pinned-launcher>" "-M" "test/services/local_generation_test.cljc"]
+            :exit 0 :stderr "" :seconds 0.668 :tests 8 :assertions 137 :failures 0 :errors 0}]
+  :offline-enforcement
+  {:mechanism :inherited-linux-libseccomp
+   :library "/lib/x86_64-linux-gnu/libseccomp.so.2"
+   :denied-syscalls ["socket" "socketpair" "connect" "bind" "listen" "accept" "accept4"
+                     "sendto" "sendmsg" "sendmmsg" "recvfrom" "recvmsg" "recvmmsg"
+                     "shutdown" "getpeername" "getsockname" "setsockopt" "getsockopt"]
+   :action :errno-eperm :guard-load-failure-aborts true
+   :actual-python-proof "AF_INET/AF_INET6/AF_UNIX denied EPERM; Seccomp=2 NoNewPrivs=1"
+   :actual-jvm-proof "JVM Seccomp=2 NoNewPrivs=1; JVM networking initialization denied: java.io.IOException Operation not permitted"
+   :final-probe-exit 0 :final-probe-stderr ""
+   :process-timeout-seconds 120 :output-file-limit-bytes 2097152
+   :new-home-config-xdg-classpath-cache-and-java-tmp true
+   :original-maven-cache-opened-readonly true
+   :isolated-existing-cache-copies {:files 18 :bytes 4893713}
+   :default-dependency-versions-paths-aliases-unchanged true
+   :only-deps-config-change :isolated-maven-local-repository-path
+   :classpath-override false :guessed-offline-flag false
+   :downloads-or-plugin-installations false :missing-dependency-coordinates []
+   :original-and-copied-artifact-sha256-rechecked-after-execution true}
+  :cached-runtime-artifacts
+  [{:coordinate "org.clojure/clojure:1.12.5" :bytes 4228300
+    :sha256 "dfdee131460216a84fef22e537bb0d0579965f8f70338d748323dff26f8e5a8b"}
+   {:coordinate "org.clojure/spec.alpha:0.5.238" :bytes 636643
+    :sha256 "94cd99b6ea639641f37af4860a643b6ed399ee5a8be5d717cff0b663c8d75077"}
+   {:coordinate "org.clojure/core.specs.alpha:0.4.74" :bytes 4306
+    :sha256 "eb73ac08cf49ba840c88ba67beef11336ca554333d9408808d78946e0feb9ddb"}
+   {:coordinate "org.clojure/pom.contrib:1.2.0:pom" :bytes 7149
+    :sha256 "0916d7a41558b9500a427c886fa29827ace5259206be3ad33e64e296fc1a6111"}]
+  :retained-execution-evidence
+  {:directory ".cache/pinned-jvm-check-20261103-b39d805"
+   :runner-sha256 "82ddbd19354d4a06e19ae2d1280cc173aa8d9443d39a7f315d41624c3636020c"
+   :corrected-probe-sha256 "79f3eea4a3a6dfa23637e8b2715b1f16ea601ec39bfb1ff32fef6f6776b99b90"
+   :inputs-json-sha256 "67d5107e5c0a55882cb65f709eabf6ac1f3e175fdfbb8840a80565abe63334cb"
+   :results-json "results-v3.json"
+   :results-sha256 "10f13ac296ec809502117119a95a6832f1f10638cb39ed3a230fad5bc7fb14b7"
+   :final-owner-recheck "owner-gates-final.json"
+   :final-owner-recheck-sha256 "9e86caa349be95fd11f57d6268c0f6277a12b2e471d529d24a29e7c7ea90e1d5"
+   :all-final-results-exit-zero-and-empty-stderr true
+   :initial-auxiliary-probes-preserved true
+   :probe-corrections "The first auxiliary procfs reader failed in FileInputStream.available; NIO reads Seccomp/NoNewPrivs correctly. JDK networking denial occurs at initialization as a root IOException rather than specifically SocketException. Corrected assertions require that IOException and EPERM; no syscall rule or dependency constraint was removed. Exact owner checks passed unchanged before and after this proof correction."
+   :retention :active-no-deletion-without-verified-backup}}
+ :other-local-gates
+ {:bb {:version "1.12.207" :tests 8 :assertions 137 :failures 0 :errors 0}
+  :nbb {:version "1.3.204" :tests 8 :assertions 137 :failures 0 :errors 0}
+  :focused-owner-tests {:tests 31 :failures 0 :errors 0}
+  :static ["clj-kondo: zero errors and warnings"
+           "Deployment boundary self-test and scan; deploy pin and chain checks"
+           "All 37 YAML files and 92 scripts Python ASTs"
+           "bash -n on DO libraries/scripts/service scripts"
+           "Environment contract checker and disabled-profile self-test/scan"
+           "git diff --check"]}
+ :api-and-custody
+ {:facade ["bb" "scripts/local-generation.clj"]
+  :owner-channel :inherited-fd-3 :request-channel :stdin
+  :native-argv ["/usr/bin/python3" "-I" "-B" "<fixed scripts/local_generation_runner.py>"]
+  :transport "8 ASCII owner-length digits, exact owner JSON bytes, then exact request bytes; empty request means capsule-only recovery."
+  :fixed-inert-law-operations ["schemas" "approval" "current"]
+  :capsule-schema "services.local-recovery/v1" :capsule-wire-bound-bytes 33554432
+  :capsule "Immutable, exclusive/no-follow, exact accepted Plan/approval/policy/source, original current bytes/metadata and complete old/retained target proofs; journal binds hash and native identity for its full nonce lifetime."
+  :current "Regular file, never symlink; named postconditions derive from the owned temporary source identity and accepted metadata."
+  :rollback "Select retained target only; never rebuild/rewrite/delete it. Failure restores prior selected B, preserving A and B."
+  :unknown "Held after:null and target_writes:null mean unknown, not absence or guessed zero; no automatic force/clear/retry."
+  :runtime-bounds {:owner-and-request-bytes-each 16777216 :input-ms-each 10000
+                   :worker-ms 30000 :law-ms 10000 :stderr-bytes 4096}
+  :actual-stalled-input {:seconds 10.1 :exit 5 :status :held :target-writes nil :target-snapshot-unchanged true}
+  :actual-source-facade-flow [:apply-a :apply-b :rollback-retained-a]
+  :actual-fixture-policy-sha256 "73a9cce1bb7265b46d4519d9deb1728b072564952f0eeea5ca26e06dad60a1a2"
+  :source-graph-named-value-sha256 "698aa5aa4cde69dd945b4814bf3b19ca4d223382ec42f33ad26453628c8419bd"
+  :policy-is-fixture-only-not-owner-release true
+  :formats {:edn "Actual pinned inert-edn-v1 positive, not a general EDN evaluator/reader."
+            :bash-env "Unavailable/unsupported until separate accepted shx handoff; no mocked availability or guessed API."}}
+ :source-byte-pins
+ {:edge "e65ac405697110fd4acfd2febc83446e287982dc3e33325dc1d071687596efc4"
+  :facade "70c8c10e0b099f530c0a7ddb075881c50f27fc763ff234715f0534de3daadc58"
+  :runner "8c68a77b303b5b019a4e40713934fa5664c7ce71e5a905b6a98c1926e886bce9"
+  :wire "5572912fd4bec1e738d205818bb991899704ea8a7dd77b6a24ebd120ed8f55f6"
+  :validator "0c6396e4db4e55b41fe374f5c7e30a6cde4733e06c689e52d229e23e6a513201"
+  :laws "6291c708dcc53ba6315a494e183b8da0eb5febef73173c6a6703dd656c536e32"
+  :pure "90f04b38684645eba9a55ff0c141279d42a68eee7cc72a566dd53ee1dc404547"}
+ :limits "Private cooperative Linux fixture envelope only. Advisory locks do not defeat hostile same-UID/root/mount actors; no atomic whole-ancestor-chain compare/rename or device-loss guarantee. All unrelated files remain outside ownership."
+ :outstanding ["Fresh independent actual code/security/OS review and explicit owner release/consumer acceptance"
+                "Entire production workflow, including Docker-dependent publication gates, is not claimed executed by this sandbox task"]
+ :effects {:system-install false :normal-path-change false :services-listeners false :docker false
+           :model-or-provider-calls false :private-inputs false :dependency-downloads false
+           :pr-push-card-parent-ledger-writes false
+           :active-worktree-caches-and-original-failed-probes-preserved true}}
