@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -284,28 +285,51 @@ class LocalGenerationTest(unittest.TestCase):
             "PYTHONDONTWRITEBYTECODE": "1"}, timeout=30)
         self.assertEqual(killed.returncode, -9, killed.stderr)
 
+        trace_counts = []
         def invoke(raw):
             with tempfile.TemporaryFile() as channel:
                 channel.write(json_bytes(owner))
                 channel.seek(0)
                 descriptor = channel.fileno()
-                return subprocess.run(['bb', str(SCRIPTS / 'local-generation.clj')], input=raw,
+                trace = Path(self.tmp.name) / ('facade-trace-%d' % len(trace_counts))
+                calls = ('open,openat,write,pwrite64,rename,renameat,renameat2,unlink,unlinkat,'
+                         'mkdir,mkdirat,rmdir,fsync,fdatasync,fchmod,fchown,fsetxattr,fremovexattr,utimensat')
+                process = subprocess.run(['/usr/bin/strace', '-f', '-qq', '-yy', '-s', '256',
+                    '-o', str(trace), '-e', 'trace=' + calls, 'bb', str(SCRIPTS / 'local-generation.clj')], input=raw,
                     capture_output=True, timeout=45, pass_fds=(descriptor, 3),
                     preexec_fn=lambda: os.dup2(descriptor, 3))
+                mutations = []
+                for line in trace.read_text().splitlines():
+                    if str(self.root) + '/' not in line and str(self.root) + '>' not in line:
+                        continue
+                    if re.search(r'\bopen(?:at)?\(', line) and not re.search(r'O_WRONLY|O_RDWR|O_CREAT|O_TRUNC', line):
+                        continue
+                    mutations.append(line)
+                trace_counts.append(len(mutations))
+                return process
 
         before = fixture_snapshot(self.root)
-        for raw in (preview, check, b'{"action":"preview","action":"check"}', b'{', b'null', json_bytes(forged)):
+        for raw in (preview, check, b'{"action":"preview","action":"check"}', b'{', b'null', json_bytes(forged), json_bytes(request)):
             result = invoke(raw)
             value = json.loads(result.stdout)
             self.assertIn(value['status'], ('held', 'denied'), value)
+            if raw in (preview, check, json_bytes(forged), json_bytes(request)):
+                self.assertEqual(value['status'], 'held', value)
             self.assertEqual(value['target_writes'], 0, value)
+            self.assertEqual(trace_counts[-1], 0)
             self.assertEqual(before, fixture_snapshot(self.root))
         recovered = json.loads(invoke(b'').stdout)
         self.assertEqual(recovered['status'], 'failed-restored', recovered)
         self.assertGreater(recovered['target_writes'], 0)
+        self.assertGreater(trace_counts[-1], 0)
         self.assertEqual(self.selection()['generation'], 'a')
         self.assertEqual(json.loads(invoke(preview).stdout)['status'], 'previewed')
         self.assertEqual(json.loads(invoke(check).stdout)['status'], 'checked')
+        next_plan = json.loads(invoke(json_bytes({"schema": "services.local-preview/v1", "action": "preview",
+                                                  "seed": self.seed('after-recovery')})).stdout)['plan']
+        applied = json.loads(invoke(json_bytes(self.request(next_plan))).stdout)
+        self.assertEqual(applied['status'], 'applied', applied)
+        self.assertEqual(self.selection()['generation'], 'after-recovery')
 
     def test_stale_preview_reports_observed_selection(self):
         self.apply('a')
