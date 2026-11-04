@@ -499,10 +499,12 @@ class Engine:
         self.writes = 0
         self.stage = 'preview'
         observed = None
+        observing = False
         try:
             self._seed(seed)
             with self._locked(False):
                 self._records(False)
+                observing = True
                 observed = self._observe(seed['manifest'], seed['operation'])
                 if (observed['selection'] or {}).get('generation') != seed['expected_generation']:
                     raise Denial('current-drift')
@@ -513,7 +515,7 @@ class Engine:
                 return self._result('preview', 'previewed', plan, wire.digest(plan),
                                     observed['selection'], observed['selection'])
         except (Denial, OSError, ValueError, subprocess.SubprocessError) as exc:
-            status = ('held' if getattr(exc, 'hold', False) or getattr(exc, 'code', '') == 'recovery-uncertain' else
+            status = ('held' if (observing and observed is None) or getattr(exc, 'hold', False) or getattr(exc, 'code', '') == 'recovery-uncertain' else
                       'unavailable' if getattr(exc, 'code', '') == 'unsupported' else 'denied')
             selection = observed['selection'] if observed is not None else None
             return self._result('preview', status, before=selection,
