@@ -195,3 +195,16 @@ unpinned local pyc loads. Existing generated caches are left untracked and
 unstaged: deletion is blocked by the workspace's verified pushed/Drive-backup
 preservation rule and lack of push/backup authority. The active worktree is
 likewise retained; no large scratch allocation, service or installation occurred.
+
+## 2026-11-04 exact-source clarification
+
+The earlier startup-recovery and qualification statements above are historical,
+not current exact-head instructions. At independently source-reviewed
+`b2973ef9e3246522324dec4658fbeb093ffab147`, nonempty ingress never initiates
+later-ingress recovery of an existing pending interrupted transaction; trusted
+owner fd 3 plus empty stdin/EOF initiates capsule-only recovery. An admitted
+operation may still restore its own failure under its lease and return
+`failed-restored`. The frozen spec's startup/re-entry language is not this
+exact-head ingress rule. See the [development handoff candidate](local-generation-development-handoff-v1.md)
+and its descriptor for the immutable independent review identity and evidence.
+This source approval is not owner release or consumer acceptance.

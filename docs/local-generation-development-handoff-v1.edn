@@ -1,0 +1,25 @@
+{:schema "services.local-generation-development-handoff/v1"
+ :status :candidate-not-owner-release
+ :scope "Experimental private synthetic development fixture composition only; no installation, deployment, production, consumer acceptance or S1B authority."
+ :source {:repository "open-hax/services"
+          :commit "b2973ef9e3246522324dec4658fbeb093ffab147"
+          :tree "daf053cce6b24c8d62f59e660b90b6c92a5bbae2"
+          :pins [{:id "edge" :path "scripts/local_generation_fs.py" :sha256 "41e633799724639ede651f039f087a602d1df6a8ef10721f4792088cbbdc6537"}
+                 {:id "facade" :path "scripts/local-generation.clj" :sha256 "70c8c10e0b099f530c0a7ddb075881c50f27fc763ff234715f0534de3daadc58"}
+                 {:id "laws" :path "scripts/local-generation-laws.clj" :sha256 "6291c708dcc53ba6315a494e183b8da0eb5febef73173c6a6703dd656c536e32"}
+                 {:id "pure" :path "src/services/local_generation.cljc" :sha256 "90f04b38684645eba9a55ff0c141279d42a68eee7cc72a566dd53ee1dc404547"}
+                 {:id "runner" :path "scripts/local_generation_runner.py" :sha256 "64c5a79d0f0fa84b953846ab99bffc186df31d113ccaa4fa031082d9a17c2175"}
+                 {:id "validator" :path "scripts/local_generation_edn.py" :sha256 "0c6396e4db4e55b41fe374f5c7e30a6cde4733e06c689e52d229e23e6a513201"}
+                 {:id "wire" :path "scripts/local_generation_wire.py" :sha256 "5572912fd4bec1e738d205818bb991899704ea8a7dd77b6a24ebd120ed8f55f6"}]
+          :frozen-spec {:path "docs/local-generations-v1.md" :sha256 "500be9073f22ae74e880e50a55627802274911a136059f92dcf53ac023bcf112"}
+          :test-source {:path "scripts/tests/test_local_generation_fs.py" :sha256 "22a209935574805ab04282b46c68c0af6c8febaec02c98bba47085e37dbfc9e2"}}
+ :descriptor-identity "Identify this descriptor by its enclosing Services Git commit, path and SHA-256 externally; that docs-only commit is not the reviewed source commit and cannot self-identify here."
+ :evidence {:repository "open-hax/foresight" :commit "792dfa341d380cbf413b925319654d7c2ebec413"
+            :independent {:path ".ημ/runs/oikos-program-20261103/reviews/services-generation-fix-review-v2.edn" :sha256 "5f565e3e2729c3461137a6a20f7fbbdc3bc8365c56965b217eab3a4cad983025" :reviewer :same-independent-services-reviewer :verdict :approve-source-scope}
+            :author {:path ".ημ/runs/oikos-program-20261103/reviews/services-recovery-ingress-fix-v3.edn" :sha256 "4a309b65c71e01eb944e80cb3cdd35fa5aa34b10a22a5c28eb96c05fd73dd7b2"}}
+ :runtime {:entry "bb scripts/local-generation.clj" :arguments [] :owner-channel "fd 3: trusted services.local-launch/v1 JSON, closed before request EOF" :request-channel "stdin original request bytes, then EOF" :python "/usr/bin/python3 -I -B" :python-sha256 "Trusted owner computes and supplies actual interpreter file SHA-256 per launch." :prerequisites ["Babashka" "Python 3" "private cooperative Linux fixture"]}
+ :formats {:supported ["inert-edn-v1"] :unsupported ["bash-env"]}
+ :qualification {:source :independently-approved-exact-source-scope :owner-release :not-issued :consumer-acceptance :not-issued
+                 :independent "3 focused, 14 edge, 4 wire/parity, 134 environment tests passed; BB and NBB each 8 tests/137 assertions; six JVM commands passed; clj-kondo zero warnings/errors."
+                 :author "42 native aggregate tests and 642 actual SIGKILL occurrences (8 checked, 248 restored, 386 held); full aggregate not independently rerun at this head."
+                 :holds ["Independent review of this docs candidate and explicit owner release remain required." "Oikos owner acceptance is separate." "Bash requires separately qualified shx handoff." "No installed promotion or whole-S1B credit."]}}

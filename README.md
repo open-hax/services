@@ -14,9 +14,10 @@ artifact selection and recovery, not application configuration policy. Its
 fixed BB/Python development entry and synthetic tests now exist; they are not
 installed or accepted for consumer use. See the
 [implementation evidence and remaining gates](docs/local-generation-engine-notes.md).
-Independent code qualification, the full fault/crash/race matrix and all
-required owner gates remain necessary before an explicit consumer handoff.
-No Bash validator, installed promotion or deployment authority is granted.
+The exact source scope has independent review; the [development handoff candidate](docs/local-generation-development-handoff-v1.md)
+still requires independent documentation review, explicit owner release and
+consumer acceptance. No Bash validator, installed promotion or deployment
+authority is granted.
 The DigitalOcean production contract below is unchanged.
 
 Application repositories own application code and tests:

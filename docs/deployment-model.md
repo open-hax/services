@@ -59,10 +59,9 @@ service deployment lane, an OCI receiver extension, or a production exception.
 After independent planning acceptance, Services may implement only explicit
 owned-generation bytes, selection, approval admission and filesystem recovery.
 It does not own shell meaning, application policy, a shared semantic kernel,
-board state, workstation installation or lifecycle commands. Independent code
-review and fixture qualification are separately required before an explicit
-consumer handoff; neither planning acceptance nor that handoff authorizes live
-installation. Until these gates are met, this is proposed architecture only.
+board state, workstation installation or lifecycle commands. Exact source scope has independent review; the [development handoff candidate](local-generation-development-handoff-v1.md)
+requires separate documentation review, owner release and consumer acceptance.
+No handoff authorizes live installation.
 No existing workflow, host, image, receiver or production gate changes.
 
 **Delivery is an image.** `build-images.yml` builds one service image and pushes
