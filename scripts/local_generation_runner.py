@@ -58,17 +58,25 @@ def main():
         request_raw = sys.stdin.buffer.read(wire.WIRE_LIMIT + 1)
         if len(request_raw) > wire.WIRE_LIMIT:
             raise wire.WireError('limit')
-        with fs.Engine(owner['policy'], revision) as engine:
-            recovered = engine.recover()
-            if recovered['status'] != 'checked' or not request_raw:
-                result = recovered
+        # Closed classification is not admission: malformed input and reads
+        # must never cause compensation. Each read checks records under its
+        # own shared lease and holds when recovery remains pending.
+        request = wire.decode(request_raw) if request_raw else None
+        if request_raw:
+            if type(request) is dict and request.get('action') == 'preview':
+                fs.shape('preview-request', request)
             else:
-                request = wire.decode(request_raw)
-                if type(request) is dict and request.get('action') == 'preview':
-                    fs.shape('preview-request', request)
-                    result = engine.preview(request['seed'])
-                else:
-                    result = engine.execute(request)
+                fs.shape('request', request)
+        with fs.Engine(owner['policy'], revision) as engine:
+            if not request_raw:
+                result = engine.recover()
+            elif request['action'] == 'preview':
+                result = engine.preview(request['seed'])
+            elif request['action'] == 'check':
+                result = engine.execute(request)
+            else:
+                recovered = engine.recover()
+                result = recovered if recovered['status'] != 'checked' else engine.execute(request)
         raw = wire.encode(result)
         sys.stdout.buffer.write(raw)
         return {'previewed': 0, 'checked': 0, 'applied': 0, 'rolled-back': 0,

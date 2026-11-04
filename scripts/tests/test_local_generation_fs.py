@@ -292,7 +292,7 @@ class LocalGenerationTest(unittest.TestCase):
                     preexec_fn=lambda: os.dup2(descriptor, 3))
 
         before = fixture_snapshot(self.root)
-        for raw in (preview, check, b'{"action":"preview","action":"check"}', b'{'):
+        for raw in (preview, check, b'{"action":"preview","action":"check"}', b'{', b'null'):
             result = invoke(raw)
             value = json.loads(result.stdout)
             self.assertIn(value['status'], ('held', 'denied'), value)
@@ -303,6 +303,7 @@ class LocalGenerationTest(unittest.TestCase):
         self.assertGreater(recovered['target_writes'], 0)
         self.assertEqual(self.selection()['generation'], 'a')
         self.assertEqual(json.loads(invoke(preview).stdout)['status'], 'previewed')
+        self.assertEqual(json.loads(invoke(check).stdout)['status'], 'checked')
 
     def test_stale_preview_reports_observed_selection(self):
         self.apply('a')

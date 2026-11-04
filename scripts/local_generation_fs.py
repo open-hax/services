@@ -498,6 +498,7 @@ class Engine:
     def preview(self, seed):
         self.writes = 0
         self.stage = 'preview'
+        observed = None
         try:
             self._seed(seed)
             with self._locked(False):
@@ -514,7 +515,9 @@ class Engine:
         except (Denial, OSError, ValueError, subprocess.SubprocessError) as exc:
             status = ('held' if getattr(exc, 'hold', False) or getattr(exc, 'code', '') == 'recovery-uncertain' else
                       'unavailable' if getattr(exc, 'code', '') == 'unsupported' else 'denied')
-            return self._result('preview', status, first=failure(exc, 'preview'),
+            selection = observed['selection'] if observed is not None else None
+            return self._result('preview', status, before=selection,
+                                after=None if status == 'held' else selection, first=failure(exc, 'preview'),
                                 recovery='uncertain' if status == 'held' else 'not-needed')
 
     def _hook(self, name):
