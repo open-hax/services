@@ -320,6 +320,19 @@ class LocalGenerationTest(unittest.TestCase):
         self.assertEqual(result['target_writes'], 0)
         self.assertEqual(before, fixture_snapshot(self.root))
 
+    def test_failed_preview_observation_holds_unknown_selection(self):
+        self.apply('a')
+        seed = self.seed('b')
+        before = fixture_snapshot(self.root)
+        with mock.patch.object(self.engine, '_observe', side_effect=fs.Denial('current-drift')):
+            result = self.engine.preview(seed)
+        self.assertEqual(result['status'], 'held', result)
+        self.assertIsNone(result['before'])
+        self.assertIsNone(result['after'])
+        self.assertEqual(result['recovery'], 'uncertain')
+        self.assertEqual(result['target_writes'], 0)
+        self.assertEqual(before, fixture_snapshot(self.root))
+
     def test_each_partial_effect_restores_or_holds_without_losing_retained_trees(self):
         for operation in ("apply", "rollback"):
             probe = LocalGenerationTest()
