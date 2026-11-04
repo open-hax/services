@@ -273,6 +273,8 @@ class LocalGenerationTest(unittest.TestCase):
         preview = json_bytes({"schema": "services.local-preview/v1", "action": "preview", "seed": self.seed('c')})
         check = json_bytes({"schema": "services.local-request/v1", "action": "check", "plan": plan,
                             "approval": None, "plan_sha256": digest(plan)})
+        forged = copy.deepcopy(request)
+        forged['approval']['approver'] = 'intruder'
         worker = ('import json, os, signal, sys\nfrom local_generation_fs import Engine\n'
                   'p, r = json.load(sys.stdin)\ne = Engine(p, p["services"]["revision"])\n'
                   'def stop(event):\n    if event == "durable-intent": os.kill(os.getpid(), signal.SIGKILL)\n'
@@ -292,7 +294,7 @@ class LocalGenerationTest(unittest.TestCase):
                     preexec_fn=lambda: os.dup2(descriptor, 3))
 
         before = fixture_snapshot(self.root)
-        for raw in (preview, check, b'{"action":"preview","action":"check"}', b'{', b'null'):
+        for raw in (preview, check, b'{"action":"preview","action":"check"}', b'{', b'null', json_bytes(forged)):
             result = invoke(raw)
             value = json.loads(result.stdout)
             self.assertIn(value['status'], ('held', 'denied'), value)
