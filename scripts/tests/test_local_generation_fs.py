@@ -260,6 +260,63 @@ class LocalGenerationTest(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['status'], 'applied')
         self.assertEqual(self.selection()['generation'], 'facade')
 
+    def test_pending_recovery_never_writes_for_facade_reads_or_bad_input(self):
+        from local_generation_runner import SOURCES
+        owner = {"schema": "services.local-launch/v1", "policy": self.policy,
+                 "revision": self.revision,
+                 "sources": [{"id": name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+                             for name, path in sorted(SOURCES.items())],
+                 "python_sha256": hashlib.sha256(Path('/usr/bin/python3').read_bytes()).hexdigest()}
+        self.apply('a')
+        plan = self.plan('b')
+        request = self.request(plan)
+        preview = json_bytes({"schema": "services.local-preview/v1", "action": "preview", "seed": self.seed('c')})
+        check = json_bytes({"schema": "services.local-request/v1", "action": "check", "plan": plan,
+                            "approval": None, "plan_sha256": digest(plan)})
+        worker = ('import json, os, signal, sys\nfrom local_generation_fs import Engine\n'
+                  'p, r = json.load(sys.stdin)\ne = Engine(p, p["services"]["revision"])\n'
+                  'def stop(event):\n    if event == "durable-intent": os.kill(os.getpid(), signal.SIGKILL)\n'
+                  'e._test_hook = stop\ne.execute(r)\n')
+        killed = subprocess.run([sys.executable, '-c', worker], input=json.dumps([self.policy, request]),
+            text=True, capture_output=True, env={"PATH": os.environ['PATH'], "PYTHONPATH": str(SCRIPTS),
+            "PYTHONDONTWRITEBYTECODE": "1"}, timeout=30)
+        self.assertEqual(killed.returncode, -9, killed.stderr)
+
+        def invoke(raw):
+            with tempfile.TemporaryFile() as channel:
+                channel.write(json_bytes(owner))
+                channel.seek(0)
+                descriptor = channel.fileno()
+                return subprocess.run(['bb', str(SCRIPTS / 'local-generation.clj')], input=raw,
+                    capture_output=True, timeout=45, pass_fds=(descriptor, 3),
+                    preexec_fn=lambda: os.dup2(descriptor, 3))
+
+        before = fixture_snapshot(self.root)
+        for raw in (preview, check, b'{"action":"preview","action":"check"}', b'{'):
+            result = invoke(raw)
+            value = json.loads(result.stdout)
+            self.assertIn(value['status'], ('held', 'denied'), value)
+            self.assertEqual(value['target_writes'], 0, value)
+            self.assertEqual(before, fixture_snapshot(self.root))
+        recovered = json.loads(invoke(b'').stdout)
+        self.assertEqual(recovered['status'], 'failed-restored', recovered)
+        self.assertGreater(recovered['target_writes'], 0)
+        self.assertEqual(self.selection()['generation'], 'a')
+        self.assertEqual(json.loads(invoke(preview).stdout)['status'], 'previewed')
+
+    def test_stale_preview_reports_observed_selection(self):
+        self.apply('a')
+        seed = self.seed('b')
+        seed['expected_generation'] = 'stale'
+        before = fixture_snapshot(self.root)
+        result = self.engine.preview(seed)
+        self.assertEqual(result['status'], 'denied', result)
+        self.assertEqual(result['first_failure']['code'], 'current-drift')
+        self.assertEqual(result['before'], self.selection())
+        self.assertEqual(result['after'], self.selection())
+        self.assertEqual(result['target_writes'], 0)
+        self.assertEqual(before, fixture_snapshot(self.root))
+
     def test_each_partial_effect_restores_or_holds_without_losing_retained_trees(self):
         for operation in ("apply", "rollback"):
             probe = LocalGenerationTest()
