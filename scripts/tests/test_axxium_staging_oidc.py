@@ -1,4 +1,4 @@
-"""Staging authority template preserves all non-OIDC Compose settings."""
+"""Staging slot templates preserve the settings of their predecessors."""
 import json
 import os
 from pathlib import Path
@@ -9,6 +9,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 BASE = ROOT / 'digitalocean/environments/axxium.compose.yaml'
 STAGING = ROOT / 'digitalocean/environments/axxium-staging-oidc.compose.yaml'
+MAILBOX = ROOT / 'digitalocean/environments/axxium-staging-mailbox.compose.yaml'
 
 class StagingAuthorityTemplateTest(unittest.TestCase):
     def render(self, path, *, trust=True):
@@ -43,11 +44,53 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         app['volumes'].remove(mount[0])
         self.assertEqual(staging, base)
 
+    def test_mailbox_changes_only_actor_signing_and_ledger_settings(self):
+        staging_result, mailbox_result = self.render(STAGING), self.render(MAILBOX)
+        self.assertEqual(staging_result.returncode, 0, staging_result.stderr)
+        self.assertEqual(mailbox_result.returncode, 0, mailbox_result.stderr)
+        staging, mailbox = json.loads(staging_result.stdout), json.loads(mailbox_result.stdout)
+        app = mailbox['services']['axxium']
+        expected_env = {
+            'AXXIUM_SERVICE': 'promethean',
+            'AXXIUM_ENV': 'staging',
+            'AXXIUM_ISS': 'https://staging.axxium.promethean.rest',
+            'AXXIUM_SIGNING_KEY_FILE': '/run/axxium/actor-signing.pem',
+            'AXXIUM_MAILBOX_LEDGER_FILE': '/var/lib/axxium/mailbox/ledger.edn',
+        }
+        for key, value in expected_env.items():
+            self.assertEqual(app['environment'].pop(key), value)
+
+        # Compose can omit false flags in normalized output. Check the explicit
+        # source declarations as well, so missing files cannot create host paths.
+        source = yaml.safe_load(MAILBOX.read_text())
+        source_volumes = source['services']['axxium']['volumes']
+        expected_mounts = [
+            ('./actor-signing.pem', '/run/axxium/actor-signing.pem', True),
+            ('./mailbox/ledger.edn', '/var/lib/axxium/mailbox/ledger.edn', False),
+        ]
+        for relative, target, read_only in expected_mounts:
+            with self.subTest(target=target):
+                [mount] = [v for v in app['volumes'] if v['target'] == target]
+                self.assertEqual(mount['type'], 'bind')
+                self.assertEqual(Path(mount['source']), BASE.parent / relative)
+                self.assertIs(mount.get('read_only', False), read_only)
+                self.assertFalse(mount['bind'].get('create_host_path', False))
+                [declared] = [v for v in source_volumes if isinstance(v, dict) and v['target'] == target]
+                self.assertEqual(declared['source'], relative)
+                self.assertIs(declared['bind']['create_host_path'], False)
+                app['volumes'].remove(mount)
+
+        # Equality also keeps the old image's JWT inputs, OIDC authority,
+        # transfer identity, trust mounts, resource limits and database intact.
+        self.assertEqual(mailbox, staging)
+
     def test_missing_proxy_refuses_render(self):
-        self.assertNotEqual(self.render(STAGING, trust=False).returncode, 0)
+        for path in (STAGING, MAILBOX):
+            with self.subTest(template=path.name):
+                self.assertNotEqual(self.render(path, trust=False).returncode, 0)
 
     def test_staging_templates_cover_maximum_startup_shutdown(self):
-        for path in (BASE, STAGING):
+        for path in (BASE, STAGING, MAILBOX):
             with self.subTest(template=path.name):
                 result = self.render(path)
                 self.assertEqual(result.returncode, 0, result.stderr)
