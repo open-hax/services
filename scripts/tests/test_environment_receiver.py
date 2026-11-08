@@ -132,9 +132,24 @@ if fault or release_fault or intake_fault:
  m.atomic_write=injected
 operation_fault=os.environ.get('RECEIVER_TEST_OPERATION_FAULT')
 if operation_fault:
+ original_write=m.atomic_write
+ def runtime_write(path,text):
+  result=original_write(path,text)
+  if path.name==m.RUNTIME_HOLD and operation_fault=='crash-after-runtime-marker':
+   raise KeyboardInterrupt('simulated crash after durable runtime marker')
+  return result
+ m.atomic_write=runtime_write
  original_run=m.subprocess.run
+ up_calls=0
  def injected_run(args,*a,**kw):
+  global up_calls
+  is_up=args[:2]==['docker','compose'] and 'up' in args
+  if is_up:up_calls+=1
   result=original_run(args,*a,**kw)
+  if is_up:
+   if (operation_fault=='up-timeout' and up_calls==1) or (operation_fault=='rollback-timeout' and up_calls==2):
+    raise m.subprocess.TimeoutExpired(args,kw.get('timeout'))
+   if operation_fault=='up-signal' and up_calls==1:raise m.subprocess.CalledProcessError(-9,args)
   if args[:2]==['docker','compose'] and 'stop' in args and operation_fault=='stop-timeout':
    (m.ROOT/'stop-timeout.json').write_text(json.dumps({'command':args,'cwd':str(kw.get('cwd')),'check':kw.get('check'),'timeout':kw.get('timeout')}))
    raise m.subprocess.TimeoutExpired(args,kw.get('timeout'))
@@ -181,6 +196,14 @@ class ReceiverLifecycleTests(unittest.TestCase):
   data=json.loads(marker.read_text());self.assertEqual('promethean.receiver-intake/v1',data['schema']);self.assertTrue(data['first_failure'])
   retained=marker.read_bytes();calls=h.data()['calls'];self.assertNotEqual(0,h.receive('c',service=service).returncode)
   self.assertEqual(calls,h.data()['calls']);self.assertEqual(retained,marker.read_bytes())
+ def assert_runtime_held(self,h,phase,service='axxium'):
+  marker=h.slot(service=service)/receiver.RUNTIME_HOLD
+  original=marker.read_bytes();journal=json.loads(original)
+  self.assertEqual(receiver.RUNTIME_SCHEMA,journal['schema']);self.assertEqual(phase,journal['phase'])
+  calls=h.data()['calls'];retry=h.receive('e',service=service)
+  self.assertNotEqual(0,retry.returncode);self.assertIn(b'Prior runtime effect requires operator review',retry.stderr)
+  self.assertEqual(calls,h.data()['calls']);self.assertEqual(original,marker.read_bytes())
+  return journal
  def test_same_source_different_image_refuses_before_release_and_restores_old_tag(self):
   h=self.harness();self.generations(h);before=self.protected_bytes(h);old=h.data()['images'][h.tag('b')]
   d=h.data();d['load_ids']={h.tag('b'):'sha256:'+'e'*64};h.save(d);health=len(d['health'])
@@ -298,24 +321,71 @@ class ReceiverLifecycleTests(unittest.TestCase):
   self.assertNotEqual(0,result.returncode)
   self.assertEqual(before,{(h.slot()/name).name:(h.slot()/name).read_bytes() for name in before})
   self.assertEqual([],h.data()['removal_attempts']);self.assertFalse(h.data()['health'][-2]['healthy']);self.assertTrue(h.data()['health'][-1]['healthy'])
+  self.assertFalse((h.slot()/receiver.RUNTIME_HOLD).exists())
  def test_first_failed_start_stops_apps_without_cleanup(self):
   h=self.harness();d=h.data();d['fail_tags']=[h.tag('a')];h.save(d)
   self.assertNotEqual(0,h.receive('a').returncode);self.assertEqual([],h.data()['removal_attempts'])
   self.assertFalse((h.slot()/'deployment.json').exists())
   self.assertTrue(any('stop' in c for c in h.data()['calls']))
+  self.assertFalse((h.slot()/receiver.RUNTIME_HOLD).exists())
+ def test_same_image_start_timeout_holds_matching_release_and_receipt(self):
+  h=self.harness();self.generations(h);before=self.protected_bytes(h);calls=len(h.data()['calls'])
+  result=h.receive('b',operation_fault='up-timeout')
+  self.assertNotEqual(0,result.returncode);self.assertIn(b'TimeoutExpired',result.stderr)
+  self.assertEqual(before,self.protected_bytes(h))
+  compose=[call for call in h.data()['calls'][calls:] if call[0]=='compose']
+  self.assertEqual(1,len(compose));self.assertIn('up',compose[0]);self.assertEqual([],h.data()['removal_attempts'])
+  journal=self.assert_runtime_held(h,'starting_candidate')
+  self.assertEqual(journal['previous_selection'],journal['candidate_selection'])
+  self.assertEqual([{'phase':'starting_candidate','error':'TimeoutExpired'}],journal['failures'])
+ def test_interrupted_start_holds_without_rollback(self):
+  h=self.harness();self.healthy(h,'a');calls=len(h.data()['calls'])
+  self.assertNotEqual(0,h.receive('b',operation_fault='up-signal').returncode)
+  compose=[call for call in h.data()['calls'][calls:] if call[0]=='compose']
+  self.assertEqual(1,len(compose));self.assertIn('up',compose[0])
+  journal=self.assert_runtime_held(h,'starting_candidate')
+  self.assertEqual([{'phase':'starting_candidate','error':'CalledProcessError','exit_code':-9}],journal['failures'])
+ def test_start_timeout_protects_incumbent_across_other_slot_cleanup(self):
+  h=self.harness();self.generations(h);before=self.protected_bytes(h)
+  self.assertNotEqual(0,h.receive('c',operation_fault='up-timeout').returncode)
+  self.assertEqual({'AXXIUM_IMAGE':h.image_id(h.tag('c'))},h.selection(h.slot()/'release.env'))
+  for name in ('rollback.env','deployment.json'):
+   self.assertEqual(before[str((h.slot()/name).relative_to(h.root))],(h.slot()/name).read_bytes())
+  self.assert_runtime_held(h,'starting_candidate')
+  self.healthy(h,'d',env='staging')
+  self.assertIn(h.tag('b'),h.data()['images'])
+  self.assertNotIn(h.tag('b'),h.data()['removal_attempts'])
+ def test_rollback_timeout_retains_both_failures_and_last_healthy_evidence(self):
+  h=self.harness();self.generations(h);before=self.protected_bytes(h)
+  data=h.data();data['fail_tags']=[h.tag('c')];h.save(data)
+  self.assertNotEqual(0,h.receive('c',operation_fault='rollback-timeout').returncode)
+  self.assertEqual(before,self.protected_bytes(h));self.assertEqual([],h.data()['removal_attempts'])
+  journal=self.assert_runtime_held(h,'starting_previous')
+  self.assertEqual([{'phase':'starting_candidate','error':'CalledProcessError','exit_code':1},
+                    {'phase':'starting_previous','error':'TimeoutExpired'}],journal['failures'])
+ def test_crash_after_runtime_marker_holds_before_release_changes(self):
+  h=self.harness();self.generations(h);before=self.protected_bytes(h);calls=len(h.data()['calls'])
+  self.assertNotEqual(0,h.receive('c',operation_fault='crash-after-runtime-marker').returncode)
+  self.assertEqual(before,self.protected_bytes(h))
+  self.assertFalse(any(call[0]=='compose' for call in h.data()['calls'][calls:]))
+  self.assert_runtime_held(h,'selecting_candidate')
  def test_first_start_stop_timeout_releases_global_lock_for_other_slot(self):
   for service in ('axxium','knoxx'):
    with self.subTest(service=service):
     h=self.harness();d=h.data();d['fail_tags']=sorted(receiver.expected_tags(service,'a'*40));h.save(d)
     result=h.receive('a',service=service,operation_fault='stop-timeout')
     self.assertNotEqual(0,result.returncode);self.assertIn('TimeoutExpired',result.stderr.decode())
-    for name in ('release.env','rollback.env','deployment.json'):
+    self.assertTrue((h.slot(service=service)/'release.env').is_file())
+    for name in ('rollback.env','deployment.json'):
      self.assertFalse((h.slot(service=service)/name).exists(),name)
     self.assertEqual([],h.data()['removal_attempts'])
     stop=json.loads((h.root/'stop-timeout.json').read_text())
     roles=['axxium'] if service=='axxium' else ['backend','frontend']
     self.assertEqual(['stop']+roles,stop['command'][-len(roles)-1:])
     self.assertEqual(str(h.slot(service=service)),stop['cwd']);self.assertIs(True,stop['check'])
+    journal=self.assert_runtime_held(h,'stopping_first_start',service)
+    self.assertIsNone(journal['previous_selection'])
+    self.assertEqual('TimeoutExpired',journal['failures'][-1]['error'])
     self.healthy(h,'b',env='staging',service=service)
     self.assertEqual(120,stop['timeout'],'first-failure cleanup must release the shared receiver within its bounded wait')
  def test_failed_first_then_healthy_does_not_adopt_failed_generation_as_rollback(self):
@@ -401,6 +471,15 @@ class ReceiverLifecycleTests(unittest.TestCase):
  def test_malformed_slot_selection_refuses_cleanup(self):
   h=self.harness();self.generations(h);(h.slot('staging','knoxx')/'rollback.env').write_text('KNOXX_BACKEND_IMAGE=untrusted:latest\n')
   self.assertEqual(3,h.receive('c').returncode);self.assertEqual('healthy',h.receipt()['status']);self.assertEqual('blocked',h.receipt()['image_cleanup']['status']);self.assertEqual([],h.data()['removal_attempts'])
+ def test_malformed_runtime_hold_blocks_intake_and_protects_other_slot_cleanup(self):
+  h=self.harness();self.generations(h);marker=h.slot()/receiver.RUNTIME_HOLD
+  marker.write_text('{broken')
+  calls=h.data()['calls'];self.assertNotEqual(0,h.receive('c').returncode)
+  self.assertEqual(calls,h.data()['calls'])
+  self.assertEqual(3,h.receive('c',env='staging').returncode)
+  self.assertEqual('healthy',h.receipt(env='staging')['status'])
+  self.assertEqual('blocked',h.receipt(env='staging')['image_cleanup']['status'])
+  self.assertEqual([],h.data()['removal_attempts']);self.assertEqual('{broken',marker.read_text())
  def test_missing_slot_refuses_cleanup(self):
   h=self.harness();self.generations(h);slot=h.slot('staging','knoxx');(slot/'.env').unlink();(slot/'compose.yaml').unlink();slot.rmdir()
   self.assertEqual(3,h.receive('c').returncode);self.assertEqual([],h.data()['removal_attempts'])

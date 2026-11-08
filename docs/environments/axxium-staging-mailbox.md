@@ -35,6 +35,10 @@ Template review and host activation are separate steps.
   writes it. Keep the mailbox file distinct from all other ledgers and key
   files. The app pins the file identity while running, so stop the writer
   before any replacement.
+- Require an admitted Axxium image that refuses to load a mailbox ledger
+  larger than 2 MiB (2,097,152 bytes) and refuses an append that would exceed
+  that limit. Check the existing file size under the receiver lock before
+  installation. If the file exceeds the limit, preserve it and stop activation.
 - Keep credentials and session material host-local. Retain the required
   `JWT_SECRET` and `JWT_ISSUER` mappings for the incumbent image. During
   automatic rollback the receiver restores the previous image selection and
@@ -46,15 +50,20 @@ Template review and host activation are separate steps.
 1. Verify the reviewed template and candidate source pins. Before installation,
    require a reviewed, rehearsed operator recovery procedure for a failure
    discovered after the receiver records the new image as healthy. The
-   [receiver](../../scripts/receive-service-environment.py) attempts automatic
-   rollback only when its Compose start fails. It records
-   a healthy upgrade's previous image in `rollback.env` and has no operator
-   rollback command. A manual image-selection change alone breaks the
+   [receiver](../../scripts/receive-service-environment.py) records a healthy
+   upgrade's previous image in `rollback.env` and has no operator rollback
+   command. A manual image-selection change alone breaks the
    [last-healthy receipt check](promotion.md#installed-receiver-and-activation).
    The recovery procedure must cover the prior Compose bytes, exact image,
    matching last-healthy admission evidence, and verification without undoing
    database or ledger writes. If that procedure is unavailable or untested,
    stop before installing the template.
+   Separately admit and install a receiver revision that implements the
+   [runtime hold](promotion.md#installed-receiver-and-activation) before
+   installing this template. The receiver pinned at
+   `a2aee9a01a51ef1481dcc6d1071104f449dcf6bd` attempts rollback immediately
+   when Compose times out, while the daemon may still be recreating or
+   stopping a container.
 2. Under `/srv/open-hax/environments/.receiver.lock`, check the intake and
    refusal barriers. Validate the reviewed template in the existing slot
    context using Compose `config --quiet` with the private `.env` and a harmless
@@ -86,12 +95,20 @@ Template review and host activation are separate steps.
    requests are refused and verify unread recovery after a controlled restart.
    Treat a polling result and subscribed delivery as separate evidence.
 
-If the receiver reports a startup failure, verify the actual running image,
-health, and matching selection and receipt before any retry. Automatic rollback
-keeps the replacement Compose file in place. If public verification fails
-after the receiver reports health, use the rehearsed operator recovery
-procedure. Reacquire the lock and check that the installed file still matches
-the reviewed selection before restoring the saved Compose bytes. Verify the
-restored image, health, public OIDC behavior, and matching selection and
-receipt. Preserve the mailbox ledger and PostgreSQL writes. Clients using a
-fresh EdDSA actor token must sign in again after rollback.
+Halt installation and suspend all retries and rollbacks after a recreate or
+stop timeout. Under the receiver lock, preserve the failed command evidence,
+establish which Docker effects ran, and confirm any pending recreate and
+incumbent stop have finished. Check the actual project containers, image
+identities, running state and health against the selection and receipt.
+A healthy receipt records earlier observations. If an operation is still
+running or its outcome is uncertain, keep the slot held for operator review.
+
+Automatic rollback keeps the replacement Compose file in place. After a
+failed startup, verify the running image, health and matching admission
+evidence before any retry. If public verification fails after the receiver
+reports health, use the rehearsed operator recovery procedure. Reacquire
+the lock and check that the installed file still matches the reviewed
+selection before restoring the saved Compose bytes. Verify the restored
+image, health, public OIDC behavior, and matching selection and receipt.
+Preserve the mailbox ledger and PostgreSQL writes. Clients using a fresh
+EdDSA actor token must sign in again after rollback.

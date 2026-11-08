@@ -122,20 +122,32 @@ refused or pending marker, which is never cleared on re-entry.
 After successful health, `rollback.env` records the previous distinct healthy
 keyed image selection. Re-admitting the same selection preserves its existing
 rollback; swapping image roles is a different selection even if the ID set is
-unchanged. A failed first start restores the absence of an active selection,
-so it cannot become a later deployment's rollback.
+unchanged. A failed first start clears the active selection after a
+confirmed application stop, so it cannot become a later deployment's rollback.
 A subsequent deployment requires `release.env` to match the complete keyed
 `images` selection in the slot's last `status: healthy` deployment receipt.
 Missing, malformed or mismatched admission evidence refuses before image load,
 startup or cleanup. A release replaced before a crash or failed durability step
 is therefore operator recovery state, rather than an implicitly healthy rollback.
 Existing healthy receipts with the original image-selection fields remain valid.
-A failed upgrade leaves the active selection, existing rollback selection and
-last healthy receipt unchanged. Image retention runs only after successful
-health, while holding the same global receiver lock. The receiver records only
-tags it admitted successfully in `receiver-images.json`; it never adopts old
-tags by scanning for a matching name. Initial installation therefore preserves
-unrecorded historical images for separate operator review.
+A failed upgrade with confirmed fallback leaves the active selection, existing
+rollback selection and last healthy receipt unchanged. Image retention runs
+only after successful health, while holding the same global receiver lock.
+The receiver records only tags it admitted successfully in
+`receiver-images.json`; it never adopts old tags by scanning for a matching
+name. Initial installation therefore preserves unrecorded historical images
+for separate operator review.
+
+Before selecting an image or running Compose, the receiver writes a durable
+`receiver-runtime.json` hold in the target slot. An interrupted effect or a
+timeout retains the hold. The receiver refuses another intake for that slot
+and preserves both image selections during other slots' retention. A timeout
+while starting the candidate supplies no basis for automatic rollback. The
+hold clears only after the receiver durably records candidate health or
+confirms fallback, including a successful application-only stop on a first
+failed start. Operators reconcile retained holds before authorizing another
+change. If hold removal cannot be confirmed, the receiver attempts to
+recreate the hold and reports failure.
 
 Retention removes only superseded, recorded source-SHA tags. It conserves image
 IDs selected by every testing/staging active or rollback file, all Docker
