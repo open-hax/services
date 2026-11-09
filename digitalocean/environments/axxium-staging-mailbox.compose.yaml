@@ -24,6 +24,8 @@ services:
       AXXIUM_ENV: staging
       AXXIUM_SIGNING_KEY_FILE: /run/axxium/actor-signing.pem
       AXXIUM_MAILBOX_LEDGER_FILE: /var/lib/axxium/mailbox/ledger.edn
+      AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID: ${AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID:-}
+      AXXIUM_MAILBOX_WEBHOOK_KEY_FILE: ${AXXIUM_MAILBOX_WEBHOOK_KEY_FILE:-}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
       AXXIUM_IDENTITY_KEY_FILE: /run/axxium/identity-private.json
       AXXIUM_IDENTITY_TRUST_FILE: /run/axxium/trust.json

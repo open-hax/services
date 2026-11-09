@@ -43,6 +43,35 @@ Template review and host activation are separate steps.
   `JWT_SECRET` and `JWT_ISSUER` mappings for the incumbent image. The candidate
   uses the separate Ed25519 key for its actor tokens.
 
+## Optional webhook pilot
+
+Polling is the default when both webhook settings are empty. Enable the
+pilot for one approved staging recipient with an admitted Axxium image that
+supports mailbox OAuth and webhook delivery.
+
+- In the slot's private `.env`, set `AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID` to
+  that recipient's verified AT Protocol DID and
+  `AXXIUM_MAILBOX_WEBHOOK_KEY_FILE` to `/run/axxium/oidc/mailbox-webhook.key`.
+  Set both values together.
+- On the host, generate a dedicated random 32-byte key and write it as
+  base64 to the slot's `oidc/mailbox-webhook.key` as a regular file owned by
+  UID 1000 with mode `0600`. Keep the key in the existing symlink-free OIDC
+  directory. Its read-only mount supplies the file to Axxium. Preserve the
+  same key across restarts so Axxium can reopen sealed subscription state.
+- In the slot's private `oidc/authority.json`, set `mailbox-client-id` to
+  the ID of the dedicated registered staging OAuth client and
+  `mailbox-resource` to
+  `https://staging.axxium.promethean.rest/api/mailbox/mcp`. Configure that
+  client's exact approved redirect URI and use the `mailbox:events` resource
+  scope. Keep the client credentials host-local.
+- Back up the prior private `.env` and `oidc/authority.json` under the
+  receiver lock before applying the pilot settings. In operator recovery,
+  restore those exact files with the saved Compose template and image.
+- Apply the fixed-slot installation procedure below. Include subscription,
+  retry, and delivery records in the disposable capacity rehearsal. Verify
+  the staged OAuth callback and signed webhook receipt with the selected
+  recipient. Confirm actual ChatGPT subscriber delivery separately.
+
 ## Capacity preflight
 
 Reserve at least 65,536 bytes for the bounded smoke. After validating the
@@ -128,13 +157,13 @@ exhaustion requires an independently reviewed data-preserving capacity change.
    health, durably establish an operator recovery hold using the receiver's
    schema and both exact selections before changing the slot. The hold
    keeps both generations protected during image retention.
-3. Under the same lock, restore the saved Compose bytes and matching prior
-   selection. Confirm the exact incumbent and selected rollback image IDs
-   are available locally before changing the slot. Validate the private
-   configuration, then start the incumbent by its recorded image ID with
+3. Under the same lock, confirm the exact incumbent and selected rollback
+   image IDs are available locally. Restore the saved Compose bytes, matching
+   prior selection, private `.env`, and `oidc/authority.json`. Validate that
+   private configuration, then start the incumbent by its recorded image ID with
    `docker compose up -d --wait --pull never` in the existing project.
-   Preserve the mailbox ledger and PostgreSQL volume. Verify the running
-   image, health, public OIDC behavior, and preserved data.
+   Preserve the webhook key, mailbox ledger, and PostgreSQL volume. Verify
+   the running image, health, public OIDC behavior, and preserved data.
 4. Archive both sets of original evidence. Reconcile the active selection
    with its matching historical healthy receipt and restore the reviewed
    rollback selection. Record the new runtime verification separately. Clear

@@ -12,13 +12,15 @@ STAGING = ROOT / 'digitalocean/environments/axxium-staging-oidc.compose.yaml'
 MAILBOX = ROOT / 'digitalocean/environments/axxium-staging-mailbox.compose.yaml'
 
 class StagingAuthorityTemplateTest(unittest.TestCase):
-    def render(self, path, *, trust=True):
+    def render(self, path, *, trust=True, webhook=None):
         env = {'PATH': os.environ.get('PATH', os.defpath),
                'AXXIUM_IMAGE': 'promethean-axxium:fixture',
                'AXXIUM_PUBLIC_BASE_URL': 'https://staging.axxium.promethean.rest',
                'DB_PASSWORD': 'fixture-only-db', 'JWT_SECRET': 'fixture-only-session'}
         if trust:
             env['AXXIUM_TRUST_PROXY'] = '172.17.0.1'
+        if webhook is not None:
+            env.update(webhook)
         return subprocess.run(['docker', 'compose', '--project-name', 'staging-fixture',
                                '--project-directory', str(BASE.parent), '-f', str(path),
                                'config', '--format', 'json'], env=env, text=True,
@@ -44,7 +46,7 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         app['volumes'].remove(mount[0])
         self.assertEqual(staging, base)
 
-    def test_mailbox_changes_only_actor_signing_and_ledger_settings(self):
+    def test_mailbox_changes_only_actor_signing_ledger_and_optional_webhook_settings(self):
         staging_result, mailbox_result = self.render(STAGING), self.render(MAILBOX)
         self.assertEqual(staging_result.returncode, 0, staging_result.stderr)
         self.assertEqual(mailbox_result.returncode, 0, mailbox_result.stderr)
@@ -56,6 +58,8 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
             'AXXIUM_ISS': 'https://staging.axxium.promethean.rest',
             'AXXIUM_SIGNING_KEY_FILE': '/run/axxium/actor-signing.pem',
             'AXXIUM_MAILBOX_LEDGER_FILE': '/var/lib/axxium/mailbox/ledger.edn',
+            'AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID': '',
+            'AXXIUM_MAILBOX_WEBHOOK_KEY_FILE': '',
         }
         for key, value in expected_env.items():
             self.assertEqual(app['environment'].pop(key), value)
@@ -83,6 +87,23 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         # Equality also keeps the old image's JWT inputs, OIDC authority,
         # transfer identity, trust mounts, resource limits and database intact.
         self.assertEqual(mailbox, staging)
+
+    def test_mailbox_webhook_uses_existing_read_only_oidc_mount(self):
+        settings = {
+            'AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID': 'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa',
+            'AXXIUM_MAILBOX_WEBHOOK_KEY_FILE': '/run/axxium/oidc/mailbox-webhook.key',
+        }
+        defaults, configured = self.render(MAILBOX), self.render(MAILBOX, webhook=settings)
+        self.assertEqual(defaults.returncode, 0, defaults.stderr)
+        self.assertEqual(configured.returncode, 0, configured.stderr)
+        expected, actual = json.loads(defaults.stdout), json.loads(configured.stdout)
+        app = expected['services']['axxium']
+        app['environment'].update(settings)
+        self.assertEqual(actual, expected)
+        [mount] = [v for v in app['volumes'] if v['target'] == '/run/axxium/oidc']
+        self.assertEqual(Path(mount['source']), BASE.parent / 'oidc')
+        self.assertTrue(mount['read_only'])
+        self.assertFalse(mount['bind'].get('create_host_path', False))
 
     def test_missing_proxy_refuses_render(self):
         for path in (STAGING, MAILBOX):
