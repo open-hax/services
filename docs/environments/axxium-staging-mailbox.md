@@ -129,9 +129,11 @@ exhaustion requires an independently reviewed data-preserving capacity change.
    schema and both exact selections before changing the slot. The hold
    keeps both generations protected during image retention.
 3. Under the same lock, restore the saved Compose bytes and matching prior
-   selection. Validate the private configuration, then explicitly start the
-   incumbent by its recorded image ID with the existing project and
-   PostgreSQL volume. Preserve the mailbox ledger as-is. Verify the running
+   selection. Confirm the exact incumbent and selected rollback image IDs
+   are available locally before changing the slot. Validate the private
+   configuration, then start the incumbent by its recorded image ID with
+   `docker compose up -d --wait --pull never` in the existing project.
+   Preserve the mailbox ledger and PostgreSQL volume. Verify the running
    image, health, public OIDC behavior, and preserved data.
 4. Archive both sets of original evidence. Reconcile the active selection
    with its matching historical healthy receipt and restore the reviewed

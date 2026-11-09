@@ -16,7 +16,7 @@ services:
       DB_NAME: axxium
       DB_USER: axxium
       DB_PASSWORD: ${DB_PASSWORD:?Set an instance-specific database password}
-      # The receiver restores the incumbent image with this same template on failure.
+      # Keep the incumbent session settings available during operator recovery.
       JWT_SECRET: ${JWT_SECRET:?Set an instance-specific session secret}
       JWT_ISSUER: ${AXXIUM_PUBLIC_BASE_URL}
       AXXIUM_ISS: ${AXXIUM_PUBLIC_BASE_URL}
