@@ -12,6 +12,8 @@ MAX_ARCHIVE=4*1024**3
 IMAGE_ID=re.compile(r'sha256:[0-9a-f]{64}')
 OWNED_TAG=re.compile(r'promethean-(?:axxium|knoxx-backend|knoxx-frontend):[0-9a-f]{40}')
 REMOVAL_BARRIER='Removal in progress or uncertain; operator review required'
+RUNTIME_HOLD='receiver-runtime.json'
+RUNTIME_SCHEMA='promethean.receiver-runtime/v1'
 
 class RetentionBlocked(ValueError):pass
 
@@ -61,6 +63,22 @@ def selection_ids(path,service):
  try:return set(selection_values(path.read_text(),service).values())
  except OSError:raise RetentionBlocked('Unavailable slot image selection')
 
+def held_runtime_ids(slot,environment,service):
+ """Keep both generations eligible for recovery during other slots' retention."""
+ marker=slot/RUNTIME_HOLD
+ if not marker.exists() and not marker.is_symlink():return set()
+ try:
+  if marker.is_symlink() or not marker.is_file():raise ValueError()
+  hold=json.loads(marker.read_text())
+  if (not isinstance(hold,dict) or hold.get('schema')!=RUNTIME_SCHEMA or
+      hold.get('environment')!=environment or hold.get('service')!=service):raise ValueError()
+  previous=hold['previous_selection']
+  candidate=hold['candidate_selection']
+  if (previous is not None and not isinstance(previous,str)) or not isinstance(candidate,str):raise ValueError()
+  selections=[candidate] if previous is None else [previous,candidate]
+  return {image for selection in selections for image in selection_values(selection,service).values()}
+ except (KeyError,ValueError,OSError):raise RetentionBlocked('Invalid runtime hold image selection')
+
 def admitted_selection(slot,environment,service):
  """A replaced release file alone never establishes a healthy generation."""
  release=slot/'release.env';receipt=slot/'deployment.json';rollback=slot/'rollback.env'
@@ -92,6 +110,7 @@ def reference_inventory():
    if active.exists() or active.is_symlink():protected.update(selection_ids(active,service))
    elif rollback.exists() or (slot/'deployment.json').exists():raise RetentionBlocked('Active slot selection missing')
    if rollback.exists() or rollback.is_symlink():protected.update(selection_ids(rollback,service))
+   protected.update(held_runtime_ids(slot,environment,service))
  aliases={};tags={}
  try:
   for line in docker_output(['image','ls','--all','--digests','--no-trunc','--format','{{json .}}']).splitlines():
@@ -287,6 +306,47 @@ def load_images(path,environment,service,sha):
   except OSError:pass
   raise RetentionBlocked(journal['first_failure']+'; operator review required: '+str(marker)) from error
 
+def deploy_images(slot,environment,service,sha,values,previous):
+ """Persist the pending generation before selecting it or invoking Compose."""
+ marker=slot/RUNTIME_HOLD
+ release=slot/'release.env'
+ selection=''.join(f'{key}={value}\n' for key,value in values.items())
+ prior=None if previous is None else previous.decode()
+ journal={'schema':RUNTIME_SCHEMA,'environment':environment,'service':service,
+          'source_sha':sha,'previous_selection':prior,'candidate_selection':selection,
+          'phase':'selecting_candidate','failures':[]}
+
+ def save():atomic_write(marker,json.dumps(journal,indent=2)+'\n')
+ def complete():
+  try:marker.unlink();sync_directory(slot)
+  except OSError as error:
+   if not marker.exists():
+    try:save()
+    except OSError:pass
+   raise RetentionBlocked('Runtime hold completion uncertain; operator review required: '+str(marker)) from error
+
+ compose=['docker','compose','--project-name',f'{service}-{environment}','--env-file',str(slot/'.env'),'--env-file',str(release),'-f',str(slot/'compose.yaml')]
+ up=['up','-d','--wait','--wait-timeout','180','--pull','never']
+ save()
+ atomic_write(release,selection)
+ journal['phase']='starting_candidate';save()
+ try:subprocess.run(compose+up,cwd=slot,check=True,timeout=240)
+ except (subprocess.SubprocessError,OSError) as error:
+  # Even a positive exit code cannot establish that Docker finished all effects.
+  failure={'phase':journal['phase'],'error':type(error).__name__}
+  if isinstance(error,subprocess.CalledProcessError):failure['exit_code']=error.returncode
+  journal['failures'].append(failure);save()
+  raise
+
+ journal['phase']='recording_health';save()
+ images=sorted(expected_tags(service,sha))
+ cleanup=retain_after_health(slot,previous,dict(zip(images,values.values())))
+ receipt={'environment':environment,'service':service,'source_sha':sha,'images':values,'deployed_at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'status':'healthy','image_cleanup':cleanup}
+ atomic_write(slot/'deployment.json',json.dumps(receipt,indent=2)+'\n')
+ complete()
+ print(json.dumps(receipt))
+ return 0 if cleanup['status']=='complete' else 3
+
 def main():
  environment,service=sys.argv[1:]
  if environment not in {'testing','staging'} or service not in {'knoxx','axxium'}:raise ValueError('Unsupported slot')
@@ -299,6 +359,8 @@ def main():
   fcntl.flock(lock,fcntl.LOCK_EX)
   intake=ROOT/'receiver-intake.json'
   if intake.exists() or intake.is_symlink():raise RetentionBlocked('Prior image intake requires operator review: '+str(intake))
+  marker=slot/RUNTIME_HOLD
+  if marker.exists() or marker.is_symlink():raise RetentionBlocked('Prior runtime effect requires operator review: '+str(marker))
   # Refuse unknown/crash residue before loading images, changing a selection,
   # attempting health or considering cleanup. Recovery is an operator decision.
   previous=admitted_selection(slot,environment,service)
@@ -311,27 +373,5 @@ def main():
      output.write(chunk)
    validate_archive(image_file,service,sha)
    values=load_images(image_file,environment,service,sha)
-   images=[f'promethean-axxium:{sha}'] if service=='axxium' else [f'promethean-knoxx-backend:{sha}',f'promethean-knoxx-frontend:{sha}']
-   # Pin verified IDs only after the complete import transaction succeeds.
-   release=slot/'release.env'
-   atomic_write(release,''.join(f'{key}={value}\n' for key,value in values.items()))
-   compose=['docker','compose','--project-name',f'{service}-{environment}','--env-file',str(slot/'.env'),'--env-file',str(release),'-f',str(slot/'compose.yaml')]
-   try:
-    subprocess.run(compose+['up','-d','--wait','--wait-timeout','180','--pull','never'],cwd=slot,check=True,timeout=240)
-   except Exception:
-    if previous is not None:
-     atomic_write(release,previous.decode())
-     subprocess.run(compose+['up','-d','--wait','--wait-timeout','180','--pull','never'],cwd=slot,check=True,timeout=240)
-    else:
-     # Preserve database volumes and its state on a first failed application start.
-     try:subprocess.run(compose+['stop']+(['axxium'] if service=='axxium' else ['backend','frontend']),cwd=slot,check=True,timeout=120)
-     finally:
-      # No healthy generation existed before this attempt. Do not let the
-      # failed selection become a later deployment's purported rollback.
-      release.unlink(missing_ok=True);sync_directory(slot)
-    raise
-   cleanup=retain_after_health(slot,previous,dict(zip(images,values.values())))
-   receipt={'environment':environment,'service':service,'source_sha':sha,'images':values,'deployed_at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'status':'healthy','image_cleanup':cleanup}
-   atomic_write(slot/'deployment.json',json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt))
-   return 0 if cleanup['status']=='complete' else 3
+   return deploy_images(slot,environment,service,sha,values,previous)
 if __name__=='__main__':raise SystemExit(main())

@@ -3,8 +3,8 @@
 """Explicit first enrollment of one synthetic Stage client, after source adoption.
 
 Run through the executing Codex account's audited sudo. This privileged helper
-does not run in CI. It holds the existing environment receiver lock, preserves
-its owner and intake barrier, and never opens a production authority/runtime.
+does not run in CI. It holds the existing environment receiver lock, honors
+intake and runtime holds, and never opens a production authority/runtime.
 Any partial pair or uncertain effect is retained for explicit recovery.
 """
 import argparse
@@ -139,6 +139,7 @@ def receiver_lock():
                 stat.S_IMODE(info.st_mode) == 0o600)
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         require(not present(ENVIRONMENTS / 'receiver-intake.json'), 'Existing receiver intake barrier is active')
+        require(not present(SLOT / 'receiver-runtime.json'), 'Existing staging Axxium receiver runtime hold is active')
         yield
 
 

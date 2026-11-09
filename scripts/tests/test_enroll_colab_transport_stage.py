@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -71,6 +72,36 @@ class EnrollmentLaws(unittest.TestCase):
     def test_duplicate_json_fields_refuse(self):
         with self.assertRaises(Exception):
             m.decode(b'{"issuer":"one","issuer":"two"}')
+
+
+class EnrollmentReceiverLockTests(unittest.TestCase):
+    def test_runtime_hold_refuses_enrollment_before_stage_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            slot = root / 'staging/axxium'
+            slot.mkdir(parents=True)
+            lock = root / '.receiver.lock'
+            lock.touch(mode=0o600)
+            info = lock.stat()
+            receiver_info = SimpleNamespace(st_mode=info.st_mode, st_nlink=info.st_nlink, st_uid=1001)
+            hold = slot / 'receiver-runtime.json'
+            with patch.multiple(m, ENVIRONMENTS=root, SLOT=slot, AUTHORITY=slot / 'authority.json',
+                                STATE=root / 'gateway-state'), patch.object(m, 'require_identity'), \
+                 patch.object(m.os, 'fstat', return_value=receiver_info), \
+                 patch.object(m, 'installed_stage', side_effect=AssertionError('Stage access reached')) as installed:
+                for dangling in (False, True):
+                    with self.subTest(dangling=dangling):
+                        if dangling:
+                            hold.symlink_to('missing-runtime-hold')
+                        else:
+                            hold.write_bytes(b'receiver evidence')
+                        try:
+                            with self.assertRaisesRegex(stage.Refused, 'receiver runtime hold is active'):
+                                m.enroll()
+                            installed.assert_not_called()
+                            self.assertTrue(m.present(hold))
+                        finally:
+                            hold.unlink()
 
 
 class EnrollmentTransactionTests(unittest.TestCase):

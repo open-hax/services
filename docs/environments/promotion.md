@@ -65,11 +65,11 @@ job, or let a candidate PR redefine the controller or its policy.
 
 ## Installed receiver and activation
 
-Knoxx stores isolated slots under `/srv/open-hax/environments/<env>/<service>`.
+Services stores isolated slots under `/srv/open-hax/environments/<env>/<service>`.
 The root-owned `/usr/local/lib/promethean-environments/receive.py` is the forced
 command for four separate SSH keys; each key names exactly one service and slot.
 It checks OCI archive tags, pins image IDs, serializes changes, waits for health,
-and restores the previous image selection after a failed upgrade. Databases and
+and holds uncertain runtime changes for operator reconciliation. Databases and
 secrets remain in the slot. Fixed compose templates cap memory, CPU, process
 counts and logs; application containers have no Docker socket or production mounts.
 
@@ -122,20 +122,35 @@ refused or pending marker, which is never cleared on re-entry.
 After successful health, `rollback.env` records the previous distinct healthy
 keyed image selection. Re-admitting the same selection preserves its existing
 rollback; swapping image roles is a different selection even if the ID set is
-unchanged. A failed first start restores the absence of an active selection,
-so it cannot become a later deployment's rollback.
+unchanged.
 A subsequent deployment requires `release.env` to match the complete keyed
 `images` selection in the slot's last `status: healthy` deployment receipt.
 Missing, malformed or mismatched admission evidence refuses before image load,
 startup or cleanup. A release replaced before a crash or failed durability step
 is therefore operator recovery state, rather than an implicitly healthy rollback.
 Existing healthy receipts with the original image-selection fields remain valid.
-A failed upgrade leaves the active selection, existing rollback selection and
-last healthy receipt unchanged. Image retention runs only after successful
-health, while holding the same global receiver lock. The receiver records only
-tags it admitted successfully in `receiver-images.json`; it never adopts old
-tags by scanning for a matching name. Initial installation therefore preserves
-unrecorded historical images for separate operator review.
+Image retention runs only after successful health, while holding the same global
+receiver lock.
+The receiver records only tags it admitted successfully in
+`receiver-images.json`; it never adopts old tags by scanning for a matching
+name. Initial installation therefore preserves unrecorded historical images
+for separate operator review.
+
+Before selecting an image or running Compose, the receiver writes a durable
+`receiver-runtime.json` hold in the target slot. A failed Compose start,
+including a positive exit code, timeout, or interruption, leaves the hold
+and attempted selection in place. The journal preserves the prior and
+candidate selections. The previous rollback selection and last healthy
+receipt, if present, remain available. Docker may still be applying a request
+after the CLI exits. A subsequent Compose command requires operator
+reconciliation of those effects. The receiver refuses another intake for
+the held slot and protects both image IDs during other slots' retention.
+
+The receiver clears its hold after it durably records candidate health. If
+the directory sync after removing the hold fails, the receiver attempts to
+recreate the hold and reports uncertain completion. A second storage failure
+can leave the hold absent. An uncertain-completion report requires operator
+review even when the marker is absent.
 
 Retention removes only superseded, recorded source-SHA tags. It conserves image
 IDs selected by every testing/staging active or rollback file, all Docker
