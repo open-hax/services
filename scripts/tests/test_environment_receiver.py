@@ -81,7 +81,6 @@ if a[:1]==['compose']:
   failed=any(s['images'].get(t) in values for t in s.get('fail_tags',[]))
   s['health'].append({'images':values,'healthy':not failed,'removals_before':list(s['removed'])})
   finish(1 if failed else 0)
- if 'stop' in a:finish()
 finish(2)
 '''
 
@@ -140,19 +139,11 @@ if operation_fault:
   return result
  m.atomic_write=runtime_write
  original_run=m.subprocess.run
- up_calls=0
  def injected_run(args,*a,**kw):
-  global up_calls
-  is_up=args[:2]==['docker','compose'] and 'up' in args
-  if is_up:up_calls+=1
   result=original_run(args,*a,**kw)
-  if is_up:
-   if (operation_fault=='up-timeout' and up_calls==1) or (operation_fault=='rollback-timeout' and up_calls==2):
-    raise m.subprocess.TimeoutExpired(args,kw.get('timeout'))
-   if operation_fault=='up-signal' and up_calls==1:raise m.subprocess.CalledProcessError(-9,args)
-  if args[:2]==['docker','compose'] and 'stop' in args and operation_fault=='stop-timeout':
-   (m.ROOT/'stop-timeout.json').write_text(json.dumps({'command':args,'cwd':str(kw.get('cwd')),'check':kw.get('check'),'timeout':kw.get('timeout')}))
-   raise m.subprocess.TimeoutExpired(args,kw.get('timeout'))
+  if args[:2]==['docker','compose'] and 'up' in args:
+   if operation_fault=='up-timeout':raise m.subprocess.TimeoutExpired(args,kw.get('timeout'))
+   if operation_fault=='up-signal':raise m.subprocess.CalledProcessError(-9,args)
   if args[:2]==['docker','load']:
    if operation_fault=='load-timeout':raise m.subprocess.TimeoutExpired(args,kw.get('timeout',1))
    if operation_fault=='crash-after-load':raise KeyboardInterrupt('simulated crash after load')
@@ -165,12 +156,13 @@ if operation_fault:
 finish_fault=os.environ.get('RECEIVER_TEST_FINISH_FAULT')
 if finish_fault:
  original_sync=m.sync_directory;original_write=m.atomic_write;failed=[]
+ marker=m.ROOT/sys.argv[3]/sys.argv[4]/m.RUNTIME_HOLD if finish_fault.startswith('runtime-') else m.ROOT/'receiver-intake.json'
  def finish_sync(path):
-  if path==m.ROOT and not (path/'receiver-intake.json').exists() and not failed:
-   failed.append(True);raise OSError('injected intake marker removal directory fsync failure')
+  if path==marker.parent and not marker.exists() and not failed:
+   failed.append(True);raise OSError('injected marker removal directory fsync failure')
   return original_sync(path)
  def recovery_write(path,text):
-  if failed and path.name=='receiver-intake.json' and finish_fault=='recovery-write-fails':raise OSError('injected unavailable recovery marker write')
+  if failed and path==marker and finish_fault.endswith('recovery-write-fails'):raise OSError('injected unavailable recovery marker write')
   return original_write(path,text)
  m.sync_directory=finish_sync;m.atomic_write=recovery_write
 sys.argv=['receiver',sys.argv[3],sys.argv[4]];raise SystemExit(m.main())
@@ -314,20 +306,25 @@ class ReceiverLifecycleTests(unittest.TestCase):
      self.assertFalse((h.root/'receiver-intake.json').exists())
      self.assertTrue(all(call[:2]==['image','inspect'] for call in after['calls'][calls:]))
      self.assertEqual([],after['removal_attempts']);self.assertEqual([],after.get('restore_attempts',[]))
- def test_failed_upgrade_preserves_active_rollback_and_receipt(self):
-  h=self.harness();self.generations(h)
-  before={p.name:p.read_bytes() for p in (h.slot()/'release.env',h.slot()/'rollback.env',h.slot()/'deployment.json')}
-  d=h.data();d['fail_tags']=[h.tag('c')];h.save(d);result=h.receive('c')
-  self.assertNotEqual(0,result.returncode)
-  self.assertEqual(before,{(h.slot()/name).name:(h.slot()/name).read_bytes() for name in before})
-  self.assertEqual([],h.data()['removal_attempts']);self.assertFalse(h.data()['health'][-2]['healthy']);self.assertTrue(h.data()['health'][-1]['healthy'])
-  self.assertFalse((h.slot()/receiver.RUNTIME_HOLD).exists())
- def test_first_failed_start_stops_apps_without_cleanup(self):
-  h=self.harness();d=h.data();d['fail_tags']=[h.tag('a')];h.save(d)
-  self.assertNotEqual(0,h.receive('a').returncode);self.assertEqual([],h.data()['removal_attempts'])
-  self.assertFalse((h.slot()/'deployment.json').exists())
-  self.assertTrue(any('stop' in c for c in h.data()['calls']))
-  self.assertFalse((h.slot()/receiver.RUNTIME_HOLD).exists())
+ def test_positive_start_exit_holds_same_and_distinct_images_without_rollback(self):
+  for letter in ('b','c'):
+   with self.subTest(letter=letter):
+    h=self.harness();self.generations(h)
+    before=self.protected_bytes(h);release=h.slot()/'release.env'
+    d=h.data();calls=len(d['calls']);d['fail_tags']=[h.tag(letter)];h.save(d)
+    result=h.receive(letter)
+    self.assertNotEqual(0,result.returncode);self.assertIn(b'CalledProcessError',result.stderr)
+    compose=[call for call in h.data()['calls'][calls:] if call[0]=='compose']
+    self.assertEqual(1,len(compose));self.assertIn('up',compose[0])
+    self.assertEqual([],h.data()['removal_attempts'])
+    selection=f'AXXIUM_IMAGE={h.image_id(h.tag(letter))}\n'
+    release_key=str(release.relative_to(h.root))
+    expected={**before,release_key:selection.encode()}
+    self.assertEqual(expected,self.protected_bytes(h))
+    journal=self.assert_runtime_held(h,'starting_candidate')
+    self.assertEqual(before[release_key].decode(),journal['previous_selection'])
+    self.assertEqual(selection,journal['candidate_selection'])
+    self.assertEqual([{'phase':'starting_candidate','error':'CalledProcessError','exit_code':1}],journal['failures'])
  def test_same_image_start_timeout_holds_matching_release_and_receipt(self):
   h=self.harness();self.generations(h);before=self.protected_bytes(h);calls=len(h.data()['calls'])
   result=h.receive('b',operation_fault='up-timeout')
@@ -355,46 +352,48 @@ class ReceiverLifecycleTests(unittest.TestCase):
   self.healthy(h,'d',env='staging')
   self.assertIn(h.tag('b'),h.data()['images'])
   self.assertNotIn(h.tag('b'),h.data()['removal_attempts'])
- def test_rollback_timeout_retains_both_failures_and_last_healthy_evidence(self):
-  h=self.harness();self.generations(h);before=self.protected_bytes(h)
-  data=h.data();data['fail_tags']=[h.tag('c')];h.save(data)
-  self.assertNotEqual(0,h.receive('c',operation_fault='rollback-timeout').returncode)
-  self.assertEqual(before,self.protected_bytes(h));self.assertEqual([],h.data()['removal_attempts'])
-  journal=self.assert_runtime_held(h,'starting_previous')
-  self.assertEqual([{'phase':'starting_candidate','error':'CalledProcessError','exit_code':1},
-                    {'phase':'starting_previous','error':'TimeoutExpired'}],journal['failures'])
  def test_crash_after_runtime_marker_holds_before_release_changes(self):
   h=self.harness();self.generations(h);before=self.protected_bytes(h);calls=len(h.data()['calls'])
   self.assertNotEqual(0,h.receive('c',operation_fault='crash-after-runtime-marker').returncode)
   self.assertEqual(before,self.protected_bytes(h))
   self.assertFalse(any(call[0]=='compose' for call in h.data()['calls'][calls:]))
   self.assert_runtime_held(h,'selecting_candidate')
- def test_first_start_stop_timeout_releases_global_lock_for_other_slot(self):
+ def test_failed_first_start_holds_without_stop_and_allows_other_slot(self):
   for service in ('axxium','knoxx'):
    with self.subTest(service=service):
     h=self.harness();d=h.data();d['fail_tags']=sorted(receiver.expected_tags(service,'a'*40));h.save(d)
-    result=h.receive('a',service=service,operation_fault='stop-timeout')
-    self.assertNotEqual(0,result.returncode);self.assertIn('TimeoutExpired',result.stderr.decode())
+    result=h.receive('a',service=service)
+    self.assertNotEqual(0,result.returncode);self.assertIn(b'CalledProcessError',result.stderr)
     self.assertTrue((h.slot(service=service)/'release.env').is_file())
     for name in ('rollback.env','deployment.json'):
      self.assertFalse((h.slot(service=service)/name).exists(),name)
     self.assertEqual([],h.data()['removal_attempts'])
-    stop=json.loads((h.root/'stop-timeout.json').read_text())
-    roles=['axxium'] if service=='axxium' else ['backend','frontend']
-    self.assertEqual(['stop']+roles,stop['command'][-len(roles)-1:])
-    self.assertEqual(str(h.slot(service=service)),stop['cwd']);self.assertIs(True,stop['check'])
-    journal=self.assert_runtime_held(h,'stopping_first_start',service)
+    compose=[call for call in h.data()['calls'] if call[0]=='compose']
+    self.assertEqual(1,len(compose));self.assertIn('up',compose[0])
+    journal=self.assert_runtime_held(h,'starting_candidate',service)
     self.assertIsNone(journal['previous_selection'])
-    self.assertEqual('TimeoutExpired',journal['failures'][-1]['error'])
+    self.assertEqual([{'phase':'starting_candidate','error':'CalledProcessError','exit_code':1}],journal['failures'])
     self.healthy(h,'b',env='staging',service=service)
-    self.assertEqual(120,stop['timeout'],'first-failure cleanup must release the shared receiver within its bounded wait')
- def test_failed_first_then_healthy_does_not_adopt_failed_generation_as_rollback(self):
-  h=self.harness();d=h.data();d['fail_tags']=[h.tag('a')];h.save(d)
-  self.assertNotEqual(0,h.receive('a').returncode)
-  self.assertFalse((h.slot()/'release.env').exists())
+    self.assertFalse((h.slot(service=service)/'deployment.json').exists())
+ def test_first_healthy_start_has_no_rollback(self):
+  h=self.harness()
   self.healthy(h,'b');self.assertFalse((h.slot()/'rollback.env').exists())
   self.assertEqual({'AXXIUM_IMAGE':h.image_id(h.tag('b'))},h.selection(h.slot()/'release.env'))
   self.assertEqual([],h.data()['removal_attempts'])
+ def test_runtime_completion_sync_failure_reports_uncertainty_and_recovers_when_possible(self):
+  for finish_fault in ('runtime-unlink-sync','runtime-recovery-write-fails'):
+   with self.subTest(finish_fault=finish_fault):
+    h=self.harness();self.healthy(h,'a')
+    result=h.receive('b',finish_fault=finish_fault)
+    self.assertNotEqual(0,result.returncode)
+    self.assertIn(b'Runtime hold completion uncertain; operator review required',result.stderr)
+    self.assertNotIn(b'"status": "healthy"',result.stdout)
+    self.assertEqual('b'*40,h.receipt()['source_sha'])
+    marker=h.slot()/receiver.RUNTIME_HOLD
+    if finish_fault=='runtime-unlink-sync':
+     self.assert_runtime_held(h,'recording_health')
+    else:
+     self.assertFalse(marker.exists(),'double storage failure can leave the hold absent')
  def test_repeat_same_healthy_selection_preserves_distinct_rollback(self):
   h=self.harness();self.generations(h);self.healthy(h,'b')
   self.assertEqual({'AXXIUM_IMAGE':h.image_id(h.tag('a'))},h.selection(h.slot()/'rollback.env'))
@@ -472,14 +471,21 @@ class ReceiverLifecycleTests(unittest.TestCase):
   h=self.harness();self.generations(h);(h.slot('staging','knoxx')/'rollback.env').write_text('KNOXX_BACKEND_IMAGE=untrusted:latest\n')
   self.assertEqual(3,h.receive('c').returncode);self.assertEqual('healthy',h.receipt()['status']);self.assertEqual('blocked',h.receipt()['image_cleanup']['status']);self.assertEqual([],h.data()['removal_attempts'])
  def test_malformed_runtime_hold_blocks_intake_and_protects_other_slot_cleanup(self):
-  h=self.harness();self.generations(h);marker=h.slot()/receiver.RUNTIME_HOLD
-  marker.write_text('{broken')
-  calls=h.data()['calls'];self.assertNotEqual(0,h.receive('c').returncode)
-  self.assertEqual(calls,h.data()['calls'])
-  self.assertEqual(3,h.receive('c',env='staging').returncode)
-  self.assertEqual('healthy',h.receipt(env='staging')['status'])
-  self.assertEqual('blocked',h.receipt(env='staging')['image_cleanup']['status'])
-  self.assertEqual([],h.data()['removal_attempts']);self.assertEqual('{broken',marker.read_text())
+  for field,wrong in ((None,None),('schema','wrong'),('environment','staging'),('service','knoxx')):
+   with self.subTest(field=field):
+    h=self.harness();self.generations(h);marker=h.slot()/receiver.RUNTIME_HOLD
+    valid={'schema':receiver.RUNTIME_SCHEMA,'environment':'testing','service':'axxium',
+           'previous_selection':(h.slot()/'release.env').read_text(),
+           'candidate_selection':f'AXXIUM_IMAGE={h.image_id(h.tag("d"))}\n',
+           'source_sha':'d'*40,'phase':'starting_candidate','failures':[]}
+    malformed='{broken' if field is None else json.dumps({**valid,field:wrong})
+    marker.write_text(malformed)
+    calls=h.data()['calls'];self.assertNotEqual(0,h.receive('c').returncode)
+    self.assertEqual(calls,h.data()['calls'])
+    self.assertEqual(3,h.receive('c',env='staging').returncode)
+    self.assertEqual('healthy',h.receipt(env='staging')['status'])
+    self.assertEqual('blocked',h.receipt(env='staging')['image_cleanup']['status'])
+    self.assertEqual([],h.data()['removal_attempts']);self.assertEqual(malformed,marker.read_text())
  def test_missing_slot_refuses_cleanup(self):
   h=self.harness();self.generations(h);slot=h.slot('staging','knoxx');(slot/'.env').unlink();(slot/'compose.yaml').unlink();slot.rmdir()
   self.assertEqual(3,h.receive('c').returncode);self.assertEqual([],h.data()['removal_attempts'])

@@ -64,6 +64,7 @@ def selection_ids(path,service):
  except OSError:raise RetentionBlocked('Unavailable slot image selection')
 
 def held_runtime_ids(slot,environment,service):
+ """Keep both generations eligible for recovery during other slots' retention."""
  marker=slot/RUNTIME_HOLD
  if not marker.exists() and not marker.is_symlink():return set()
  try:
@@ -326,31 +327,15 @@ def deploy_images(slot,environment,service,sha,values,previous):
 
  compose=['docker','compose','--project-name',f'{service}-{environment}','--env-file',str(slot/'.env'),'--env-file',str(release),'-f',str(slot/'compose.yaml')]
  up=['up','-d','--wait','--wait-timeout','180','--pull','never']
- def effect(phase,args,timeout):
-  journal['phase']=phase;save()
-  try:subprocess.run(compose+args,cwd=slot,check=True,timeout=timeout)
-  except (subprocess.SubprocessError,OSError) as error:
-   failure={'phase':phase,'error':type(error).__name__}
-   if isinstance(error,subprocess.CalledProcessError):failure['exit_code']=error.returncode
-   journal['failures'].append(failure);save()
-   raise
-
  save()
  atomic_write(release,selection)
- try:effect('starting_candidate',up,240)
- except subprocess.CalledProcessError as error:
-  # A timeout or signal is not evidence that the daemon stopped its work.
-  if not 0 < error.returncode < 128:raise
-  if prior is not None:
-   journal['phase']='selecting_previous';save()
-   atomic_write(release,prior)
-   effect('starting_previous',up,240)
-  else:
-   roles=['axxium'] if service=='axxium' else ['backend','frontend']
-   effect('stopping_first_start',['stop']+roles,120)
-   # Preserve the database volume and clear the selection only after confirmed stop.
-   release.unlink(missing_ok=True);sync_directory(slot)
-  complete()
+ journal['phase']='starting_candidate';save()
+ try:subprocess.run(compose+up,cwd=slot,check=True,timeout=240)
+ except (subprocess.SubprocessError,OSError) as error:
+  # Even a positive exit code cannot establish that Docker finished all effects.
+  failure={'phase':journal['phase'],'error':type(error).__name__}
+  if isinstance(error,subprocess.CalledProcessError):failure['exit_code']=error.returncode
+  journal['failures'].append(failure);save()
   raise
 
  journal['phase']='recording_health';save()

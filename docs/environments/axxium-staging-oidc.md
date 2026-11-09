@@ -38,8 +38,10 @@ this template is accepted in Services, the host operator must separately:
    consent, code/PKCE exchange and token revocation. A healthy app is not proof
    of a working OIDC flow.
 
-On failure, reacquire the receiver lock, check that the installed template still
-matches the staged selection, restore the saved template bytes, validate, and
-use the receiver's normal image rollback procedure. Do not restore an old
-PostgreSQL snapshot over accepted writes. A staging issuer and keys do not
-activate or change the production Axxium authority or Cloud Cuckoo gateway.
+On failure, follow the [receiver's operator recovery
+procedure](promotion.md#installed-receiver-and-activation). Under the receiver
+lock, reconcile pending Docker effects, verify the installed template still
+matches the staged selection, and restore the saved Compose bytes with the
+prior exact image and matching admission evidence. Verify OIDC and preserve
+accepted PostgreSQL writes. A staging issuer and keys do not activate or change
+the production Axxium authority or Cloud Cuckoo gateway.

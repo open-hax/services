@@ -37,48 +37,66 @@ Template review and host activation are separate steps.
   before any replacement.
 - Require an admitted Axxium image that refuses to load a mailbox ledger
   larger than 2 MiB (2,097,152 bytes) and refuses an append that would exceed
-  that limit. Check the existing file size under the receiver lock before
-  installation. If the file exceeds the limit, preserve it and stop activation.
+  that limit. Apply the [capacity preflight](#capacity-preflight) under the
+  receiver lock before installing the template.
 - Keep credentials and session material host-local. Retain the required
-  `JWT_SECRET` and `JWT_ISSUER` mappings for the incumbent image. During
-  automatic rollback the receiver restores the previous image selection and
-  starts it with the same installed Compose file. The candidate uses the
-  separate Ed25519 key for its actor tokens.
+  `JWT_SECRET` and `JWT_ISSUER` mappings for the incumbent image. The candidate
+  uses the separate Ed25519 key for its actor tokens.
+
+## Capacity preflight
+
+Reserve at least 65,536 bytes for the bounded smoke. After validating the
+existing file and while holding the receiver lock, obtain its logical size
+with `stat --format='%s' -- "$slot/mailbox/ledger.edn"`. Start only at or
+below 2,031,616 bytes. If the file is larger, preserve it and stop activation.
+
+Before installation, rehearse the same smoke with the reviewed candidate
+build and a disposable ledger. Budget at most three initializations, two registrations,
+one sender grant, one send with a synthetic body of at most 256 UTF-8 bytes,
+two reads and one acknowledgement. Keep background polling stopped. Record
+the ledger byte count before and after each request, including initialization
+and the read after restart. The smoke must use at most 32,768 bytes of the
+reserve. Record only the byte counts and their times as capacity evidence.
+
+Repeat the size check before the staging smoke and monitor the same counts
+after each request. Stop mailbox traffic if less than 32,768 bytes remain,
+growth exceeds the smoke budget, or a request returns 503. Preserve the
+ledger and PostgreSQL data. Rehearse this stop on an exhausted disposable
+ledger before installation and use the operator recovery procedure to retire
+the pilot if traffic cannot stay paused. Any future resumption after
+exhaustion requires an independently reviewed data-preserving capacity change.
 
 ## Install and verify
 
 1. Verify the reviewed template and candidate source pins. Before installation,
-   require a reviewed, rehearsed operator recovery procedure for a failure
-   discovered after the receiver records the new image as healthy. The
-   [receiver](../../scripts/receive-service-environment.py) records a healthy
-   upgrade's previous image in `rollback.env` and has no operator rollback
-   command. A manual image-selection change alone breaks the
-   [last-healthy receipt check](promotion.md#installed-receiver-and-activation).
-   The recovery procedure must cover the prior Compose bytes, exact image,
-   matching last-healthy admission evidence, and verification without undoing
-   database or ledger writes. If that procedure is unavailable or untested,
-   stop before installing the template.
-   Separately admit and install a receiver revision that implements the
-   [runtime hold](promotion.md#installed-receiver-and-activation) before
-   installing this template. The receiver pinned at
-   `a2aee9a01a51ef1481dcc6d1071104f449dcf6bd` attempts rollback immediately
-   when Compose times out, while the daemon may still be recreating or
-   stopping a container.
+   require the reviewed [operator recovery](#operator-recovery) procedure
+   and rehearse it in a disposable slot for both a failed mutating start
+   before health and a public verification failure after health. Require
+   evidence of the runtime hold, restored incumbent image and receipt,
+   preserved ledger and database writes, and a blocked retry until
+   reconciliation finishes.
+   Separately admit and install a [receiver](../../scripts/receive-service-environment.py)
+   revision that retains a [runtime hold](promotion.md#installed-receiver-and-activation)
+   after any failed mutating start and defers recovery to the operator.
+   The receiver pinned at `a2aee9a01a51ef1481dcc6d1071104f449dcf6bd`
+   attempts rollback immediately when Compose times out, while the daemon
+   may still be recreating or stopping a container.
 2. Under `/srv/open-hax/environments/.receiver.lock`, check the intake and
    refusal barriers. Validate the reviewed template in the existing slot
    context using Compose `config --quiet` with the private `.env` and a harmless
    image selection. Keep rendered configuration and environment values out
    of logs. Revalidate the required bind sources, including their type,
-   ownership, mode, and symlink-free paths. Compose config validation can pass
-   with a missing bind source, which prevents both candidate startup and
-   automatic rollback using this template. Confirm the candidate uses the
-   default 20-second schema statement timeout. Its startup shutdown bound is
+   ownership, mode, and symlink-free paths. Check the files independently
+   because Compose config validation can pass with a missing bind source.
+   Confirm the candidate uses the default 20-second schema statement timeout.
+   Its startup shutdown bound is
    then 45 seconds. The receiver's 180-second health wait and 240-second
    outer timeout do not cover the template's full 610-second stop grace.
    Record the installed Compose digest and preserve a private byte-for-byte
    backup of the known-good file, the private `.env`, image selections, and
-   the deployment receipt. Install the replacement as the fixed
-   `compose.yaml` while holding the lock. Leave the current containers running.
+   the deployment receipt. Verify the saved active selection matches the
+   receipt and record the full incumbent image ID. Install the replacement as
+   the fixed `compose.yaml` while holding the lock. Leave the current containers running.
    Use this fixed-slot procedure because the general environment preparer
    copies the base template over the slot.
 3. Release the lock before invoking the restricted receiver through the
@@ -91,24 +109,33 @@ Template review and host activation are separate steps.
    sign-in. An in-flight Google redirect must restart. Polling requires a
    fresh Axxium session from the verified AT Protocol callback. Use approved
    staging-only actors to initialize `/api/mailbox/mcp`, discover tools,
-   send, poll and acknowledge one message. Verify anonymous and revoked
-   requests are refused and verify unread recovery after a controlled restart.
+   send, poll and acknowledge one message within the capacity preflight
+   budget. Verify anonymous and revoked requests are refused and verify unread
+   recovery after a controlled restart.
    Treat a polling result and subscribed delivery as separate evidence.
 
-Halt installation and suspend all retries and rollbacks after a recreate or
-stop timeout. Under the receiver lock, preserve the failed command evidence,
-establish which Docker effects ran, and confirm any pending recreate and
-incumbent stop have finished. Check the actual project containers, image
-identities, running state and health against the selection and receipt.
-A healthy receipt records earlier observations. If an operation is still
-running or its outcome is uncertain, keep the slot held for operator review.
+## Operator recovery
 
-Automatic rollback keeps the replacement Compose file in place. After a
-failed startup, verify the running image, health and matching admission
-evidence before any retry. If public verification fails after the receiver
-reports health, use the rehearsed operator recovery procedure. Reacquire
-the lock and check that the installed file still matches the reviewed
-selection before restoring the saved Compose bytes. Verify the restored
-image, health, public OIDC behavior, and matching selection and receipt.
-Preserve the mailbox ledger and PostgreSQL writes. Clients using a fresh
-EdDSA actor token must sign in again after rollback.
+1. Stop intake and mailbox traffic. Under the receiver lock, preserve the
+   failure evidence, installed Compose digest, active and rollback selections,
+   last-healthy receipt and any runtime hold. Compare the actual project
+   containers, image IDs and health to those records. Establish that pending
+   Docker recreates and stops have finished before taking a recovery action.
+   Keep the slot held if any Docker outcome is uncertain.
+2. A failed mutating start leaves `receiver-runtime.json` and the selected
+   candidate in place for operator recovery. Retain that hold and preserve
+   the previous healthy receipt. If the failure is discovered after recorded
+   health, durably establish an operator recovery hold using the receiver's
+   schema and both exact selections before changing the slot. The hold
+   keeps both generations protected during image retention.
+3. Under the same lock, restore the saved Compose bytes and matching prior
+   selection. Validate the private configuration, then explicitly start the
+   incumbent by its recorded image ID with the existing project and
+   PostgreSQL volume. Preserve the mailbox ledger as-is. Verify the running
+   image, health, public OIDC behavior, and preserved data.
+4. Archive both sets of original evidence. Reconcile the active selection
+   with its matching historical healthy receipt and restore the reviewed
+   rollback selection. Record the new runtime verification separately. Clear
+   the reconciled hold durably only after these checks pass. A failed or
+   uncertain restoration retains the hold for operator review.
+   Clients using a fresh EdDSA actor token must sign in again after recovery.
