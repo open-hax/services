@@ -36,7 +36,7 @@ def verify_decision(plan):
             and decision.get("desk_revision") == 92
             and decision.get("mutation_campaign_passed") is False
             and decision.get("run_id") == CAMPAIGN and decision.get("attempt") == 1
-            and decision.get("qualified_batches") == 0 and decision.get("completed_partitions") == 4
+            and decision.get("qualified_batches") == 0 and decision.get("terminal_partitions") == 4
             and decision.get("eligible_over_observed") == [[68, 157], [88, 218], [193, 489], [115, 260]],
             "reviewed mutation-only decision or negative campaign evidence missing")
     require(sha256(Path(__file__).with_name("environment_policy.py").read_bytes()).hexdigest() == POLICY,
@@ -44,9 +44,12 @@ def verify_decision(plan):
     verdict = production_admission(SOURCE, plan.get("integration"), plan.get("e2e"), [])
     require(verdict == {"admitted": False, "reason": "four completed mutation batches are required"},
             verdict.get("reason", "unexpected mutation waiver verdict"))
+    require(re.fullmatch(r"[0-9a-f]{64}", plan["integration"].get("log_sha256", "")),
+            "integration baseline log binding missing")
     rehearsal = plan.get("exact_image_rehearsal", {})
     require(rehearsal.get("source_sha") == SOURCE and rehearsal.get("status") == "passed"
-            and re.fullmatch(r"[0-9a-f]{64}", rehearsal.get("log_sha256", "")),
+            and all(re.fullmatch(r"[0-9a-f]{64}", rehearsal.get(key, ""))
+                    for key in ("log_sha256", "receipt_sha256")),
             "exact image rehearsal evidence missing")
 
 
@@ -69,7 +72,9 @@ def verify_transport(plan, archive, target):
     """Re-hash the verified Docker member before allowing transport to the host."""
     expected = plan.get("images_tar_sha256", "")
     config = plan.get("image_config_digest", "")
-    require(re.fullmatch(r"[0-9a-f]{64}", expected) and re.fullmatch(r"sha256:[0-9a-f]{64}", config),
+    manifest = plan.get("image_manifest_digest", "")
+    require(re.fullmatch(r"[0-9a-f]{64}", expected)
+            and all(re.fullmatch(r"sha256:[0-9a-f]{64}", value) for value in (config, manifest)),
             "immutable Docker transport digests missing")
     with zipfile.ZipFile(archive) as package:
         with package.open("images.tar") as stream:
@@ -90,7 +95,7 @@ def verify_transport(plan, archive, target):
                 except BaseException:
                     target.unlink(missing_ok=True)
                     raise
-    return {"images_tar_sha256": expected, "image_config_digest": config}
+    return {"images_tar_sha256": expected, "image_config_digest": config, "image_manifest_digest": manifest}
 
 
 def admit(plan_bytes, controller_sha, archive, target=None):
