@@ -1,0 +1,39 @@
+services:
+  axxium:
+    ports:
+      - "127.0.0.1:18873:8787"
+    environment:
+      AXXIUM_HOST: 0.0.0.0
+      AXXIUM_PUBLIC_BASE_URL: https://work.pilot.axxium.promethean.rest
+      AXXIUM_ISS: https://work.pilot.axxium.promethean.rest
+      SESSION_COOKIE_SECURE: "true"
+      AXXIUM_TRUST_PROXY: 172.31.254.1
+      AXXIUM_OIDC_CONFIG_FILE: /run/axxium/oidc/authority.json
+      AXXIUM_MAILBOX_LEDGER_FILE: /var/lib/axxium/mailbox/ledger.edn
+      AXXIUM_MAILBOX_WEBHOOK_KEY_FILE: /run/axxium/oidc/webhook-seal.key
+      AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID: ${AXXIUM_PILOT_RECIPIENT_DID:?Set the approved Work recipient}
+      AXXIUM_MAILBOX_PILOT_ALLOWED_DIDS: ${AXXIUM_PILOT_SENDER_DID:?Set the approved sender},${AXXIUM_PILOT_RECIPIENT_DID:?Set the approved Work recipient}
+    volumes:
+      - type: bind
+        source: ./live/oidc
+        target: /run/axxium/oidc
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./live/mailbox/ledger.edn
+        target: /var/lib/axxium/mailbox/ledger.edn
+        bind:
+          create_host_path: false
+    networks:
+      default: {}
+      egress:
+        gw_priority: 1
+
+networks:
+  egress:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.254.0/29
+          gateway: 172.31.254.1

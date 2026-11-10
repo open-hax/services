@@ -121,6 +121,16 @@ jobs:
       caller_holds_production_host_lock: true
     secrets: inherit
 
+  operate-axxium-work-pilot:
+    if: inputs.scope == 'axxium-work-pilot-activate' || inputs.scope == 'axxium-work-pilot-teardown'
+    uses: ./.github/workflows/deploy-axxium-work-activation.yml
+    with:
+      action: ${{ inputs.scope == 'axxium-work-pilot-activate' && 'activate' || 'teardown' }}
+      source_sha: ${{ inputs.axxium_ref }}
+      caller_holds_production_host_lock: true
+    secrets:
+      DIGITALOCEAN_SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+
   # Build jobs may run while the host is prepared, but no production service
   # deploy starts until this exact checkout has installed and verified the
   # provisioner it expects. deploy-stack.yml holds the production-host lock
