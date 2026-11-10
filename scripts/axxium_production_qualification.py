@@ -10,12 +10,14 @@ from __future__ import annotations
 import argparse
 import base64
 from datetime import datetime, timezone
+import gzip
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
 import tarfile
 import zipfile
+import zlib
 
 from environment_policy import production_admission, timestamp
 from github_environment_admission import api
@@ -30,6 +32,11 @@ DIGEST = re.compile(r"[0-9a-f]{64}")
 MAX_ZIP = 256 * 1024 * 1024
 MAX_TAR = 512 * 1024 * 1024
 MAX_JSON = 1024 * 1024
+OCI_INDEX = "application/vnd.oci.image.index.v1+json"
+OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
+OCI_CONFIG = "application/vnd.oci.image.config.v1+json"
+OCI_LAYER = "application/vnd.oci.image.layer.v1.tar"
+PROVENANCE = "https://slsa.dev/provenance/v1"
 
 # This exception is deliberately bound to one candidate and one exact plan.
 # A plan or shared-policy change requires a new review; it cannot silently
@@ -145,12 +152,81 @@ def verify_native_stage(plan, now):
     return artifact
 
 
+def oci_blob(descriptor, sizes, media_type, *extra_fields):
+    """Validate an exact descriptor and resolve its digest-bound archive path."""
+    require(isinstance(descriptor, dict) and set(descriptor) == {"digest", "size", "mediaType", *extra_fields}
+            and descriptor["mediaType"] == media_type
+            and isinstance(descriptor["digest"], str) and re.fullmatch(r"sha256:[0-9a-f]{64}", descriptor["digest"]),
+            "unexpected OCI descriptor")
+    path = "blobs/sha256/" + descriptor["digest"][7:]
+    require(type(descriptor["size"]) is int and 0 < descriptor["size"] == sizes.get(path), "OCI descriptor size mismatch")
+    return path
+
+
+def nested_image(index, sizes, metadata, source_sha):
+    """Select the single runnable image in the staged BuildKit save format."""
+    require(isinstance(index, dict) and set(index) == {"schemaVersion", "mediaType", "manifests"}
+            and index["schemaVersion"] == 2 and index["mediaType"] == OCI_INDEX
+            and isinstance(index["manifests"], list) and len(index["manifests"]) == 2, "unexpected nested OCI index")
+    runnable, attestation = index["manifests"]
+    image_path = oci_blob(runnable, sizes, OCI_MANIFEST, "platform")
+    require(runnable["platform"] == {"os": "linux", "architecture": "amd64"}, "unexpected OCI image platform")
+    attestation_path = oci_blob(attestation, sizes, OCI_MANIFEST, "platform", "annotations")
+    require(attestation["platform"] == {"os": "unknown", "architecture": "unknown"}
+            and attestation["annotations"] == {"vnd.docker.reference.type": "attestation-manifest",
+                                               "vnd.docker.reference.digest": runnable["digest"]},
+            "OCI attestation does not reference the runnable manifest")
+    manifest = strict_json(metadata[attestation_path])
+    require(isinstance(manifest, dict) and set(manifest) == {"schemaVersion", "mediaType", "config", "layers"}
+            and manifest["schemaVersion"] == 2 and manifest["mediaType"] == OCI_MANIFEST
+            and isinstance(manifest["layers"], list) and len(manifest["layers"]) == 1,
+            "unexpected OCI attestation manifest")
+    config_path = oci_blob(manifest["config"], sizes, OCI_CONFIG)
+    layer = manifest["layers"][0]
+    statement_path = oci_blob(layer, sizes, "application/vnd.in-toto+json", "annotations")
+    require(layer["annotations"] == {"in-toto.io/predicate-type": PROVENANCE}
+            and strict_json(metadata[config_path]) == {"os": "unknown", "architecture": "unknown", "config": {},
+                                                        "rootfs": {"type": "layers", "diff_ids": [layer["digest"]]}},
+            "unexpected OCI provenance configuration")
+    statement = strict_json(metadata[statement_path])
+    require(isinstance(statement, dict) and statement.get("_type") == "https://in-toto.io/Statement/v0.1"
+            and statement.get("predicateType") == PROVENANCE and isinstance(statement.get("predicate"), dict)
+            and statement.get("subject") == [{"name": f"pkg:docker/promethean-axxium@{source_sha}?platform=linux%2Famd64",
+                                              "digest": {"sha256": runnable["digest"][7:]}}],
+            "OCI provenance does not bind the runnable source image")
+    return image_path, {attestation_path, config_path, statement_path}
+
+
+def gzip_diff_ids(package, paths):
+    """Hash uncompressed layer bytes in order, bounding total expansion."""
+    remaining = MAX_TAR
+    digests = {}
+    layer_paths = set(paths)
+    try:
+        with package.open("images.tar") as stream, tarfile.open(fileobj=stream, mode="r|") as image:
+            for member in image:
+                if member.name in layer_paths:
+                    with gzip.GzipFile(fileobj=image.extractfile(member)) as layer:
+                        digest, size = stream_digest(layer, remaining)
+                    require(size > 0, "empty OCI gzip layer")
+                    remaining -= size
+                    digests[member.name] = "sha256:" + digest
+    except (OSError, EOFError, zlib.error) as error:
+        raise Refusal("invalid OCI gzip layer") from error
+    return [digests[path] for path in paths]
+
+
 def verify_archive(plan, archive):
     """Verify one OCI Docker-save artifact without executing any member."""
     require(archive.is_file() and 0 < archive.stat().st_size <= MAX_ZIP, "archive unavailable or too large")
     with archive.open("rb") as stream:
         actual, _ = stream_digest(stream, MAX_ZIP)
-    require(actual == plan["artifact_sha256"], "archive differs from native digest")
+        require(actual == plan["artifact_sha256"], "archive differs from native digest")
+        return verify_archive_members(plan, stream)
+
+
+def verify_archive_members(plan, archive):
+    """Bound and hash archive members before passing their metadata to the OCI verifier."""
     metadata = {}
     sizes = {}
     with zipfile.ZipFile(archive) as package:
@@ -194,47 +270,77 @@ def verify_archive(plan, archive):
                     require(size == member.size, "truncated image member")
                 if blob:
                     require(digest == blob.group(1), "OCI blob digest mismatch")
+        return verify_image(plan, package, metadata, sizes)
+
+
+def verify_image(plan, package, metadata, sizes):
+    """Bind the plan to one runnable image and check the complete archive file set."""
     layout = strict_json(metadata["oci-layout"])
     index = strict_json(metadata["index.json"])
     require(layout == {"imageLayoutVersion": "1.0.0"} and index.get("schemaVersion") == 2
             and len(index.get("manifests", [])) == 1, "unexpected OCI layout")
     selected = index["manifests"][0]
+    nested = selected.get("mediaType") == OCI_INDEX
     image_digest = plan["image_id"].split(":", 1)[1]
-    image_path = "blobs/sha256/" + image_digest
-    require(selected.get("digest") == plan["image_id"] and selected.get("size") == sizes.get(image_path)
-            and selected.get("mediaType") == "application/vnd.oci.image.manifest.v1+json"
-            and selected.get("annotations", {}).get("io.containerd.image.name")
-                == "docker.io/library/promethean-axxium:" + plan["source_sha"]
-            and selected.get("annotations", {}).get("org.opencontainers.image.ref.name") == plan["source_sha"],
+    tagged_path = "blobs/sha256/" + image_digest
+    reference = {"io.containerd.image.name": "docker.io/library/promethean-axxium:" + plan["source_sha"],
+                 "org.opencontainers.image.ref.name": plan["source_sha"]}
+    annotations = selected.get("annotations", {})
+    require(selected.get("digest") == plan["image_id"] and selected.get("size") == sizes.get(tagged_path)
+            and selected.get("mediaType") in (OCI_MANIFEST, OCI_INDEX)
+            and isinstance(annotations, dict) and all(annotations.get(key) == value for key, value in reference.items()),
             "OCI image/source reference mismatch")
+    referenced = {tagged_path, "index.json", "manifest.json", "oci-layout"}
+    image_path = tagged_path
+    if nested:
+        require(set(index) == {"schemaVersion", "mediaType", "manifests"}
+                and index["mediaType"] == OCI_INDEX and annotations == reference, "unexpected tagged OCI index")
+        oci_blob(selected, sizes, OCI_INDEX, "annotations")
+        image_path, attestations = nested_image(strict_json(metadata[tagged_path]), sizes, metadata, plan["source_sha"])
+        referenced.update(attestations)
     manifest = strict_json(metadata[image_path])
     config = manifest.get("config", {})
     require(manifest.get("schemaVersion") == 2 and isinstance(config.get("digest"), str)
             and re.fullmatch(r"sha256:[0-9a-f]{64}", config["digest"]), "OCI configuration unavailable")
     config_path = "blobs/sha256/" + config["digest"].split(":", 1)[1]
     require(config.get("size") == sizes.get(config_path), "OCI configuration size mismatch")
+    if nested:
+        require(set(manifest) == {"schemaVersion", "mediaType", "config", "layers"}
+                and manifest["mediaType"] == OCI_MANIFEST, "unexpected OCI image manifest")
+        oci_blob(config, sizes, OCI_CONFIG)
     configuration = strict_json(metadata[config_path])
     layers = manifest.get("layers")
     require(isinstance(layers, list) and layers, "OCI layers unavailable")
     paths = []
     for layer in layers:
+        if nested:
+            paths.append(oci_blob(layer, sizes, OCI_LAYER + "+gzip"))
+            continue
         digest = layer.get("digest")
         require(isinstance(digest, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
-                and layer.get("mediaType") == "application/vnd.oci.image.layer.v1.tar",
+                and layer.get("mediaType") == OCI_LAYER,
                 "unexpected OCI layer format")
         path = "blobs/sha256/" + digest.split(":", 1)[1]
         require(layer.get("size") == sizes.get(path), "OCI layer size mismatch")
         paths.append(path)
+    if nested:
+        require(len(set(paths)) == len(paths), "repeated OCI runnable layer")
     docker = strict_json(metadata["manifest.json"])
-    require(isinstance(docker, list) and len(docker) == 1
+    require(isinstance(docker, list) and len(docker) == 1 and isinstance(docker[0], dict)
+            and (not nested or set(docker[0]) == {"Config", "Layers", "RepoTags"})
             and docker[0].get("Config") == config_path and docker[0].get("Layers") == paths
             and docker[0].get("RepoTags") == ["promethean-axxium:" + plan["source_sha"]],
             "Docker manifest differs from native candidate")
-    require(strict_json(metadata["repositories"]) == {
-        "promethean-axxium": {plan["source_sha"]: layers[-1]["digest"].split(":", 1)[1]}},
-        "legacy tag differs from OCI candidate")
+    if not nested or "repositories" in sizes:
+        require(strict_json(metadata["repositories"]) == {
+            "promethean-axxium": {plan["source_sha"]: layers[-1]["digest"].split(":", 1)[1]}},
+            "legacy tag differs from OCI candidate")
+        referenced.add("repositories")
+    referenced.update({image_path, config_path, *paths})
+    require(set(sizes) == referenced, "unreferenced OCI archive files")
+    diff_ids = gzip_diff_ids(package, paths) if nested else [item["digest"] for item in layers]
     require(configuration.get("os") == "linux" and configuration.get("architecture") == "amd64"
-            and configuration.get("rootfs") == {"type": "layers", "diff_ids": [item["digest"] for item in layers]},
+            and configuration.get("rootfs") == {"type": "layers", "diff_ids": diff_ids},
             "OCI root filesystem binding mismatch")
     return plan["image_id"]
 

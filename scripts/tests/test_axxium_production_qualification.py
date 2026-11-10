@@ -2,6 +2,7 @@
 import base64
 import copy
 from datetime import datetime, timedelta, timezone
+import gzip
 import hashlib
 import io
 import json
@@ -43,31 +44,73 @@ def proof():
             "integration": receipt, "e2e": dict(receipt), "mutation_batches": batches}
 
 
-def create_archive(path, legacy_tag=SOURCE):
+def create_archive(path, legacy_tag=SOURCE, *, nested=False, defect=None):
     """Construct a tiny OCI save-format fixture without a Docker daemon."""
+    blobs = {}
+
+    def blob(raw, media_type, **fields):
+        digest = hashlib.sha256(raw).hexdigest()
+        blobs["blobs/sha256/" + digest] = raw
+        return {"mediaType": media_type, "digest": "sha256:" + digest, "size": len(raw), **fields}
+
     layer = b"synthetic unexecuted layer bytes"
-    layer_digest = hashlib.sha256(layer).hexdigest()
-    config = encoded({"architecture": "amd64", "os": "linux", "config": {"User": "node"},
-                      "rootfs": {"type": "layers", "diff_ids": ["sha256:" + layer_digest]}})
-    config_digest = hashlib.sha256(config).hexdigest()
-    manifest = encoded({"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json",
-                        "config": {"mediaType": "application/vnd.oci.image.config.v1+json",
-                                   "digest": "sha256:" + config_digest, "size": len(config)},
-                        "layers": [{"mediaType": "application/vnd.oci.image.layer.v1.tar",
-                                    "digest": "sha256:" + layer_digest, "size": len(layer)}]})
-    image = hashlib.sha256(manifest).hexdigest()
-    index = encoded({"schemaVersion": 2, "mediaType": "application/vnd.oci.image.index.v1+json",
-                     "manifests": [{"mediaType": "application/vnd.oci.image.manifest.v1+json",
-                                    "digest": "sha256:" + image, "size": len(manifest),
-                                    "annotations": {"io.containerd.image.name": "docker.io/library/promethean-axxium:" + SOURCE,
-                                                    "org.opencontainers.image.ref.name": SOURCE}}]})
-    entries = {"blobs/sha256/" + layer_digest: layer, "blobs/sha256/" + config_digest: config,
-               "blobs/sha256/" + image: manifest, "index.json": index,
-               "oci-layout": encoded({"imageLayoutVersion": "1.0.0"}),
-               "repositories": encoded({"promethean-axxium": {legacy_tag: layer_digest}}),
-               "manifest.json": encoded([{"Config": "blobs/sha256/" + config_digest,
-                                         "RepoTags": ["promethean-axxium:" + SOURCE],
-                                         "Layers": ["blobs/sha256/" + layer_digest]}])}
+    if defect == "expansion":
+        layer *= 4096
+    layer_media = "application/vnd.oci.image.layer.v1.tar"
+    manifest_media = "application/vnd.oci.image.manifest.v1+json"
+    index_media = "application/vnd.oci.image.index.v1+json"
+    config_media = "application/vnd.oci.image.config.v1+json"
+    actual_diff_id = "sha256:" + hashlib.sha256(layer).hexdigest()
+    diff_id = "sha256:" + "f" * 64 if defect == "diff-id" else actual_diff_id
+    if nested:
+        layer_descriptor = blob(layer if defect == "invalid-gzip" else gzip.compress(layer, mtime=0),
+                                layer_media + "+gzip")
+    else:
+        layer_descriptor = blob(layer, layer_media)
+    layer_count = 2 if defect == "repeated-layer" else 1
+    config = blob(encoded({"architecture": "amd64", "os": "linux", "config": {"User": "node"},
+                           "rootfs": {"type": "layers", "diff_ids": [diff_id] * layer_count}}), config_media)
+    selected = blob(encoded({"schemaVersion": 2, "mediaType": manifest_media, "config": config,
+                             "layers": [layer_descriptor] * layer_count}), manifest_media)
+    docker = {"Config": "blobs/sha256/" + config["digest"][7:],
+              "RepoTags": ["promethean-axxium:" + SOURCE],
+              "Layers": ["blobs/sha256/" + layer_descriptor["digest"][7:]] * layer_count}
+    if nested:
+        subject = selected["digest"][7:] if defect != "attestation-subject" else "f" * 64
+        predicate_type = "https://slsa.dev/provenance/v1"
+        statement = blob(encoded({"_type": "https://in-toto.io/Statement/v0.1",
+                                  "subject": [{"name": f"pkg:docker/promethean-axxium@{SOURCE}?platform=linux%2Famd64",
+                                               "digest": {"sha256": subject}}],
+                                  "predicateType": predicate_type, "predicate": {}}),
+                         "application/vnd.in-toto+json", annotations={"in-toto.io/predicate-type": predicate_type})
+        attestation_config = blob(encoded({"architecture": "unknown", "os": "unknown", "config": {},
+                                           "rootfs": {"type": "layers", "diff_ids": [statement["digest"]]}}), config_media)
+        attestation = blob(encoded({"schemaVersion": 2, "mediaType": manifest_media, "config": attestation_config,
+                                    "layers": [statement]}), manifest_media,
+                           platform={"architecture": "unknown", "os": "unknown"},
+                           annotations={"vnd.docker.reference.type": "attestation-manifest",
+                                        "vnd.docker.reference.digest": selected["digest"] if defect != "attestation-target"
+                                        else "sha256:" + "f" * 64})
+        selected["platform"] = {"architecture": "arm64" if defect == "platform" else "amd64", "os": "linux"}
+        if defect == "descriptor-size":
+            selected["size"] += 1
+        manifests = [selected, attestation]
+        if defect == "extra-platform":
+            manifests.append(selected)
+        selected = blob(encoded({"schemaVersion": 2, "mediaType": index_media, "manifests": manifests}), index_media)
+        if defect == "blob-tamper":
+            blobs[docker["Layers"][0]] += b"tampered archive layer"
+        if defect == "docker-alias":
+            docker["config"] = attestation_config["digest"]
+    if defect == "unbound-blob":
+        blob(b"unused archive blob", config_media)
+    selected["annotations"] = {"io.containerd.image.name": "docker.io/library/promethean-axxium:" + SOURCE,
+                               "org.opencontainers.image.ref.name": SOURCE}
+    entries = {**blobs,
+               "index.json": encoded({"schemaVersion": 2, "mediaType": index_media, "manifests": [selected]}),
+               "oci-layout": encoded({"imageLayoutVersion": "1.0.0"}), "manifest.json": encoded([docker])}
+    if not nested:
+        entries["repositories"] = encoded({"promethean-axxium": {legacy_tag: actual_diff_id[7:]}})
     stream = io.BytesIO()
     with tarfile.open(fileobj=stream, mode="w") as archive:
         for name, raw in entries.items():
@@ -78,7 +121,7 @@ def create_archive(path, legacy_tag=SOURCE):
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("images.tar", tar)
         archive.writestr("images.sha256", hashlib.sha256(tar).hexdigest() + "\n")
-    return "sha256:" + image
+    return selected["digest"]
 
 
 class ProductionQualificationTest(unittest.TestCase):
@@ -216,6 +259,47 @@ class ProductionQualificationTest(unittest.TestCase):
         plan = {**self.plan, "artifact_sha256": hashlib.sha256(changed.read_bytes()).hexdigest()}
         with self.assertRaisesRegex(qualification.Refusal, "legacy tag"):
             qualification.verify_archive(plan, changed)
+
+    def nested_plan(self, defect=None):
+        image_id = create_archive(self.archive, nested=True, defect=defect)
+        return {**self.plan, "image_id": image_id,
+                "artifact_sha256": hashlib.sha256(self.archive.read_bytes()).hexdigest()}
+
+    def test_staged_nested_index_binds_runnable_image_and_provenance(self):
+        plan = self.nested_plan()
+        self.assertEqual(qualification.verify_archive(plan, self.archive), plan["image_id"])
+
+    def test_direct_manifest_also_refuses_unreferenced_blob(self):
+        create_archive(self.archive, defect="unbound-blob")
+        plan = {**self.plan, "artifact_sha256": hashlib.sha256(self.archive.read_bytes()).hexdigest()}
+        with self.assertRaisesRegex(qualification.Refusal, "unreferenced"):
+            qualification.verify_archive(plan, self.archive)
+
+    def test_direct_manifest_retains_support_for_repeated_layers(self):
+        image_id = create_archive(self.archive, defect="repeated-layer")
+        plan = {**self.plan, "image_id": image_id,
+                "artifact_sha256": hashlib.sha256(self.archive.read_bytes()).hexdigest()}
+        self.assertEqual(qualification.verify_archive(plan, self.archive), image_id)
+
+    def test_nested_index_refuses_resealed_archives_with_inconsistent_content(self):
+        for defect, reason in (("platform", "platform"), ("extra-platform", "nested OCI index"),
+                               ("descriptor-size", "descriptor"), ("attestation-target", "attestation"),
+                               ("attestation-subject", "provenance"), ("unbound-blob", "unreferenced"),
+                               ("blob-tamper", "blob digest"), ("docker-alias", "Docker manifest"),
+                               ("diff-id", "root filesystem"), ("invalid-gzip", "gzip"),
+                               ("repeated-layer", "repeated OCI runnable layer")):
+            with self.subTest(defect=defect):
+                plan = self.nested_plan(defect)
+                with self.assertRaisesRegex(qualification.Refusal, reason):
+                    qualification.verify_archive(plan, self.archive)
+
+    def test_nested_index_refuses_excessive_gzip_expansion(self):
+        plan = self.nested_plan("expansion")
+        with zipfile.ZipFile(self.archive) as artifact:
+            tar_size = artifact.getinfo("images.tar").file_size
+        with patch.object(qualification, "MAX_TAR", tar_size):
+            with self.assertRaisesRegex(qualification.Refusal, "size exceeds inspected bounds"):
+                qualification.verify_archive(plan, self.archive)
 
     def test_duplicate_json_and_boolean_native_plan_identities_refuse(self):
         with self.assertRaises(qualification.Refusal):
