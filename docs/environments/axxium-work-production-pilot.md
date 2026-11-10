@@ -9,27 +9,32 @@ Axxium release and Services transaction.
 
 | Setting | Planned value |
 | --- | --- |
-| Production origin | `https://axxium-work-pilot.promethean.rest` |
-| DNS | One DNS-only Cloudflare A record to `157.245.125.134`, the Services production inventory address |
+| Production origin | `https://work.pilot.axxium.promethean.rest` |
+| DNS | Existing wildcard resolves to `157.245.125.134`, the Services production inventory address |
 | Project and runtime | `axxium-work-pilot` at `/srv/open-hax/services/axxium-work-pilot` |
 | Caddy managed route | `/srv/open-hax/state/caddy/managed/axxium-work-pilot.caddy` |
 | Ingress relay | `172.31.255.1:19073` with Caddy source `172.31.255.2/32` |
 | App publication | `127.0.0.1:18873:8787` |
-| OIDC issuer | `https://axxium-work-pilot.promethean.rest/oidc` |
-| Work MCP resource | `https://axxium-work-pilot.promethean.rest/api/mailbox/mcp` |
-| AT Protocol callback | `https://axxium-work-pilot.promethean.rest/api/auth/atproto/callback` |
+| OIDC issuer | `https://work.pilot.axxium.promethean.rest/oidc` |
+| Work MCP resource | `https://work.pilot.axxium.promethean.rest/api/mailbox/mcp` |
+| AT Protocol callback | `https://work.pilot.axxium.promethean.rest/api/auth/atproto/callback` |
 
-On 2026-11-10 both authoritative Cloudflare nameservers returned NXDOMAIN
-for the chosen name. The relay and loopback ports had no listeners. Running
-Caddy had a read-only managed directory mount and the expected fixed
-`caddy-dev-ingress` address. Repeat these checks immediately before changes.
-The sibling hostname stays outside the incumbent PDS wildcard.
+On 2026-11-10 both authoritative Cloudflare nameservers returned
+`157.245.125.134` for the chosen name. The existing DNS wildcard supplies
+the address. Caddy's incumbent `*.axxium.promethean.rest` matcher covers one
+label, and the official PDS handle domain likewise assigns one label. Add an
+exact managed Caddy site and an exact-name ACME certificate for the
+two-label pilot hostname. Leave DNS and the incumbent PDS route in place.
+The relay and loopback ports had no listeners. Running Caddy had a read-only
+managed directory mount and the expected fixed `caddy-dev-ingress` address.
+Repeat the inventory and DNS checks before activation.
 
-Use the existing Cloudflare owner account to create only the named A record
-after recording that it is absent. Keep the record DNS-only for Caddy's ACME
-validation. Record the exact record ID and address. Cloudflare authentication
-is pending. The candidate source and native artifact, production sender and
-recipient DIDs, Work redirect URI, and pilot stop time are still unassigned.
+Keep `axxium-work-pilot.promethean.rest` as a contingency if exact-name
+certificate issuance or provider callback on the selected origin fails.
+That sibling was NXDOMAIN and would require the existing Cloudflare owner
+account to create one DNS-only A record and a reviewed origin/redirect
+change. The candidate source and native artifact, production sender and
+recipient DIDs, Work redirect URI, and pilot stop time remain to be bound.
 
 ## Candidate and private state
 
@@ -42,10 +47,13 @@ recipient DIDs, Work redirect URI, and pilot stop time are still unassigned.
    event delivery and consent. The candidate needs a separate mailbox intake
    check. Review the application change and stage its exact merged image.
 2. Provision separate purpose-built AT Protocol accounts through the
-   authorized provider. Record their verified handles and DIDs, roles, and
-   registration authority. Keep password and token material in the
-   approved private handoff. Verify handle-to-DID and DID-to-provider
-   round trips. Use normal provider sign-in to establish each pilot session.
+   authorized incumbent PDS. Use separate one-label handles under
+   `axxium.promethean.rest` for the native sender and Work inbox. Verify
+   each handle's HTTPS `/.well-known/atproto-did` through the existing
+   one-label route, resolve its DID document back to the handle and
+   incumbent provider, and record both identities and roles. Keep
+   password and token material in the approved private handoff. Use
+   normal provider sign-in to establish each pilot session.
 3. Bind the exact source, stage run and artifact, ZIP and OCI digests,
    ordinary integration and end-to-end evidence, and current production
    policy in a reviewed Services activation plan. Keep the historical
@@ -132,7 +140,7 @@ The following readbacks run only after the dedicated site is admitted. They
 exercise public routing without sending credentials or a mailbox message.
 
 ```sh
-pilot_host=axxium-work-pilot.promethean.rest
+pilot_host=work.pilot.axxium.promethean.rest
 pilot_origin="https://$pilot_host"
 dig @anita.ns.cloudflare.com +short A "$pilot_host"
 dig @jaime.ns.cloudflare.com +short A "$pilot_host"
@@ -165,9 +173,10 @@ configuration, and operation journal. Preserve any accepted write for
 reconciliation.
 
 Restore the pilot managed route to its previous state and validate and
-reload Caddy. Stop the pilot relay, remove only its exact UFW rule and unit
-files, and restore the pilot DNS record to the previous state when the
-transaction created it. Record public route denial and incumbent sentinels.
+reload Caddy. Stop the pilot relay and remove only its exact UFW rule and
+unit files. The selected wildcard-backed origin has no pilot DNS record
+to remove. If the sibling contingency was used, restore its exact DNS
+record state. Record public route denial and incumbent sentinels.
 A known pre-ingress failure can return to the verified dark selection with
 its data retained. A timed-out or interrupted mutation retains the pending
 hold until its effects and terminal state are verified. Rehearse successful
