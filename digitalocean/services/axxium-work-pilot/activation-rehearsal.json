@@ -1,0 +1,40 @@
+{
+  "artifact_expires_at": "2026-11-13T18:34:20Z",
+  "artifact_id": 13791652349,
+  "artifact_sha256": "225e740de343c637fc4eef5275d1df268dba415e0e07deecc9bc38d890af29c1",
+  "excluded": [
+    "Real AT Protocol provider authentication, new production identities or ingress",
+    "Real ChatGPT Work installation, signed webhook dispatch, actual event delivery or execution",
+    "Any production write or mutation-testing credit"
+  ],
+  "image_config_digest": "sha256:d3b92dc7afb9fe485c6341ef8cbcbb49568c7b57aeb616d2b72e530faa391be4",
+  "image_index_digest": "sha256:e5ba69e1710f6733b2be8d9baac0af81f4636f1ae38f2b9e3888605dd18e6f46",
+  "image_manifest_digest": "sha256:1f55250cf01753be2328ac83c434dd996a958b6fb55b0f70e12b526abfe6f6b5",
+  "images_tar_sha256": "c5df06d4986807ac7ceb6e077d1408088826597fbce980628ff787e36a520198",
+  "isolated_environment": {
+    "cleanup": "verified",
+    "database": "disposable-postgresql",
+    "docker": "local",
+    "network": "internal",
+    "published_ports": 0,
+    "retained_image_cache": true
+  },
+  "log_sha256": "a53106879ec73e45e5bbe2734c7428fe8e8a3f6264831d38f53b1435cc8dfb87",
+  "observed_at": "2026-11-10T18:36:45.248290+00:00",
+  "passed": [
+    "Exact native stage admission, checkout, build, HTTPS receiver verification and OCI custody",
+    "Exact compiled image health and general OIDC login, consent, PKCE, token, logout and revocation",
+    "Live signed outsider credential returned HTTP 200 from account session endpoint",
+    "Live outsider returned HTTP 403 for initialization and tool use with admitted session ID without ledger change",
+    "Two distinct admitted actors initialized, registered mailboxes, granted one sender, sent once and read/acknowledged",
+    "Native sender refused by recipient-only Work OIDC consent",
+    "Recipient-only Work OAuth S256 and exact callback/resource, event catalog, polling denial and grant revocation"
+  ],
+  "schema": "axxium-fenced-exact-image-rehearsal/v1",
+  "script_sha256": "7ee88729d2749b131a265f6c41ceae9e1862e5cb865998967fc97a6c605d289e",
+  "source_pr": 57,
+  "source_sha": "7daca10cd0e6e83a4c8da626899bf59236a681be",
+  "stage_deploy_job_id": 130041327018,
+  "stage_run_id": 42875788429,
+  "status": "passed"
+}

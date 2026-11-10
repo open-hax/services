@@ -1,0 +1,130 @@
+name: Operate the live Axxium Work pilot
+
+on:
+  workflow_call:
+    inputs:
+      action:
+        required: true
+        type: string
+      source_sha:
+        required: false
+        type: string
+      caller_holds_production_host_lock:
+        required: true
+        type: boolean
+    secrets:
+      DIGITALOCEAN_SSH_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  operate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Verify the caller and admit the exact activation artifact
+        env:
+          CALLER_LOCKED: ${{ inputs.caller_holds_production_host_lock }}
+          CALLER_WORKFLOW: ${{ github.workflow_ref }}
+          ACTION: ${{ inputs.action }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CONTROLLER_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$CALLER_LOCKED" = true
+          test "$CALLER_WORKFLOW" = 'open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main'
+          [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          case "$ACTION" in
+            activate)
+              plan=digitalocean/services/axxium-work-pilot/activation-release-plan.json
+              [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+              test "$SOURCE_SHA" = "$(jq -er .source_sha "$plan")"
+              artifact_id=$(jq -er '.artifact_id | select(type == "number" and . > 0 and floor == .)' "$plan")
+              timeout --kill-after=5s 120s gh api "repos/open-hax/axxium/actions/artifacts/${artifact_id}/zip" > stage.zip
+              python3 scripts/axxium_work_activation_admission.py --plan "$plan" \
+                --controller-sha "$CONTROLLER_SHA" --archive stage.zip --extract-image stage-images.tar > admission.json
+              jq -e --arg source "$SOURCE_SHA" --arg plan "$(sha256sum "$plan" | cut -d' ' -f1)" \
+                '.admitted == true and .lane == "activate-work-pilot" and .source_sha == $source and .plan_sha256 == $plan' admission.json >/dev/null
+              ;;
+            repair-ingress|teardown)
+              test -z "$SOURCE_SHA"
+              ;;
+            *) exit 2 ;;
+          esac
+      - name: Configure canonical pinned production SSH trust
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          . digitalocean/lib/host-contract.sh
+          load_host_contract production
+          assert_pinned_host_key
+          test -n "$SSH_PRIVATE_KEY"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/digitalocean
+          install -m 600 "$OPEN_HAX_KNOWN_HOSTS" ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<CONFIG
+          Host open-hax-target
+            HostName $OPEN_HAX_HOST
+            User $OPEN_HAX_SSH_USER
+            IdentityFile ~/.ssh/digitalocean
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            ConnectTimeout 10
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+          CONFIG
+      - name: Apply the journaled pilot transaction and verify its receipt
+        env:
+          ACTION: ${{ inputs.action }}
+          CONTROLLER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ACTION" =~ ^(activate|repair-ingress|teardown)$ ]]
+          files=()
+          if [ "$ACTION" = activate ]; then files+=(stage-images.tar); fi
+          tar -cf controller.tar scripts/axxium_work_{activation,dark}_host.py \
+            digitalocean/scripts/check-axxium-production-hold.sh \
+            digitalocean/services/axxium-work-pilot/ "${files[@]}"
+          # Only validated action and hexadecimal arguments expand on the runner.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "set -eu; umask 077; scratch=\$(mktemp -d);
+            trap 'rm -rf -- \"\$scratch\"' EXIT;
+            cd \"\$scratch\"; tar --no-same-owner -xf -;
+            python3 scripts/axxium_work_activation_host.py --action '$ACTION' --controller '$CONTROLLER_SHA'" \
+            < controller.tar > release-receipt.json
+          if [ "$ACTION" = activate ]; then
+            jq -e '.status == "healthy-live" and .mailbox_active == true and .public_ingress == true' release-receipt.json >/dev/null
+          elif [ "$ACTION" = repair-ingress ]; then
+            jq -e '.status == "ingress-repaired"' release-receipt.json >/dev/null
+          else
+            jq -e '.status == "healthy-dark" and .mailbox_active == false and .public_ingress == false' release-receipt.json >/dev/null
+          fi
+      - name: Preserve sanitized deployment evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: axxium-work-pilot-${{ inputs.action }}
+          path: |
+            admission.json
+            release-receipt.json
+          if-no-files-found: ignore
+      - name: Remove runner copies
+        if: always()
+        run: rm -f ~/.ssh/digitalocean controller.tar stage.zip stage-images.tar

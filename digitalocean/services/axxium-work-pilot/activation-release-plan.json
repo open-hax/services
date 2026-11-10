@@ -1,0 +1,73 @@
+{
+  "artifact_id": 13791652349,
+  "artifact_sha256": "225e740de343c637fc4eef5275d1df268dba415e0e07deecc9bc38d890af29c1",
+  "host": "knoxx.promethean.rest",
+  "image_config_digest": "sha256:d3b92dc7afb9fe485c6341ef8cbcbb49568c7b57aeb616d2b72e530faa391be4",
+  "image_id": "sha256:e5ba69e1710f6733b2be8d9baac0af81f4636f1ae38f2b9e3888605dd18e6f46",
+  "image_manifest_digest": "sha256:1f55250cf01753be2328ac83c434dd996a958b6fb55b0f70e12b526abfe6f6b5",
+  "images_tar_sha256": "c5df06d4986807ac7ceb6e077d1408088826597fbce980628ff787e36a520198",
+  "schema": "axxium-minimal-production/v1",
+  "source_pr": 57,
+  "source_sha": "7daca10cd0e6e83a4c8da626899bf59236a681be",
+  "stage_controller_sha": "a2aee9a01a51ef1481dcc6d1071104f449dcf6bd",
+  "stage_deploy_job_id": 130041327018,
+  "stage_run_id": 42875788429,
+  "stage_workflow_path": ".github/workflows/service-environment-staging.yml",
+  "lane": "activate-work-pilot",
+  "exposure": "two-actor-work-pilot",
+  "origin": "https://work.pilot.axxium.promethean.rest",
+  "owner_decision": {
+    "scope": "mutation-only",
+    "reference": "https://axxium-integration-desk.enso-err.chatgpt.site",
+    "desk_revision": 101,
+    "source_sha": "7daca10cd0e6e83a4c8da626899bf59236a681be",
+    "artifact_id": 13791652349,
+    "artifact_sha256": "225e740de343c637fc4eef5275d1df268dba415e0e07deecc9bc38d890af29c1",
+    "mutation_campaign_passed": false
+  },
+  "historical_campaign": {
+    "source_sha": "4805e9aa1ab574c2e517f6c156bca0c1e69696fb",
+    "run_id": 42834010838,
+    "attempt": 1,
+    "qualified_batches": 0,
+    "terminal_partitions": 4,
+    "eligible_over_observed": [
+      [
+        68,
+        157
+      ],
+      [
+        88,
+        218
+      ],
+      [
+        193,
+        489
+      ],
+      [
+        115,
+        260
+      ]
+    ]
+  },
+  "integration": {
+    "status": "passed",
+    "source_sha": "7daca10cd0e6e83a4c8da626899bf59236a681be",
+    "assertions": 4,
+    "warnings": [],
+    "timed_out": false,
+    "scope_limit": "Exact staged image startup, PostgreSQL-backed identity, OIDC session and token lifecycle, and a valid outsider denied mailbox access without a ledger write. Disposable PostgreSQL and synthetic signed AT identities."
+  },
+  "e2e": {
+    "status": "passed",
+    "source_sha": "7daca10cd0e6e83a4c8da626899bf59236a681be",
+    "assertions": 1,
+    "warnings": [],
+    "timed_out": false,
+    "scope_limit": "Exact image synthetic mailbox send, recipient read and acknowledgement, with recipient-only Work OAuth and grant revocation. Real provider sign-in, ChatGPT Work delivery and execution are outside this rehearsal."
+  },
+  "exact_image_rehearsal": {
+    "receipt_sha256": "6800dcbbfe9ec5a109ec048017472e57960ab6007a1d172832b67b53345632ad",
+    "log_sha256": "a53106879ec73e45e5bbe2734c7428fe8e8a3f6264831d38f53b1435cc8dfb87"
+  }
+}
