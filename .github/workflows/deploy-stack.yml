@@ -9,11 +9,11 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: Stack, website, Proxx, Axxium, synthetic Colab Stage or qualified Colab gateway
+        description: Stack, website, Proxx, Axxium, dark Axxium Work pilot, or Colab
         required: false
         default: stack
         type: choice
-        options: [stack, website, proxx, axxium, colab-stage, colab]
+        options: [stack, website, proxx, axxium, axxium-work-pilot, colab-stage, colab]
       proxx_ref:
         description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
@@ -23,7 +23,7 @@ on:
         required: false
         type: string
       axxium_ref:
-        description: Immutable staged Axxium source required for its fixed production adoption plan
+        description: Immutable staged Axxium source required for the selected Axxium production plan
         required: false
         type: string
       axxium_recover_interrupted:
@@ -99,7 +99,7 @@ jobs:
               exit 2
             fi
             case "$DEPLOY_SCOPE" in
-              stack|website|proxx|axxium|colab-stage|colab) ;;
+              stack|website|proxx|axxium|axxium-work-pilot|colab-stage|colab) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
             esac
             if [ -n "$WEBSITE_IMAGE" ] && [ "$DEPLOY_SCOPE" != website ]; then
@@ -124,7 +124,7 @@ jobs:
                 exit 2
               fi
             fi
-            if [ "$DEPLOY_SCOPE" = axxium ]; then
+            if [ "$DEPLOY_SCOPE" = axxium ] || [ "$DEPLOY_SCOPE" = axxium-work-pilot ]; then
               if [ "$CALLER_REF" != refs/heads/main ] || [ "$INCLUDE_WEBSITE" = true ] || ! [[ "${AXXIUM_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
                 echo '::error::Axxium requires the main controller, its immutable staged source and no website opt-in.' >&2
                 exit 2

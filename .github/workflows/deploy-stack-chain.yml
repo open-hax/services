@@ -36,7 +36,7 @@ on:
         required: true
         type: string
       axxium_ref:
-        description: Fixed immutable staged Axxium source; isolated axxium scope only
+        description: Fixed immutable staged Axxium source for either isolated Axxium scope
         required: false
         default: ''
         type: string
@@ -111,6 +111,14 @@ jobs:
       source_sha: ${{ inputs.axxium_ref }}
       caller_holds_production_host_lock: true
       recover_interrupted: ${{ inputs.axxium_recover_interrupted }}
+    secrets: inherit
+
+  deploy-axxium-work-pilot:
+    if: inputs.scope == 'axxium-work-pilot'
+    uses: ./.github/workflows/deploy-axxium-work-dark.yml
+    with:
+      source_sha: ${{ inputs.axxium_ref }}
+      caller_holds_production_host_lock: true
     secrets: inherit
 
   # Build jobs may run while the host is prepared, but no production service
