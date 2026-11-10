@@ -1,0 +1,72 @@
+name: axxium-work-pilot
+
+services:
+  axxium:
+    image: ${AXXIUM_PILOT_IMAGE:?Set the verified staged image ID}
+    platform: linux/amd64
+    user: "${AXXIUM_PILOT_UID:?}:${AXXIUM_PILOT_GID:?}"
+    stop_grace_period: 610s
+    environment:
+      NODE_ENV: production
+      AXXIUM_PORT: "8787"
+      AXXIUM_PUBLIC_BASE_URL: http://127.0.0.1:8787
+      AXXIUM_ISS: http://127.0.0.1:8787
+      AXXIUM_SERVICE: axxium-work-pilot
+      AXXIUM_ENV: production
+      AXXIUM_SIGNING_KEY_FILE: /run/axxium/actor-signing.pem
+      DB_HOST: database
+      DB_NAME: axxium
+      DB_USER: axxium
+      DB_PASSWORD: ${AXXIUM_PILOT_DATABASE_PASSWORD:?Set an isolated password}
+    volumes:
+      - type: bind
+        source: ./actor-signing.pem
+        target: /run/axxium/actor-signing.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    mem_limit: 192m
+    cpus: '1.0'
+    pids_limit: 160
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+
+  database:
+    image: docker.io/library/postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    platform: linux/amd64
+    environment:
+      POSTGRES_DB: axxium
+      POSTGRES_USER: axxium
+      POSTGRES_PASSWORD: ${AXXIUM_PILOT_DATABASE_PASSWORD:?Set an isolated password}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "axxium", "-d", "axxium"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    mem_limit: 192m
+    cpus: '1.0'
+    pids_limit: 160
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+
+networks:
+  default:
+    internal: true
+
+volumes:
+  database: {}

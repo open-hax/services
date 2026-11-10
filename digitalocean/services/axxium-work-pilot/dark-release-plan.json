@@ -1,0 +1,71 @@
+{
+  "schema": "axxium-minimal-production/v1",
+  "host": "knoxx.promethean.rest",
+  "source_pr": 52,
+  "source_sha": "4805e9aa1ab574c2e517f6c156bca0c1e69696fb",
+  "stage_controller_sha": "a2aee9a01a51ef1481dcc6d1071104f449dcf6bd",
+  "stage_run_id": 42747386912,
+  "stage_workflow_path": ".github/workflows/service-environment-staging.yml",
+  "artifact_id": 13731817265,
+  "artifact_sha256": "d8de71b17d44232d13e8cff597a9be7955845be8fac16353eb4b704fd9f3bc6e",
+  "image_id": "sha256:036568d51e167b30dbafced6c256715561349500831864206332fc294523270f",
+  "lane": "dark-work-pilot",
+  "exposure": "none",
+  "image_manifest_digest": "sha256:2f7466fe76a2e31c510444c073be5452b9b1dce7e97e37f64d9fadc77e4e3d08",
+  "image_config_digest": "sha256:9de7fb9c8521db88223c4af6cb504132634939af9fc13cb62fb446c2aa19ec4c",
+  "images_tar_sha256": "02625b43807958b0fe336edad42665b29b5eeb0bdb5372e5361d4a5aeec4577f",
+  "stage_deploy_job_id": 129604052831,
+  "owner_decision": {
+    "scope": "mutation-only",
+    "reference": "https://axxium-integration-desk.enso-err.chatgpt.site",
+    "desk_revision": 92,
+    "mutation_campaign_passed": false,
+    "run_id": 42834010838,
+    "attempt": 1,
+    "qualified_batches": 0,
+    "terminal_partitions": 4,
+    "eligible_over_observed": [
+      [
+        68,
+        157
+      ],
+      [
+        88,
+        218
+      ],
+      [
+        193,
+        489
+      ],
+      [
+        115,
+        260
+      ]
+    ]
+  },
+  "integration": {
+    "status": "passed",
+    "source_sha": "4805e9aa1ab574c2e517f6c156bca0c1e69696fb",
+    "assertions": 5334,
+    "log_sha256": "204678ddcd942390e32cbd5a5b1935f1461698d4f7f3a8b060afed7c71064a19",
+    "warnings": [],
+    "timed_out": false,
+    "scope_limit": "Exact application baseline with 293 tests across four groups. This is integration evidence, with no mutation kill credit."
+  },
+  "e2e": {
+    "status": "passed",
+    "source_sha": "4805e9aa1ab574c2e517f6c156bca0c1e69696fb",
+    "assertions": 1,
+    "warnings": [],
+    "timed_out": false,
+    "scope_limit": "One independently observed exact staging Work delivery and teardown. The production slot will have no ingress or mailbox.",
+    "reference": "https://chatgpt.com/c/6af20b5d-3388-83ea-b115-50aa8d8b85ac"
+  },
+  "exact_image_rehearsal": {
+    "source_sha": "4805e9aa1ab574c2e517f6c156bca0c1e69696fb",
+    "status": "passed",
+    "log_sha256": "220376de3bc443223007b5ad59b49b2e98e7a16fa106d9faf49280804636ad19",
+    "receipt_sha256": "bf080291ba2e3c8d8a5c8aed346889b51de5537de91220fb8e930f35feef7bd3",
+    "scope_limit": "Disposable PostgreSQL and synthetic AT identities; actual image, OIDC, mailbox, scoped consent, revocation and cleanup."
+  }
+}

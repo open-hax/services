@@ -298,12 +298,17 @@ def verify_image(plan, package, metadata, sizes):
         oci_blob(selected, sizes, OCI_INDEX, "annotations")
         image_path, attestations = nested_image(strict_json(metadata[tagged_path]), sizes, metadata, plan["source_sha"])
         referenced.update(attestations)
+    if "image_manifest_digest" in plan:
+        require(image_path == "blobs/sha256/" + plan["image_manifest_digest"].removeprefix("sha256:"),
+                "OCI manifest differs from reviewed runtime")
     manifest = strict_json(metadata[image_path])
     config = manifest.get("config", {})
     require(manifest.get("schemaVersion") == 2 and isinstance(config.get("digest"), str)
             and re.fullmatch(r"sha256:[0-9a-f]{64}", config["digest"]), "OCI configuration unavailable")
     config_path = "blobs/sha256/" + config["digest"].split(":", 1)[1]
     require(config.get("size") == sizes.get(config_path), "OCI configuration size mismatch")
+    if "image_config_digest" in plan:
+        require(config["digest"] == plan["image_config_digest"], "OCI configuration differs from reviewed runtime")
     if nested:
         require(set(manifest) == {"schemaVersion", "mediaType", "config", "layers"}
                 and manifest["mediaType"] == OCI_MANIFEST, "unexpected OCI image manifest")
