@@ -13,7 +13,7 @@ on:
         required: false
         default: stack
         type: choice
-        options: [stack, website, proxx, axxium, axxium-work-pilot, axxium-work-pilot-activate, axxium-work-pilot-teardown, colab-stage, colab]
+        options: [stack, website, proxx, axxium, axxium-work-pilot, axxium-work-pilot-activate, axxium-work-pilot-repair-ingress, axxium-work-pilot-teardown, colab-stage, colab]
       proxx_ref:
         description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
@@ -99,7 +99,7 @@ jobs:
               exit 2
             fi
             case "$DEPLOY_SCOPE" in
-              stack|website|proxx|axxium|axxium-work-pilot|axxium-work-pilot-activate|axxium-work-pilot-teardown|colab-stage|colab) ;;
+              stack|website|proxx|axxium|axxium-work-pilot|axxium-work-pilot-activate|axxium-work-pilot-repair-ingress|axxium-work-pilot-teardown|colab-stage|colab) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
             esac
             if [ -n "$WEBSITE_IMAGE" ] && [ "$DEPLOY_SCOPE" != website ]; then
@@ -130,9 +130,9 @@ jobs:
                 exit 2
               fi
             fi
-            if [ "$DEPLOY_SCOPE" = axxium-work-pilot-teardown ]; then
+            if [ "$DEPLOY_SCOPE" = axxium-work-pilot-teardown ] || [ "$DEPLOY_SCOPE" = axxium-work-pilot-repair-ingress ]; then
               if [ "$CALLER_REF" != refs/heads/main ] || [ "$INCLUDE_WEBSITE" = true ] || [ -n "$AXXIUM_SHA" ]; then
-                echo '::error::Work pilot teardown requires the main controller and an isolated teardown scope.' >&2
+                echo '::error::Work pilot maintenance requires the main controller, an isolated scope and no Axxium source input.' >&2
                 exit 2
               fi
             fi
