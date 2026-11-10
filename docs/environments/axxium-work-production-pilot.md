@@ -88,7 +88,16 @@ Use `deploy-stack.yml` on Services `main` with
 `scope=axxium-work-pilot-activate` and `axxium_ref` set to the source in
 the activation release plan. Use `scope=axxium-work-pilot-teardown`
 without a source to return to the original dark app after cleanup.
-Both operations use the canonical production host queue and protected
+For a pilot activated with the original ingress policy, use
+`scope=axxium-work-pilot-repair-ingress` without a source input while the
+relay timer is armed. It swaps only the reviewed active Caddy snippet.
+The application remains responsible for the consent page's
+`Referrer-Policy: same-origin`, which preserves the Origin check on the
+same-origin form submission. The controller binds the swap to the live
+pilot receipt and container identities. Teardown accepts either reviewed
+active snippet.
+
+All operations use the canonical production host queue and protected
 production environment.
 
 Before activation, stage these files inside the existing pilot slot as the

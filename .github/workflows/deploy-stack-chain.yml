@@ -122,10 +122,10 @@ jobs:
     secrets: inherit
 
   operate-axxium-work-pilot:
-    if: inputs.scope == 'axxium-work-pilot-activate' || inputs.scope == 'axxium-work-pilot-teardown'
+    if: inputs.scope == 'axxium-work-pilot-activate' || inputs.scope == 'axxium-work-pilot-repair-ingress' || inputs.scope == 'axxium-work-pilot-teardown'
     uses: ./.github/workflows/deploy-axxium-work-activation.yml
     with:
-      action: ${{ inputs.scope == 'axxium-work-pilot-activate' && 'activate' || 'teardown' }}
+      action: ${{ inputs.scope == 'axxium-work-pilot-activate' && 'activate' || inputs.scope == 'axxium-work-pilot-repair-ingress' && 'repair-ingress' || 'teardown' }}
       source_sha: ${{ inputs.axxium_ref }}
       caller_holds_production_host_lock: true
     secrets:

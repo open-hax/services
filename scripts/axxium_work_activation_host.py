@@ -26,6 +26,7 @@ PACKAGE = ROOT / "digitalocean/services" / dark.PROJECT
 PENDING = SLOT / ".axxium-work-production-pending"
 MANAGED = Path("/srv/open-hax/state/caddy/managed")
 ROUTE = MANAGED / "axxium-work-pilot.caddy"
+PRE_CONSENT_ROUTE_SHA256 = "c5370b9431f840efb852391594f450e46a13afde08713581fdb6bd87bfcffc0f"
 ORIGIN = "https://work.pilot.axxium.promethean.rest"
 HOST = ORIGIN.removeprefix("https://")
 ISSUER = ORIGIN + "/oidc"
@@ -446,6 +447,67 @@ def rollback_activation(receipt, baseline, view, fenced, active, changed_app, er
     return result
 
 
+def installed_active_route(active):
+    require(not ROUTE.is_symlink() and ROUTE.is_file(), "pilot active route unavailable")
+    installed = ROUTE.read_bytes()
+    require(installed == active or digest(installed) == PRE_CONSENT_ROUTE_SHA256,
+            "installed pilot route differs from both reviewed active routes")
+    return installed
+
+
+def repair_ingress(controller, baseline, view, active):
+    original = json.loads(private_read(LIVE / "active.json"))
+    plan_bytes = (PACKAGE / "activation-release-plan.json").read_bytes()
+    plan = json.loads(plan_bytes)
+    require(original["status"] == "healthy-live" and original["origin"] == ORIGIN
+            and original["source_sha"] == plan["source_sha"] and original["plan_sha256"] == digest(plan_bytes)
+            and original["image_manifest_digest"] == plan["image_manifest_digest"]
+            and all(absent(LIVE / name) for name in
+                    ("teardown.json", "ingress-repair.json", "ingress-repair-failed.json")),
+            "no exact active pilot is eligible for ingress repair")
+    previous = installed_active_route(active)
+    require(digest(previous) == PRE_CONSENT_ROUTE_SHA256, "the pilot consent route is already updated")
+    binding = json.loads(private_read(LIVE / "activation.json"))
+    stop = validate_config(binding, json.loads(private_read(LIVE / "oidc/authority.json")),
+                           private_read(LIVE / "oidc/webhook-seal.key", 128))
+    require(binding["stop_at"] == original["stop_at"], "live pilot deadline differs from activation")
+    verify_relay(stop)
+    image = dark.verified_image("promethean-axxium:" + plan["source_sha"], plan["image_config_digest"],
+                                plan["image_id"], plan["image_manifest_digest"])
+    require(read_live_runtime(original, image, plan, binding) == original["pilot_containers"],
+            "pilot containers changed after activation")
+    result = {"schema": "axxium-work-ingress-repair/v1", "controller_sha": controller,
+              "source_sha": plan["source_sha"], "origin": ORIGIN, "status": "held",
+              "phase": "before-reload", "stop_at": binding["stop_at"],
+              "pilot_containers": original["pilot_containers"],
+              "previous_route_sha256": digest(previous), "updated_route_sha256": digest(active)}
+    write_json(PENDING, result)
+    try:
+        publish_route(active, previous, view)
+        probe_live()
+        require(dark.incumbent() == baseline and caddy_view() == view
+                and read_live_runtime(original, image, plan, binding) == original["pilot_containers"],
+                "pilot or incumbent changed during ingress repair")
+    except (dark.Refused, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
+        result["reason"] = str(error) if isinstance(error, dark.Refused) else "pilot ingress repair failed"
+        try:
+            installed = installed_active_route(active)
+            if installed == active:
+                publish_route(previous, active, view)
+            require(dark.incumbent() == baseline and caddy_view() == view, "ingress rollback readback differs")
+            if not isinstance(error, (dark.CommandTimeout, subprocess.TimeoutExpired)):
+                result.update(status="ingress-rolled-back", phase="complete")
+                write_json(LIVE / "ingress-repair-failed.json", result)
+                clear_hold()
+        except (dark.Refused, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired):
+            result["rollback"] = "unverified"
+    else:
+        result.update(status="ingress-repaired", phase="complete")
+        write_json(LIVE / "ingress-repair.json", result)
+        clear_hold()
+    return result
+
+
 def verify_teardown_fence():
     require(all(systemd_property(unit, "ActiveState") == "inactive" for unit in (SOCKET, RELAY))
             and public_probe(MCP, method="POST") == "503",
@@ -466,7 +528,7 @@ def teardown(controller, receipt, baseline, view, fenced, active):
               "incumbent_before": baseline}
     write_json(PENDING, result)
     try:
-        publish_route(fenced, active, view)
+        publish_route(fenced, installed_active_route(active), view)
         require(public_probe(MCP, method="POST") == "503", "pilot route did not fence")
         save_phase(result, "restore-dark")
         result["pilot_containers"] = restore_dark(receipt)
@@ -483,7 +545,7 @@ def teardown(controller, receipt, baseline, view, fenced, active):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--action", required=True, choices=("activate", "teardown"))
+    parser.add_argument("--action", required=True, choices=("activate", "repair-ingress", "teardown"))
     parser.add_argument("--controller", required=True)
     args = parser.parse_args()
     try:
@@ -501,14 +563,18 @@ def main():
             baseline, view = dark.incumbent(), caddy_view()
             fenced = (PACKAGE / "ingress/fenced.caddy").read_bytes()
             active = (PACKAGE / "ingress/active.caddy").read_bytes()
-            result = (activate(args.controller, receipt, environment, baseline, view, fenced, active)
-                      if args.action == "activate"
-                      else teardown(args.controller, receipt, baseline, view, fenced, active))
+            if args.action == "activate":
+                result = activate(args.controller, receipt, environment, baseline, view, fenced, active)
+            elif args.action == "repair-ingress":
+                result = repair_ingress(args.controller, baseline, view, active)
+            else:
+                result = teardown(args.controller, receipt, baseline, view, fenced, active)
     except (dark.Refused, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
         result = {"status": "refused", "reason": str(error) if isinstance(error, dark.Refused)
                   else "pilot host preflight failed"}
     print(json.dumps(result, sort_keys=True))
-    return 0 if result["status"] == ("healthy-live" if args.action == "activate" else "healthy-dark") else 1
+    success = {"activate": "healthy-live", "repair-ingress": "ingress-repaired", "teardown": "healthy-dark"}
+    return 0 if result["status"] == success[args.action] else 1
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     """Keep the isolated phase graph fail closed without authorizing new callers."""
     errors = []
     scope = entry["on"]["workflow_dispatch"]["inputs"].get("scope", {})
-    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx", "axxium", "axxium-work-pilot", "axxium-work-pilot-activate", "axxium-work-pilot-teardown", "colab-stage", "colab"]:
+    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx", "axxium", "axxium-work-pilot", "axxium-work-pilot-activate", "axxium-work-pilot-repair-ingress", "axxium-work-pilot-teardown", "colab-stage", "colab"]:
         errors.append("manual scope must retain stack as default and only offer reviewed service scopes")
     jobs = chain["jobs"]
     work_pilot = jobs.get("deploy-axxium-work-pilot", {})
@@ -45,10 +45,10 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
         or work_pilot.get("with") != {"source_sha": "${{ inputs.axxium_ref }}", "caller_holds_production_host_lock": "true"}):
         errors.append("dark Axxium Work must retain its isolated scope, immutable source and enclosing host queue")
     live_pilot = jobs.get("operate-axxium-work-pilot", {})
-    if (live_pilot.get("if") != "inputs.scope == 'axxium-work-pilot-activate' || inputs.scope == 'axxium-work-pilot-teardown'"
+    if (live_pilot.get("if") != "inputs.scope == 'axxium-work-pilot-activate' || inputs.scope == 'axxium-work-pilot-repair-ingress' || inputs.scope == 'axxium-work-pilot-teardown'"
         or live_pilot.get("uses") != "./.github/workflows/deploy-axxium-work-activation.yml"
         or live_pilot.get("with") != {
-            "action": "${{ inputs.scope == 'axxium-work-pilot-activate' && 'activate' || 'teardown' }}",
+            "action": "${{ inputs.scope == 'axxium-work-pilot-activate' && 'activate' || inputs.scope == 'axxium-work-pilot-repair-ingress' && 'repair-ingress' || 'teardown' }}",
             "source_sha": "${{ inputs.axxium_ref }}",
             "caller_holds_production_host_lock": "true",
         }):

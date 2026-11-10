@@ -9,9 +9,16 @@ work.pilot.axxium.promethean.rest {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "SAMEORIGIN"
-		Referrer-Policy "no-referrer"
 		-Server
 	}
+
+	# The app sets same-origin on the mailbox consent form so its POST
+	# carries the exact issuer Origin without cross-origin Referer.
+	@non_consent_page not {
+		method GET
+		path_regexp consent ^/oidc/interaction/[^/]+$
+	}
+	header @non_consent_page >Referrer-Policy "no-referrer"
 
 	@work_surface {
 		path /health /portal/* /api/auth/config /api/auth/me /api/auth/logout
