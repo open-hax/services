@@ -89,7 +89,10 @@ recipient DIDs, Work redirect URI, and pilot stop time are still unassigned.
    Bind `172.31.255.1:19073` and allow only `172.31.255.2/32`. Set
    `systemd-socket-proxyd` to the dedicated loopback port and add only the
    matching source, destination, and port UFW allow. Confirm unauthorized
-   peers cannot connect. The relay installation requires the reviewed
+   peers cannot connect. Arm a host-local timer to stop the exact pilot
+   socket and relay service by the declared UTC stop time, even if the
+   controller or browser disconnects. Verify that the pilot error handler
+   returns 503 with the relay stopped. The installation requires the reviewed
    production host bootstrap path or audited root operation. The existing
    deploy account can publish the Caddy snippet without sudo.
 3. Publish a fenced 503 virtual host and obtain a valid certificate for the
@@ -124,6 +127,32 @@ recipient DIDs, Work redirect URI, and pilot stop time are still unassigned.
    reply that names the same message ID. Record acknowledgment separately
    if performed. Stop on a 503, unexpected ledger growth, lost headroom,
    wrong actor, wrong origin, or the declared stop time.
+
+The following readbacks run only after the dedicated site is admitted. They
+exercise public routing without sending credentials or a mailbox message.
+
+```sh
+pilot_host=axxium-work-pilot.promethean.rest
+pilot_origin="https://$pilot_host"
+dig @anita.ns.cloudflare.com +short A "$pilot_host"
+dig @jaime.ns.cloudflare.com +short A "$pilot_host"
+curl --fail --silent --show-error --max-time 10 "$pilot_origin/health" |
+  jq -e '.status == "ok"'
+curl --fail --silent --show-error --max-time 10 \
+  "$pilot_origin/.well-known/oauth-authorization-server/oidc" |
+  jq -e --arg issuer "$pilot_origin/oidc" \
+    '.issuer == $issuer and (.code_challenge_methods_supported | index("S256") != null)'
+curl --fail --silent --show-error --max-time 10 \
+  "$pilot_origin/.well-known/oauth-protected-resource/api/mailbox/mcp" |
+  jq -e --arg resource "$pilot_origin/api/mailbox/mcp" --arg issuer "$pilot_origin/oidc" \
+    '.resource == $resource and .authorization_servers == [$issuer] and .scopes_supported == ["mailbox:events"]'
+curl --silent --show-error --max-time 10 --request POST \
+  --output /dev/null --write-out '%{http_code}\n' "$pilot_origin/api/mailbox/mcp"
+```
+
+Require the DNS address in the slot table on both nameservers and a final
+HTTP 401. Verify the challenge points to the exact protected-resource
+metadata URL and compare the OpenID discovery alias to the same issuer.
 
 ## Teardown and recovery
 
