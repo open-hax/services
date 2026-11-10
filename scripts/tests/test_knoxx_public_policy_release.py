@@ -33,6 +33,8 @@ class FakeHost:
         self.active = OLD
         self.reloads = 0
         self.mismatch = False
+        self.timeout_next = None
+        self.delayed = None
 
     def identities(self, _plan):
         return {"fixture": {"Id": "same"}}
@@ -46,9 +48,17 @@ class FakeHost:
     def current(self):
         return self.active
 
-    def reload(self):
+    def reload(self, *, incumbent=False):
         self.reloads += 1
-        self.active = NEW if self.snippet.exists() else OLD
+        target = OLD if incumbent else NEW
+        if self.timeout_next == target:
+            self.timeout_next = None
+            self.delayed = target
+            raise subprocess.TimeoutExpired("fixture reload", 45)
+        self.active = target
+
+    def complete_delayed_reload(self):
+        self.active, self.delayed = self.delayed, None
 
     def public(self):
         result = {path: response(path.encode()) for path in policy.NEIGHBORS}
@@ -123,11 +133,57 @@ class HostTransactionTest(unittest.TestCase):
             "containers": self.host.identities(self.plan),
             "phase": "prepared",
             "public_before": before,
+            "reload_intent": None,
         })
         self.host.artifacts.mkdir()
         (self.host.artifacts / "homepage.html").write_bytes(self.artifacts["homepage.html"])
         self.assertEqual(self.apply()["result"], "active")
         self.assertEqual(self.host.reloads, 1)
+
+    def assert_prepared(self, intent):
+        state = json.loads(self.host.receipt.read_bytes())
+        self.assertEqual(state["phase"], "prepared")
+        self.assertEqual(state["reload_intent"], intent)
+        self.assertEqual(self.host.snippet.read_bytes(), self.artifacts[policy.SNIPPET])
+        for name in policy.HTTP_PATHS.values():
+            self.assertEqual((self.host.artifacts / name).read_bytes(), self.artifacts[name])
+
+    def test_timeout_then_delayed_activation_keeps_files_and_retries_same_direction(self):
+        self.host.timeout_next = NEW
+        with self.assertRaisesRegex(policy.ReloadUncertain, "outcome is unknown"):
+            self.apply()
+        self.assertEqual(self.host.current(), OLD)
+        self.assertEqual(self.host.reloads, 1)
+        self.assert_prepared("activate")
+
+        self.host.complete_delayed_reload()
+        self.host.mismatch = True
+        with self.assertRaisesRegex(policy.Refused, "retried activation did not verify"):
+            self.apply()
+        self.assertEqual(self.host.current(), NEW)
+        self.assertEqual(self.host.reloads, 2)
+        self.assert_prepared("activate")
+
+        self.host.mismatch = False
+        self.assertEqual(self.apply()["result"], "active")
+        self.assertEqual(self.host.reloads, 3)
+
+    def test_timeout_during_rollback_keeps_files_until_acknowledged(self):
+        self.host.timeout_next = OLD
+        self.host.mismatch = True
+        with self.assertRaisesRegex(policy.ReloadUncertain, "outcome is unknown"):
+            self.apply()
+        self.assertEqual(self.host.current(), NEW)
+        self.assert_prepared("rollback")
+
+        self.host.complete_delayed_reload()
+        with self.assertRaisesRegex(policy.Refused, "interrupted policy rollback completed"):
+            self.apply()
+        self.assertEqual(self.host.current(), OLD)
+        self.assertEqual(self.host.reloads, 3)
+        self.assertFalse(self.host.snippet.exists())
+        self.assertFalse(self.host.artifacts.exists())
+        self.assertEqual(json.loads(self.host.receipt.read_bytes())["phase"], "rolled_back")
 
     def test_symlink_is_not_read_or_overwritten(self):
         outside = self.host.managed / "outside"
@@ -140,6 +196,16 @@ class HostTransactionTest(unittest.TestCase):
 
 
 class BundleTest(unittest.TestCase):
+    def test_host_lock_refuses_second_controller(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / policy.LOCK
+            with policy.host_lock(path):
+                with self.assertRaisesRegex(policy.Refused, "another policy controller"):
+                    with policy.host_lock(path):
+                        self.fail("lock contention did not refuse")
+            with policy.host_lock(path):
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
     def test_tracked_bundle_pins_all_artifact_bytes(self):
         plan, _, artifacts = policy.load_bundle(BUNDLE, ROOT)
         self.assertEqual(plan["host"], policy.HOST)

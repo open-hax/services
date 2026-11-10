@@ -154,6 +154,10 @@ jobs:
         if: steps.target.outputs.operation == 'bootstrap'
         run: ssh production-droplet 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
 
+      - name: Refuse a pending Knoxx policy retirement before stack bootstrap
+        if: steps.target.outputs.operation == 'bootstrap'
+        run: ssh production-droplet 'python3 -' < digitalocean/scripts/check-knoxx-public-policy-hold.py
+
       - name: Bootstrap host
         if: steps.target.outputs.operation == 'bootstrap'
         run: |

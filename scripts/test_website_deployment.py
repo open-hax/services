@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -159,6 +160,55 @@ class WebsiteDeploymentTests(unittest.TestCase):
         policy["jobs"]["deploy"]["if"] = "always()"
         self.assertIn("Knoxx policy production access must depend on successful credentialless admission",
                       chain_guard.knoxx_policy_path_errors(self.entry, self.chain, policy))
+
+    def test_knoxx_policy_stage_rejects_aliased_ancestors_and_nonprivate_directory(self):
+        workflow_step = next(step for step in workflow("deploy-knoxx-public-policy.yml")["jobs"]["deploy"]["steps"]
+                             if step.get("name") == "Install and apply the fixed policy transaction")
+        command = workflow_step["run"]
+        hold = "'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh"
+        self.assertLess(command.index(hold), command.index("stage unpack"))
+        remote = re.search(r"^stage_command='(.*?)^'$", command, re.MULTILINE | re.DOTALL).group(1)
+        stage_id = "a" * 40 + "-1-1"
+        archive = io.BytesIO()
+        payload = b"fixture upload"
+        with tarfile.open(fileobj=archive, mode="w") as stream:
+            member = tarfile.TarInfo("scripts/knoxx_public_policy_release.py")
+            member.size = len(payload)
+            stream.addfile(member, io.BytesIO(payload))
+
+        for layout, accepted in (("canonical", True), ("services alias", False), ("app alias", False),
+                                 ("parent alias", False), ("public parent", False)):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                services, state, outside = (root / name for name in ("services", "state", "outside"))
+                state.mkdir()
+                outside.mkdir()
+                if layout == "services alias":
+                    (outside / "knoxx").mkdir()
+                    services.symlink_to(outside, target_is_directory=True)
+                else:
+                    services.mkdir()
+                    app = services / "knoxx"
+                    if layout == "app alias":
+                        app.symlink_to(outside, target_is_directory=True)
+                    else:
+                        app.mkdir()
+                        parent = app / "public-policy-controllers"
+                        if layout == "parent alias":
+                            parent.symlink_to(outside, target_is_directory=True)
+                        elif layout == "public parent":
+                            parent.mkdir(mode=0o755)
+                            parent.chmod(0o755)
+                result = subprocess.run(["sh", "-c", remote, "sh", str(services), str(state), stage_id, "unpack"],
+                                        input=archive.getvalue(), capture_output=True)
+                self.assertEqual(accepted, result.returncode == 0, result.stderr)
+                self.assertEqual([], list(outside.rglob("knoxx_public_policy_release.py")))
+                if accepted:
+                    stage = services / "knoxx" / "public-policy-controllers" / stage_id
+                    self.assertEqual(0o700, stage.stat().st_mode & 0o777)
+                    self.assertEqual(payload, (stage / member.name).read_bytes())
+                else:
+                    self.assertFalse((services / "knoxx" / "public-policy-controllers" / stage_id).exists())
 
     def test_knoxx_policy_admission_binds_ancestry_and_exact_privacy_bytes(self):
         policy = workflow("deploy-knoxx-public-policy.yml")

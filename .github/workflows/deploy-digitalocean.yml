@@ -199,6 +199,10 @@ jobs:
       - name: Refuse unresolved Axxium production transition
         run: ssh open-hax-target 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
 
+      - name: Refuse a pending Knoxx policy retirement before service changes
+        if: inputs.environment == 'production' && (inputs.service == 'knoxx' || inputs.service == 'caddy')
+        run: ssh open-hax-target 'python3 -' < digitalocean/scripts/check-knoxx-public-policy-hold.py
+
       - name: Verify Caddy dev-ingress firewall boundary
         if: inputs.service == 'caddy'
         run: |

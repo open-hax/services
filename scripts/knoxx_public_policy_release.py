@@ -2,7 +2,9 @@
 """Activate the fixed Knoxx public policy bundle through the protected host controller."""
 
 import argparse
+from contextlib import contextmanager
 from copy import deepcopy
+import fcntl
 import hashlib
 from html.parser import HTMLParser
 import json
@@ -26,6 +28,7 @@ FRONTEND_IMAGE = "ghcr.io/open-hax/knoxx-frontend"
 SNIPPET = "knoxx-public-policy.caddy"
 POLICY_DIR = "knoxx-public-policy"
 RECEIPT = ".knoxx-public-policy-release.json"
+LOCK = ".knoxx-public-policy-release.lock"
 MOUNT = "/etc/caddy/managed"
 BASE_IMPORT = f"import {MOUNT}/*.caddy".encode()
 LOGGER = "knoxx_policy_unassigned"
@@ -41,6 +44,10 @@ LIMIT = 8 * 1024 * 1024
 
 class Refused(Exception):
     """A fixed safe message to return to the deployment workflow."""
+
+
+class ReloadUncertain(Refused):
+    """A reload request may have reached Caddy without acknowledgment."""
 
 
 def require(condition, message):
@@ -91,6 +98,22 @@ def directory(path):
     require(path.is_absolute() and path.resolve(strict=True) == path and path.is_dir(),
             "noncanonical release directory")
     return path
+
+
+@contextmanager
+def host_lock(path):
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    try:
+        metadata = os.fstat(fd)
+        require(stat.S_ISREG(metadata.st_mode) and metadata.st_uid == os.geteuid()
+                and not metadata.st_mode & 0o077, "unsafe policy lock file")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Refused("another policy controller is active on the host") from None
+        yield
+    finally:
+        os.close(fd)
 
 
 def read_file(path):
@@ -318,6 +341,7 @@ class Host:
         self.artifacts = self.managed / POLICY_DIR
         self.snippet = self.managed / SNIPPET
         self.receipt = self.managed.parent / RECEIPT
+        self.lock = self.managed.parent / LOCK
         require(self.managed.stat().st_dev == self.receipt.parent.stat().st_dev,
                 "policy staging and managed ingress must share a filesystem")
 
@@ -377,12 +401,16 @@ class Host:
         before = [f"import {MOUNT}/{name}\n".encode() for name in names if name != SNIPPET]
         after = [snippet + b"\n" if name == SNIPPET else f"import {MOUNT}/{name}\n".encode()
                  for name in names]
-        return (self.adapt(b"".join(lines[:index] + imports + lines[index + 1:]))
-                for imports in (before, after))
+        self.incumbent_input = b"".join(lines[:index] + before + lines[index + 1:])
+        proposed_input = b"".join(lines[:index] + after + lines[index + 1:])
+        return self.adapt(self.incumbent_input), self.adapt(proposed_input)
 
-    def reload(self):
-        self.exec(CADDY, ["caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"],
-                  "Caddy rejected activation or rollback")
+    def reload(self, *, incumbent=False):
+        # Keep the exact on-disk policy intact until a compensating reload is
+        # acknowledged. A timed-out Docker client can outlive our observation.
+        path = "/dev/stdin" if incumbent else "/etc/caddy/Caddyfile"
+        self.exec(CADDY, ["caddy", "reload", "--config", path, "--adapter", "caddyfile"],
+                  "Caddy rejected activation or rollback", self.incumbent_input if incumbent else None)
 
     def public(self):
         response = {path: request(path) for path in (*HTTP_PATHS, *NEIGHBORS)}
@@ -416,6 +444,35 @@ def record(path, value):
     write_atomic(path, (json.dumps(value, sort_keys=True) + "\n").encode(), 0o600)
 
 
+def reload_checked(host, *, incumbent=False):
+    try:
+        host.reload(incumbent=incumbent)
+    except Exception:
+        raise ReloadUncertain("Caddy reload outcome is unknown; exact files and prepared receipt retained") from None
+
+
+def restore(host, plan, artifacts, paths, key, before, *, retry):
+    before_hash = key["incumbent_config_sha256"]
+    after_hash = key["candidate_config_sha256"]
+    current = config_digest(host.current())
+    require(current in (before_hash, after_hash) and host.identities(plan) == key["containers"],
+            "rollback would overwrite unknown runtime state")
+    exact_disk(host, artifacts)
+    record(host.receipt, {**key, "phase": "prepared", "public_before": before, "reload_intent": "rollback"})
+    if retry or current != before_hash:
+        reload_checked(host, incumbent=True)
+    require(config_digest(host.current()) == before_hash and host.public() == before,
+            "rollback did not restore incumbent Caddy and public responses")
+    host.snippet.unlink(missing_ok=True)
+    for name in HTTP_PATHS.values():
+        paths[name].unlink(missing_ok=True)
+    if host.artifacts.exists():
+        sync_dir(host.artifacts)
+        host.artifacts.rmdir()
+    sync_dir(host.managed)
+    record(host.receipt, {**key, "phase": "rolled_back", "public_before": before})
+
+
 def release(host, plan, plan_hash, artifacts, controller_sha):
     initial = host.identities(plan)
     original_index = host.index()
@@ -433,13 +490,14 @@ def release(host, plan, plan_hash, artifacts, controller_sha):
            "incumbent_config_sha256": before_hash, "candidate_config_sha256": after_hash,
            "containers": initial}
     saved = read_optional(host.receipt)
+    intent = None
     if saved is None:
         require(current == before_hash and all(value is None for value in disk.values())
                 and not host.artifacts.exists(), "unreceipted policy release state")
         before = host.public()
         require(before["/"] == {"status": 200, "type": "text/html", "sha256": digest(original_index)},
                 "public homepage differs from incumbent frontend")
-        record(host.receipt, {**key, "phase": "prepared", "public_before": before})
+        record(host.receipt, {**key, "phase": "prepared", "public_before": before, "reload_intent": None})
     else:
         prior = json.loads(saved, object_pairs_hook=unique_keys)
         require(all(prior.get(field) == value for field, value in key.items()),
@@ -455,7 +513,19 @@ def release(host, plan, plan_hash, artifacts, controller_sha):
         if prior["phase"] == "rolled_back":
             require(current == before_hash and all(value is None for value in disk.values())
                     and not host.artifacts.exists(), "recorded rollback differs from disk or live Caddy")
-            record(host.receipt, {**key, "phase": "prepared", "public_before": before})
+            record(host.receipt, {**key, "phase": "prepared", "public_before": before, "reload_intent": None})
+        else:
+            require("reload_intent" in prior and prior["reload_intent"] in (None, "activate", "rollback"),
+                    "unknown prepared reload intent")
+            intent = prior["reload_intent"]
+            if intent is None:
+                require(current == before_hash, "policy activated without a recorded reload intent")
+            elif intent == "activate":
+                require(all(value is not None for value in disk.values()), "prepared activation files are incomplete")
+
+    if intent == "rollback":
+        restore(host, plan, artifacts, paths, key, before, retry=True)
+        raise Refused("interrupted policy rollback completed and the incumbent was restored")
 
     try:
         if not host.artifacts.exists():
@@ -467,31 +537,25 @@ def release(host, plan, plan_hash, artifacts, controller_sha):
         for name, path in paths.items():
             if disk[name] is None:
                 write_atomic(path, artifacts[name], 0o644, replace=False, staging=host.receipt.parent)
-        if current != after_hash:
-            host.reload()
+        record(host.receipt, {**key, "phase": "prepared", "public_before": before, "reload_intent": "activate"})
+        reload_checked(host)
         require(config_digest(host.current()) == after_hash, "activated Caddy configuration differs")
         require(host.identities(plan) == initial, "application container identities changed")
         after = host.public()
         verify_public(before, after, artifacts)
         record(host.receipt, {**key, "phase": "active", "public_before": before, "public_after": after})
         return {**key, "result": "active", "public_after": after}
+    except ReloadUncertain:
+        raise
     except Exception:
+        if intent == "activate":
+            # An earlier activation request may still arrive. A retry can
+            # converge in the same direction but must not race it with rollback.
+            raise Refused("retried activation did not verify; prepared state retained for reconciliation") from None
         try:
-            require(config_digest(host.current()) in (before_hash, after_hash)
-                    and host.identities(plan) == initial, "rollback would overwrite unknown runtime state")
-            exact_disk(host, artifacts)
-            host.snippet.unlink(missing_ok=True)
-            sync_dir(host.managed)
-            if config_digest(host.current()) != before_hash:
-                host.reload()
-            require(config_digest(host.current()) == before_hash and host.public() == before,
-                    "rollback did not restore incumbent Caddy and public responses")
-            for name in HTTP_PATHS.values():
-                paths[name].unlink(missing_ok=True)
-            if host.artifacts.exists():
-                host.artifacts.rmdir()
-                sync_dir(host.managed)
-            record(host.receipt, {**key, "phase": "rolled_back", "public_before": before})
+            restore(host, plan, artifacts, paths, key, before, retry=False)
+        except ReloadUncertain:
+            raise
         except Exception:
             raise Refused("policy release failed and rollback requires reconciliation") from None
         raise Refused("policy release failed and the incumbent was restored") from None
@@ -511,7 +575,9 @@ def main():
         directory(args.state_root)
         plan, plan_hash, artifacts = load_bundle(args.bundle, args.services_root)
         host = Host(args.services_root, args.state_root)
-        print(json.dumps(release(host, plan, plan_hash, artifacts, args.controller_sha), sort_keys=True))
+        with host_lock(host.lock):
+            result = release(host, plan, plan_hash, artifacts, args.controller_sha)
+        print(json.dumps(result, sort_keys=True))
     except Refused as error:
         print(f"Knoxx policy release refused: {error}", file=sys.stderr)
         return 1

@@ -153,20 +153,75 @@ jobs:
           load_host_contract production
           test "$OPEN_HAX_SERVICES_ROOT" = /srv/open-hax/services
           test "$OPEN_HAX_STATE_ROOT" = /srv/open-hax/state
-          parent="$OPEN_HAX_SERVICES_ROOT/knoxx/public-policy-controllers"
-          controller="$parent/$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          test "$OPEN_HAX_SSH_USER" = deploy
+          stage_id="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           ssh_target=(ssh -F "$RUNNER_TEMP/knoxx-policy-ssh/config" open-hax-target)
           "${ssh_target[@]}" 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
-          # Fixed checked-out paths and validated hexadecimal/numeric IDs expand locally.
-          # shellcheck disable=SC2029
+          # Positional arguments and paths below expand on the host.
+          # shellcheck disable=SC2016
+          stage_command='
+          set -eu
+          umask 077
+          services=$1
+          state=$2
+          stage_id=$3
+          mode=$4
+          printf "%s\n" "$stage_id" | grep -Eq "^[0-9a-f]{40}-[0-9]+-[0-9]+$"
+          canonical_dir() {
+            test -d "$1"
+            test "$(realpath -e -- "$1")" = "$1"
+          }
+          owned_dir() {
+            canonical_dir "$1"
+            test "$(stat -c %u -- "$1")" = "$(id -u)"
+          }
+          private_dir() {
+            owned_dir "$1"
+            test "$(stat -c %a -- "$1")" = 700
+          }
+          canonical_dir "$services"
+          canonical_dir "$state"
+          app="$services/knoxx"
+          owned_dir "$app"
+          cd -P "$app"
+          test "$(pwd -P)" = "$app"
+          if [ "$mode" = unpack ] && [ ! -e public-policy-controllers ]; then
+            mkdir -m 700 public-policy-controllers
+          fi
+          parent="$app/public-policy-controllers"
+          private_dir "$parent"
+          cd -P "$parent"
+          test "$(pwd -P)" = "$parent"
+          if [ "$mode" = unpack ]; then
+            mkdir -m 700 -- "$stage_id"
+          fi
+          controller="$parent/$stage_id"
+          private_dir "$controller"
+          cd -P "$controller"
+          test "$(pwd -P)" = "$controller"
+          case "$mode" in
+            unpack)
+              exec tar --keep-old-files --no-same-owner --no-same-permissions -xf -
+              ;;
+            apply)
+              sha256sum --check --status -
+              exec python3 -B scripts/knoxx_public_policy_release.py \
+                --bundle "$controller/digitalocean/services/knoxx/public-policy" \
+                --services-root "$services" --state-root "$state" \
+                --controller-sha "${stage_id%%-*}" </dev/null
+              ;;
+            *) exit 2 ;;
+          esac
+          '
+          stage() {
+            # These literal roots and hexadecimal/numeric IDs were validated above.
+            # shellcheck disable=SC2029
+            "${ssh_target[@]}" "sh -c '$stage_command' sh '$OPEN_HAX_SERVICES_ROOT' '$OPEN_HAX_STATE_ROOT' '$stage_id' '$1'"
+          }
           tar --mode=u=r,go= -cf - "$POLICY_BUNDLE/plan.json" "$POLICY_BUNDLE/homepage.html" \
             "$POLICY_BUNDLE/privacy.html" "$POLICY_BUNDLE/knoxx-public-policy.caddy" "$POLICY_CONTROLLER" |
-            "${ssh_target[@]}" "set -eu; umask 077; test ! -L '$parent'; mkdir -p '$parent'; mkdir -m 700 '$controller'; tar --no-same-owner --no-same-permissions -xf - -C '$controller'"
-          # shellcheck disable=SC2029
-          "${ssh_target[@]}" "cd '$controller' && sha256sum --check --status -" < "$RUNNER_TEMP/knoxx-policy-sha256"
-          # shellcheck disable=SC2029
-          "${ssh_target[@]}" "umask 077; python3 -B '$controller/$POLICY_CONTROLLER' --bundle '$controller/$POLICY_BUNDLE' --services-root '$OPEN_HAX_SERVICES_ROOT' --state-root '$OPEN_HAX_STATE_ROOT' --controller-sha '$GITHUB_SHA'" \
-            </dev/null > knoxx-public-policy-receipt.json
+            stage unpack
+          stage apply < "$RUNNER_TEMP/knoxx-policy-sha256" > knoxx-public-policy-receipt.json
           jq -e 'type == "object"' knoxx-public-policy-receipt.json >/dev/null
       - name: Preserve sanitized policy receipt
         if: always()

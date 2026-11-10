@@ -28,9 +28,11 @@ frontend and route configuration, the exact new routes and their logging,
 and the application container identities. It reloads Caddy gracefully.
 A failing preflight leaves production alone. A failing live probe restores
 the previous snippet state, reloads and verifies the rollback. If the
-controller reports an interrupted or unknown state, use its receipt and
-the live readback to reconcile before any retry. Do not manually replace
-the snippet while the controller holds the queue.
+controller reports a reload with an unknown outcome, it keeps the
+prepared receipt and served files in place. A retry of the same reviewed
+controller reconciles only the known incumbent or candidate configuration.
+Use its receipt and live readback before handling any unknown state. Do
+not manually replace the snippet while the controller holds the queue.
 
 After success, run the public browser verification from the reviewed
 Services checkout:
@@ -50,9 +52,11 @@ folder before swapping the worker profile at an idle queue boundary.
 ## Next Knoxx frontend release
 
 This overlay is bound to the observed frontend digest, including its
-index, script paths and CSS. It cannot be reused with a changed frontend
-digest without a new reviewed plan. Before dispatching the next normal
-Knoxx stack release or upgrading Caddy, prepare a reviewed retirement
+index, script paths and CSS. The stack controller refuses
+to start while the overlay is active, interrupted, or unreadable. An
+exact verified rollback with no overlay files permits a stack release.
+Before dispatching the next normal Knoxx stack release or upgrading Caddy,
+prepare a reviewed retirement
 of the overlay under the same production-host queue. Qualify the new
 frontend's native homepage and policy route first. Keep the public
 policy URL reachable throughout the transition and verify the anonymous
