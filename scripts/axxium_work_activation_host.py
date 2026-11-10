@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 import axxium_work_dark_host as dark
 
@@ -245,14 +246,22 @@ def publish_route(candidate, expected, view):
 def public_probe(path, *, method="GET", body=False, retry=False, headers=False):
     args = ["curl", "--silent", "--show-error", "--noproxy", "*", "--proto", "=https",
             "--max-time", "6", "--max-filesize", "1048576", "--request", method]
-    if retry:
-        args += ["--retry", "12", "--retry-delay", "3", "--retry-all-errors"]
     if not body:
         args += ["--output", "/dev/null", "--write-out", "%{http_code}"]
     if headers:
         args += ["--dump-header", "-"]
-    raw = command([*args, ORIGIN + path], "pilot HTTPS probe failed", timeout=125 if retry else 10)
-    return json.loads(raw) if body else raw.decode().strip()
+    # ACME may still be issuing the certificate. Retry failed invocations
+    # without letting curl retry an intentional fenced 503 response.
+    retries = 12 if retry else 0
+    for attempt in range(retries + 1):
+        try:
+            raw = command([*args, ORIGIN + path], "pilot HTTPS probe failed", timeout=7)
+        except dark.Refused:
+            if attempt == retries:
+                raise
+            time.sleep(3)
+        else:
+            return json.loads(raw) if body else raw.decode().strip()
 
 
 def probe_live():
