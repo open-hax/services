@@ -1,0 +1,7 @@
+[Unit]
+Description=Fence public Axxium Work pilot traffic at the approved deadline
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl stop promethean-axxium-work-pilot.socket promethean-axxium-work-pilot.service
+TimeoutStartSec=30s

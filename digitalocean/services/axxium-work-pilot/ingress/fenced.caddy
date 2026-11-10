@@ -1,0 +1,15 @@
+work.pilot.axxium.promethean.rest {
+	tls {
+		issuer acme
+	}
+
+	header {
+		Cache-Control "no-store"
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	respond "Axxium Work pilot unavailable." 503
+}

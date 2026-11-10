@@ -59,15 +59,16 @@ def require(condition, reason):
         raise Refused(reason)
 
 
-def command(args, reason, timeout=30):
+def command(args, reason, timeout=30, *, data=None):
     try:
-        process = subprocess.Popen(args, env=COMMAND_ENV, stdin=subprocess.DEVNULL,
+        process = subprocess.Popen(args, env=COMMAND_ENV,
+                                   stdin=subprocess.DEVNULL if data is None else subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
     except OSError:
         raise Refused(reason) from None
     with process:
         try:
-            stdout, _ = process.communicate(timeout=timeout)
+            stdout, _ = process.communicate(data, timeout=timeout)
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
@@ -79,8 +80,8 @@ def command(args, reason, timeout=30):
         return stdout
 
 
-def docker(*args, reason, timeout=30):
-    return command([*DOCKER, *args], reason, timeout)
+def docker(*args, reason, timeout=30, data=None):
+    return command([*DOCKER, *args], reason, timeout, data=data)
 
 
 def incumbent():

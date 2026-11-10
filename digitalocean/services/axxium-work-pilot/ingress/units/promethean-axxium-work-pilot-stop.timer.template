@@ -1,0 +1,9 @@
+[Unit]
+Description=Close Axxium Work pilot ingress at the approved UTC deadline
+
+[Timer]
+OnCalendar=__REVIEWED_UTC_STOP__
+AccuracySec=1s
+RandomizedDelaySec=0
+Persistent=true
+Unit=promethean-axxium-work-pilot-stop.service
