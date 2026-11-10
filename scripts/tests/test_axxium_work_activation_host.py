@@ -3,9 +3,11 @@ import base64
 import json
 from copy import deepcopy
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
+from threading import Thread
 import unittest
 from unittest.mock import call, patch
 
@@ -14,6 +16,43 @@ import axxium_work_activation_host as host
 
 
 class ActivationHostTest(unittest.TestCase):
+    def test_fenced_https_probe_returns_the_first_503(self):
+        requests = []
+
+        class Fence(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append(self.path)
+                self.send_response(503)
+                self.end_headers()
+                self.wfile.write(b"Work pilot unavailable.")
+
+            def log_message(self, *_):
+                pass
+
+        # Keep the real curl options except the scheme for this loopback fixture.
+        def loopback_curl(args, *details, **options):
+            args[args.index("=https")] = "=http"
+            return host.dark.command(args, *details, **options)
+
+        with HTTPServer(("127.0.0.1", 0), Fence) as server:
+            worker = Thread(target=server.serve_forever)
+            worker.start()
+            try:
+                with (patch.object(host, "ORIGIN", f"http://127.0.0.1:{server.server_port}"),
+                      patch.object(host, "command", side_effect=loopback_curl)):
+                    self.assertEqual(host.public_probe("/health", retry=True), "503")
+            finally:
+                server.shutdown()
+                worker.join()
+        self.assertEqual(requests, ["/health"])
+
+    def test_fenced_https_probe_retries_a_transport_failure(self):
+        with (patch.object(host, "command", side_effect=[host.dark.Refused("certificate pending"), b"503"]) as probe,
+              patch.object(host.time, "sleep") as pause):
+            self.assertEqual(host.public_probe("/health", retry=True), "503")
+        self.assertEqual(probe.call_count, 2)
+        pause.assert_called_once_with(3)
+
     def test_validation_keeps_siblings_in_order_without_importing_old_pilot(self):
         root = b"before\nimport /etc/caddy/managed/*.caddy\nafter\n"
         candidate = b"exact-pilot-site {\n}\n"
