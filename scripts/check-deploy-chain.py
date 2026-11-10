@@ -37,9 +37,14 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     """Keep the isolated phase graph fail closed without authorizing new callers."""
     errors = []
     scope = entry["on"]["workflow_dispatch"]["inputs"].get("scope", {})
-    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx", "axxium", "colab-stage", "colab", "knoxx-policy"]:
+    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx", "axxium", "axxium-work-pilot", "colab-stage", "colab", "knoxx-policy"]:
         errors.append("manual scope must retain stack as default and only offer reviewed service scopes")
     jobs = chain["jobs"]
+    work_pilot = jobs.get("deploy-axxium-work-pilot", {})
+    if (work_pilot.get("if") != "inputs.scope == 'axxium-work-pilot'"
+        or work_pilot.get("uses") != "./.github/workflows/deploy-axxium-work-dark.yml"
+        or work_pilot.get("with") != {"source_sha": "${{ inputs.axxium_ref }}", "caller_holds_production_host_lock": "true"}):
+        errors.append("dark Axxium Work must retain its isolated scope, immutable source and enclosing host queue")
     colab = jobs.get("deploy-colab-production", {})
     if (colab.get("if") != "inputs.scope == 'colab'"
         or colab.get("uses") != "./.github/workflows/deploy-colab-qualified.yml"
