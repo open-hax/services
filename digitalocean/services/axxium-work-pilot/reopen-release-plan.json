@@ -1,0 +1,61 @@
+{
+  "artifact_id": 13805144939,
+  "artifact_sha256": "a1e6770a2db3dabecee49c8f14fa1eec0cd1e482149e059a780e317ba2b52b50",
+  "host": "knoxx.promethean.rest",
+  "image_config_digest": "sha256:768228ea7435e37acd11c25cb4d37d038e58afb75683944e10cb0eb99f1d70c1",
+  "image_id": "sha256:9121e04a8f89b1dfaf9dae1e213c16265dd03f0d5a059503322b3cd9f2293480",
+  "image_manifest_digest": "sha256:5bf53c46030910300f1cb00861ca3ee18ec2a5df505511e62b2bae3e8a6ac6c1",
+  "images_tar_sha256": "8d8948199529fbfbe431de239986e2943df12e740202790d601195a7900fe1ae",
+  "schema": "axxium-minimal-production/v1",
+  "source_pr": 59,
+  "source_sha": "68aa511626ab28ea3d93684c9c464b8c13edbb17",
+  "stage_controller_sha": "a2aee9a01a51ef1481dcc6d1071104f449dcf6bd",
+  "stage_deploy_job_id": 130154417897,
+  "stage_run_id": 42908355906,
+  "stage_workflow_path": ".github/workflows/service-environment-staging.yml",
+  "lane": "reopen-work-pilot",
+  "exposure": "two-actor-work-pilot",
+  "origin": "https://work.pilot.axxium.promethean.rest",
+  "post_merge_ci_run_id": 42908353537,
+  "post_merge_codeql_run_id": 42908353032,
+  "retained_ledger_sha256": "94cc866602b768731b4dce165be255ad6d54a8b225d80ff6d484c3b082cce321",
+  "owner_decision": {
+    "scope": "mutation-only",
+    "reference": "https://axxium-integration-desk.enso-err.chatgpt.site",
+    "desk_revision": 130,
+    "source_sha": "68aa511626ab28ea3d93684c9c464b8c13edbb17",
+    "artifact_id": 13805144939,
+    "artifact_sha256": "a1e6770a2db3dabecee49c8f14fa1eec0cd1e482149e059a780e317ba2b52b50",
+    "mutation_campaign_passed": false
+  },
+  "historical_campaign": {
+    "source_sha": "4805e9aa1ab574c2e517f6c156bca0c1e69696fb",
+    "run_id": 42834010838,
+    "attempt": 1,
+    "qualified_batches": 0,
+    "terminal_partitions": 4,
+    "eligible_over_observed": [
+      [
+        68,
+        157
+      ],
+      [
+        88,
+        218
+      ],
+      [
+        193,
+        489
+      ],
+      [
+        115,
+        260
+      ]
+    ]
+  },
+  "local_rehearsal": {
+    "status": "passed",
+    "log_sha256": "936831b9fb4c1ffe98679e6402f1927a59b11ef008440f217f51c6e37baaab0b",
+    "scope": "Exact image on an isolated Docker network. OIDC lifecycle, event scope and catalog, anonymous and outsider denial, and empty mailbox read. No send or replay."
+  }
+}
