@@ -304,6 +304,8 @@ def verify_image(plan, package, metadata, sizes):
             and re.fullmatch(r"sha256:[0-9a-f]{64}", config["digest"]), "OCI configuration unavailable")
     config_path = "blobs/sha256/" + config["digest"].split(":", 1)[1]
     require(config.get("size") == sizes.get(config_path), "OCI configuration size mismatch")
+    if "image_config_digest" in plan:
+        require(config["digest"] == plan["image_config_digest"], "OCI configuration differs from reviewed runtime")
     if nested:
         require(set(manifest) == {"schemaVersion", "mediaType", "config", "layers"}
                 and manifest["mediaType"] == OCI_MANIFEST, "unexpected OCI image manifest")
