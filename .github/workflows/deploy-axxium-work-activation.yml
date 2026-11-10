@@ -34,6 +34,7 @@ jobs:
         env:
           CALLER_LOCKED: ${{ inputs.caller_holds_production_host_lock }}
           CALLER_WORKFLOW: ${{ github.workflow_ref }}
+          CALLER_REF_PROTECTED: ${{ github.ref_protected }}
           ACTION: ${{ inputs.action }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           CONTROLLER_SHA: ${{ github.sha }}
@@ -46,18 +47,31 @@ jobs:
           test "$CALLER_WORKFLOW" = 'open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main'
           [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
           case "$ACTION" in
-            activate)
-              plan=digitalocean/services/axxium-work-pilot/activation-release-plan.json
+            activate|reopen)
+              if [ "$ACTION" = reopen ]; then
+                test "$CALLER_REF_PROTECTED" = true
+                plan=digitalocean/services/axxium-work-pilot/reopen-release-plan.json
+                admission=scripts/axxium_work_reopen_admission.py
+                lane=reopen-work-pilot
+              else
+                plan=digitalocean/services/axxium-work-pilot/activation-release-plan.json
+                admission=scripts/axxium_work_activation_admission.py
+                lane=activate-work-pilot
+              fi
               [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
               test "$SOURCE_SHA" = "$(jq -er .source_sha "$plan")"
               artifact_id=$(jq -er '.artifact_id | select(type == "number" and . > 0 and floor == .)' "$plan")
               timeout --kill-after=5s 120s gh api "repos/open-hax/axxium/actions/artifacts/${artifact_id}/zip" > stage.zip
-              python3 scripts/axxium_work_activation_admission.py --plan "$plan" \
+              python3 "$admission" --plan "$plan" \
                 --controller-sha "$CONTROLLER_SHA" --archive stage.zip --extract-image stage-images.tar > admission.json
-              jq -e --arg source "$SOURCE_SHA" --arg plan "$(sha256sum "$plan" | cut -d' ' -f1)" \
-                '.admitted == true and .lane == "activate-work-pilot" and .source_sha == $source and .plan_sha256 == $plan' admission.json >/dev/null
+              jq -e --arg source "$SOURCE_SHA" --arg lane "$lane" --arg plan "$(sha256sum "$plan" | cut -d' ' -f1)" \
+                '.admitted == true and .lane == $lane and .source_sha == $source and .plan_sha256 == $plan' admission.json >/dev/null
               ;;
             repair-ingress|teardown)
+              test -z "$SOURCE_SHA"
+              ;;
+            close)
+              test "$CALLER_REF_PROTECTED" = true
               test -z "$SOURCE_SHA"
               ;;
             *) exit 2 ;;
@@ -96,9 +110,9 @@ jobs:
           set -euo pipefail
           umask 077
           [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$ACTION" =~ ^(activate|repair-ingress|teardown)$ ]]
+          [[ "$ACTION" =~ ^(activate|repair-ingress|teardown|reopen|close)$ ]]
           files=()
-          if [ "$ACTION" = activate ]; then files+=(stage-images.tar); fi
+          if [ "$ACTION" = activate ] || [ "$ACTION" = reopen ]; then files+=(stage-images.tar); fi
           tar -cf controller.tar scripts/axxium_work_{activation,dark}_host.py \
             digitalocean/scripts/check-axxium-production-hold.sh \
             digitalocean/services/axxium-work-pilot/ "${files[@]}"
@@ -109,7 +123,23 @@ jobs:
             cd \"\$scratch\"; tar --no-same-owner -xf -;
             python3 scripts/axxium_work_activation_host.py --action '$ACTION' --controller '$CONTROLLER_SHA'" \
             < controller.tar > release-receipt.json
-          if [ "$ACTION" = activate ]; then
+          if [ "$ACTION" = reopen ] || [ "$ACTION" = close ]; then
+            plan=digitalocean/services/axxium-work-pilot/reopen-release-plan.json
+            live=false
+            status=healthy-dark
+            if [ "$ACTION" = reopen ]; then
+              live=true
+              status=healthy-live
+            fi
+            jq -e --arg controller "$CONTROLLER_SHA" --arg status "$status" --argjson live "$live" \
+              --arg plan_sha "$(sha256sum "$plan" | cut -d' ' -f1)" --slurpfile plan "$plan" \
+              '.schema == "axxium-work-retained-host/v1" and .phase == "complete"
+               and .status == $status and .mailbox_active == $live and .public_ingress == $live
+               and .source_sha == $plan[0].source_sha and .origin == $plan[0].origin
+               and .controller_sha == $controller and .plan_sha256 == $plan_sha
+               and ($live == false or .image_manifest_digest == $plan[0].image_manifest_digest)' \
+              release-receipt.json >/dev/null
+          elif [ "$ACTION" = activate ]; then
             jq -e '.status == "healthy-live" and .mailbox_active == true and .public_ingress == true' release-receipt.json >/dev/null
           elif [ "$ACTION" = repair-ingress ]; then
             jq -e '.status == "ingress-repaired"' release-receipt.json >/dev/null
