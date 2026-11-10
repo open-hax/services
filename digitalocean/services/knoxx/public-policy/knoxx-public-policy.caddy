@@ -1,0 +1,46 @@
+https://knoxx.promethean.rest/, https://knoxx.promethean.rest/privacy.html {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log knoxx_policy_unassigned {
+		no_hostname
+	}
+
+	@homepage {
+		path /
+		method GET HEAD
+	}
+	@privacy {
+		path /privacy.html
+		method GET HEAD
+	}
+
+	handle @homepage {
+		root * /etc/caddy/managed/knoxx-public-policy
+		rewrite * /homepage.html
+		file_server
+	}
+
+	handle @privacy {
+		root * /etc/caddy/managed/knoxx-public-policy
+		file_server
+	}
+
+	handle {
+		reverse_proxy knoxx-frontend:80 {
+			header_up -x-open-hax-bridge-auth
+
+			transport http {
+				read_timeout 3600s
+				write_timeout 3600s
+			}
+		}
+	}
+}

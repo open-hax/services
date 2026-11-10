@@ -68,6 +68,13 @@ receipt; ordinary dispatch therefore refuses. No health result or pilot report
 supplies an exception. This first adoption is a fixed transition, not a generic
 Axxium environment renderer or another dispatch lane.
 
+## Knoxx public policy release
+
+The `knoxx-policy` scope serves the reviewed public homepage disclosure and
+privacy page from existing production ingress without replacing Knoxx images.
+See the [policy release runbook](docs/knoxx-public-policy-release.md) for
+admission, verification, and handoff to the next frontend release.
+
 ## Operational contracts
 
 - [`docs/dev-instances.md`](docs/dev-instances.md) — host-resident development

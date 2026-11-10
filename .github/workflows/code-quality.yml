@@ -70,6 +70,11 @@ jobs:
           test "$("$caddy_test_dir/caddy" version | cut -d' ' -f1)" = v2.8.4
           printf 'CADDY_TEST_BINARY=%s\n' "$caddy_test_dir/caddy" >> "$GITHUB_ENV"
 
+      - name: Test the Knoxx public policy transaction
+        run: |
+          shellcheck scripts/verify-knoxx-public-policy.sh
+          python3 -m unittest scripts.tests.test_knoxx_public_policy_release scripts.tests.test_knoxx_public_policy_hold
+
       - name: Test service environment admission and receiver boundaries
         run: python3 -m unittest discover -s scripts/tests -p 'test_environment*.py'
       - name: Test legacy deployment key comparison

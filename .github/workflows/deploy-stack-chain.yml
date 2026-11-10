@@ -23,7 +23,7 @@ on:
   workflow_call:
     inputs:
       scope:
-        description: stack or website; website does not mutate application services
+        description: Production scope selected by the locked Deploy Stack caller
         required: false
         default: stack
         type: string
@@ -86,6 +86,14 @@ permissions:
   packages: write
 
 jobs:
+  deploy-knoxx-policy:
+    if: inputs.scope == 'knoxx-policy'
+    uses: ./.github/workflows/deploy-knoxx-public-policy.yml
+    with:
+      caller_holds_production_host_lock: true
+    secrets:
+      DIGITALOCEAN_SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+
   deploy-colab-production:
     if: inputs.scope == 'colab'
     uses: ./.github/workflows/deploy-colab-qualified.yml

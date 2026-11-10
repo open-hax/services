@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Knoxx</title>
+    <link rel="stylesheet" href="/app.css" />
+    <!-- Vite app-bridge CSS (emitted when TS pages import CSS modules) -->
+    <link rel="stylesheet" href="/bridge/style.css" />
+    <style>
+      body.knoxx-policy-home {
+        margin: 0;
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+        height: 100dvh;
+      }
+      .knoxx-policy-home > #root { min-height: 0; overflow-y: auto; }
+      .knoxx-policy-home > #root .app-shell,
+      .knoxx-policy-home > #root > .min-h-screen { min-height: 100%; }
+      .knoxx-policy-note {
+        box-sizing: border-box;
+        border-top: 1px solid #334155;
+        background: #0f172a;
+        color: #e2e8f0;
+        font: .8125rem/1.45 system-ui, sans-serif;
+        text-align: center;
+        padding: .5rem .75rem;
+      }
+      .knoxx-policy-note p { margin: 0; }
+      .knoxx-policy-note a {
+        color: #93c5fd;
+        text-decoration: underline;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body class="knoxx-policy-home">
+    <div id="root"></div>
+
+    <!-- shadow-cljs entrypoint (owns routing + mounting) -->
+    <script src="/cljs/app.js"></script>
+    <footer class="knoxx-policy-note" aria-label="About Knoxx">
+      <p>Knoxx is a workspace for AI-assisted chat, tools, and connected services.</p>
+      <p>Axxium offers Google sign-in. A separate Drive permission supports encrypted audit archiving.
+        <a href="/privacy.html">Privacy Policy</a></p>
+    </footer>
+  </body>
+</html>

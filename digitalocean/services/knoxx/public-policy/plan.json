@@ -1,0 +1,9 @@
+{
+  "host": "knoxx.promethean.rest",
+  "frontend_image_digest": "sha256:bd9585665b28618b842b626fc58a699356a8b35853444f9a032ddc19fea288ec",
+  "incumbent_index_sha256": "79eee6c3247ab9f3201479012d97dc2dac1dd5ef8aac38336e0588db3ecc497d",
+  "homepage_sha256": "1a7350f17625bc608bc350d08b67c76d0a3eb69a4b0eecd77a37d977d9d75c59",
+  "privacy_sha256": "9e77e69efce616bcd60666618ff27073fff69fe6fd5dc075d060b052c3975f7f",
+  "snippet_sha256": "77caeba37a77b577363fb9789d9338dcd5bcd0cb04299ad425ed2873bd8e3360",
+  "knoxx_source_sha": "dc206984488b38e587f272cc2c702679663632eb"
+}

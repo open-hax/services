@@ -30,13 +30,14 @@ STACK_WORKFLOW = (
     / "deploy-stack.yml"
 )
 WEBSITE_PHASE_WORKFLOW = STACK_WORKFLOW.parent / "deploy-website-phases.yml"
+KNOXX_POLICY_WORKFLOW = STACK_WORKFLOW.parent / "deploy-knoxx-public-policy.yml"
 
 
 def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     """Keep the isolated phase graph fail closed without authorizing new callers."""
     errors = []
     scope = entry["on"]["workflow_dispatch"]["inputs"].get("scope", {})
-    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx", "axxium", "axxium-work-pilot", "axxium-work-pilot-activate", "axxium-work-pilot-repair-ingress", "axxium-work-pilot-teardown", "colab-stage", "colab"]:
+    if scope.get("default") != "stack" or scope.get("options") != ["stack", "website", "proxx", "axxium", "axxium-work-pilot", "axxium-work-pilot-activate", "axxium-work-pilot-repair-ingress", "axxium-work-pilot-teardown", "colab-stage", "colab", "knoxx-policy"]:
         errors.append("manual scope must retain stack as default and only offer reviewed service scopes")
     jobs = chain["jobs"]
     work_pilot = jobs.get("deploy-axxium-work-pilot", {})
@@ -152,6 +153,67 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     return errors
 
 
+def knoxx_policy_path_errors(entry: dict, chain: dict, policy: dict) -> list[str]:
+    """Keep the fixed public-policy lane inside the reviewed production path."""
+    errors = []
+    decide = entry["jobs"]["authorize"]["steps"][0]
+    if (decide.get("env", {}).get("CALLER_REF_PROTECTED") != "${{ github.ref_protected }}"
+        or 'if [ "$DEPLOY_SCOPE" = knoxx-policy ]; then' not in decide.get("run", "")
+        or 'Knoxx public policy requires protected main' not in decide.get("run", "")):
+        errors.append("Knoxx policy dispatch must require protected main and reject source overrides")
+    dispatch = chain["jobs"].get("deploy-knoxx-policy", {})
+    if (dispatch.get("if") != "inputs.scope == 'knoxx-policy'"
+        or dispatch.get("uses") != "./.github/workflows/deploy-knoxx-public-policy.yml"
+        or dispatch.get("with") != {"caller_holds_production_host_lock": "true"}
+        or dispatch.get("secrets") != {"DIGITALOCEAN_SSH_PRIVATE_KEY":
+                                      "${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}"}):
+        errors.append("Knoxx policy must use only the isolated scope and enclosing host lock")
+    call = policy.get("on", {}).get("workflow_call", {})
+    if (set(policy.get("on", {})) != {"workflow_call"} or "concurrency" in policy
+        or call.get("inputs") != {
+            "caller_holds_production_host_lock": {"required": "true", "type": "boolean"}
+        } or policy.get("env") != {
+            "POLICY_BUNDLE": "digitalocean/services/knoxx/public-policy",
+            "POLICY_CONTROLLER": "scripts/knoxx_public_policy_release.py",
+        }):
+        errors.append("Knoxx policy must have a fixed bundle and no separate entrypoint or lock")
+    jobs = policy.get("jobs", {})
+    admit = jobs.get("admit", {})
+    deploy = jobs.get("deploy", {})
+    if (set(jobs) != {"admit", "deploy"} or "environment" in admit
+        or deploy.get("needs") != "admit" or deploy.get("environment") != "production"
+        or "if" in deploy or deploy.get("continue-on-error") == "true"):
+        errors.append("Knoxx policy production access must depend on successful credentialless admission")
+    admission = "\n".join(step.get("run", "") for step in admit.get("steps", []))
+    for clause in (
+        'test "$CALLER_WORKFLOW" = open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main',
+        'test "$CALLER_REF_PROTECTED" = true',
+        'test "$CALLER_EVENT" = workflow_dispatch',
+        'test "$CALLER_LOCKED" = true',
+        '.merge_base_commit.sha == $source',
+        'contents/frontend/public/legal/privacy.html?ref=$source_sha',
+        'cmp -s "$RUNNER_TEMP/reviewed-knoxx-privacy.html" "$POLICY_BUNDLE/privacy.html"',
+    ):
+        if clause not in admission:
+            errors.append(f"Knoxx policy admission lost required custody check: {clause}")
+    steps = deploy.get("steps", [])
+    named = {step.get("name"): index for index, step in enumerate(steps)}
+    ordered = [named.get(name, -1) for name in (
+        "Recheck admitted controller bytes", "Configure pinned production SSH trust",
+        "Install and apply the fixed policy transaction",
+    )]
+    if not 0 <= ordered[0] < ordered[1] < ordered[2]:
+        errors.append("Knoxx policy must recheck admitted bytes before SSH and host mutation")
+    elif (steps[ordered[0]].get("env", {}).get("EXPECTED_BUNDLE")
+          != "${{ needs.admit.outputs.bundle_sha256 }}"
+          or "assert_pinned_host_key" not in steps[ordered[1]].get("run", "")
+          or any("if" in steps[index] for index in ordered)):
+        errors.append("Knoxx policy may not skip bundle verification or pinned host trust")
+    if any("secrets." in str(step) for step in admit.get("steps", [])):
+        errors.append("Knoxx policy admission must not use deployment secrets")
+    return errors
+
+
 def main() -> int:
     document = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     if set(document.get("on", {})) != {"workflow_call"}:
@@ -254,6 +316,7 @@ def main() -> int:
     chain_callers = []
     service_deploy_callers = []
     website_phase_callers = []
+    knoxx_policy_callers = []
     workflow_paths = sorted(
         set(HOST_WORKFLOW.parent.glob("*.yml"))
         | set(HOST_WORKFLOW.parent.glob("*.yaml"))
@@ -286,11 +349,17 @@ def main() -> int:
             if job.get("uses") == "./.github/workflows/deploy-website-phases.yml":
                 website_phase_callers.append((workflow_path.name, job_name,
                     job.get("with", {}).get("caller_holds_production_host_lock")))
+            if job.get("uses") == "./.github/workflows/deploy-knoxx-public-policy.yml":
+                knoxx_policy_callers.append((workflow_path.name, job_name))
     stack_workflow = yaml.load(STACK_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     phases = yaml.load(WEBSITE_PHASE_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     phase_errors = website_path_errors(stack_workflow, document, phases)
     if website_phase_callers != [("deploy-stack-chain.yml", "deploy-website", "true")]:
         phase_errors.append("website phase body has a caller outside the locked chain")
+    policy = yaml.load(KNOXX_POLICY_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    phase_errors.extend(knoxx_policy_path_errors(stack_workflow, document, policy))
+    if knoxx_policy_callers != [("deploy-stack-chain.yml", "deploy-knoxx-policy")]:
+        phase_errors.append("Knoxx policy workflow has a caller outside the locked chain")
     if phase_errors:
         print("\n".join("deploy chain error: " + error for error in phase_errors), file=sys.stderr)
         return 1
