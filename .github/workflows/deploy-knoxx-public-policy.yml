@@ -1,0 +1,180 @@
+name: Deploy Knoxx public policy
+
+# This fixed content transaction runs inside Deploy Stack's host lock.
+on:
+  workflow_call:
+    inputs:
+      caller_holds_production_host_lock:
+        required: true
+        type: boolean
+    secrets:
+      DIGITALOCEAN_SSH_PRIVATE_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  POLICY_BUNDLE: digitalocean/services/knoxx/public-policy
+  POLICY_CONTROLLER: scripts/knoxx_public_policy_release.py
+
+jobs:
+  admit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      bundle_sha256: ${{ steps.reviewed.outputs.bundle_sha256 }}
+    steps:
+      - name: Verify protected caller
+        env:
+          CALLER_WORKFLOW: ${{ github.workflow_ref }}
+          CALLER_REF: ${{ github.ref }}
+          CALLER_REF_PROTECTED: ${{ github.ref_protected }}
+          CALLER_EVENT: ${{ github.event_name }}
+          CALLER_LOCKED: ${{ inputs.caller_holds_production_host_lock }}
+        run: |
+          set -euo pipefail
+          test "$CALLER_WORKFLOW" = open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main
+          test "$CALLER_REF" = refs/heads/main
+          test "$CALLER_REF_PROTECTED" = true
+          test "$CALLER_EVENT" = workflow_dispatch
+          test "$CALLER_LOCKED" = true
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Bind the fixed bundle to reviewed Knoxx main
+        id: reviewed
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          plan="$POLICY_BUNDLE/plan.json"
+          files=("$plan" "$POLICY_BUNDLE/homepage.html" "$POLICY_BUNDLE/privacy.html"
+                 "$POLICY_BUNDLE/knoxx-public-policy.caddy" "$POLICY_CONTROLLER")
+          for file in "${files[@]}"; do
+            test -f "$file"
+            test ! -L "$file"
+            git ls-files --error-unmatch -- "$file" >/dev/null
+          done
+          source_sha=$(jq -er '
+            select(keys == ["frontend_image_digest", "homepage_sha256", "host",
+                            "incumbent_index_sha256", "knoxx_source_sha", "privacy_sha256", "snippet_sha256"])
+            | select(.host == "knoxx.promethean.rest")
+            | select(.frontend_image_digest | test("^(ghcr[.]io/open-hax/knoxx-frontend@)?sha256:[0-9a-f]{64}$"))
+            | select([.homepage_sha256, .incumbent_index_sha256, .privacy_sha256, .snippet_sha256]
+                     | all(test("^[0-9a-f]{64}$")))
+            | .knoxx_source_sha | select(test("^[0-9a-f]{40}$"))
+          ' "$plan")
+          for pair in homepage_sha256:homepage.html privacy_sha256:privacy.html snippet_sha256:knoxx-public-policy.caddy; do
+            expected=$(jq -er --arg key "${pair%%:*}" '.[$key]' "$plan")
+            test "$(sha256sum "$POLICY_BUNDLE/${pair#*:}" | cut -d' ' -f1)" = "$expected"
+          done
+          # Knoxx is public. No cross-repository token or application checkout is needed.
+          api() {
+            curl -q --proto '=https' --fail --silent --show-error --max-time 20 --retry 2 \
+              -H "Accept: $1" -H 'X-GitHub-Api-Version: 2022-11-28' "https://api.github.com/repos/open-hax/knoxx/$2"
+          }
+          main_sha=$(api application/vnd.github+json git/ref/heads/main | jq -er '.object.sha | select(test("^[0-9a-f]{40}$"))')
+          if ! api application/vnd.github+json "compare/$source_sha...${main_sha}?per_page=1" |
+            jq -e --arg source "$source_sha" '
+              .merge_base_commit.sha == $source and (.status == "ahead" or .status == "identical")
+            ' >/dev/null; then
+            echo '::error::The pinned Knoxx policy source is outside main or its ancestry could not be verified.' >&2
+            exit 1
+          fi
+          api application/vnd.github.raw+json "contents/frontend/public/legal/privacy.html?ref=$source_sha" \
+            > "$RUNNER_TEMP/reviewed-knoxx-privacy.html"
+          if ! cmp -s "$RUNNER_TEMP/reviewed-knoxx-privacy.html" "$POLICY_BUNDLE/privacy.html"; then
+            echo '::error::The bundle privacy document differs from the exact Knoxx source.' >&2
+            exit 1
+          fi
+          sha256sum "${files[@]}" | sha256sum | cut -d' ' -f1 | sed 's/^/bundle_sha256=/' >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: admit
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: production
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Recheck admitted controller bytes
+        env:
+          EXPECTED_BUNDLE: ${{ needs.admit.outputs.bundle_sha256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$EXPECTED_BUNDLE" =~ ^[0-9a-f]{64}$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          sha256sum "$POLICY_BUNDLE/plan.json" "$POLICY_BUNDLE/homepage.html" \
+            "$POLICY_BUNDLE/privacy.html" "$POLICY_BUNDLE/knoxx-public-policy.caddy" \
+            "$POLICY_CONTROLLER" > "$RUNNER_TEMP/knoxx-policy-sha256"
+          test "$(sha256sum "$RUNNER_TEMP/knoxx-policy-sha256" | cut -d' ' -f1)" = "$EXPECTED_BUNDLE"
+      - name: Configure pinned production SSH trust
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          # shellcheck source=/dev/null
+          . digitalocean/lib/host-contract.sh
+          load_host_contract production
+          assert_pinned_host_key
+          test -n "$SSH_PRIVATE_KEY"
+          ssh_dir="$RUNNER_TEMP/knoxx-policy-ssh"
+          mkdir -m 700 "$ssh_dir"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$ssh_dir/identity"
+          install -m 600 "$OPEN_HAX_KNOWN_HOSTS" "$ssh_dir/known_hosts"
+          cat > "$ssh_dir/config" <<CONFIG
+          Host open-hax-target
+            HostName $OPEN_HAX_HOST
+            User $OPEN_HAX_SSH_USER
+            IdentityFile $ssh_dir/identity
+            UserKnownHostsFile $ssh_dir/known_hosts
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            ConnectTimeout 10
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+          CONFIG
+      - name: Install and apply the fixed policy transaction
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          # shellcheck source=/dev/null
+          . digitalocean/lib/host-contract.sh
+          load_host_contract production
+          test "$OPEN_HAX_SERVICES_ROOT" = /srv/open-hax/services
+          test "$OPEN_HAX_STATE_ROOT" = /srv/open-hax/state
+          parent="$OPEN_HAX_SERVICES_ROOT/knoxx/public-policy-controllers"
+          controller="$parent/$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          ssh_target=(ssh -F "$RUNNER_TEMP/knoxx-policy-ssh/config" open-hax-target)
+          "${ssh_target[@]}" 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
+          # Fixed checked-out paths and validated hexadecimal/numeric IDs expand locally.
+          # shellcheck disable=SC2029
+          tar --mode=u=r,go= -cf - "$POLICY_BUNDLE/plan.json" "$POLICY_BUNDLE/homepage.html" \
+            "$POLICY_BUNDLE/privacy.html" "$POLICY_BUNDLE/knoxx-public-policy.caddy" "$POLICY_CONTROLLER" |
+            "${ssh_target[@]}" "set -eu; umask 077; test ! -L '$parent'; mkdir -p '$parent'; mkdir -m 700 '$controller'; tar --no-same-owner --no-same-permissions -xf - -C '$controller'"
+          # shellcheck disable=SC2029
+          "${ssh_target[@]}" "cd '$controller' && sha256sum --check --status -" < "$RUNNER_TEMP/knoxx-policy-sha256"
+          # shellcheck disable=SC2029
+          "${ssh_target[@]}" "umask 077; python3 -B '$controller/$POLICY_CONTROLLER' --bundle '$controller/$POLICY_BUNDLE' --services-root '$OPEN_HAX_SERVICES_ROOT' --state-root '$OPEN_HAX_STATE_ROOT' --controller-sha '$GITHUB_SHA'" \
+            </dev/null > knoxx-public-policy-receipt.json
+          jq -e 'type == "object"' knoxx-public-policy-receipt.json >/dev/null
+      - name: Preserve sanitized policy receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: knoxx-public-policy-receipt
+          path: knoxx-public-policy-receipt.json
+          if-no-files-found: ignore
+      - name: Remove runner SSH credential
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/knoxx-policy-ssh/identity"

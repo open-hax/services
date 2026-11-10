@@ -2,6 +2,7 @@
 """Exercise phase isolation, receipt admission and verifier failure paths."""
 import copy
 import contextlib
+import hashlib
 import io
 import importlib.util
 import itertools
@@ -132,6 +133,89 @@ class WebsiteDeploymentTests(unittest.TestCase):
                     self.assertIn("production qualification is unsupported", result.stderr)
                 else:
                     self.assertEqual("should_deploy=true", output.read_text().strip())
+
+    def test_knoxx_policy_dispatch_requires_fixed_protected_main(self):
+        command = self.entry["jobs"]["authorize"]["steps"][0]["run"]
+        for override, expected in (
+            ({}, 0), ({"CALLER_REF": "refs/heads/candidate"}, 2),
+            ({"CALLER_REF_PROTECTED": "false"}, 2), ({"KNOXX_SHA": "a" * 40}, 2),
+            ({"WEBSITE_REF": "candidate"}, 2), ({"INCLUDE_WEBSITE": "true"}, 2),
+        ):
+            with self.subTest(override=override), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary) / "outputs"
+                env = {**os.environ, "EVENT_NAME": "workflow_dispatch", "DEPLOY_SCOPE": "knoxx-policy",
+                       "CALLER_REF": "refs/heads/main", "CALLER_REF_PROTECTED": "true",
+                       "AXXIUM_RECOVER": "false", "INCLUDE_WEBSITE": "false", "WEBSITE_IMAGE": "",
+                       "WEBSITE_REF": "main", "KNOXX_SHA": "", "PROXX_SHA": "", "AXXIUM_SHA": "",
+                       "COLAB_SHA": "", "OPENPLANNER_SHA": "", "GITHUB_OUTPUT": str(output),
+                       **override}
+                result = subprocess.run(["bash", "-c", command], cwd=ROOT, env=env, capture_output=True)
+                self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(expected == 0, output.exists())
+
+    def test_knoxx_policy_lane_requires_successful_unprivileged_admission(self):
+        policy = workflow("deploy-knoxx-public-policy.yml")
+        self.assertEqual([], chain_guard.knoxx_policy_path_errors(self.entry, self.chain, policy))
+        policy["jobs"]["deploy"]["if"] = "always()"
+        self.assertIn("Knoxx policy production access must depend on successful credentialless admission",
+                      chain_guard.knoxx_policy_path_errors(self.entry, self.chain, policy))
+
+    def test_knoxx_policy_admission_binds_ancestry_and_exact_privacy_bytes(self):
+        policy = workflow("deploy-knoxx-public-policy.yml")
+        command = next(step["run"] for step in policy["jobs"]["admit"]["steps"]
+                       if step.get("id") == "reviewed")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = root / "digitalocean/services/knoxx/public-policy"
+            bundle.mkdir(parents=True)
+            controller = root / "scripts/knoxx_public_policy_release.py"
+            controller.parent.mkdir()
+            controller.write_text("fixture controller")
+            (bundle / "homepage.html").write_text("<html>fixture homepage</html>")
+            (bundle / "privacy.html").write_text("<html>fixture privacy</html>")
+            (bundle / "knoxx-public-policy.caddy").write_text("# fixture snippet")
+            sha = lambda filename: hashlib.sha256((bundle / filename).read_bytes()).hexdigest()
+            (bundle / "plan.json").write_text(json.dumps({
+                "host": "knoxx.promethean.rest", "frontend_image_digest": "sha256:" + "3" * 64,
+                "incumbent_index_sha256": "4" * 64, "knoxx_source_sha": "b" * 40,
+                "homepage_sha256": sha("homepage.html"), "privacy_sha256": sha("privacy.html"),
+                "snippet_sha256": sha("knoxx-public-policy.caddy"),
+            }))
+            commands = root / "bin"
+            commands.mkdir()
+            git = commands / "git"
+            git.write_text('#!/bin/sh\ncase "$1" in\n'
+                           'rev-parse) printf "%s\\n" "$GITHUB_SHA";;\n'
+                           'ls-files) test -f "$4";;\n*) exit 3;;\nesac\n')
+            curl = commands / "curl"
+            curl.write_text("""#!/bin/bash
+case "${@: -1}" in
+  */git/ref/heads/main) printf '{"object":{"sha":"%s"}}' "$FIXTURE_MAIN";;
+  */compare/*) printf '{"status":"%s","merge_base_commit":{"sha":"%s"}}' "$FIXTURE_STATUS" "$FIXTURE_ANCESTOR";;
+  */contents/frontend/public/legal/privacy.html*) printf '%s' "$FIXTURE_PRIVACY";;
+  *) exit 3;;
+esac
+""")
+            for executable in (git, curl):
+                executable.chmod(0o700)
+            for status, ancestor, privacy, accepted in (
+                ("ahead", "b" * 40, "<html>fixture privacy</html>", True),
+                ("behind", "c" * 40, "<html>fixture privacy</html>", False),
+                ("ahead", "c" * 40, "<html>fixture privacy</html>", False),
+                ("ahead", "b" * 40, "<html>different privacy</html>", False),
+            ):
+                with self.subTest(status=status, ancestor=ancestor, accepted=accepted):
+                    output = root / "outputs"
+                    output.unlink(missing_ok=True)
+                    env = {**os.environ, **policy["env"], "PATH": str(commands) + ":" + os.environ["PATH"],
+                           "GITHUB_SHA": "a" * 40, "GITHUB_OUTPUT": str(output), "RUNNER_TEMP": str(root),
+                           "FIXTURE_MAIN": "c" * 40, "FIXTURE_ANCESTOR": ancestor,
+                           "FIXTURE_STATUS": status, "FIXTURE_PRIVACY": privacy}
+                    result = subprocess.run(["bash", "-c", command], cwd=root, env=env, capture_output=True)
+                    self.assertEqual(accepted, result.returncode == 0, result.stdout + result.stderr)
+                    self.assertEqual(accepted, output.exists())
+                    if accepted:
+                        self.assertRegex(output.read_text(), r"^bundle_sha256=[0-9a-f]{64}\n$")
 
     def test_proxx_scope_admits_only_immutable_sources_without_knoxx(self):
         command = self.entry["jobs"]["authorize"]["steps"][0]["run"]

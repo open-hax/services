@@ -3,17 +3,17 @@ name: Deploy Stack
 # Manual production promotion. Stack scope requires an immutable Knoxx candidate
 # and completed qualification before any host mutation. Website scope remains
 # isolated behind its exact-candidate selector, staging proof and qualification.
-# One production-host lock covers either complete scope.
+# One production-host lock covers every complete scope.
 
 on:
   workflow_dispatch:
     inputs:
       scope:
-        description: Stack, website, Proxx, Axxium, synthetic Colab Stage or qualified Colab gateway
+        description: Stack, website, Proxx, Axxium, Colab Stage, Colab gateway or Knoxx public policy
         required: false
         default: stack
         type: choice
-        options: [stack, website, proxx, axxium, colab-stage, colab]
+        options: [stack, website, proxx, axxium, colab-stage, colab, knoxx-policy]
       proxx_ref:
         description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
@@ -86,6 +86,9 @@ jobs:
           AXXIUM_RECOVER: ${{ inputs.axxium_recover_interrupted }}
           COLAB_SHA: ${{ inputs.colab_ref }}
           CALLER_REF: ${{ github.ref }}
+          CALLER_REF_PROTECTED: ${{ github.ref_protected }}
+          OPENPLANNER_SHA: ${{ inputs.openplanner_ref }}
+          WEBSITE_REF: ${{ inputs.website_ref }}
           EVENT_NAME: ${{ github.event_name }}
           DEPLOY_SCOPE: ${{ inputs.scope || 'stack' }}
           INCLUDE_WEBSITE: ${{ inputs.include_website }}
@@ -99,7 +102,7 @@ jobs:
               exit 2
             fi
             case "$DEPLOY_SCOPE" in
-              stack|website|proxx|axxium|colab-stage|colab) ;;
+              stack|website|proxx|axxium|colab-stage|colab|knoxx-policy) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
             esac
             if [ -n "$WEBSITE_IMAGE" ] && [ "$DEPLOY_SCOPE" != website ]; then
@@ -133,6 +136,14 @@ jobs:
             if [ "$DEPLOY_SCOPE" = colab-stage ] || [ "$DEPLOY_SCOPE" = colab ]; then
               if [ "$CALLER_REF" != refs/heads/main ] || [ "$INCLUDE_WEBSITE" = true ] || ! [[ "${COLAB_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
                 echo '::error::Cloud Cuckoo transport staging requires its immutable source, main controller and isolated scope.' >&2
+                exit 2
+              fi
+            fi
+            if [ "$DEPLOY_SCOPE" = knoxx-policy ]; then
+              if [ "$CALLER_REF" != refs/heads/main ] || [ "$CALLER_REF_PROTECTED" != true ] ||
+                 [ "$INCLUDE_WEBSITE" = true ] || [ "${WEBSITE_REF:-main}" != main ] ||
+                 [ -n "${PROXX_SHA}${KNOXX_SHA}${AXXIUM_SHA}${COLAB_SHA}${OPENPLANNER_SHA}${WEBSITE_IMAGE}" ]; then
+                echo '::error::Knoxx public policy requires protected main and the fixed controller bundle without source overrides.' >&2
                 exit 2
               fi
             fi
