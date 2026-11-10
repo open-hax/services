@@ -153,6 +153,7 @@ def verify_native_stage(plan, now):
 
 
 def oci_blob(descriptor, sizes, media_type, *extra_fields):
+    """Validate an exact descriptor and resolve its digest-bound archive path."""
     require(isinstance(descriptor, dict) and set(descriptor) == {"digest", "size", "mediaType", *extra_fields}
             and descriptor["mediaType"] == media_type
             and isinstance(descriptor["digest"], str) and re.fullmatch(r"sha256:[0-9a-f]{64}", descriptor["digest"]),
@@ -225,6 +226,7 @@ def verify_archive(plan, archive):
 
 
 def verify_archive_members(plan, archive):
+    """Bound and hash archive members before passing their metadata to the OCI verifier."""
     metadata = {}
     sizes = {}
     with zipfile.ZipFile(archive) as package:
@@ -272,6 +274,7 @@ def verify_archive_members(plan, archive):
 
 
 def verify_image(plan, package, metadata, sizes):
+    """Bind the plan to one runnable image and check the complete archive file set."""
     layout = strict_json(metadata["oci-layout"])
     index = strict_json(metadata["index.json"])
     require(layout == {"imageLayoutVersion": "1.0.0"} and index.get("schemaVersion") == 2
