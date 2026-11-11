@@ -1,0 +1,37 @@
+services:
+  axxium:
+    extends:
+      file: axxium-staging-google.compose.yaml
+      service: axxium
+    environment:
+      AXXIUM_GITHUB_IDENTITY_KEY_FILE: /run/axxium/owner/identity.key
+      AXXIUM_GITHUB_IDENTITY_LEDGER_FILE: /var/lib/axxium/identity/ledger.edn
+      AXXIUM_IDENTITY_SEED_FILE: /run/axxium/owner/foresight-tree.edn
+      AXXIUM_IDENTITY_ROOT_OPERATOR_ACTOR_ID: ${AXXIUM_IDENTITY_ROOT_OPERATOR_ACTOR_ID:?Set the verified staging owner account ID}
+      AXXIUM_IDENTITY_ROOT_DID: ${AXXIUM_IDENTITY_ROOT_DID:?Set the exact staging root DID}
+    volumes:
+      - type: bind
+        source: ./owner/identity.key
+        target: /run/axxium/owner/identity.key
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./owner/foresight-tree.edn
+        target: /run/axxium/owner/foresight-tree.edn
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./identity/ledger.edn
+        target: /var/lib/axxium/identity/ledger.edn
+        read_only: false
+        bind:
+          create_host_path: false
+  database:
+    extends:
+      file: axxium-staging-google.compose.yaml
+      service: database
+
+volumes:
+  postgres-data:

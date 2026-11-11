@@ -20,9 +20,11 @@ this staging operation.
 2. Use a staging Google web client registered for the exact callback
    `https://staging.axxium.promethean.rest/api/auth/google/callback`. Place its
    JSON at `owner/google-client.json`. Use separate private staging material
-   for the identity seal key at `owner/identity.key`. Use the reviewed
-   environment-appropriate seed at `owner/foresight-tree.edn` and the same
-   slot’s identity ledger at `identity/ledger.edn`. Create the regular ledger
+   for the identity seal key at `owner/identity.key`. Install the
+   [reviewed owner tree seed](https://github.com/riatzukiza/services/blob/c44555e50a8e12d0fdf8d0b41dde0742d046da21/contracts/axxium/identity/foresight-tree.edn)
+   at `owner/foresight-tree.edn`. Its SHA-256 is
+   `a2cea7e8b79721b2f7aeb2b6e5e6e152d2ded4865af8af6740e603d58a904808`.
+   Use the slot’s identity ledger at `identity/ledger.edn`. Create the regular ledger
    only if absent. Keep bind sources symlink-free and keys and ledgers owned by
    UID 1000 with mode 0600 under private directories. The mailbox ledger and
    the identity ledger must be distinct files with one writer.
@@ -33,7 +35,13 @@ this staging operation.
    staging actor is active, human, and linked to the same Google provider
    subject as the active production administrator. Compare provider subjects
    privately. Retain the staging actor account ID for the next step.
-4. Set these entries in the slot’s private `.env`.
+4. Set the two owner entries below and select the
+   [owner tree profile](../../digitalocean/environments/axxium-staging-owner.compose.yaml)
+   using the same receiver and recovery procedure as the full profile. The
+   reviewed seed contains 37 nodes, including two Codex children. Use the
+   authenticated identity manager to add the Work child if absent. Preserve
+   the existing nodes and give the mailbox actor no repository privileges.
+   Then set the two mailbox entries for the full profile.
 
    | Setting | Required value |
    | --- | --- |
@@ -60,8 +68,8 @@ this staging operation.
 5. Under the environment receiver lock, preserve the previous selections,
    configuration and deployment receipt as described in the
    [fixed-slot recovery procedure](axxium-staging-mailbox.md#operator-recovery).
-   Install the reviewed mailbox base and Google profile beside the selected
-   `compose.yaml`, preserving their filenames. For the full rollout, install
+   Install the reviewed mailbox base, Google profile and owner tree profile
+   beside the selected `compose.yaml`, preserving their filenames. For the full rollout, install
    the [canonical profile](../../digitalocean/environments/axxium-staging-canonical.compose.yaml)
    as `compose.yaml`. Validate with Compose `config --quiet` against the
    slot’s private `.env` and the admitted `release.env`. Use project name

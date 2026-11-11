@@ -13,10 +13,14 @@ BASE = ROOT / 'digitalocean/environments/axxium.compose.yaml'
 STAGING = ROOT / 'digitalocean/environments/axxium-staging-oidc.compose.yaml'
 MAILBOX = ROOT / 'digitalocean/environments/axxium-staging-mailbox.compose.yaml'
 GOOGLE = ROOT / 'digitalocean/environments/axxium-staging-google.compose.yaml'
+OWNER = ROOT / 'digitalocean/environments/axxium-staging-owner.compose.yaml'
 CANONICAL = ROOT / 'digitalocean/environments/axxium-staging-canonical.compose.yaml'
-OWNER_ENV = {
+ROOT_ENV = {
     'AXXIUM_IDENTITY_ROOT_OPERATOR_ACTOR_ID': 'actor_00000000-0000-4000-8000-000000000001',
     'AXXIUM_IDENTITY_ROOT_DID': 'did:web:staging.axxium.promethean.rest:actors:owner',
+}
+OWNER_ENV = {
+    **ROOT_ENV,
     'AXXIUM_MAILBOX_ACTOR_BINDINGS': (
         '[["did:plc:aaaaaaaaaaaaaaaaaaaaaaaa" "did:web:staging.axxium.promethean.rest:actors:owner:work"]]'
     ),
@@ -140,31 +144,37 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         self.assertEqual(google, base)
 
     def test_canonical_preserves_existing_db_issuer_and_mailbox(self):
-        google_result = self.render(GOOGLE, settings=OWNER_ENV)
+        google_result = self.render(GOOGLE)
+        owner_result = self.render(OWNER, settings=ROOT_ENV)
         canonical_result = self.render(CANONICAL, settings=OWNER_ENV)
         self.assertEqual(google_result.returncode, 0, google_result.stderr)
+        self.assertEqual(owner_result.returncode, 0, owner_result.stderr)
         self.assertEqual(canonical_result.returncode, 0, canonical_result.stderr)
-        google, canonical = json.loads(google_result.stdout), json.loads(canonical_result.stdout)
-        app = canonical['services']['axxium']
+        google = json.loads(google_result.stdout)
+        owner = json.loads(owner_result.stdout)
+        canonical = json.loads(canonical_result.stdout)
+        environment = canonical['services']['axxium']['environment']
+        self.assertEqual(environment.pop('AXXIUM_MAILBOX_ACTOR_BINDINGS'), OWNER_ENV['AXXIUM_MAILBOX_ACTOR_BINDINGS'])
+        self.assertEqual(environment['AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID'], OWNER_ENV['AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID'])
+        self.assertEqual(environment['AXXIUM_MAILBOX_WEBHOOK_KEY_FILE'], '/run/axxium/oidc/mailbox-webhook.key')
+        owner_env = owner['services']['axxium']['environment']
+        for key in ('AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID', 'AXXIUM_MAILBOX_WEBHOOK_KEY_FILE'):
+            environment[key] = owner_env[key]
+        self.assertEqual(canonical, owner)
+
+        app = owner['services']['axxium']
         identity_key = '/run/axxium/owner/identity.key'
         seed = '/run/axxium/owner/foresight-tree.edn'
         identity_ledger = '/var/lib/axxium/identity/ledger.edn'
         self.assertEqual(app['environment'].pop('AXXIUM_GITHUB_IDENTITY_KEY_FILE'), identity_key)
         self.assertEqual(app['environment'].pop('AXXIUM_IDENTITY_SEED_FILE'), seed)
         self.assertEqual(app['environment'].pop('AXXIUM_GITHUB_IDENTITY_LEDGER_FILE'), identity_ledger)
-        self.assertEqual(
-            app['environment']['AXXIUM_MAILBOX_WEBHOOK_KEY_FILE'],
-            '/run/axxium/oidc/mailbox-webhook.key',
-        )
-        app['environment']['AXXIUM_MAILBOX_WEBHOOK_KEY_FILE'] = ''
-        for key, value in OWNER_ENV.items():
-            self.assertEqual(app['environment'][key], value)
-            if key != 'AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID':
-                del app['environment'][key]
-        self.assert_mount(CANONICAL, app, 'owner/identity.key', identity_key, read_only=True)
-        self.assert_mount(CANONICAL, app, 'owner/foresight-tree.edn', seed, read_only=True)
-        self.assert_mount(CANONICAL, app, 'identity/ledger.edn', identity_ledger, read_only=False)
-        self.assertEqual(canonical, google)
+        for key, value in ROOT_ENV.items():
+            self.assertEqual(app['environment'].pop(key), value)
+        self.assert_mount(OWNER, app, 'owner/identity.key', identity_key, read_only=True)
+        self.assert_mount(OWNER, app, 'owner/foresight-tree.edn', seed, read_only=True)
+        self.assert_mount(OWNER, app, 'identity/ledger.edn', identity_ledger, read_only=False)
+        self.assertEqual(owner, google)
 
     def test_canonical_refuses_incomplete_owner_or_mailbox_binding(self):
         for required in OWNER_ENV:
@@ -177,7 +187,7 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
     def test_receiver_entrypoint_resolves_reviewed_profiles_in_the_fixed_slot(self):
         with tempfile.TemporaryDirectory() as directory:
             slot = Path(directory)
-            for dependency in (MAILBOX, GOOGLE):
+            for dependency in (MAILBOX, GOOGLE, OWNER):
                 shutil.copyfile(dependency, slot / dependency.name)
             selected = slot / 'compose.yaml'
             shutil.copyfile(CANONICAL, selected)
