@@ -49,10 +49,14 @@ this staging operation.
    `oidc/mailbox-webhook.key` or provision one on the host if absent. In the
    existing staging OIDC authority, bind the approved Work client and exact
    callback to the MCP resource
-   `https://staging.axxium.promethean.rest/api/mailbox/mcp`. Apply the client’s
-   actor-messaging opt-in only with the admitted supporting image. A fresh
-   Work consent request uses `openid mailbox:events mailbox:actors`. Keep
-   the issuer, signing keys and unrelated clients in place.
+   `https://staging.axxium.promethean.rest/api/mailbox/mcp`. Before activating
+   the full profile, verify the Work mailbox DID is bound in this same database
+   to a distinct active actor and maps to the exact managed Work child under
+   the selected root. The Google owner remains the grant approver. Enable
+   `mailbox-actor-messaging?` and `mailbox-owner-consent?` only with the
+   admitted supporting image. A fresh Work consent request uses
+   `openid mailbox:events mailbox:actors`. Keep the issuer, signing keys and
+   unrelated clients in place.
 5. Under the environment receiver lock, preserve the previous selections,
    configuration and deployment receipt as described in the
    [fixed-slot recovery procedure](axxium-staging-mailbox.md#operator-recovery).
@@ -81,6 +85,13 @@ this staging operation.
 - Exercise only read-only mailbox identity and discovery calls with fresh
   approved staging credentials. Verify Work is scoped to its exact managed
   actor, Codex sees reachable mailboxes in the same owner tree and an
-  unrelated actor cannot discover them. Compare mailbox ledger size before
-  and after, and record native message delivery separately when authorized.
+  unrelated actor cannot discover them. Discovery lists registered mailboxes.
+  Verify registrations for the expected actors before the checks. An
+  unregistered actor uses its own verified AT session to register, without
+  sending a message. Work's OAuth grant cannot register a mailbox. Confirm the
+  mailbox ledger retains its original byte prefix and has no new accepted
+  messages, subscriptions, or webhook attempts. Opening a mailbox session
+  can append its own record. Record native delivery separately when authorized.
   An existing event-only OAuth grant does not gain discovery permissions.
+  The linked recovery procedure's synthetic delivery checks belong in its
+  disposable rehearsal. The shared staging activation uses read-only calls.
