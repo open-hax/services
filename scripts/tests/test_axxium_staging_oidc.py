@@ -155,6 +155,8 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         canonical = json.loads(canonical_result.stdout)
         environment = canonical['services']['axxium']['environment']
         self.assertEqual(environment.pop('AXXIUM_MAILBOX_ACTOR_BINDINGS'), OWNER_ENV['AXXIUM_MAILBOX_ACTOR_BINDINGS'])
+        self.assertEqual(environment.pop('AXXIUM_MAILBOX_BOOTSTRAP_ACTOR_DIDS'), '')
+        self.assertEqual(environment.pop('AXXIUM_MAILBOX_STREAM_ENABLED'), 'false')
         self.assertEqual(environment.pop('AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED'), 'false')
         self.assertEqual(environment['AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID'], OWNER_ENV['AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID'])
         self.assertEqual(environment['AXXIUM_MAILBOX_WEBHOOK_KEY_FILE'], '/run/axxium/oidc/mailbox-webhook.key')
@@ -176,6 +178,23 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         self.assert_mount(OWNER, app, 'owner/foresight-tree.edn', seed, read_only=True)
         self.assert_mount(OWNER, app, 'identity/ledger.edn', identity_ledger, read_only=False)
         self.assertEqual(owner, google)
+
+    def test_canonical_forwards_explicit_stream_and_bootstrap_opt_ins(self):
+        settings = {
+            'AXXIUM_MAILBOX_BOOTSTRAP_ACTOR_DIDS': (
+                'did:web:fixture.test:actors:owner:codex,did:web:fixture.test:actors:owner:bot'
+            ),
+            'AXXIUM_MAILBOX_STREAM_ENABLED': 'true',
+        }
+        defaults = self.render(CANONICAL, settings=OWNER_ENV)
+        configured = self.render(CANONICAL, settings={**OWNER_ENV, **settings})
+        owner = self.render(OWNER, settings={**ROOT_ENV, **settings})
+        for result in (defaults, configured, owner):
+            self.assertEqual(result.returncode, 0, result.stderr)
+        expected = json.loads(defaults.stdout)
+        expected['services']['axxium']['environment'].update(settings)
+        self.assertEqual(json.loads(configured.stdout), expected)
+        self.assertTrue(settings.keys().isdisjoint(json.loads(owner.stdout)['services']['axxium']['environment']))
 
     def test_canonical_refuses_incomplete_owner_or_mailbox_binding(self):
         for required in OWNER_ENV:
