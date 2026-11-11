@@ -155,6 +155,7 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         canonical = json.loads(canonical_result.stdout)
         environment = canonical['services']['axxium']['environment']
         self.assertEqual(environment.pop('AXXIUM_MAILBOX_ACTOR_BINDINGS'), OWNER_ENV['AXXIUM_MAILBOX_ACTOR_BINDINGS'])
+        self.assertEqual(environment.pop('AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED'), 'false')
         self.assertEqual(environment['AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID'], OWNER_ENV['AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID'])
         self.assertEqual(environment['AXXIUM_MAILBOX_WEBHOOK_KEY_FILE'], '/run/axxium/oidc/mailbox-webhook.key')
         owner_env = owner['services']['axxium']['environment']
