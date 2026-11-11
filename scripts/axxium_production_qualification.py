@@ -111,7 +111,8 @@ def validate_plan(plan):
     require(plan.get("stage_workflow_path") == STAGE_WORKFLOW, "unexpected staging caller")
 
 
-def verify_native_stage(plan, now):
+def verify_native_stage_run(plan, now):
+    """Bind the historical successful staging run to its merged source and controller."""
     main_ancestor(REPOSITORY, plan["source_sha"])
     main_ancestor(SERVICES, plan["stage_controller_sha"])
     pr = api(f"repos/{REPOSITORY}/pulls/{plan['source_pr']}")
@@ -136,6 +137,13 @@ def verify_native_stage(plan, now):
             "native staging controller mismatch")
     require(timestamp(pr["merged_at"]) <= timestamp(run["created_at"]) <= timestamp(run["updated_at"]) <= now,
             "native staging chronology mismatch")
+    return run
+
+
+def verify_native_stage(plan, now):
+    run = verify_native_stage_run(plan, now)
+    repository = run["repository"]
+    head = run["head_sha"]
     artifact = api(f"repos/{REPOSITORY}/actions/artifacts/{plan['artifact_id']}")
     custody = artifact.get("workflow_run", {})
     require(type(artifact.get("id")) is int and artifact.get("id") == plan["artifact_id"] and artifact.get("name") == "service-environment-images"

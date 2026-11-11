@@ -9,6 +9,7 @@ on:
       - 'scripts/axxium_interrupted_handoff.py'
       - 'scripts/axxium_incident_guard.py'
       - 'scripts/axxium_minimal_release.py'
+      - 'scripts/axxium_production_qualification.py'
       - 'scripts/provision_axxium_colab_identity.py'
       - 'scripts/axxium_oidc_ingress.py'
       - 'digitalocean/services/axxium/minimal-production-plan.json'
@@ -45,14 +46,15 @@ jobs:
           test -z "${DOCKER_CONTEXT:-}"
           test "$(docker context show)" = default
           test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock
-      - name: Download and verify fixed candidate artifact
+      - name: Download and verify fixed recovery fixture
         env:
-          GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           umask 077
-          timeout --kill-after=5s 120s gh api repos/open-hax/axxium/actions/artifacts/12911496785/zip > "$RUNNER_TEMP/candidate.zip"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            --max-time 120 --max-filesize 268435456 --output "$RUNNER_TEMP/candidate.zip" \
+            'https://github.com/open-hax/axxium/releases/download/recovery-ci-fixture-58234df96ca8/staging-artifact-12911496785.zip'
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/staging/axxium/prepare_candidate.py \
             --plan digitalocean/services/axxium/minimal-production-plan.json \
             --archive "$RUNNER_TEMP/candidate.zip" --output "$RUNNER_TEMP/images.tar"

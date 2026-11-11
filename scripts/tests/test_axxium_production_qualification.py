@@ -15,8 +15,10 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 import zipfile
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+SCRIPTS = Path(__file__).resolve().parents[1]
+sys.path[:0] = [str(SCRIPTS), str(SCRIPTS / 'staging/axxium')]
 import axxium_production_qualification as qualification
+import prepare_candidate as recovery_candidate
 
 SOURCE = "a" * 40
 CONTROLLER = "b" * 40
@@ -232,6 +234,16 @@ class ProductionQualificationTest(unittest.TestCase):
         self.run["referenced_workflows"][0]["path"] = qualification.REUSABLE + "main"
         with self.assertRaises(qualification.Refusal): self.admit()
 
+    def test_historical_run_check_is_independent_of_native_artifact_retention(self):
+        self.artifact["expired"] = True
+        self.artifact["expires_at"] = (NOW - timedelta(seconds=1)).isoformat()
+        with patch.object(qualification, "api", side_effect=self.api):
+            self.assertEqual(qualification.verify_native_stage_run(self.plan, NOW), self.run)
+            self.assertFalse(any("/actions/artifacts/" in path for path in self.calls))
+            with self.assertRaisesRegex(qualification.Refusal, "native staging artifact custody mismatch"):
+                qualification.verify_native_stage(self.plan, NOW)
+        self.assertTrue(any("/actions/artifacts/" in path for path in self.calls))
+
     def test_native_main_ancestry_is_required_but_tip_equality_is_not(self):
         def diverged(path):
             if "/compare/" in path:
@@ -272,6 +284,22 @@ class ProductionQualificationTest(unittest.TestCase):
     def test_direct_manifest_also_refuses_unreferenced_blob(self):
         create_archive(self.archive, defect="unbound-blob")
         plan = {**self.plan, "artifact_sha256": hashlib.sha256(self.archive.read_bytes()).hexdigest()}
+        with self.assertRaisesRegex(qualification.Refusal, "unreferenced"):
+            qualification.verify_archive(plan, self.archive)
+
+    def test_recovery_projection_omits_only_pinned_metadata(self):
+        create_archive(self.archive, defect="unbound-blob")
+        plan = {**self.plan, "artifact_sha256": hashlib.sha256(self.archive.read_bytes()).hexdigest()}
+        image = self.archive.with_name("projected.tar")
+        projected = self.archive.with_name("projected.zip")
+        legacy = "blobs/sha256/" + hashlib.sha256(b"unused archive blob").hexdigest()
+        with patch.object(recovery_candidate, "LEGACY_LAYER_METADATA", {legacy}):
+            wrong = {**plan, "artifact_sha256": "f" * 64}
+            with self.assertRaisesRegex(qualification.Refusal, "differs from native digest"):
+                recovery_candidate.project_fixture_tar(wrong, self.archive, image)
+            self.assertFalse(image.exists())
+            recovery_candidate.project_fixture_tar(plan, self.archive, image)
+            recovery_candidate.verify_projection(plan, image, projected)
         with self.assertRaisesRegex(qualification.Refusal, "unreferenced"):
             qualification.verify_archive(plan, self.archive)
 
