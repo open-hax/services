@@ -1,0 +1,21 @@
+services:
+  axxium:
+    extends:
+      file: axxium-staging-mailbox.compose.yaml
+      service: axxium
+    environment:
+      GOOGLE_OAUTH_CLIENT_FILE: /run/axxium/owner/google-client.json
+    volumes:
+      - type: bind
+        source: ./owner/google-client.json
+        target: /run/axxium/owner/google-client.json
+        read_only: true
+        bind:
+          create_host_path: false
+  database:
+    extends:
+      file: axxium-staging-mailbox.compose.yaml
+      service: database
+
+volumes:
+  postgres-data:

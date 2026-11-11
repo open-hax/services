@@ -1,0 +1,16 @@
+services:
+  axxium:
+    extends:
+      file: axxium-staging-owner.compose.yaml
+      service: axxium
+    environment:
+      AXXIUM_MAILBOX_ACTOR_BINDINGS: ${AXXIUM_MAILBOX_ACTOR_BINDINGS:?Set the staging mailbox actor bindings}
+      AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID: ${AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID:?Set the staging Work mailbox DID}
+      AXXIUM_MAILBOX_WEBHOOK_KEY_FILE: /run/axxium/oidc/mailbox-webhook.key
+  database:
+    extends:
+      file: axxium-staging-owner.compose.yaml
+      service: database
+
+volumes:
+  postgres-data:

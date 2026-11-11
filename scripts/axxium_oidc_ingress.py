@@ -1,4 +1,4 @@
-"""Prepare the minimal OIDC matcher change for an observed incumbent Caddyfile.
+"""Prepare an exact Axxium matcher change for an observed incumbent Caddyfile.
 
 This is a pure byte transform, not a Caddy parser, host writer or authorization
 surface. A source-owned deployment must bind the expected digest to its reviewed
@@ -14,6 +14,12 @@ OLD = (b'\t@axxium_api {\n'
        b'\t\tpath / /health /portal/* /api/auth/* /api/actors* /api/entities* /api/atproto/*\n'
        b'\t}\n')
 NEW = OLD.replace(b'/api/atproto/*\n', b'/api/atproto/* /oidc/*\n')
+MAILBOX = NEW.replace(
+    b'/oidc/*\n',
+    b'/oidc/* /api/identity/admin /api/mailbox/mcp '
+    b'/.well-known/oauth-protected-resource/api/mailbox/mcp '
+    b'/.well-known/oauth-authorization-server/oidc /.well-known/openid-configuration/oidc\n',
+)
 SITE = b'axxium.promethean.rest, *.axxium.promethean.rest {\n'
 UPSTREAM = (b'\thandle @axxium_api {\n'
             b'\t\treverse_proxy axxium:8787 {\n'
@@ -27,6 +33,17 @@ class IngressRefused(ValueError):
     pass
 
 
+def _replace_matcher(config, expected_sha256, incumbent, candidate):
+    if (not isinstance(config, bytes) or len(config) > 2 * 1024 * 1024
+            or not isinstance(expected_sha256, str)
+            or not re.fullmatch('[0-9a-f]{64}', expected_sha256)
+            or hashlib.sha256(config).hexdigest() != expected_sha256
+            or config.count(SITE) != 1 or config.count(incumbent) != 1
+            or candidate in config):
+        raise IngressRefused('Observed Axxium ingress does not match the reviewed plan')
+    return config.replace(incumbent, candidate, 1)
+
+
 def prepare(config, expected_sha256):
     """Append only /oidc/* to the exact existing authority matcher.
 
@@ -34,19 +51,28 @@ def prepare(config, expected_sha256):
     the trusted caller must obtain it from the observed, reviewed host plan.
     Missing, duplicate, changed and already-updated matchers refuse.
     """
-    if (not isinstance(config, bytes) or len(config) > 2 * 1024 * 1024
-            or not isinstance(expected_sha256, str)
-            or not re.fullmatch('[0-9a-f]{64}', expected_sha256)
-            or hashlib.sha256(config).hexdigest() != expected_sha256
-            or config.count(SITE) != 1 or config.count(OLD) != 1
-            or NEW in config):
-        raise IngressRefused('Observed Axxium ingress does not match the reviewed plan')
-    return config.replace(OLD, NEW, 1)
+    return _replace_matcher(config, expected_sha256, OLD, NEW)
 
 
 def maintenance(config, expected_sha256):
     """Fence only the existing Axxium API while preserving the PDS fallback."""
     prepare(config, expected_sha256)
+    return _fence(config)
+
+
+def _fence(config):
     if config.count(UPSTREAM) != 1 or MAINTENANCE in config:
         raise IngressRefused('Observed authority upstream does not match the reviewed plan')
     return config.replace(UPSTREAM, MAINTENANCE, 1)
+
+
+def prepare_mailbox(config, expected_sha256):
+    """Return the fenced and live candidates for the existing primary issuer.
+
+    The fence covers the proposed API paths as well as the incumbent routes.
+    PDS paths and the host-wide DID document keep the incumbent fallback.
+    """
+    if isinstance(config, bytes) and OLD in config:
+        raise IngressRefused('Observed Axxium ingress contains multiple authority matchers')
+    candidate = _replace_matcher(config, expected_sha256, NEW, MAILBOX)
+    return _fence(candidate), candidate

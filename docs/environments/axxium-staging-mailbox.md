@@ -16,6 +16,9 @@ The staging receiver requires an independently admitted current merged Axxium
 revision and the immutable image produced by the trusted staging workflow.
 Template review and host activation are separate steps.
 
+For staging Google sign-in and the owner actor tree with this same mailbox,
+use the [unified staging profiles](axxium-canonical-staging.md).
+
 ## Host-local prerequisites
 
 - Confirm the existing slot uses `https://staging.axxium.promethean.rest` as

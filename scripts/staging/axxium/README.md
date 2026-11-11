@@ -6,9 +6,15 @@ The protocol probe covers signup, session login, discovery, CSRF/origin rejectio
 
 This is candidate-image OIDC integration on isolated infrastructure. The internal-bridge HTTP fixture does not verify the existing public staging route, HTTPS, Caddy or trusted proxy, secure-cookie production behavior, a real human's login, or actual Colab tool access. The exact candidate's previous staging deployment/readiness and these tests remain separately attributed evidence.
 
-The workflow runs only on a disposable GitHub-hosted VM, uses a minimally scoped
-read token to download the native staging artifact, verifies source/run custody,
-the artifact hash and OCI blobs, then loads the exact image. The fixture also
+The workflow runs only on a disposable GitHub-hosted VM. It downloads the
+archived copy of staging artifact `12911496785` from Axxium's
+`recovery-ci-fixture-58234df96ca8` release. It checks the historical GitHub
+source, producer run and controller, then verifies the original archive SHA-256
+against the reviewed plan. The historical Docker save contains ten unreferenced
+legacy layer metadata blobs. The workflow removes only those fixed blobs from
+a disposable projection and verifies all OCI references and image digests
+before loading it. Production admission independently requires a fresh native
+artifact and retains its strict OCI member checks. The fixture also
 performs a real `pg_dump` and `pg_restore --list` on its disposable database
 and exercises the reviewed handoff filesystem primitive with a private fixture
 lock, held marker, backup and journal. The handoff checks confirm that the
