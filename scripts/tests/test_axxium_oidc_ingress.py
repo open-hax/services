@@ -5,6 +5,7 @@ import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from axxium_oidc_ingress import IngressRefused, NEW, OLD, SITE, UPSTREAM, MAINTENANCE, prepare, maintenance
+from axxium_oidc_ingress import MAILBOX, prepare_mailbox
 
 
 class ExistingIngressTests(unittest.TestCase):
@@ -52,6 +53,32 @@ class ExistingIngressTests(unittest.TestCase):
         self.assertIn(b'reverse_proxy axxium-pds:3000',fenced)
         self.assertNotIn(NEW,fenced)
         with self.assertRaises(IngressRefused):maintenance(self.raw,hashlib.sha256(self.raw).hexdigest())
+
+    def test_primary_mailbox_adds_exact_routes_to_existing_authority(self):
+        raw = self.apply(self.raw).replace(
+            b'\thandle @axxium_api { reverse_proxy axxium:8787 }\n', UPSTREAM)
+        fenced, candidate = prepare_mailbox(raw, hashlib.sha256(raw).hexdigest())
+        self.assertEqual(candidate.replace(MAILBOX, NEW, 1), raw)
+        self.assertEqual(fenced.replace(MAINTENANCE, UPSTREAM, 1), candidate)
+        self.assertEqual(set(MAILBOX.split()) - set(NEW.split()), {
+            b'/api/identity/admin', b'/api/mailbox/mcp',
+            b'/.well-known/oauth-protected-resource/api/mailbox/mcp',
+            b'/.well-known/oauth-authorization-server/oidc',
+            b'/.well-known/openid-configuration/oidc',
+        })
+        self.assertIn(b'host axxium.promethean.rest\n', MAILBOX)
+        self.assertIn(b'reverse_proxy axxium-pds:3000', fenced)
+
+    def test_primary_mailbox_refuses_missing_duplicate_or_drifted_authority(self):
+        raw = self.apply(self.raw).replace(
+            b'\thandle @axxium_api { reverse_proxy axxium:8787 }\n', UPSTREAM)
+        for invalid in (self.raw, raw + NEW, raw + OLD, raw + UPSTREAM,
+                        raw.replace(NEW, MAILBOX), raw.replace(UPSTREAM, MAINTENANCE)):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(IngressRefused):
+                    prepare_mailbox(invalid, hashlib.sha256(invalid).hexdigest())
+        with self.assertRaises(IngressRefused):
+            prepare_mailbox(raw + b'# drift\n', hashlib.sha256(raw).hexdigest())
 
 
 if __name__=='__main__':unittest.main()
