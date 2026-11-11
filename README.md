@@ -61,12 +61,16 @@ The incumbent private environment, application database and PDS are preserved.
 A private binding selects the previously verified existing human for the Colab
 client; it never creates a human account.
 
-The normal production qualification remains required before SSH: integration,
-e2e and four disjoint batches of at least 250 test-killed mutations for that
-source. The current candidate has staging custody, but no such qualification
-receipt; ordinary dispatch therefore refuses. No health result or pilot report
-supplies an exception. This first adoption is a fixed transition, not a generic
-Axxium environment renderer or another dispatch lane.
+Axxium production admission remains required before SSH: integration and e2e
+receipts for that source, plus artifact and staging custody, host checks,
+rollback, and review. Four mutation batches are not required. The Axxium
+mutation qualification campaign was retired in
+[open-hax/axxium#58](https://github.com/open-hax/axxium/pull/58) and must not
+block this scope, whether `mutation_batches` is empty or absent or
+`mutation_campaign_passed` is false. Knoxx still uses its own mutation path.
+Missing or invalid integration, e2e, or custody still refuses. No health result
+or pilot report replaces those checks. This first adoption is a fixed
+transition, not a generic Axxium environment renderer or another dispatch lane.
 
 ## Knoxx public policy release
 

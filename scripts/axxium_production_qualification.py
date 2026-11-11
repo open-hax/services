@@ -2,8 +2,10 @@
 """Read native custody and canonical qualification before any host capability.
 
 The archive is inspected as data; nothing is extracted, loaded or executed.
-Only an immutable Services-main qualification file can reach the existing
-production_admission policy. A staging build or pilot report supplies no waiver.
+Only an immutable Services-main qualification file can supply integration and
+e2e receipts. Axxium production admission does not require mutation batches:
+open-hax/axxium#58 retired that campaign, and it must not block this path.
+A staging build or pilot report does not replace integration, e2e, or custody.
 """
 from __future__ import annotations
 
@@ -37,13 +39,6 @@ OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
 OCI_CONFIG = "application/vnd.oci.image.config.v1+json"
 OCI_LAYER = "application/vnd.oci.image.layer.v1.tar"
 PROVENANCE = "https://slsa.dev/provenance/v1"
-
-# This exception is deliberately bound to one candidate and one exact plan.
-# A plan or shared-policy change requires a new review; it cannot silently
-# expand the waiver or invalidate the interpretation of the receipt check.
-WAIVER_SOURCE = "58234df96ca86507e6cdd87f65aaa9ab35621415"
-WAIVER_PLAN_SHA256 = "6025ff0257a28711cc7847ca6935b97ffc3b11e4ccef76c3eb27a89f16bcafe1"
-WAIVER_POLICY_SHA256 = "b32748ae2d103cacb9ccdecf17119659aac9c0797461e32d5ce96b2e1ce58b33"
 
 
 class Refusal(ValueError):
@@ -358,41 +353,22 @@ def verify_image(plan, package, metadata, sizes):
     return plan["image_id"]
 
 
-def verify_mutation_exception(plan, plan_bytes, proof, verdict):
-    """Admit only the reviewed mutation waiver; never assert mutation success.
+def require_axxium_receipts(source_sha, integration, e2e):
+    """Require shared integration and e2e receipts. Mutation batches are not an Axxium gate.
 
-    The actual missing-batches verdict confirms that the existing shared policy
-    accepted integration and e2e. Only an explicitly empty mutation-batch list
-    is in scope: submitted partial or invalid results must not be discarded.
-    The exact shared policy bytes are pinned to prevent later policy changes
-    from being silently skipped by this candidate-only exception.
+    Knoxx and Colab still pass their mutation batches to production_admission.
+    That shared function is unchanged and still refuses without four completed
+    batches. Axxium calls it with an empty batch list so the integration and
+    e2e rules run first, then accepts only that mutation-batch refusal. Any
+    other refusal is an integration or e2e failure. Caller-supplied
+    mutation_batches and mutation_campaign_passed are not evidence: they cannot
+    block this gate or satisfy it.
     """
-    policy_path = Path(__file__).with_name("environment_policy.py")
-    require(hashlib.sha256(policy_path.read_bytes()).hexdigest() == WAIVER_POLICY_SHA256,
-            "shared policy changed; mutation exception needs review")
-    plan_hash = hashlib.sha256(plan_bytes).hexdigest()
-    require(plan.get("source_sha") == WAIVER_SOURCE and plan_hash == WAIVER_PLAN_SHA256,
-            "mutation exception does not apply to this candidate")
-    exception = proof.get("mutation_exception")
-    require(isinstance(exception, dict)
-            and exception.get("schema") == "axxium-mutation-exception/v1"
-            and exception.get("status") == "approved"
-            and exception.get("scope") == "mutation-only"
-            and exception.get("source_sha") == WAIVER_SOURCE
-            and exception.get("plan_sha256") == plan_hash
-            and exception.get("image_id") == plan.get("image_id")
-            and exception.get("stage_run_id") == plan.get("stage_run_id")
-            and exception.get("artifact_sha256") == plan.get("artifact_sha256")
-            and exception.get("mutation_campaign_passed") is False
-            and isinstance(exception.get("owner_decision_reference"), str)
-            and bool(exception["owner_decision_reference"].strip()),
-            "reviewed candidate-specific mutation exception unavailable")
+    verdict = production_admission(source_sha, integration, e2e, [])
+    if verdict.get("admitted") is True:
+        return
     require(verdict == {"admitted": False, "reason": "four completed mutation batches are required"},
             verdict.get("reason", "canonical production qualification refused"))
-    require(isinstance(proof.get("mutation_batches"), list) and proof["mutation_batches"] == [],
-            "mutation exception requires an explicitly empty batch list")
-    return {"qualification": "owner-decision", "mutationCampaignPassed": False,
-            "waivedMutationVerdict": verdict}
 
 
 def admit(plan_bytes, controller_sha, archive, *, now=None):
@@ -413,16 +389,12 @@ def admit(plan_bytes, controller_sha, archive, *, now=None):
         raise Refusal("immutable source qualification unavailable") from error
     require(isinstance(proof, dict) and proof.get("repository") == REPOSITORY
             and proof.get("source_sha") == plan["source_sha"], "qualification source binding mismatch")
-    verdict = production_admission(plan["source_sha"], proof.get("integration"),
-                                   proof.get("e2e"), proof.get("mutation_batches"))
-    exception_verdict = {}
-    if verdict.get("admitted") is not True:
-        exception_verdict = verify_mutation_exception(plan, plan_bytes, proof, verdict)
-    # Re-read mutable native custody after archive inspection and policy admission.
+    require_axxium_receipts(plan["source_sha"], proof.get("integration"), proof.get("e2e"))
+    # Re-read mutable native custody after archive inspection and receipt admission.
     main_ancestor(SERVICES, controller_sha)
     verify_native_stage(plan, fixed_time or datetime.now(timezone.utc))
     return {"admitted": True, "source_sha": plan["source_sha"], "image_id": plan["image_id"],
-            "plan_sha256": hashlib.sha256(plan_bytes).hexdigest(), **exception_verdict}
+            "plan_sha256": hashlib.sha256(plan_bytes).hexdigest()}
 
 
 def main():

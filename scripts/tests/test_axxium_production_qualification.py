@@ -192,8 +192,8 @@ class ProductionQualificationTest(unittest.TestCase):
         with self.assertRaisesRegex(qualification.Refusal, "immutable source qualification unavailable"):
             self.admit()
 
-    def test_pilot_counts_and_survivors_cannot_supply_four_qualified_batches(self):
-        for change in ("missing", "short", "survivor", "duplicate", "stale", "boolean"):
+    def test_mutation_batches_do_not_block_when_receipts_and_custody_pass(self):
+        for change in ("missing", "short", "survivor", "duplicate", "empty", "absent", "campaign_false"):
             with self.subTest(change=change):
                 self.proof = proof()
                 rows = self.proof["mutation_batches"]
@@ -201,8 +201,27 @@ class ProductionQualificationTest(unittest.TestCase):
                 elif change == "short": rows[0]["mutants"].pop()
                 elif change == "survivor": rows[0]["mutants"][0]["status"] = "survived"
                 elif change == "duplicate": rows[1]["mutants"][0]["fingerprint"] = rows[0]["mutants"][0]["fingerprint"]
-                elif change == "stale": self.proof["integration"]["source_sha"] = "e" * 40
+                elif change == "empty": self.proof["mutation_batches"] = []
+                elif change == "absent": del self.proof["mutation_batches"]
+                elif change == "campaign_false":
+                    self.proof["mutation_batches"] = []
+                    self.proof["mutation_campaign_passed"] = False
+                result = self.admit()
+                self.assertTrue(result["admitted"])
+                self.assertNotIn("mutationCampaignPassed", result)
+                self.assertNotIn("qualification", result)
+                self.assertNotIn("waivedMutationVerdict", result)
+
+    def test_invalid_integration_or_e2e_still_refuses(self):
+        for change in ("stale", "boolean", "failed", "missing", "warnings", "timeout"):
+            with self.subTest(change=change):
+                self.proof = proof()
+                if change == "stale": self.proof["integration"]["source_sha"] = "e" * 40
                 elif change == "boolean": self.proof["e2e"]["assertions"] = True
+                elif change == "failed": self.proof["e2e"]["status"] = "failed"
+                elif change == "missing": del self.proof["integration"]
+                elif change == "warnings": self.proof["e2e"]["warnings"] = ["warning"]
+                elif change == "timeout": self.proof["integration"]["timed_out"] = True
                 with self.assertRaises(qualification.Refusal):
                     self.admit()
 

@@ -1,6 +1,29 @@
 # Axxium 58234 production evidence and owner decision
 
-This is a proposed, review-required candidate-specific production decision. The owner waived mutation qualification on 2026-10-30; mutation qualification has not passed. This implementation applies the exception only when the record explicitly contains an empty mutation-batch list and the unmodified policy verdict is the missing-batches refusal. It retains that original verdict in the admission result and refuses submitted partial or invalid batches rather than silently discarding them. The decision reference is a private Codex conversation, not a public or independently authenticated GitHub approval. A reviewer with access to the original conversation must verify it. The decision does not waive integration, E2E, source/artifact custody, selected human binding, host checks, backup, rollback, or review.
+The notes below record the 2026-10-30 review of candidate
+`58234df96ca86507e6cdd87f65aaa9ab35621415`. They are historical evidence, not
+the current Axxium production gate.
+[open-hax/axxium#58](https://github.com/open-hax/axxium/pull/58) retired the
+Axxium mutation qualification pilot. On 2026-11-11 the Axxium production
+admission path stopped requiring mutation batches and stopped applying the
+one-SHA mutation waiver described here. Integration and e2e receipts, artifact
+and staging custody, host checks, rollback, and review remain required. Empty
+or absent `mutation_batches`, and `mutation_campaign_passed: false`, do not
+block that admission. Knoxx still uses its own mutation path through the shared
+production admission rule.
+
+On 2026-10-30 the owner waived mutation qualification for this candidate;
+mutation qualification had not passed. The implementation at that time applied
+the exception only when the record explicitly contained an empty mutation-batch
+list and the unmodified policy verdict was the missing-batches refusal. It
+retained that original verdict in the admission result and refused submitted
+partial or invalid batches rather than silently discarding them. That
+candidate-specific waiver is no longer part of Axxium production admission.
+The decision reference is a private Codex conversation, not a public or
+independently authenticated GitHub approval. A reviewer with access to the
+original conversation must verify the historical record. The decision did not
+waive integration, E2E, source/artifact custody, selected human binding, host
+checks, backup, rollback, or review, and those requirements still apply.
 
 The empty list means no mutation batches are submitted as qualifying evidence; it does not mean that no exploratory mutation work occurred. In [run 40990245543](https://github.com/open-hax/axxium/actions/runs/40990245543), the retained partition 3 archive contained 102 outcomes from 708 selected candidates, ended with a timeout and an unknown-containment marker, and was not admitted. Those observations remain evidence; they are not relabeled as a passed batch or silently incorporated into the waiver.
 
