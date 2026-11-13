@@ -97,6 +97,15 @@ same-origin form submission. The controller binds the swap to the live
 pilot receipt and container identities. Teardown accepts either reviewed
 active snippet.
 
+Retained reopen and close use the same queue. From an audited operator
+login, arm the relay with
+`sudo -n python3 scripts/axxium_work_reopen_relay.py arm`, then dispatch
+`scope=axxium-work-pilot-reopen` with the source in the reopen release plan.
+`reopen` requires that armed socket, service, boot link, and listener.
+To return the private service to dark, run the same helper with `disarm`,
+then dispatch `scope=axxium-work-pilot-close`. `close` requires the relay
+to be disarmed.
+
 All operations use the canonical production host queue and protected
 production environment.
 
@@ -217,7 +226,14 @@ separate Work evidence. Preserve the ledger, database, private
 configuration, and operation journal, including any accepted write.
 
 After the protected teardown removes the exact managed site and reloads
-Caddy, remove only the pilot relay's exact UFW rule and unit files. The selected wildcard-backed origin has no pilot DNS record
+Caddy, keep the Caddy-only UFW rule and the socket and service units
+`promethean-axxium-work-pilot.socket` and
+`promethean-axxium-work-pilot.service` when the slot will be reopened.
+Those files, the boot link, and an armed listener are what
+`verify_durable_relay(armed=True)` requires. Removing the stop timer and
+stop service (`promethean-axxium-work-pilot-stop.timer` and
+`promethean-axxium-work-pilot-stop.service`) is optional; both must be
+inactive, and an absent unit file is accepted. The selected wildcard-backed origin has no pilot DNS record
 to remove. If the sibling contingency was used, restore its exact DNS
 record state. Record public route denial and incumbent sentinels.
 A known pre-ingress failure can return to the verified dark selection with
