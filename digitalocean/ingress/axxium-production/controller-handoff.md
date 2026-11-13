@@ -26,13 +26,16 @@ identity under the existing production lock and hold.
    same app image, database, PDS and private mounts. Stage the managed Axxium
    snippet with its fence intact. Supply the subnet, gateway and dynamic pool
    explicitly. Docker's default gateway can otherwise differ from the plan.
-   Before removing the fence, verify the peer,
-   prove private HTTPS forwarding and OIDC from the selected Caddy origin,
+   Before removing the fence, verify the peer and confirm that the upstream
+   resolves from Caddy to only the admitted app address. Prove private HTTPS
+   forwarding and OIDC from the selected Caddy origin,
    and recheck the live route and dependency identities. Then publish the
    full matcher and verify sign-in, PDS, wildcard handles and unrelated
    managed ingress.
 4. If rollback is admitted, confirm or re-establish the active and startup
-   fence. Restore the original route layout in its fenced form and restore
+   fence. Remove the adopted managed snippet from the rollback candidate
+   before restoring the original inline site in its fenced form. Validate
+   the complete root and managed directory together. Restore
    the shared-network Caddy attachment. Read the actual Caddy address on the
    restored shared bridge before rendering the rollback app trust setting.
    It can differ from the address recorded at admission. Recreate only the
@@ -57,7 +60,8 @@ The caller supplies a Docker network inspection object as `network`, the
 canonical inspected container IDs as `caddy` and `axxium`, the exact
 `AXXIUM_TRUST_PROXY` value as `appTrust`, and `aliases` keyed by every current
 member ID. Each alias list includes endpoint aliases, DNS names and the
-container's name. The caller gathers and reconciles endpoint network IDs,
+container's name. The verifier compares ASCII DNS names without regard to
+case or a terminal dot. The caller gathers and reconciles endpoint network IDs,
 endpoint IDs and addresses against the same Docker inventory under the
 operation lock. Never persist full container environment records here.
 
