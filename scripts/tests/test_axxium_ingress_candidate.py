@@ -63,6 +63,35 @@ class AxxiumIngressCandidateTest(unittest.TestCase):
         self.assertEqual("9205d70921e983850369de190cbb4130f0d22c48fc1a2704eef45db2b32d6343",
                          hashlib.sha256(data).hexdigest())
 
+    @unittest.skipUnless(os.environ.get("CADDY_TEST_BINARY"), "Caddy adapter binary unavailable")
+    def test_real_adapter_preserves_other_routes_when_importing_the_candidate(self):
+        root = self.incumbent.replace(self.before_site, self.before_site + b"(common) {\n\tencode gzip\n}\n")
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Path(temporary)
+            config = fixture / "Caddyfile"
+            managed = fixture / "managed"
+            managed.mkdir()
+            (managed / "neighbor.caddy").write_bytes(b"neighbor.invalid {\n\trespond 200\n}\n")
+
+            def adapt(contents):
+                config.write_bytes(contents.replace(RENDER.MANAGED_IMPORT, b"\nimport managed/*.caddy\n"))
+                result = subprocess.run([os.environ["CADDY_TEST_BINARY"], "adapt", "--config", str(config),
+                                         "--adapter", "caddyfile"], capture_output=True, check=True, timeout=10)
+
+                def normalize(item):
+                    if item.get("handler") == "file_server":
+                        item.pop("hide", None)  # Caddy includes each source config path.
+                    return item
+
+                return json.loads(result.stdout, object_hook=normalize)
+
+            baseline = adapt(root)
+            (managed / "axxium-production.caddy").write_bytes(self.snippet)
+            candidate = adapt(self.render(root))
+        candidate_json = json.dumps(candidate)
+        self.assertEqual(1, candidate_json.count("axxium-ingress:8787"))
+        self.assertEqual(baseline, json.loads(candidate_json.replace("axxium-ingress:8787", "axxium:8787")))
+
     @unittest.skipUnless(shutil.which("docker"), "Docker Compose is required for the overlay integration check")
     def test_compose_overlays_keep_existing_dependencies_and_mounts(self):
         network = json.loads((CANDIDATE / "network.json").read_bytes())

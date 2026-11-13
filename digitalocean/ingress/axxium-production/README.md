@@ -40,5 +40,9 @@ Caddy recreation, portal and health returned successfully, password sign-in
 set a secure session cookie, and an OIDC S256 authorization code was exchanged
 and its token signature verified. A direct shared-network request to OIDC
 returned 503. The same rehearsal served the exact DID asset and exercised
-PDS fallback against a stub. Google sign-in and production state were outside
-this rehearsal.
+PDS fallback against the digest-pinned production PDS image
+`sha256:95d6179bc9fb10cc36ccd6dea0407fc6d99f21374bf2a1f9e8f28c0427c7e336`.
+PDS health, `describeServer` with the fixture service DID, and OAuth issuer
+discovery passed before and after recreation. External PLC and handle
+resolution, Google sign-in, production state, and the other production
+managed routes remain to be verified during rollout qualification.
