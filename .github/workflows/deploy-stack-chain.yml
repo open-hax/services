@@ -157,6 +157,7 @@ jobs:
     uses: ./.github/workflows/digitalocean-host.yml
     with:
       operation: bootstrap
+      include_ingress: ${{ inputs.include_ingress }}
       caller_holds_production_host_lock: true
     secrets: inherit
 
