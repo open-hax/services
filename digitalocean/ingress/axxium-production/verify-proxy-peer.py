@@ -24,7 +24,11 @@ def verify_peer(mode, contract, network, caddy, axxium, app_trust, aliases):
             or any(not isinstance(names, list) or not all(isinstance(name, str) for name in names)
                    for names in aliases.values())):
         raise ValueError("Alias inventory does not cover the current network members")
-    if {member for member, names in aliases.items() if app_alias in names} != {axxium}:
+    selected = {
+        member for member, names in aliases.items()
+        if any(name.isascii() and name.lower().removesuffix(".") == app_alias for name in names)
+    }
+    if selected != {axxium}:
         raise ValueError("Axxium upstream alias does not uniquely select the admitted app")
 
     proxy_interface = ipaddress.IPv4Interface(members[caddy]["IPv4Address"])

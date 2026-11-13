@@ -48,7 +48,7 @@ class ProxyPeerTest(unittest.TestCase):
             (implicit_gateway, self.aliases),
             (extra, {**self.aliases, "unrelated": ["unrelated"]}),
             (wrong_address, self.aliases),
-            (self.network, {"proxy": ["axxium-ingress"], "app": ["axxium-ingress"]}),
+            (self.network, {"proxy": ["AXXIUM-INGRESS."], "app": ["axxium-ingress"]}),
             (self.network, {"proxy": [], "app": "not-axxium-ingress"}),
             (self.network, {"app": ["axxium-ingress"]}),
         ):
@@ -65,6 +65,9 @@ class ProxyPeerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly the observed Caddy address"):
             PEER.verify_peer("shared", CONTRACT, shared, "proxy-restored", "app-restored",
                              "172.18.0.9", aliases)
+        with self.assertRaisesRegex(ValueError, "does not uniquely select"):
+            PEER.verify_peer("shared", CONTRACT, shared, "proxy-restored", "app-restored",
+                             "172.18.0.14", {**aliases, "pds": ["AXXIUM", "axxium-pds"]})
         self.assertEqual({"network": "open-hax", "network_id": "shared-net", "upstream": "axxium:8787",
                           "caddy_id": "proxy-restored", "axxium_id": "app-restored",
                           "proxy_address": "172.18.0.14"},
