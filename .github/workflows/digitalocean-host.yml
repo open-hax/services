@@ -17,6 +17,11 @@ on:
         required: false
         default: stack
         type: string
+      include_ingress:
+        description: Check whether this stack can replace Caddy before provisioning it
+        required: false
+        default: false
+        type: boolean
       caller_holds_production_host_lock:
         description: Caller owns the production-host lock for this entire invocation
         required: true
@@ -160,7 +165,25 @@ jobs:
 
       - name: Bootstrap host
         if: steps.target.outputs.operation == 'bootstrap'
+        env:
+          INCLUDE_INGRESS: ${{ inputs.include_ingress }}
         run: |
+          set -euo pipefail
+          check_caddy_replacement() {
+            local remote_command
+            printf -v remote_command 'bash -s -- %q' "$caddy_runtime"
+            # The host-contract path is resolved and quoted on the runner.
+            # shellcheck disable=SC2029
+            ssh production-droplet "$remote_command" "$@" \
+              < digitalocean/services/caddy/check-replacement.sh
+          }
+          if [ "$INCLUDE_INGRESS" = true ]; then
+            . digitalocean/lib/host-contract.sh
+            load_host_contract production
+            caddy_runtime=$(service_runtime_path caddy)
+            check_caddy_replacement --before-bootstrap
+          fi
+
           scp digitalocean/scripts/verify-dev-ingress-firewall.sh \
             production-droplet:/tmp/open-hax-verify-dev-ingress-firewall
           scp digitalocean/scripts/provision-ollama.sh \
@@ -168,6 +191,10 @@ jobs:
           ssh production-droplet \
             'install -o root -g root -m 0755 /tmp/open-hax-verify-dev-ingress-firewall /usr/local/sbin/open-hax-verify-dev-ingress-firewall && install -o root -g root -m 0755 /tmp/open-hax-provision-ollama /usr/local/sbin/open-hax-provision-ollama && rm -f /tmp/open-hax-verify-dev-ingress-firewall /tmp/open-hax-provision-ollama'
           ssh production-droplet 'bash -s' < digitalocean/scripts/bootstrap-host.sh
+          if [ "$INCLUDE_INGRESS" = true ]; then
+            # Bootstrap can install Docker, exposing containers unavailable to the first check.
+            check_caddy_replacement
+          fi
 
       - name: Verify host
         env:

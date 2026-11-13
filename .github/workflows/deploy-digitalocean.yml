@@ -210,6 +210,16 @@ jobs:
           ssh open-hax-target \
             'sudo -n /usr/local/sbin/open-hax-verify-dev-ingress-firewall'
 
+      - name: Protect the incumbent Axxium ingress
+        if: inputs.service == 'caddy'
+        env:
+          RUNTIME_PATH: ${{ steps.contract.outputs.runtime_path }}
+        run: |
+          printf -v remote_command 'bash -s -- %q' "$RUNTIME_PATH"
+          # The host-contract path is resolved and quoted on the runner.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "$remote_command" < digitalocean/services/caddy/check-replacement.sh
+
       - name: Render runtime environment
         env:
           # The auth resolver branches by service before rendering. Keep the

@@ -67,7 +67,7 @@ on:
       include_ingress:
         description: Deploy Caddy (owns host 80/443). No DNS is changed either way.
         required: false
-        default: true
+        default: false
         type: boolean
       include_website:
         description: >-
@@ -157,6 +157,7 @@ jobs:
     uses: ./.github/workflows/digitalocean-host.yml
     with:
       operation: bootstrap
+      include_ingress: ${{ inputs.include_ingress }}
       caller_holds_production_host_lock: true
     secrets: inherit
 
