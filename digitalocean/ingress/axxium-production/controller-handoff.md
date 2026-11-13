@@ -52,6 +52,38 @@ Recovery reads the actual state under the same lock and may resume from a
 verified phase or roll back from a verified fence. Clear the hold after
 recording the terminal route checks and dependency preservation.
 
+## Transaction journal
+
+`scripts/axxium_ingress_transaction.py` provides the unwired journal under the
+existing Axxium native lock and pending marker. Its phase methods record intent
+and observations. The caller executes each runtime effect separately and only
+after its intent record is durable. The caller supplies independent readback
+bound to the exact admitted plan, active and startup Caddy configuration,
+peer and dependency identities, and route checks. The observation includes a
+stable fingerprint for the verified state and a digest of the evidence that
+supports it. The journal checks phase ordering and fingerprints. The future
+host adapter supplies the observations and any runtime effects.
+
+A pending effect reports unknown exposure until readback verifies its intended
+result or the unchanged source. Verifying an unchanged source records that the
+effect did not apply. Any retry requires a fresh intent and the caller's
+admission. Mixed or unverified state retains the hold for reconciliation.
+If the first fence did not apply, the operation stays held at the original
+shared site until an admitted retry. A pre-fence cancellation path still needs
+an explicit host-adapter contract.
+The private phase files are create-only. A durable head records their count and
+last digest, so a missing final record fails verification. A completed append
+with an interrupted head update can be recovered under the native lock.
+
+An operation directory left before initial marker publication cannot have
+executed a runtime effect through this journal. Retain it as evidence and use
+a new operation ID only after confirming that the original claim has no hold.
+The journal records terminal evidence before removing the marker. If removal
+or directory sync fails, it attempts to restore the marker and reports an
+uncertain cleanup. The durable terminal record distinguishes this cleanup from
+an unverified runtime effect. If the marker remains, a resumed terminal cleanup
+requires fresh matching route and dependency readback.
+
 ## Peer verification
 
 `verify-proxy-peer.py dedicated INVENTORY` and `verify-proxy-peer.py shared INVENTORY`
