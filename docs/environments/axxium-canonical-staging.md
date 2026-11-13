@@ -38,7 +38,11 @@ same slot and Google sign-in client with a separate Drive callback and ledger.
    staging actor is active, human, and linked to the same Google provider
    subject as the active production administrator. Compare provider subjects
    privately. Retain the staging actor account ID for the next step.
-4. Set the two owner entries below and select the
+4. Under the environment receiver lock, copy the current private `.env` and
+   `oidc/authority.json` before changing owner, mailbox, or OIDC settings.
+   The [operator recovery procedure](axxium-staging-mailbox.md#operator-recovery)
+   restores those exact prior bytes. Then set the two owner entries below and
+   select the
    [owner tree profile](../../digitalocean/environments/axxium-staging-owner.compose.yaml)
    using the same receiver and recovery procedure as the full profile. The
    reviewed seed contains 37 nodes, including two Codex children. Use the
@@ -68,9 +72,11 @@ same slot and Google sign-in client with a separate Drive callback and ledger.
    admitted supporting image. A fresh Work consent request uses
    `openid mailbox:events mailbox:actors`. Keep the issuer, signing keys and
    unrelated clients in place.
-5. Under the environment receiver lock, preserve the previous selections,
-   configuration and deployment receipt as described in the
+5. Under the environment receiver lock, preserve the previous selections
+   and deployment receipt as described in the
    [fixed-slot recovery procedure](axxium-staging-mailbox.md#operator-recovery).
+   Do not replace the step 4 copies of `.env` and `oidc/authority.json` with
+   the configuration just written.
    Install the reviewed mailbox base, Google profile and owner tree profile
    beside the selected `compose.yaml`, preserving their filenames. For the full rollout, install
    the [canonical profile](../../digitalocean/environments/axxium-staging-canonical.compose.yaml)
