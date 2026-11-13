@@ -165,6 +165,30 @@ class ActivationHostTest(unittest.TestCase):
                     publish.assert_called_once_with(active, previous, ())
                     clear.assert_called_once()
 
+    def test_removed_legacy_units_do_not_block_an_armed_relay(self):
+        def prop(unit, name):
+            if unit in (host.TIMER, host.STOP):
+                return {"ActiveState": "inactive", "UnitFileState": ""}[name]
+            if name == "ActiveState":
+                return "active"
+            if name == "Listen":
+                return "172.31.255.1:19073 (Stream)"
+            return ""
+
+        class Stat:
+            st_uid = 0
+
+        with (patch.object(host, "verify_relay_unit"), patch.object(host, "systemd_property", side_effect=prop),
+              patch.object(host.Path, "is_symlink", return_value=True),
+              patch.object(host.Path, "resolve", return_value=host.UNITS / host.SOCKET),
+              patch.object(host.Path, "lstat", return_value=Stat())):
+            host.verify_durable_relay(armed=True)
+        with patch.object(host, "verify_relay_unit"), patch.object(
+            host, "systemd_property", return_value="enabled",
+        ):
+            with self.assertRaisesRegex(host.dark.Refused, "active or enabled"):
+                host.verify_durable_relay(armed=False)
+
     def test_operator_must_fence_before_work_teardown(self):
         with (patch.object(host, "systemd_property", return_value="active"),
               patch.object(host, "public_probe") as probe, self.assertRaises(host.dark.Refused)):
