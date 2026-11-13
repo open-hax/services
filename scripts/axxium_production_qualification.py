@@ -39,6 +39,21 @@ OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
 OCI_CONFIG = "application/vnd.oci.image.config.v1+json"
 OCI_LAYER = "application/vnd.oci.image.layer.v1.tar"
 PROVENANCE = "https://slsa.dev/provenance/v1"
+# Classic Docker save emitted these unreferenced legacy layer JSON records in
+# the historical Axxium artifact. Each name is the sha256 of its bytes. No
+# other unreferenced archive member is admissible.
+LEGACY_LAYER_METADATA = frozenset("blobs/sha256/" + digest for digest in (
+    "05ebb58fc71038f0063523ef6f23ef3b51d4f07f0149f48b092676ce3da0d7fd",
+    "30a7ed937ab3c0c0c06cf8968ca222a545e4333273eee8915b2af8ae721d6a0e",
+    "6b20faf0102614b1290e22d7dbe66115ea1cb6d3edcdde901ad3f42c7b68089c",
+    "8bd87858499b8778b26ed35a9cc052fea5798d6b61664c0059a53fd451e07f89",
+    "ac6cab210f037bd9e93403f75c93cf24e4cb034fd351a830308a69573c2177a0",
+    "bddbf4942d1ab783b05a2e3236eae2421716bc495afe94ced7427180b1756eb7",
+    "c97b03879397d8cde4b4cb3eaee9686dbccda3affa7a55448bcf9d42c3cabffe",
+    "ca33e2ee30da2a366fea20ce00bf7945c2a3634c6f2b46dec3aa594d9018201b",
+    "e39ae583f7c887dd4347dcfb7f35080daa4af10379d1d86466025645b927256b",
+    "e7e153ad5535ed1231d4f5816471d555e38fce149ca7b2eb47aac3665f0c93d3",
+))
 
 
 class Refusal(ValueError):
@@ -345,7 +360,7 @@ def verify_image(plan, package, metadata, sizes):
             "legacy tag differs from OCI candidate")
         referenced.add("repositories")
     referenced.update({image_path, config_path, *paths})
-    require(set(sizes) == referenced, "unreferenced OCI archive files")
+    require(set(sizes) - referenced <= LEGACY_LAYER_METADATA, "unreferenced OCI archive files")
     diff_ids = gzip_diff_ids(package, paths) if nested else [item["digest"] for item in layers]
     require(configuration.get("os") == "linux" and configuration.get("architecture") == "amd64"
             and configuration.get("rootfs") == {"type": "layers", "diff_ids": diff_ids},

@@ -300,6 +300,15 @@ class ProductionQualificationTest(unittest.TestCase):
         plan = self.nested_plan()
         self.assertEqual(qualification.verify_archive(plan, self.archive), plan["image_id"])
 
+    def test_only_digest_named_legacy_metadata_may_be_unreferenced(self):
+        create_archive(self.archive, defect="unbound-blob")
+        plan = {**self.plan, "artifact_sha256": hashlib.sha256(self.archive.read_bytes()).hexdigest()}
+        legacy = "blobs/sha256/" + hashlib.sha256(b"unused archive blob").hexdigest()
+        with patch.object(qualification, "LEGACY_LAYER_METADATA", frozenset({legacy})):
+            self.assertEqual(qualification.verify_archive(plan, self.archive), plan["image_id"])
+        with self.assertRaisesRegex(qualification.Refusal, "unreferenced"):
+            qualification.verify_archive(plan, self.archive)
+
     def test_direct_manifest_also_refuses_unreferenced_blob(self):
         create_archive(self.archive, defect="unbound-blob")
         plan = {**self.plan, "artifact_sha256": hashlib.sha256(self.archive.read_bytes()).hexdigest()}
