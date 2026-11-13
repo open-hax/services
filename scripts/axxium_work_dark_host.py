@@ -215,8 +215,14 @@ def verify_dark(images, manifests):
     return apps
 
 
+def prepare_database_image():
+    """Pull the pinned database digest before inspection. The app archive does not contain it."""
+    docker("pull", POSTGRES, reason="pinned database image unavailable", timeout=180)
+    return verified_image(POSTGRES, POSTGRES_CONFIG, POSTGRES_INDEX, POSTGRES_MANIFEST)
+
+
 def deploy(args):
-    require(os.geteuid() != 0, "pilot must run as the production deploy user")
+    require(os.geteuid() == 1000, "pilot must run as the production deploy user")
     require(SLOT.resolve() == SLOT and SLOT.parent.is_dir(), "pilot path aliases the host runtime")
     SLOT.mkdir(mode=0o700, exist_ok=True)
     require(SLOT.is_dir() and SLOT.stat().st_uid == os.geteuid()
@@ -239,7 +245,7 @@ def deploy(args):
         write_private(SLOT / "pending.json", json.dumps(receipt).encode() + b"\n")
         attempted_start = False
         try:
-            database = verified_image(POSTGRES, POSTGRES_CONFIG, POSTGRES_INDEX, POSTGRES_MANIFEST)
+            database = prepare_database_image()
             docker("image", "load", "--input", str(archive), reason="staged image load failed", timeout=180)
             selected = verified_image(f"promethean-axxium:{args.source}", args.image, args.index, args.manifest)
             images = {"axxium": selected, "database": database}
