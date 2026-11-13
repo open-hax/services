@@ -38,6 +38,13 @@ candidate. The locked deployment chain requires that exact candidate's
 qualification before any host mutation. A Services PR merge or `deploy` label
 does not start this production workflow.
 
+Stack dispatches skip Caddy by default. The generic Caddy deploy refuses to
+replace ingress on a host with an incumbent Axxium Compose project. Production
+Axxium depends on the incumbent Caddy routes, mounted service DID, and proxy
+address. A Caddy replacement needs a reviewed migration of all three. From
+the ingress host, run `bash digitalocean/services/caddy/verify-axxium-routes.sh`
+in a Services checkout to verify the existing Axxium and PDS routes over TLS.
+
 Manual dispatch also accepts `scope: website` for the isolated staging and
 production handoff in [the website runbook](docs/website-staging-deployment.md).
 Stack dispatches leave the website unchanged. Stack website opt-in is rejected

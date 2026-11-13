@@ -49,9 +49,9 @@ on:
         required: false
         type: string
       include_ingress:
-        description: Stack-only Caddy deployment. Axxium uses its fixed OIDC route transaction.
+        description: Stack-only Caddy deployment for hosts without an incumbent production Axxium proxy dependency.
         required: false
-        default: true
+        default: false
         type: boolean
       include_website:
         description: >-
