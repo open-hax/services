@@ -47,7 +47,8 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     work_pilot = jobs.get("deploy-axxium-work-pilot", {})
     if (work_pilot.get("if") != "inputs.scope == 'axxium-work-pilot'"
         or work_pilot.get("uses") != "./.github/workflows/deploy-axxium-work-dark.yml"
-        or work_pilot.get("with") != {"source_sha": "${{ inputs.axxium_ref }}", "caller_holds_production_host_lock": "true"}):
+        or work_pilot.get("with") != {"source_sha": "${{ inputs.axxium_ref }}", "caller_holds_production_host_lock": "true"}
+        or work_pilot.get("secrets") != {"DIGITALOCEAN_SSH_PRIVATE_KEY": "${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}"}):
         errors.append("dark Axxium Work must retain its isolated scope, immutable source and enclosing host queue")
     live_pilot = jobs.get("operate-axxium-work-pilot", {})
     if (live_pilot.get("if") != (
@@ -63,7 +64,8 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
                 "inputs.scope == 'axxium-work-pilot-close' && 'close' || 'teardown' }}"),
             "source_sha": "${{ inputs.axxium_ref }}",
             "caller_holds_production_host_lock": "true",
-        }):
+        }
+        or live_pilot.get("secrets") != {"DIGITALOCEAN_SSH_PRIVATE_KEY": "${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}"}):
         errors.append("live Axxium Work must retain its isolated scopes and enclosing host queue")
     colab = jobs.get("deploy-colab-production", {})
     if (colab.get("if") != "inputs.scope == 'colab'"

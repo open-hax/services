@@ -127,7 +127,8 @@ jobs:
     with:
       source_sha: ${{ inputs.axxium_ref }}
       caller_holds_production_host_lock: true
-    secrets: inherit
+    secrets:
+      DIGITALOCEAN_SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
 
   operate-axxium-work-pilot:
     if: >-
