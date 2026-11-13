@@ -1,0 +1,12 @@
+services:
+  axxium:
+    environment:
+      AXXIUM_TRUST_PROXY: 172.30.115.2
+    networks:
+      axxium-ingress:
+        aliases: [axxium-ingress]
+
+networks:
+  axxium-ingress:
+    name: axxium-ingress
+    external: true

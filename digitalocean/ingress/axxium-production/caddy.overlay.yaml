@@ -1,0 +1,17 @@
+services:
+  caddy:
+    volumes:
+      - type: bind
+        source: ./axxium-did.json
+        target: /etc/caddy/axxium-identity/did.json
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      axxium-ingress:
+        ipv4_address: 172.30.115.2
+
+networks:
+  axxium-ingress:
+    name: axxium-ingress
+    external: true
