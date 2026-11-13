@@ -170,7 +170,11 @@ jobs:
         run: |
           set -euo pipefail
           check_caddy_replacement() {
-            ssh production-droplet "bash -s -- '${caddy_runtime}'" "$@" \
+            local remote_command
+            printf -v remote_command 'bash -s -- %q' "$caddy_runtime"
+            # The host-contract path is resolved and quoted on the runner.
+            # shellcheck disable=SC2029
+            ssh production-droplet "$remote_command" "$@" \
               < digitalocean/services/caddy/check-replacement.sh
           }
           if [ "$INCLUDE_INGRESS" = true ]; then

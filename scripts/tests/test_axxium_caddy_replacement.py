@@ -83,7 +83,7 @@ class AxxiumCaddyWorkflowTest(unittest.TestCase):
                     'printf "%s %s\\n" "${0##*/}" "$*" >> "$TRACE"\n'
                     'case "$*" in\n'
                     '  *--before-bootstrap*) exit "$BEFORE" ;;\n'
-                    "  *\"/caddy'\") exit \"$AFTER\" ;;\n"
+                    '  */caddy) exit "$AFTER" ;;\n'
                     'esac\n'
                 )
                 command.chmod(0o700)
@@ -110,7 +110,7 @@ class AxxiumCaddyWorkflowTest(unittest.TestCase):
                         self.assertIn("--before-bootstrap", operations[0])
                         self.assertTrue(operations[1].startswith("scp "))
                         self.assertEqual(operations[-2], "ssh production-droplet bash -s")
-                        self.assertIn("/caddy'", operations[-1])
+                        self.assertTrue(operations[-1].endswith("/caddy"))
                     else:
                         self.assertTrue(operations[0].startswith("scp "))
                         self.assertEqual(operations[-1], "ssh production-droplet bash -s")
