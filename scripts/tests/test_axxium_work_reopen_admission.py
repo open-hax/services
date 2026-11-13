@@ -20,6 +20,8 @@ class WorkReopenAdmissionTests(unittest.TestCase):
                     post_merge_ci_run_id=work.CI_RUN, post_merge_codeql_run_id=work.CODEQL_RUN)
         plan["owner_decision"]["source_sha"] = work.SOURCE
         plan["owner_decision"]["artifact_id"] = work.ARTIFACT
+        plan["integration"]["source_sha"] = work.SOURCE
+        plan["e2e"]["source_sha"] = work.SOURCE
         plan["local_rehearsal"] = {"status": "passed", "log_sha256": "a" * 64, "scope": "fixture"}
         work.verify_decision(plan)
         for section, key, value in (
@@ -32,6 +34,8 @@ class WorkReopenAdmissionTests(unittest.TestCase):
             ("owner_decision", "artifact_id", 1),
             ("owner_decision", "mutation_campaign_passed", True),
             ("historical_campaign", "qualified_batches", 4),
+            ("integration", "status", "failed"),
+            ("e2e", "assertions", 0),
             ("local_rehearsal", "status", "failed"),
         ):
             with self.subTest(section=section, key=key):

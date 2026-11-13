@@ -13,6 +13,7 @@ from axxium_production_qualification import (
 )
 from axxium_work_activation_admission import ORIGIN
 from axxium_work_dark_admission import CAMPAIGN, POLICY, SOURCE as CAMPAIGN_SOURCE, verify_transport
+from environment_policy import production_admission
 from github_environment_admission import api
 
 PLAN = "digitalocean/services/axxium-work-pilot/reopen-release-plan.json"
@@ -62,6 +63,9 @@ def verify_decision(plan):
     }, "historical mutation results differ from retained negative evidence")
     require(sha256(Path(__file__).with_name("environment_policy.py").read_bytes()).hexdigest() == POLICY,
             "shared production policy changed; review this Work decision again")
+    verdict = production_admission(SOURCE, plan.get("integration"), plan.get("e2e"), [])
+    require(verdict == {"admitted": False, "reason": "four completed mutation batches are required"},
+            verdict.get("reason", "unexpected mutation waiver verdict"))
     rehearsal = plan.get("local_rehearsal", {})
     require(rehearsal.get("status") == "passed"
             and re.fullmatch(r"[0-9a-f]{64}", rehearsal.get("log_sha256", ""))
