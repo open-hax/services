@@ -8,6 +8,9 @@ actor signing key, transfer identity, mailbox ledger, and Caddy relay stay in
 use. The separate loopback owner rehearsal and production pilot remain outside
 this staging operation.
 
+The opt-in [Google Drive staging profile](axxium-staging-drive.md) uses this
+same slot and Google sign-in client with a separate Drive callback and ledger.
+
 ## Prepare the existing slot
 
 1. Admit the exact merged Axxium image that implements the owner-scoped mailbox

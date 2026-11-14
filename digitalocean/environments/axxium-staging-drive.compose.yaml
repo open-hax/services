@@ -1,0 +1,28 @@
+services:
+  axxium:
+    extends:
+      file: axxium-staging-canonical.compose.yaml
+      service: axxium
+    environment:
+      AXXIUM_DRIVE_TOKEN_KEY_FILE: /run/axxium/drive/token.key
+      AXXIUM_DRIVE_LEDGER_FILE: /var/lib/axxium/drive/ledger.edn
+    volumes:
+      - type: bind
+        source: ./drive/token.key
+        target: /run/axxium/drive/token.key
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./drive/ledger.edn
+        target: /var/lib/axxium/drive/ledger.edn
+        read_only: false
+        bind:
+          create_host_path: false
+  database:
+    extends:
+      file: axxium-staging-canonical.compose.yaml
+      service: database
+
+volumes:
+  postgres-data:
