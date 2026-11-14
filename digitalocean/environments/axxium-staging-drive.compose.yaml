@@ -6,6 +6,7 @@ services:
     environment:
       AXXIUM_DRIVE_TOKEN_KEY_FILE: /run/axxium/drive/token.key
       AXXIUM_DRIVE_LEDGER_FILE: /var/lib/axxium/drive/ledger.edn
+      AXXIUM_DRIVE_ACTOR_ACCESS_ENABLED: ${AXXIUM_DRIVE_ACTOR_ACCESS_ENABLED:-false}
     volumes:
       - type: bind
         source: ./drive/token.key

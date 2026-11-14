@@ -226,7 +226,7 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
                 self.assertNotEqual(refused.returncode, 0)
                 self.assertIn(required, refused.stderr)
 
-    def test_drive_only_adds_its_private_key_and_ledger(self):
+    def test_drive_adds_its_private_key_ledger_and_disabled_actor_access(self):
         canonical = self.render(CANONICAL, settings=OWNER_ENV)
         drive = self.render(DRIVE, settings=OWNER_ENV)
         for result in (canonical, drive):
@@ -237,9 +237,24 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         ledger = '/var/lib/axxium/drive/ledger.edn'
         self.assertEqual(app['environment'].pop('AXXIUM_DRIVE_TOKEN_KEY_FILE'), key)
         self.assertEqual(app['environment'].pop('AXXIUM_DRIVE_LEDGER_FILE'), ledger)
+        self.assertEqual(app['environment'].pop('AXXIUM_DRIVE_ACTOR_ACCESS_ENABLED'), 'false')
         self.assert_mount(DRIVE, app, 'drive/token.key', key, read_only=True)
         self.assert_mount(DRIVE, app, 'drive/ledger.edn', ledger, read_only=False)
         self.assertEqual(enabled, baseline)
+
+    def test_drive_actor_access_requires_a_drive_profile_and_explicit_opt_in(self):
+        key = 'AXXIUM_DRIVE_ACTOR_ACCESS_ENABLED'
+        defaults = self.render(DRIVE, settings=OWNER_ENV)
+        blank = self.render(DRIVE, settings={**OWNER_ENV, key: ''})
+        enabled = self.render(DRIVE, settings={**OWNER_ENV, key: 'true'})
+        canonical = self.render(CANONICAL, settings={**OWNER_ENV, key: 'true'})
+        for result in (defaults, blank, enabled, canonical):
+            self.assertEqual(result.returncode, 0, result.stderr)
+        expected = json.loads(defaults.stdout)
+        self.assertEqual(json.loads(blank.stdout), expected)
+        expected['services']['axxium']['environment'][key] = 'true'
+        self.assertEqual(json.loads(enabled.stdout), expected)
+        self.assertNotIn(key, json.loads(canonical.stdout)['services']['axxium']['environment'])
 
     def test_receiver_entrypoint_resolves_reviewed_profiles_in_the_fixed_slot(self):
         with tempfile.TemporaryDirectory() as directory:

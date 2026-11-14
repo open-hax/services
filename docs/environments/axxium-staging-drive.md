@@ -47,6 +47,14 @@ requests until configuration is present.
    source SHA can yield a different image ID, and the receiver refuses
    replacement of an already owned tag.
 
+Managed actor Drive access defaults to off. After the selected image includes
+[Axxium #80](https://github.com/open-hax/axxium/pull/80), set
+`AXXIUM_DRIVE_ACTOR_ACCESS_ENABLED=true` in the private slot `.env` when
+enrolling managed actors. The Drive profile passes the setting to Axxium and
+uses the existing identity ledger and root operator. The configured human
+owner completes a separate Google consent flow for each selected actor.
+The existing Drive callback serves both human and managed actor consent.
+
 ## Verify Drive and the existing staging service
 
 Verify the healthy app image and retained database, public health, Google
@@ -57,3 +65,7 @@ real consent return for the selected staging user, then use `/api/drive/mcp`
 to create and read back one synthetic EDN artifact in an authorized folder
 and verify destination-scoped duplicate refusal. Record only the safe file
 and outcome metadata. The OAuth grant is bound to the signed-in user.
+
+For an enrolled actor, verify `/api/drive/agent` with that actor's bootstrap
+credential. Create and read back one synthetic EDN file, then verify that a
+different actor cannot read it. Keep the verification file ID and result.
