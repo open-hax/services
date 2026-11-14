@@ -15,6 +15,7 @@ MAILBOX = ROOT / 'digitalocean/environments/axxium-staging-mailbox.compose.yaml'
 GOOGLE = ROOT / 'digitalocean/environments/axxium-staging-google.compose.yaml'
 OWNER = ROOT / 'digitalocean/environments/axxium-staging-owner.compose.yaml'
 CANONICAL = ROOT / 'digitalocean/environments/axxium-staging-canonical.compose.yaml'
+DRIVE = ROOT / 'digitalocean/environments/axxium-staging-drive.compose.yaml'
 ROOT_ENV = {
     'AXXIUM_IDENTITY_ROOT_OPERATOR_ACTOR_ID': 'actor_00000000-0000-4000-8000-000000000001',
     'AXXIUM_IDENTITY_ROOT_DID': 'did:web:staging.axxium.promethean.rest:actors:owner',
@@ -225,21 +226,53 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
                 self.assertNotEqual(refused.returncode, 0)
                 self.assertIn(required, refused.stderr)
 
+    def test_drive_adds_its_private_key_ledger_and_disabled_actor_access(self):
+        canonical = self.render(CANONICAL, settings=OWNER_ENV)
+        drive = self.render(DRIVE, settings=OWNER_ENV)
+        for result in (canonical, drive):
+            self.assertEqual(result.returncode, 0, result.stderr)
+        baseline, enabled = json.loads(canonical.stdout), json.loads(drive.stdout)
+        app = enabled['services']['axxium']
+        key = '/run/axxium/drive/token.key'
+        ledger = '/var/lib/axxium/drive/ledger.edn'
+        self.assertEqual(app['environment'].pop('AXXIUM_DRIVE_TOKEN_KEY_FILE'), key)
+        self.assertEqual(app['environment'].pop('AXXIUM_DRIVE_LEDGER_FILE'), ledger)
+        self.assertEqual(app['environment'].pop('AXXIUM_DRIVE_ACTOR_ACCESS_ENABLED'), 'false')
+        self.assert_mount(DRIVE, app, 'drive/token.key', key, read_only=True)
+        self.assert_mount(DRIVE, app, 'drive/ledger.edn', ledger, read_only=False)
+        self.assertEqual(enabled, baseline)
+
+    def test_drive_actor_access_requires_a_drive_profile_and_explicit_opt_in(self):
+        key = 'AXXIUM_DRIVE_ACTOR_ACCESS_ENABLED'
+        defaults = self.render(DRIVE, settings=OWNER_ENV)
+        blank = self.render(DRIVE, settings={**OWNER_ENV, key: ''})
+        enabled = self.render(DRIVE, settings={**OWNER_ENV, key: 'true'})
+        canonical = self.render(CANONICAL, settings={**OWNER_ENV, key: 'true'})
+        for result in (defaults, blank, enabled, canonical):
+            self.assertEqual(result.returncode, 0, result.stderr)
+        expected = json.loads(defaults.stdout)
+        self.assertEqual(json.loads(blank.stdout), expected)
+        expected['services']['axxium']['environment'][key] = 'true'
+        self.assertEqual(json.loads(enabled.stdout), expected)
+        self.assertNotIn(key, json.loads(canonical.stdout)['services']['axxium']['environment'])
+
     def test_receiver_entrypoint_resolves_reviewed_profiles_in_the_fixed_slot(self):
         with tempfile.TemporaryDirectory() as directory:
             slot = Path(directory)
-            for dependency in (MAILBOX, GOOGLE, OWNER):
+            for dependency in (MAILBOX, GOOGLE, OWNER, CANONICAL):
                 shutil.copyfile(dependency, slot / dependency.name)
             selected = slot / 'compose.yaml'
-            shutil.copyfile(CANONICAL, selected)
-            result = self.render(selected, settings=OWNER_ENV, project_directory=slot)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            project = json.loads(result.stdout)
-            self.assertEqual(set(project['services']), {'axxium', 'database'})
-            mounts = project['services']['axxium']['volumes']
-            for mount in mounts:
-                self.assertTrue(Path(mount['source']).is_relative_to(slot))
-            self.assertEqual(set(project['volumes']), {'postgres-data'})
+            for profile in (CANONICAL, DRIVE):
+                with self.subTest(profile=profile.name):
+                    shutil.copyfile(profile, selected)
+                    result = self.render(selected, settings=OWNER_ENV, project_directory=slot)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    project = json.loads(result.stdout)
+                    self.assertEqual(set(project['services']), {'axxium', 'database'})
+                    mounts = project['services']['axxium']['volumes']
+                    for mount in mounts:
+                        self.assertTrue(Path(mount['source']).is_relative_to(slot))
+                    self.assertEqual(set(project['volumes']), {'postgres-data'})
 
     def test_missing_proxy_refuses_render(self):
         for path in (STAGING, MAILBOX):
