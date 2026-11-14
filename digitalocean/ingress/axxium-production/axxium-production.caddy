@@ -1,0 +1,35 @@
+axxium.promethean.rest, *.axxium.promethean.rest {
+	import common
+	tls {
+		on_demand
+	}
+
+	# The PDS advertises this service DID but does not publish its DID document.
+	# It is a service identity; account DIDs and signing keys remain PDS-owned.
+	@axxium_service_did {
+		host axxium.promethean.rest
+		path /.well-known/did.json
+	}
+	handle @axxium_service_did {
+		root * /etc/caddy/axxium-identity
+		rewrite * /did.json
+		header Content-Type application/did+json
+		file_server
+	}
+
+	@axxium_api {
+		host axxium.promethean.rest
+		path / /health /portal/* /api/auth/* /api/actors* /api/entities* /api/atproto/* /oidc/*
+	}
+	handle @axxium_api {
+		reverse_proxy axxium-ingress:8787 {
+			header_up -x-open-hax-bridge-auth
+		}
+	}
+
+	handle {
+		reverse_proxy axxium-pds:3000 {
+			header_up -x-open-hax-bridge-auth
+		}
+	}
+}

@@ -1,0 +1,10 @@
+{
+  "name": "axxium-ingress",
+  "driver": "bridge",
+  "internal": true,
+  "subnet": "172.30.115.0/28",
+  "gateway": "172.30.115.1",
+  "dynamicPool": "172.30.115.8/29",
+  "proxyAddress": "172.30.115.2",
+  "appAlias": "axxium-ingress"
+}
