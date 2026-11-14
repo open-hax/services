@@ -156,6 +156,7 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         environment = canonical['services']['axxium']['environment']
         self.assertEqual(environment.pop('AXXIUM_MAILBOX_ACTOR_BINDINGS'), OWNER_ENV['AXXIUM_MAILBOX_ACTOR_BINDINGS'])
         self.assertEqual(environment.pop('AXXIUM_MAILBOX_BOOTSTRAP_ACTOR_DIDS'), '')
+        self.assertIsNone(environment.pop('AXXIUM_MAILBOX_BOUND_BOOTSTRAP_BINDINGS'))
         self.assertEqual(environment.pop('AXXIUM_MAILBOX_STREAM_ENABLED'), 'false')
         self.assertEqual(environment.pop('AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED'), 'false')
         self.assertEqual(environment['AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID'], OWNER_ENV['AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID'])
@@ -195,6 +196,26 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
         expected['services']['axxium']['environment'].update(settings)
         self.assertEqual(json.loads(configured.stdout), expected)
         self.assertTrue(settings.keys().isdisjoint(json.loads(owner.stdout)['services']['axxium']['environment']))
+
+    def test_canonical_forwards_exact_bound_bootstrap_opt_in_without_changing_other_settings(self):
+        key = 'AXXIUM_MAILBOX_BOUND_BOOTSTRAP_BINDINGS'
+        pair = (
+            '[["did:plc:aaaaaaaaaaaaaaaaaaaaaaaa" '
+            '"did:web:staging.axxium.promethean.rest:actors:owner:work"]]'
+        )
+        defaults = self.render(CANONICAL, settings=OWNER_ENV)
+        explicit = self.render(CANONICAL, settings={**OWNER_ENV, key: pair})
+        blank = self.render(CANONICAL, settings={**OWNER_ENV, key: ''})
+        owner = self.render(OWNER, settings={**ROOT_ENV, key: pair})
+        for result in (defaults, explicit, blank, owner):
+            self.assertEqual(result.returncode, 0, result.stderr)
+        expected = json.loads(defaults.stdout)
+        environment = expected['services']['axxium']['environment']
+        self.assertIsNone(environment.pop(key))
+        self.assertNotIn(key, json.loads(owner.stdout)['services']['axxium']['environment'])
+        for result, value in ((explicit, pair), (blank, '')):
+            environment[key] = value
+            self.assertEqual(json.loads(result.stdout), expected)
 
     def test_canonical_refuses_incomplete_owner_or_mailbox_binding(self):
         for required in OWNER_ENV:
