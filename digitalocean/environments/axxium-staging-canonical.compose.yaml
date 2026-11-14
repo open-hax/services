@@ -6,6 +6,8 @@ services:
     environment:
       AXXIUM_MAILBOX_ACTOR_BINDINGS: ${AXXIUM_MAILBOX_ACTOR_BINDINGS:?Set the staging mailbox actor bindings}
       AXXIUM_MAILBOX_BOOTSTRAP_ACTOR_DIDS: ${AXXIUM_MAILBOX_BOOTSTRAP_ACTOR_DIDS:-}
+      # An absent pair stays unset; Axxium rejects an explicitly empty vector value.
+      AXXIUM_MAILBOX_BOUND_BOOTSTRAP_BINDINGS:
       AXXIUM_MAILBOX_STREAM_ENABLED: ${AXXIUM_MAILBOX_STREAM_ENABLED:-false}
       AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED: "false"
       AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID: ${AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID:?Set the staging Work mailbox DID}

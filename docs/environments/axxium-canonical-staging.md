@@ -79,6 +79,21 @@ this staging operation.
    for a configuration change on an already admitted image. Apply recovery
    under the existing receiver lock if an activation outcome is uncertain.
 
+## Keep an existing mailbox when enabling bootstrap access
+
+For an admitted Axxium image that supports bound bootstrap actors, optionally set
+`AXXIUM_MAILBOX_BOUND_BOOTSTRAP_BINDINGS` in the staging slot's private
+`.env` to one single-quoted EDN vector of `["AT mailbox DID" "actor DID"]`
+pairs. Omit the setting when unused. An empty string is not a valid opt-in.
+
+Use the current identity ledger to verify the exact active actor, its owner
+ancestry and binding. Verify the existing mailbox registration and the owner's
+current read grant before enabling the pair. Keep the prior AT Protocol login,
+mailbox history and unbound bootstrap allowlist in place. Configure the harness
+to use its own actor DID and bootstrap key with the existing AT mailbox DID.
+Recreate only the app using the fixed-slot procedure above and read back the
+exact effective pair. Keep webhook subscriptions disabled.
+
 ## Verify the shared service
 
 - Confirm the single app and retained database container identities, exact
