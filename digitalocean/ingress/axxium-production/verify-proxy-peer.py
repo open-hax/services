@@ -10,10 +10,11 @@ from pathlib import Path
 CONTRACT = Path(__file__).with_name("network.json")
 
 
-def verify_peer(mode, contract, network, caddy, axxium, app_trust, aliases):
+def verify_peer(mode, contract, network, caddy, axxium, app_trust, aliases, *,
+                shared_network="open-hax", shared_alias="axxium"):
     """Return the observed peer, or refuse an incomplete or inconsistent topology."""
-    network_name = contract["name"] if mode == "dedicated" else "open-hax"
-    app_alias = contract["appAlias"] if mode == "dedicated" else "axxium"
+    network_name = contract["name"] if mode == "dedicated" else shared_network
+    app_alias = contract["appAlias"] if mode == "dedicated" else shared_alias
     if (network["Name"] != network_name or network["Driver"] != "bridge"
             or network["Scope"] != "local" or not isinstance(network["Id"], str) or not network["Id"]):
         raise ValueError("Proxy network differs")

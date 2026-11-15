@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 import json
 import os
+from pathlib import Path
 import re
 import stat
 import tempfile
@@ -28,10 +29,25 @@ PHASES = {
 }
 STATES = {target for _, target in PHASES.values()} | {"shared_live", "unknown"}
 TERMINAL = {"dedicated_live", "restored_live"}
+ROUTE_PHASES = {"fence_shared", "publish_dedicated", "fence_dedicated", "publish_restored"}
 
 
 class Held(production.Refused):
     """Operation needs independent reconciliation before another effect."""
+
+
+@dataclass(frozen=True)
+class JournalPaths:
+    runtime: Path
+    state: Path
+
+    @property
+    def lock(self):
+        return self.runtime / ".axxium-production.lock"
+
+    @property
+    def pending(self):
+        return self.runtime / ".axxium-production-pending"
 
 
 def sha256(value):
@@ -43,13 +59,16 @@ class Observation:
     state: str
     state_sha256: str
     evidence_sha256: str
+    runtime_sha256: str | None = None
 
     def __post_init__(self):
-        if self.state not in STATES or not sha256(self.state_sha256) or not sha256(self.evidence_sha256):
+        if (self.state not in STATES or not sha256(self.state_sha256) or not sha256(self.evidence_sha256)
+                or (self.runtime_sha256 is not None and not sha256(self.runtime_sha256))):
             raise Held("Invalid ingress observation")
 
     def agrees(self, other):
-        return self.state == other.state and self.state_sha256 == other.state_sha256
+        return (self.state == other.state and self.state_sha256 == other.state_sha256
+                and (self.runtime_sha256 is None or self.runtime_sha256 == other.runtime_sha256))
 
 
 def json_bytes(value):
@@ -110,6 +129,9 @@ class Journal:
                 raise Held("Phase source has not been independently verified")
             self.pending = phase
         elif action == "verified" and phase is not None and phase == self.pending and observation.state == PHASES[phase][1]:
+            if (phase in ROUTE_PHASES and self.current.runtime_sha256 is not None
+                    and observation.runtime_sha256 != self.current.runtime_sha256):
+                raise Held("Runtime changed during a route-only phase")
             self.current = observation
             self.verified.add(phase)
             self.pending = None
@@ -123,7 +145,10 @@ class Journal:
 
     def _append(self, action, phase, observation):
         self.host.recheck_lock()
-        data = json_bytes({"action": action, "phase": phase, "observation": asdict(observation),
+        fields = asdict(observation)
+        if observation.runtime_sha256 is None:
+            del fields["runtime_sha256"]
+        data = json_bytes({"action": action, "phase": phase, "observation": fields,
                            "sequence": self.count, "previous": self.previous})
         try:
             self._project(action, phase, observation)
@@ -200,7 +225,7 @@ class Journal:
             self._append("terminal", None, observation)
         if not self.current.agrees(observation):
             raise Held("Terminal ingress observation changed")
-        marker = production.PENDING
+        marker = self.host.pending_path
         saved = self.host.pending_bytes
         self.host.recheck_lock()
         try:
@@ -219,7 +244,7 @@ class Journal:
 
 
 @contextmanager
-def open_journal(operation_id, plan_sha256, *, observe_initial=None):
+def open_journal(operation_id, plan_sha256, *, observe_initial=None, paths=None, host=None):
     """Claim or reopen an exact operation under the existing native lock.
 
     The caller independently admits the plan and retains private rollback
@@ -228,10 +253,14 @@ def open_journal(operation_id, plan_sha256, *, observe_initial=None):
     """
     if not isinstance(operation_id, str) or not re.fullmatch(r"[0-9a-f]{32}", operation_id) or not sha256(plan_sha256):
         raise Held("Invalid ingress operation identity")
-    host = production.NativeHost()
-    root = production.STATE / "ingress-operations"
+    lock, marker, state = ((production.LOCK, production.PENDING, production.STATE)
+                           if paths is None else (paths.lock, paths.pending, paths.state))
+    if host is None:
+        host = production.NativeHost(lock_path=lock, pending_path=marker)
+    elif (host.lock_path, host.pending_path) != (lock, marker):
+        raise Held("Ingress journal and host hold paths differ")
+    root = state / "ingress-operations"
     directory = root / operation_id
-    marker = production.PENDING
     expected = json_bytes({"schema": SCHEMA, "operation": str(directory), "plan_sha256": plan_sha256})
     with host.lock():
         journal = Journal(host, directory)
