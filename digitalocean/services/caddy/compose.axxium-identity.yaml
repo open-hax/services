@@ -1,0 +1,18 @@
+# Services-controlled optional overlay. Retains the incumbent command, user,
+# ports, certificate/data/config mounts, single-file Caddyfile bind, dev peer
+# and Compose project. Select only through a qualified production transaction.
+services:
+  caddy:
+    networks:
+      axxium-identity-ingress:
+        ipv4_address: 172.30.115.2
+
+networks:
+  axxium-identity-ingress:
+    name: axxium-identity-ingress
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.115.0/29
+          gateway: 172.30.115.1

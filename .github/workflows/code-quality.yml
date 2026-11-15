@@ -74,6 +74,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p 'test_environment*.py'
       - name: Test Axxium production admission and environment boundaries
         run: python3 -m unittest discover -s scripts/tests -p 'test_axxium_production_*.py'
+      - name: Test bounded Axxium ingress transaction
+        run: python3 -m unittest discover -s scripts/tests -p 'test_axxium_inplace_ingress.py'
       - name: Test website phase isolation and serving gates
         run: python scripts/test_website_deployment.py
 
