@@ -182,12 +182,14 @@ def execute(plan, host, *, recover_interrupted=False):
 
 
 class NativeHost:
-    def __init__(self,plan_digest=None):
+    def __init__(self,plan_digest=None,*,lock_path=None,pending_path=None):
         self.operation = None; self.sequence = 0; self.uncertain = False
         self.lock_fd = None; self.lock_identity = None
         self.original = None; self.backups = {}; self.before_data = None
         self.plan_digest=plan_digest
         self.pending_bytes=None
+        self.lock_path=LOCK if lock_path is None else lock_path
+        self.pending_path=PENDING if pending_path is None else pending_path
         self.require_existing_identity=False
         self.candidate_id=None
         self.incumbent_image_id=None;self.rollback_id=None
@@ -210,14 +212,14 @@ class NativeHost:
 
     def recheck_lock(self):
         if self.uncertain:raise Uncertain('Transaction uncertainty requires operator recovery')
-        info=os.fstat(self.lock_fd);current=LOCK.lstat()
+        info=os.fstat(self.lock_fd);current=self.lock_path.lstat()
         if ((info.st_dev,info.st_ino)!=(current.st_dev,current.st_ino)
                 or (info.st_dev,info.st_ino)!=self.lock_identity
                 or not stat.S_ISREG(current.st_mode) or current.st_nlink!=1
                 or current.st_uid not in (0,os.getuid()) or current.st_mode&0o022):
             self.uncertain=True;raise Uncertain('Axxium deployment lock identity changed')
         if self.pending_bytes is not None:
-            try:current=private_read(PENDING)
+            try:current=private_read(self.pending_path)
             except (OSError,Refused):self.uncertain=True;raise Uncertain('Production refusal marker unavailable') from None
             if current!=self.pending_bytes:
                 self.uncertain=True;raise Uncertain('Production refusal marker changed')
@@ -227,12 +229,12 @@ class NativeHost:
         # This cooperating lock is deployment-account owned. The canonical
         # GitHub queue serializes other production scopes; manual/external
         # Docker or ingress writers are not made exclusive by this file.
-        self.lock_fd=os.open(LOCK,os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW|os.O_CLOEXEC,0o600)
+        self.lock_fd=os.open(self.lock_path,os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW|os.O_CLOEXEC,0o600)
         try:
             info=os.fstat(self.lock_fd);self.lock_identity=(info.st_dev,info.st_ino)
             if stat.S_IMODE(info.st_mode)!=0o600:raise Refused('Private deployment lock mode refused')
             os.fsync(self.lock_fd)
-            self.sync_directory(LOCK.parent)
+            self.sync_directory(self.lock_path.parent)
             self.recheck_lock()
             try:fcntl.flock(self.lock_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:raise Refused('Axxium deployment already in progress') from None

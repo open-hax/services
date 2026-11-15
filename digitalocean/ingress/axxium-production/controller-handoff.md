@@ -54,20 +54,37 @@ recording the terminal route checks and dependency preservation.
 
 ## Transaction journal
 
-`scripts/axxium_ingress_transaction.py` provides the unwired journal under the
-existing Axxium native lock and pending marker. Its phase methods record intent
-and observations. The caller executes each runtime effect separately and only
-after its intent record is durable. The caller supplies independent readback
-bound to the exact admitted plan, active and startup Caddy configuration,
-peer and dependency identities, and route checks. The observation includes a
-stable fingerprint for the verified state and a digest of the evidence that
-supports it. The journal checks phase ordering and fingerprints. The future
-host adapter supplies the observations and any runtime effects.
+`scripts/axxium_ingress_host.py` runs one action at a time under the existing
+Axxium native lock and pending marker. The journal records a durable intent
+before the adapter applies a phase. After that effect, or after a controller
+restart, the journal advances only on independent readback. A restart may
+run `reconcile` or `finish` with the original operation ID and plan hash.
+`reconcile` only reads the host. The next effect requires an explicit `step`.
+
+`scripts/axxium_ingress_native.py` binds the production Docker and Caddy
+operations to this entry point. The protected caller admits the operation,
+the exact root and managed route bytes, the adapted Caddy digest for each
+state, the unchanged managed siblings and DID, the service fingerprints and
+the Compose inputs. The plan hash covers those selections and the tracked
+bridge. On restored shared topology the driver observes the Caddy address
+before recreating Axxium with that trust setting. The adapter checks active
+and startup Caddy configuration, the actual proxy and app endpoints, the
+database and PDS container fingerprints, and TLS origin probes. Production
+execution uses the canonical deploy account and requires the existing
+`digitalocean-production-host` queue. The production dispatch still needs
+an admitted plan and the rollout checks described above.
 
 A pending effect reports unknown exposure until readback verifies its intended
-result or the unchanged source. Verifying an unchanged source records that the
-effect did not apply. Any retry requires a fresh intent and the caller's
-admission. Mixed or unverified state retains the hold for reconciliation.
+result. A synchronous effect that returned may record an unchanged source as
+`not_applied`. After an interruption, observing the old state alone leaves
+the hold in place because a Docker daemon request can outlive its client.
+Any retry requires independently settled effects, a fresh intent and the
+caller's admission. A route-only phase also retains the hold if the runtime
+fingerprint differs from the one recorded at intent.
+Examples include a journal-owned bridge with the old configuration still
+active, or a restart between writes to the root file and managed route.
+Confirm the actual disk, active and Docker state under the existing hold
+before admitting any repair. The adapter issues no automatic compensation.
 If the first fence did not apply, the operation stays held at the original
 shared site until an admitted retry. A pre-fence cancellation path still needs
 an explicit host-adapter contract.
@@ -111,6 +128,16 @@ replace, the Caddy-origin forwarding and OAuth checks.
 
 ## Rehearsal
 
+Run `python3 -B scripts/rehearse_axxium_ingress_host.py /path/to/built/axxium`
+against a local Axxium checkout containing `dist/server.js` and
+`node_modules`. The rehearsal uses disposable Docker networks and no
+published host ports. It kills the controller just after each topology
+switch, opens the original hold in a fresh process, and verifies the
+completed effect through the native Caddy and Docker readback. It records
+the hold identity, topology, route receipts and journal in its private
+receipt directory and checks fixture cleanup. This exercises controller
+restart and actual service recreation on the local Docker host.
+
 In a disposable HTTPS deployment, the original inline site on the shared
 bridge was migrated to a dedicated peer and then restored to the exact
 original root bytes. Caddy's restored shared address differed from the first
@@ -119,5 +146,5 @@ OIDC S256 and signed token exchange, the service DID, pinned PDS health and
 OAuth discovery, and an unrelated imported route passed at all three stages.
 The synthetic actor ID and the PostgreSQL and PDS container IDs were identical
 throughout. This rehearsed the topology and order, using local hostnames and
-manual fixture steps. The host transaction, production Google sign-in and
+manual fixture steps. Protected production dispatch, Google sign-in and
 external wildcard resolution still need qualification.
