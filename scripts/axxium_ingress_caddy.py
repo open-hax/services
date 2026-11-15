@@ -38,13 +38,23 @@ def _inode(info):
     return info.st_dev, info.st_ino
 
 
-def _read_file(path):
+def _identity(info):
+    return (*_inode(info), info.st_uid, info.st_gid, info.st_mode, info.st_nlink)
+
+
+def _read_file(path, *, sibling=False):
     with os.fdopen(os.open(path, os.O_RDONLY | FILE_FLAGS), "rb") as stream:
         info = os.fstat(stream.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & stat.S_IWOTH:
+        # An unrelated publisher may expose one root-controlled inode at
+        # multiple paths. This controller only reads such siblings.
+        protected_sibling = (sibling and info.st_nlink > 1 and info.st_uid == 0
+                             and not info.st_mode & (stat.S_IWGRP | stat.S_IWOTH))
+        if (not stat.S_ISREG(info.st_mode) or info.st_mode & stat.S_IWOTH
+                or (info.st_nlink != 1 and not protected_sibling)):
             raise production.Refused("Caddy source file protection differs")
         data = stream.read(MAX_CONFIG_BYTES + 1)
-        if len(data) > MAX_CONFIG_BYTES or _inode(path.lstat()) != _inode(info):
+        if (len(data) > MAX_CONFIG_BYTES or _identity(path.lstat()) != _identity(info)
+                or _identity(os.fstat(stream.fileno())) != _identity(info)):
             raise production.Refused("Caddy source file changed or exceeds the limit")
         return data, _inode(info)
 
@@ -60,7 +70,7 @@ def _files(root, managed):
     for path in sorted(managed.glob("*.caddy")):
         if not NAME.fullmatch(path.name):
             raise production.Refused("Caddy managed route name differs")
-        routes[path.name], _ = _read_file(path)
+        routes[path.name], _ = _read_file(path, sibling=path.name != ROUTE_NAME)
     if _inode(managed_info) != _inode(managed.lstat()):
         raise production.Refused("Caddy managed directory changed during readback")
     return ConfigFiles(root_bytes, routes, root_inode, _inode(managed_info))
@@ -182,7 +192,9 @@ def _write_root(path, before, data, host):
     with os.fdopen(os.open(path, os.O_RDWR | FILE_FLAGS), "r+b") as stream:
         fd = stream.fileno()
         host.recheck_lock()
-        if (_inode(os.fstat(fd)) != before.root_inode or _inode(path.lstat()) != before.root_inode
+        info = os.fstat(fd)
+        if (_inode(info) != before.root_inode or _identity(path.lstat()) != _identity(info)
+                or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & stat.S_IWOTH
                 or stream.read(MAX_CONFIG_BYTES + 1) != before.root):
             raise production.Uncertain("Caddy root changed before in-place publication")
         stream.seek(0)
