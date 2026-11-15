@@ -74,6 +74,9 @@ an explicit host-adapter contract.
 The private phase files are create-only. A durable head records their count and
 last digest, so a missing final record fails verification. A completed append
 with an interrupted head update can be recovered under the native lock.
+The journal limits each record's size and reopens records in sequence. There
+is no total record ceiling, so an operation can still record reconciliation
+and terminal evidence after many attempts. The caller owns retry admission.
 
 An operation directory left before initial marker publication cannot have
 executed a runtime effect through this journal. Retain it as evidence and use

@@ -18,7 +18,6 @@ from axxium_interrupted_handoff import _rename_noreplace
 
 
 SCHEMA = "axxium-ingress-production-pending/v1"
-MAX_EVENTS = 64
 PHASES = {
     "fence_shared": ({"shared_live"}, "shared_fenced"),
     "select_dedicated": ({"shared_fenced"}, "dedicated_fenced"),
@@ -124,8 +123,6 @@ class Journal:
 
     def _append(self, action, phase, observation):
         self.host.recheck_lock()
-        if self.count >= MAX_EVENTS:
-            raise Held("Ingress journal limit reached")
         data = json_bytes({"action": action, "phase": phase, "observation": asdict(observation),
                            "sequence": self.count, "previous": self.previous})
         try:
@@ -139,15 +136,17 @@ class Journal:
             raise
 
     def load(self):
-        names = sorted(path.name for path in self.directory.iterdir() if path.name.startswith("phase-"))
-        if not names or len(names) > MAX_EVENTS:
+        with os.scandir(self.directory) as entries:
+            count = sum(1 for entry in entries if entry.name.startswith("phase-"))
+        if not count:
             raise Held("Ingress journal record count differs")
         head = production.private_read(self.directory / "head.json", maximum=256)
-        digests = []
-        for sequence, name in enumerate(names):
-            if name != f"phase-{sequence:03d}.json":
-                raise Held("Ingress journal sequence differs")
-            raw = production.private_read(self.directory / name, maximum=4096)
+        penultimate = None
+        for sequence in range(count):
+            try:
+                raw = production.private_read(self.directory / f"phase-{sequence:03d}.json", maximum=4096)
+            except FileNotFoundError as error:
+                raise Held("Ingress journal sequence differs") from error
             try:
                 event = json.loads(raw)
                 if (set(event) != {"action", "phase", "observation", "sequence", "previous"}
@@ -157,12 +156,12 @@ class Journal:
                 self._project(event["action"], event["phase"], Observation(**event["observation"]))
             except (TypeError, ValueError) as error:
                 raise Held("Malformed ingress journal record") from error
+            penultimate = self.previous
             self.previous = production.digest(raw)
-            digests.append(self.previous)
-        self.count = len(names)
+        self.count = count
         if head == json_bytes({"count": self.count, "sha256": self.previous}):
             return
-        if self.count > 1 and head == json_bytes({"count": self.count - 1, "sha256": digests[-2]}):
+        if self.count > 1 and head == json_bytes({"count": self.count - 1, "sha256": penultimate}):
             # An append can finish before its anchor advances. A phase effect
             # cannot begin until begin() returns after both durable writes.
             self.host.recheck_lock()

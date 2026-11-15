@@ -60,6 +60,48 @@ class IngressJournalTest(unittest.TestCase):
         self.assertFalse(self.hold.exists())
         self.assertTrue((self.operation / "phase-007.json").exists())
 
+    def test_restart_reconciles_pending_effect_at_former_record_limit(self):
+        with self.open(observe("shared_live")) as journal:
+            for _ in range(29):
+                journal.begin("fence_shared", journal.current)
+                self.assertEqual("not_applied", journal.reconcile(journal.current))
+            self.step(journal, "fence_shared", "shared_fenced")
+            self.step(journal, "select_dedicated", "dedicated_fenced")
+            journal.begin("publish_dedicated", journal.current)
+            self.assertEqual(64, journal.count)
+        original = {path: path.read_bytes() for path in self.operation.glob("phase-*.json")}
+
+        with self.open() as journal:
+            self.assertEqual("publish_dedicated", journal.pending)
+            self.assertEqual("verified", journal.reconcile(observe("dedicated_live")))
+        with self.open() as journal:
+            self.assertEqual(65, journal.count)
+            journal.finish(observe("dedicated_live", evidence="fresh terminal check"))
+
+        self.assertFalse(self.hold.exists())
+        self.assertTrue((self.operation / "phase-065.json").exists())
+        self.assertEqual(original, {path: path.read_bytes() for path in original})
+
+    def test_restart_can_retry_rollback_after_four_digit_record(self):
+        with self.open(observe("shared_live")) as journal:
+            self.step(journal, "fence_shared", "shared_fenced")
+            self.step(journal, "restore_shared", "restored_fenced")
+            for _ in range(498):
+                journal.begin("publish_restored", journal.current)
+                self.assertEqual("not_applied", journal.reconcile(journal.current))
+            journal.begin("publish_restored", journal.current)
+            self.assertEqual(1002, journal.count)
+
+        with self.open() as journal:
+            self.assertEqual("publish_restored", journal.pending)
+            self.assertEqual("not_applied", journal.reconcile(observe("restored_fenced")))
+            self.step(journal, "publish_restored", "restored_live")
+        with self.open() as journal:
+            journal.finish(observe("restored_live", evidence="fresh restored route"))
+
+        self.assertFalse(self.hold.exists())
+        self.assertTrue((self.operation / "phase-1005.json").exists())
+
     def test_source_can_only_be_recorded_as_not_applied_when_fingerprint_agrees(self):
         with self.open(observe("shared_live")) as journal:
             journal.begin("fence_shared", observe("shared_live"))
