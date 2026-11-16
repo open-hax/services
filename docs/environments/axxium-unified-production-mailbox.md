@@ -70,3 +70,21 @@ minimal plan source.
    the Work scheduled inbox read and acknowledgment as a separate result.
    Only use fresh authorized fixture messages after the routing and identity
    checks pass.
+
+## Shared Caddy candidate readback
+
+The installed production Caddy binary adapted the complete live root and
+managed snippets in an isolated namespace. The incumbent adaptation matched
+its active and startup hashes. The diff changed only the selected apex
+matcher and its fenced handler. Production container identity, active
+configuration, and source files had matching before and after readback.
+
+| State | Root file SHA-256 | Mounted adaptation SHA-256 |
+| --- | --- | --- |
+| Incumbent | `64dbd966aadd40805f836467a1c9c4c1d3a42569b3688fa68b52245e20fca168` | `5e7c63279029b9e125eec8d0928e6d1b5a54a4c8c26eae27447b3ad1d8c187b0` |
+| Mailbox fenced | `6bb4f7e056865770ff2d0b933566f5a5bcb61b33a5d262975cabc304cccb68d7` | `fc56a3b3a57e99803e2dd728fd275b791fd7f1193822a0b2eb847c850ecf086b` |
+| Mailbox live candidate | `633c271a867a85a160f2d3d521c33cb8d9f4ce3d0ad5c6bb6e71199b36a9d46c` | `e46ece791a71b583d6c706172ec53504070947301d6bbbf59be3d5a689d73ee2` |
+
+These are readback pins for the current shared-ingress candidate. Admission
+still depends on the app image and state overlay, recovery rehearsal, and
+protected production caller.
