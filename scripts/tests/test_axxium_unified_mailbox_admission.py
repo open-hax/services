@@ -36,6 +36,18 @@ class UnifiedMailboxAdmissionTest(unittest.TestCase):
         self.receipts["e2e"]["image_id"] = image
         self.qualification_path = f"digitalocean/qualifications/axxium/{SOURCE}.json"
         self.artifact = {"size_in_bytes": self.archive.stat().st_size}
+        self.receipts["integration"].update(native_ci_run_id=71, native_ci_job_id=72)
+        self.run = {"id": 71, "repository": {"full_name": admission.REPOSITORY},
+                    "head_repository": {"full_name": admission.REPOSITORY}, "head_sha": SOURCE,
+                    "head_branch": "main", "path": admission.CI_WORKFLOW, "event": "push",
+                    "status": "completed", "conclusion": "success", "run_attempt": 3}
+        success = {"status": "completed", "conclusion": "success", "completed_at": NOW.isoformat()}
+        self.job = {"id": 72, "name": "build", "run_attempt": 3, "run_id": 71, "head_sha": SOURCE,
+                    "status": "completed", "conclusion": "success", "steps": [
+                        {"name": "Test", **success}, {"name": admission.INTEGRATION_STEP, **success}]}
+        self.api = patch.object(admission, "api", side_effect=lambda path: self.run if "/runs/" in path else self.job)
+        self.native_api = self.api.start()
+        self.addCleanup(self.api.stop)
 
     def verify(self, proof):
         return admission.verify_qualification(proof, self.plan, self.plan_hash, NOW)
@@ -53,6 +65,8 @@ class UnifiedMailboxAdmissionTest(unittest.TestCase):
                           call(admission.SERVICES, self.qualification_path, CONTROLLER)])
         self.assertEqual(ancestry.call_args_list, [call(admission.SERVICES, CONTROLLER)] * 2)
         self.assertEqual(native_stage.call_args_list, [call(self.plan, NOW)] * 2)
+        self.assertEqual(self.native_api.call_args_list, [call(f"repos/{admission.REPOSITORY}/actions/runs/71"),
+                                                         call(f"repos/{admission.REPOSITORY}/actions/jobs/72")])
 
     def test_requires_exact_plan_schema_and_validation_of_native_plan_bytes(self):
         legacy = encoded({**self.plan, "schema": "axxium-minimal-production/v1"})
@@ -90,9 +104,25 @@ class UnifiedMailboxAdmissionTest(unittest.TestCase):
                                  ("completed_at", (NOW + timedelta(seconds=1)).isoformat())):
                 with self.subTest(kind=kind, field=field, value=value), self.assertRaisesRegex(admission.Refusal, kind):
                     self.verify({**self.receipts, kind: {**original, field: value}})
-            for field in original:
+            for field in original.keys() - {"native_ci_run_id", "native_ci_job_id"}:
                 with self.subTest(kind=kind, missing=field), self.assertRaises(admission.Refusal):
                     self.verify({**self.receipts, kind: {key: value for key, value in original.items() if key != field}})
+
+    def test_native_integration_requires_exact_successful_job_and_step(self):
+        receipt = self.receipts["integration"]
+        for field in ("native_ci_run_id", "native_ci_job_id"):
+            with self.subTest(missing=field), self.assertRaisesRegex(admission.Refusal, "run and job required"):
+                admission.verify_native_integration(SOURCE, {**receipt, field: True})
+        with patch.dict(self.run, {"head_sha": "wrong"}), self.assertRaisesRegex(admission.Refusal, "run differs"):
+            admission.verify_native_integration(SOURCE, receipt)
+        with patch.dict(self.job, {"run_attempt": 2}), self.assertRaisesRegex(admission.Refusal, "job differs"):
+            admission.verify_native_integration(SOURCE, receipt)
+        step = self.job["steps"][1]
+        with patch.dict(step, {"conclusion": "failure"}), self.assertRaisesRegex(admission.Refusal, "step not successful"):
+            admission.verify_native_integration(SOURCE, receipt)
+        with patch.dict(step, {"completed_at": (NOW - timedelta(seconds=1)).isoformat()}), \
+                self.assertRaisesRegex(admission.Refusal, "completion differs"):
+            admission.verify_native_integration(SOURCE, receipt)
 
     def test_retired_harness_cannot_be_claimed_as_success_or_erase_existing_results(self):
         for changed in ({"mutation_batches": [{"status": "failed"}]}, {"mutation_batches": None},
