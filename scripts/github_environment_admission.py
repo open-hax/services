@@ -9,7 +9,12 @@ from urllib.parse import quote
 from environment_policy import testing_admission,staging_admission,testing_authorization,timestamp
 
 def api(path,*,accept='application/vnd.github+json'):
- req=Request('https://api.github.com/'+path,headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'Accept':accept,'X-GitHub-Api-Version':'2022-11-28'})
+ headers={'Accept':accept,'X-GitHub-Api-Version':'2022-11-28'}
+ if token:=os.environ.get('GITHUB_TOKEN'):
+  headers['Authorization']='Bearer '+token
+ else:
+  headers['Cache-Control']='no-cache'
+ req=Request('https://api.github.com/'+path,headers=headers)
  with urlopen(req,timeout=30) as response:return json.load(response)
 def pages(path):
  result=[]
@@ -143,6 +148,8 @@ def admit(repo,number,environment):
 if __name__=='__main__':
  repo,number,environment=sys.argv[1:]
  if repo not in {'open-hax/knoxx','open-hax/axxium'}:raise SystemExit('Service repository not enabled')
+ if not os.environ.get('GITHUB_TOKEN') and (repo,environment)!=('open-hax/knoxx','staging'):
+  raise SystemExit('GitHub authentication is required for this admission')
  result=admit(repo,int(number),environment)
  print(json.dumps(result))
  if not result['admitted']:raise SystemExit(1)

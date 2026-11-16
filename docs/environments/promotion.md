@@ -212,8 +212,10 @@ the application. It checks the same Knoxx evidence again after the build before
 sending the archive to the receiver. The Actions run and the receiver receipt
 should both identify the admitted SHA.
 
-Configure the Services Actions secret `KNOXX_ENVIRONMENT_ADMISSION_TOKEN` with a
-read-only credential scoped to `open-hax/knoxx`. Admission needs metadata
+Staging reads the public Knoxx PR and current main revision from GitHub. Both
+checks require successful responses before proceeding. Testing additionally
+needs the Services Actions secret `KNOXX_ENVIRONMENT_ADMISSION_TOKEN` with a
+read-only credential scoped to `open-hax/knoxx`. Testing admission needs metadata
 (including collaborator permissions), contents, pull requests and the issue
 timeline. Use the minimum repository read permissions, with explicit
 CODEOWNERS handles as above. The Services workflow token is scoped to Services

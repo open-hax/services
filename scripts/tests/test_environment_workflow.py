@@ -218,10 +218,13 @@ class EnvironmentWorkflowTest(unittest.TestCase):
         self.assertEqual(controller_repo, admission["env"]["SOURCE_REPOSITORY"])
         self.assertEqual(admitted_repo, recheck["env"]["SOURCE_REPOSITORY"])
         admission_token = ("${{ github.repository != 'open-hax/services' && github.token || "
-                           "secrets.KNOXX_ENVIRONMENT_ADMISSION_TOKEN }}")
+                           "(inputs.environment == 'testing' && "
+                           "secrets.KNOXX_ENVIRONMENT_ADMISSION_TOKEN || '') }}")
+        public_admission = "${{ github.repository == 'open-hax/services' && inputs.environment == 'staging' }}"
         for step in (admission, recheck):
             self.assertIn('scripts/github_environment_admission.py "$SOURCE_REPOSITORY"', step["run"])
             self.assertEqual(admission_token, step["env"]["GITHUB_TOKEN"])
+            self.assertEqual(public_admission, step["env"]["ALLOW_PUBLIC_ADMISSION"])
         source = next(s for s in jobs["build"]["steps"] if s.get("with", {}).get("path") == "source")
         self.assertEqual(admitted_repo, source["with"]["repository"])
         self.assertEqual("${{ needs.admit.outputs.source_sha }}", source["with"]["ref"])
@@ -229,23 +232,45 @@ class EnvironmentWorkflowTest(unittest.TestCase):
         self.assertNotIn("secrets.", json.dumps(jobs["build"]))
         self.assertNotIn("environment", jobs["build"])
 
-    def test_absent_knoxx_admission_token_fails_before_invoking_the_api_script(self):
+    def test_admission_credentials_and_recheck_for_both_environment_slots(self):
+        cases = (
+            ("testing", "false", "", False),
+            ("staging", "false", "", False),
+            ("staging", "true", "", True),
+            ("testing", "false", "synthetic credential", True),
+            ("staging", "false", "synthetic credential", True),
+        )
+        sha = "c" * 40
         for job, step_id in (("admit", "admission"), ("deploy", "recheck")):
-            with self.subTest(step=step_id), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                (root / "scripts").mkdir()
-                (root / "scripts/github_environment_admission.py").write_text(
-                    "from pathlib import Path\nPath('invoked').touch()\n")
-                steps = self.workflow["jobs"][job]["steps"]
-                step = next(s for s in steps if s.get("id") == step_id)
-                result = subprocess.run(["bash", "-euo", "pipefail", "-c", step["run"]],
-                    cwd=root, env={"PATH": os.defpath, "GITHUB_TOKEN": "",
-                                   "SOURCE_REPOSITORY": "open-hax/knoxx", "PR_NUMBER": "1",
-                                   "ENVIRONMENT": "staging", "BUILT_SHA": "c" * 40},
-                    capture_output=True, text=True, timeout=10, check=False)
-                self.assertEqual(1, result.returncode, result.stderr)
-                self.assertIn("Missing the Knoxx read-only admission credential", result.stderr)
-                self.assertFalse((root / "invoked").exists())
+            steps = self.workflow["jobs"][job]["steps"]
+            step = next(s for s in steps if s.get("id") == step_id)
+            for environment, allow_public, token, expected in cases:
+                with self.subTest(step=step_id, environment=environment, allow_public=allow_public,
+                                  authenticated=bool(token)), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    (root / "scripts").mkdir()
+                    (root / "scripts/github_environment_admission.py").write_text(
+                        "import json, os, sys\nfrom pathlib import Path\n"
+                        "Path('invoked').write_text(json.dumps([sys.argv[1:], bool(os.environ['GITHUB_TOKEN'])]))\n"
+                        f"print(json.dumps({{'source_sha': '{sha}'}}))\n")
+                    artifact = root / "artifact"
+                    artifact.mkdir()
+                    (artifact / "images.tar").write_bytes(b"synthetic image data")
+                    (artifact / "images.sha256").write_text(hashlib.sha256(b"synthetic image data").hexdigest())
+                    result = subprocess.run(["bash", "-euo", "pipefail", "-c", step["run"]],
+                        cwd=root, env={"PATH": os.defpath, "GITHUB_TOKEN": token,
+                                       "ALLOW_PUBLIC_ADMISSION": allow_public,
+                                       "SOURCE_REPOSITORY": "open-hax/knoxx", "PR_NUMBER": "1",
+                                       "ENVIRONMENT": environment, "BUILT_SHA": sha},
+                        capture_output=True, text=True, timeout=10, check=False)
+                    invoked = root / "invoked"
+                    self.assertEqual(0 if expected else 1, result.returncode, result.stderr)
+                    if expected:
+                        self.assertEqual([["open-hax/knoxx", "1", environment], bool(token)],
+                                         json.loads(invoked.read_text()))
+                    else:
+                        self.assertIn("Missing the Knoxx read-only admission credential", result.stderr)
+                        self.assertFalse(invoked.exists())
 
     def test_services_dispatch_uses_separate_protected_deployment_environments(self):
         deploy = self.workflow["jobs"]["deploy"]

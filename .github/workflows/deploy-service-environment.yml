@@ -30,7 +30,7 @@ on:
         description: Restricted receiver key from the selected testing or staging environment.
         required: false
       KNOXX_ENVIRONMENT_ADMISSION_TOKEN:
-        description: Read-only Knoxx admission credential used for direct Services dispatches.
+        description: Read-only Knoxx admission credential used for direct Services testing dispatches.
         required: false
 permissions:
   contents: read
@@ -101,12 +101,13 @@ jobs:
           persist-credentials: false
       - id: admission
         env:
-          GITHUB_TOKEN: ${{ github.repository != 'open-hax/services' && github.token || secrets.KNOXX_ENVIRONMENT_ADMISSION_TOKEN }}
+          GITHUB_TOKEN: ${{ github.repository != 'open-hax/services' && github.token || (inputs.environment == 'testing' && secrets.KNOXX_ENVIRONMENT_ADMISSION_TOKEN || '') }}
+          ALLOW_PUBLIC_ADMISSION: ${{ github.repository == 'open-hax/services' && inputs.environment == 'staging' }}
           SOURCE_REPOSITORY: ${{ steps.controller.outputs.source_repository }}
           PR_NUMBER: ${{ inputs.pull_request }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
-          if [[ -z "$GITHUB_TOKEN" ]]; then
+          if [[ -z "$GITHUB_TOKEN" && "$ALLOW_PUBLIC_ADMISSION" != true ]]; then
             echo 'Missing the Knoxx read-only admission credential.' >&2
             exit 1
           fi
@@ -184,14 +185,15 @@ jobs:
       - name: Recheck the lease and immutable revision inside the deployment slot
         id: recheck
         env:
-          GITHUB_TOKEN: ${{ github.repository != 'open-hax/services' && github.token || secrets.KNOXX_ENVIRONMENT_ADMISSION_TOKEN }}
+          GITHUB_TOKEN: ${{ github.repository != 'open-hax/services' && github.token || (inputs.environment == 'testing' && secrets.KNOXX_ENVIRONMENT_ADMISSION_TOKEN || '') }}
+          ALLOW_PUBLIC_ADMISSION: ${{ github.repository == 'open-hax/services' && inputs.environment == 'staging' }}
           SOURCE_REPOSITORY: ${{ needs.admit.outputs.source_repository }}
           PR_NUMBER: ${{ inputs.pull_request }}
           ENVIRONMENT: ${{ inputs.environment }}
           BUILT_SHA: ${{ needs.admit.outputs.source_sha }}
         run: |
           set -euo pipefail
-          if [[ -z "$GITHUB_TOKEN" ]]; then
+          if [[ -z "$GITHUB_TOKEN" && "$ALLOW_PUBLIC_ADMISSION" != true ]]; then
             echo 'Missing the Knoxx read-only admission credential.' >&2
             exit 1
           fi
