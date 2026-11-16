@@ -1,9 +1,8 @@
 'use strict';
 
-// Verify the exact host-Ollama path Knoxx uses for translation and OpenPlanner
-// embeddings. verify.sh evaluates this file inside knoxx-backend, so the probe
-// crosses the same dedicated host-bridge route and sees the same container environment
-// as the application. PROBE_SELFTEST replaces fetch and never uses the network.
+// Verify the host-Ollama publication path and the Proxx embedding path used
+// by Knoxx. verify.sh evaluates this inside knoxx-backend, with the same routes
+// and configuration as the application. PROBE_SELFTEST uses a recording fetch.
 
 const REQUIRED_TRANSLATION_MODEL = 'gemma4:e2b';
 const TRANSLATION_SCHEMA = Object.freeze({
@@ -81,6 +80,38 @@ async function jsonBody(response) {
     return await response.json();
   } catch {
     return null;
+  }
+}
+
+// Shared by the pre-cutover check and the running backend verifier. Keep the
+// bearer restricted to the exact internal route, including across redirects.
+async function probeProxxEmbedding({baseUrl, key, model, dimensions, timeoutMs}, fetchImpl = globalThis.fetch) {
+  if (baseUrl !== 'http://proxx:8789' || !key) {
+    return {ok: false, reason: 'invalid-proxx-embedding-route'};
+  }
+  try {
+    const response = await fetchImpl(`${baseUrl}/v1/embeddings`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', Authorization: `Bearer ${key}`},
+      body: JSON.stringify({model, input: ['knoxx deployment embedding probe']}),
+      redirect: 'error',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const vector = firstEmbedding(await jsonBody(response));
+    const nonemptyFiniteVector = vector.length > 0
+      && vector.every((value) => typeof value === 'number' && Number.isFinite(value));
+    const dimensionsMatch = vector.length === dimensions;
+    return {
+      ok: response.status === 200 && nonemptyFiniteVector && dimensionsMatch,
+      status: response.status,
+      model,
+      expectedDimensions: dimensions,
+      vectorLength: vector.length,
+      nonemptyFiniteVector,
+      dimensionsMatch,
+    };
+  } catch (_error) {
+    return {ok: false, reason: 'proxx-embedding-request-failed'};
   }
 }
 
@@ -235,6 +266,11 @@ function agentToolCallSummary(payload, requiredModel) {
 async function probe(env = process.env, fetchImpl = globalThis.fetch) {
   const embedBaseUrl = normalizedBaseUrl(env.EMBED_PROVIDER_BASE_URL);
   const ollamaBaseUrl = normalizedBaseUrl(env.OLLAMA_BASE_URL);
+  const proxxBaseUrl = normalizedBaseUrl(env.PROXX_BASE_URL);
+  const embeddingKey = env.EMBED_PROVIDER_API_KEY;
+  const embeddingViaProxx = embedBaseUrl === 'http://proxx:8789'
+    && embedBaseUrl === proxxBaseUrl
+    && Boolean(embeddingKey && embeddingKey === env.PROXX_AUTH_TOKEN);
   const translationModel = String(env.KNOXX_DEPLOY_TRANSLATION_MODEL || '').trim();
   const expectedEmbeddingModel = String(env.KNOXX_DEPLOY_EMBEDDING_MODEL || '').trim();
   const configuredEmbeddingModel = String(env.EMBED_PROVIDER_MODEL || '').trim();
@@ -242,12 +278,11 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
   const configuredDimensions = Number(env.EMBED_PROVIDER_DIMENSIONS);
   const timeoutMs = Number(env.BACKEND_PROBE_TIMEOUT_MS) || 15000;
   const inferenceTimeoutMs = Number(env.KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS);
-  const requiredModels = [...new Set([translationModel, expectedEmbeddingModel].filter(Boolean))];
+  const requiredModels = [translationModel];
 
   const configurationValid = Boolean(
-    embedBaseUrl
-    && ollamaBaseUrl
-    && embedBaseUrl === ollamaBaseUrl
+    ollamaBaseUrl === 'http://172.30.114.1:11434'
+    && embeddingViaProxx
     && translationModel === REQUIRED_TRANSLATION_MODEL
     && expectedEmbeddingModel
     && configuredEmbeddingModel === expectedEmbeddingModel
@@ -263,8 +298,8 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
   if (!configurationValid) {
     return {
       ok: false,
-      reason: 'invalid-ollama-configuration',
-      routing: {directToOllama: embedBaseUrl !== '' && embedBaseUrl === ollamaBaseUrl},
+      reason: 'invalid-inference-configuration',
+      routing: {embeddingViaProxx},
       models: {
         translation: translationModel,
         expectedEmbedding: expectedEmbeddingModel,
@@ -336,20 +371,13 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
     const agentToolCallPayload = await jsonBody(agentToolCallResponse);
     const agentToolCall = agentToolCallSummary(agentToolCallPayload, translationModel);
 
-    const embeddingResponse = await fetchImpl(`${embedBaseUrl}/v1/embeddings`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        model: configuredEmbeddingModel,
-        input: ['knoxx deployment embedding probe'],
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    const embeddingPayload = await jsonBody(embeddingResponse);
-    const vector = firstEmbedding(embeddingPayload);
-    const vectorFinite = vector.length > 0
-      && vector.every((value) => typeof value === 'number' && Number.isFinite(value));
-    const dimensionsMatch = vector.length === expectedDimensions;
+    const embedding = await probeProxxEmbedding({
+      baseUrl: embedBaseUrl,
+      key: embeddingKey,
+      model: configuredEmbeddingModel,
+      dimensions: expectedDimensions,
+      timeoutMs,
+    }, fetchImpl);
 
     return {
       ok: tagsResponse.status === 200
@@ -359,10 +387,8 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
         && translation.nonblankTranslatedText
         && agentToolCallResponse.status === 200
         && agentToolCall.wellFormed
-        && embeddingResponse.status === 200
-        && vectorFinite
-        && dimensionsMatch,
-      routing: {directToOllama: true},
+        && embedding.ok,
+      routing: {embeddingViaProxx},
       catalog: {
         status: tagsResponse.status,
         required: requiredModels,
@@ -379,20 +405,12 @@ async function probe(env = process.env, fetchImpl = globalThis.fetch) {
         timeoutMs: inferenceTimeoutMs,
         ...agentToolCall,
       },
-      embedding: {
-        status: embeddingResponse.status,
-        model: configuredEmbeddingModel,
-        expectedDimensions,
-        configuredDimensions,
-        vectorLength: vector.length,
-        nonemptyFiniteVector: vectorFinite,
-        dimensionsMatch,
-      },
+      embedding,
     };
   } catch (error) {
     return {
       ok: false,
-      reason: 'ollama-probe-threw',
+      reason: 'inference-probe-threw',
       detail: String((error && error.message) || error),
     };
   }
@@ -402,11 +420,14 @@ async function selfTest() {
   const assert = require('node:assert/strict');
   const baseEnv = {
     OLLAMA_BASE_URL: 'http://172.30.114.1:11434/',
-    EMBED_PROVIDER_BASE_URL: 'http://172.30.114.1:11434',
-    EMBED_PROVIDER_MODEL: 'qwen3-embedding:8b',
+    PROXX_BASE_URL: 'http://proxx:8789',
+    PROXX_AUTH_TOKEN: 'fixture-proxx-token',
+    EMBED_PROVIDER_BASE_URL: 'http://proxx:8789',
+    EMBED_PROVIDER_API_KEY: 'fixture-proxx-token',
+    EMBED_PROVIDER_MODEL: 'gte-large-en-v1.5',
     EMBED_PROVIDER_DIMENSIONS: '1024',
     KNOXX_DEPLOY_TRANSLATION_MODEL: 'gemma4:e2b',
-    KNOXX_DEPLOY_EMBEDDING_MODEL: 'qwen3-embedding:8b',
+    KNOXX_DEPLOY_EMBEDDING_MODEL: 'gte-large-en-v1.5',
     KNOXX_DEPLOY_EMBEDDING_DIMENSIONS: '1024',
     BACKEND_PROBE_TIMEOUT_MS: '15000',
     KNOXX_OLLAMA_INFERENCE_TIMEOUT_MS: '90000',
@@ -421,7 +442,7 @@ async function selfTest() {
     async json() { throw new Error('not json'); },
   });
   const tagsPayload = {
-    models: [{name: 'gemma4:e2b'}, {name: 'qwen3-embedding:8b'}],
+    models: [{name: 'gemma4:e2b'}],
   };
   const translationPayload = {
     model: 'gemma4:e2b',
@@ -487,8 +508,9 @@ async function selfTest() {
     'http://172.30.114.1:11434/api/tags',
     'http://172.30.114.1:11434/api/chat',
     'http://172.30.114.1:11434/v1/chat/completions',
-    'http://172.30.114.1:11434/v1/embeddings',
+    'http://proxx:8789/v1/embeddings',
   ]);
+  assert.equal(calls[0].options.headers?.Authorization, undefined);
   assert.deepEqual(JSON.parse(calls[1].options.body), {
     model: 'gemma4:e2b',
     messages: [{
@@ -526,10 +548,11 @@ async function selfTest() {
   assert.equal('reasoning_effort' in agentRequestBody, false);
   assert.equal(calls[2].options.headers.Authorization, undefined);
   assert.deepEqual(JSON.parse(calls[3].options.body), {
-    model: 'qwen3-embedding:8b',
+    model: 'gte-large-en-v1.5',
     input: ['knoxx deployment embedding probe'],
   });
-  assert.equal(calls[3].options.headers.Authorization, undefined);
+  assert.equal(calls[3].options.headers.Authorization, 'Bearer fixture-proxx-token');
+  assert.equal(calls[3].options.redirect, 'error');
 
   const shortVector = await probe(baseEnv, async (url) => {
     if (url.endsWith('/v1/embeddings')) {
@@ -792,28 +815,33 @@ async function selfTest() {
   }
 
   const wrongRoute = await probe(
-    {...baseEnv, EMBED_PROVIDER_BASE_URL: 'http://proxx:8789'},
+    {...baseEnv, EMBED_PROVIDER_BASE_URL: 'http://172.30.114.1:11434'},
     async () => { throw new Error('fetch must not run for invalid routing'); },
   );
   assert.equal(wrongRoute.ok, false);
-  assert.equal(wrongRoute.reason, 'invalid-ollama-configuration');
-  assert.equal(wrongRoute.routing.directToOllama, false);
+  assert.equal(wrongRoute.reason, 'invalid-inference-configuration');
+  assert.equal(wrongRoute.routing.embeddingViaProxx, false);
+
+  const wrongToken = await probe(
+    {...baseEnv, EMBED_PROVIDER_API_KEY: 'different-fixture-token'},
+    async () => { throw new Error('fetch must not run for an invalid credential binding'); },
+  );
+  assert.equal(wrongToken.ok, false);
+  assert.equal(wrongToken.reason, 'invalid-inference-configuration');
 
   const wrongTranslationModel = await probe(
     {...baseEnv, KNOXX_DEPLOY_TRANSLATION_MODEL: 'gemma4:latest'},
     async () => { throw new Error('fetch must not run for the wrong translation model'); },
   );
   assert.equal(wrongTranslationModel.ok, false);
-  assert.equal(wrongTranslationModel.reason, 'invalid-ollama-configuration');
+  assert.equal(wrongTranslationModel.reason, 'invalid-inference-configuration');
 
-  // 4096 is qwen3-embedding:8b's native width, so a deployment that forgets to
-  // request Matryoshka truncation lands here rather than on a nonsense number.
   const wrongConfiguredDimensions = await probe(
     {...baseEnv, EMBED_PROVIDER_DIMENSIONS: '4096'},
     async () => { throw new Error('fetch must not run for mismatched embedding dimensions'); },
   );
   assert.equal(wrongConfiguredDimensions.ok, false);
-  assert.equal(wrongConfiguredDimensions.reason, 'invalid-ollama-configuration');
+  assert.equal(wrongConfiguredDimensions.reason, 'invalid-inference-configuration');
   assert.equal(wrongConfiguredDimensions.expectedDimensions, 1024);
   assert.equal(wrongConfiguredDimensions.configuredDimensions, 4096);
 
@@ -822,17 +850,19 @@ async function selfTest() {
     async () => { throw new Error('fetch must not run for an unbounded inference timeout'); },
   );
   assert.equal(unboundedInferenceTimeout.ok, false);
-  assert.equal(unboundedInferenceTimeout.reason, 'invalid-ollama-configuration');
+  assert.equal(unboundedInferenceTimeout.reason, 'invalid-inference-configuration');
 
   process.stdout.write('probe-ollama: native translation, required tool call, reasoning-off, and 1024-vector matrix ok\n');
 }
 
-if (process.env.PROBE_SELFTEST === '1') {
+module.exports = {probeProxxEmbedding};
+
+if (!module.parent && process.env.PROBE_SELFTEST === '1') {
   selfTest().catch((error) => {
     process.stderr.write(`${String((error && error.stack) || error)}\n`);
     process.exitCode = 1;
   });
-} else {
+} else if (!module.parent) {
   probe().then(
     (result) => process.stdout.write(JSON.stringify(result)),
     (error) => process.stdout.write(JSON.stringify({
