@@ -1,0 +1,61 @@
+# Apply after the host's base and retained authority overlay. The protected
+# caller supplies the admitted image, private inputs, and operation directory.
+services:
+  axxium:
+    image: ${AXXIUM_PRODUCTION_MAILBOX_IMAGE:?Set the admitted production mailbox image}
+    environment:
+      # The mailbox release derives its actor token audience from service and environment.
+      JWT_AUDIENCE: promethean+production
+      AXXIUM_OIDC_CONFIG_FILE: /run/axxium/oidc/authority.json
+      AXXIUM_SIGNING_KEY_FILE: /run/axxium/actor-signing.pem
+      AXXIUM_GITHUB_IDENTITY_KEY_FILE: /run/axxium/owner/identity.key
+      AXXIUM_GITHUB_IDENTITY_LEDGER_FILE: /var/lib/axxium/identity/ledger.edn
+      AXXIUM_IDENTITY_SEED_FILE: /run/axxium/owner/foresight-tree.edn
+      AXXIUM_IDENTITY_ROOT_OPERATOR_ACTOR_ID: ${AXXIUM_IDENTITY_ROOT_OPERATOR_ACTOR_ID:?Set the verified production owner account ID}
+      AXXIUM_IDENTITY_ROOT_DID: ${AXXIUM_IDENTITY_ROOT_DID:?Set the exact production root DID}
+      AXXIUM_MAILBOX_LEDGER_FILE: /var/lib/axxium/mailbox/ledger.edn
+      AXXIUM_MAILBOX_DIRECTORY: "true"
+      AXXIUM_MAILBOX_ACTOR_BINDINGS: ${AXXIUM_MAILBOX_ACTOR_BINDINGS:?Set the verified production mailbox actor bindings}
+      # Keep an absent bootstrap setting out of the process environment.
+      AXXIUM_MAILBOX_BOOTSTRAP_ACTOR_DIDS:
+      AXXIUM_MAILBOX_BOUND_BOOTSTRAP_BINDINGS:
+      AXXIUM_MAILBOX_STREAM_ENABLED: "true"
+      AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED: "false"
+      AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID: ${AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID:?Set the verified production Work mailbox DID}
+      # The mailbox OAuth authority requires this path with subscriptions disabled.
+      AXXIUM_MAILBOX_WEBHOOK_KEY_FILE: /run/axxium/oidc/mailbox-webhook.key
+    volumes:
+      - type: bind
+        source: ${AXXIUM_PRODUCTION_MAILBOX_IDENTITY_PATH:?Set the prepared production mailbox identity path}/oidc
+        target: /run/axxium/oidc
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${AXXIUM_PRODUCTION_MAILBOX_IDENTITY_PATH:?Set the prepared production mailbox identity path}/actor-signing.pem
+        target: /run/axxium/actor-signing.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${AXXIUM_PRODUCTION_MAILBOX_IDENTITY_PATH:?Set the prepared production mailbox identity path}/owner/identity.key
+        target: /run/axxium/owner/identity.key
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${AXXIUM_PRODUCTION_MAILBOX_IDENTITY_PATH:?Set the prepared production mailbox identity path}/owner/foresight-tree.edn
+        target: /run/axxium/owner/foresight-tree.edn
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${AXXIUM_STATE_PATH:?Set the existing production state path}/identity/ledger.edn
+        target: /var/lib/axxium/identity/ledger.edn
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${AXXIUM_STATE_PATH:?Set the existing production state path}/mailbox/ledger.edn
+        target: /var/lib/axxium/mailbox/ledger.edn
+        bind:
+          create_host_path: false
