@@ -184,7 +184,8 @@ The GitHub `testing` and `staging` environments contain those restricted keys an
 verified SSH host-key variables for existing application callers. The Services
 Knoxx dispatch uses its own environments described below. Until an admitted build
 reaches a slot, its HTTPS route returns a service-unavailable placeholder. Axxium
-should be deployed before Knoxx in the same slot when Axxium sign-in is needed.
+should be deployed before Knoxx in the same environment when Axxium sign-in is
+needed.
 
 Install reviewed templates with `prepare-service-environments.mjs ROOT TEMPLATES`;
 install the receiver root-owned, then attach only `restrict,command=...` keys.
@@ -204,8 +205,8 @@ gh workflow run deploy-service-environment.yml --repo open-hax/services --ref ma
 ```
 
 For testing, submit the commit-bound review and apply the label before dispatch.
-For staging, wait for the PR to merge
-and dispatch while its merge commit is still Knoxx main. The workflow uses the
+For staging, wait for the PR to merge and dispatch while its merge commit is
+still Knoxx main. The workflow uses the
 executing Services workflow SHA for the controller and the admitted Knoxx SHA for
 the application. It checks the same Knoxx evidence again after the build before
 sending the archive to the receiver. The Actions run and the receiver receipt
