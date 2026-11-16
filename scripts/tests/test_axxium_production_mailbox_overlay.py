@@ -4,13 +4,18 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+import axxium_unified_mailbox_release as unified
+
 BASE = ROOT / 'digitalocean/services/axxium/compose.yaml'
 MAILBOX = BASE.with_name('mailbox-production.overlay.yaml')
 INCUMBENT_IMAGE = 'sha256:' + '1' * 64
@@ -121,6 +126,24 @@ class ProductionMailboxOverlayTest(unittest.TestCase):
         [old_oidc] = [v for v in previous['volumes'] if v['target'] == OIDC_MOUNT]
         app['volumes'].append(old_oidc)
         self.assertEqual(candidate, base)
+
+    def test_production_controller_checks_complete_compose_delta(self):
+        env = self.env | unified.PREFLIGHT_BINDING
+        renders = [self.render(env=env), self.render(MAILBOX, env=env)]
+        for result in renders:
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('AXXIUM_MAILBOX_BOUND_BOOTSTRAP_BINDINGS', env)
+        base, candidate = (json.loads(result.stdout) for result in renders)
+        app = candidate['services']['axxium']
+        self.assertIsNone(app['environment']['AXXIUM_MAILBOX_BOUND_BOOTSTRAP_BINDINGS'])
+        with mock.patch.object(unified.release, 'STATE', STATE):
+            selected = unified.validate_projection(json.loads(renders[0].stdout),
+                                                   json.loads(renders[1].stdout),
+                                                   CANDIDATE_IMAGE, IDENTITY)
+            self.assertEqual(app, selected)
+            app['environment']['AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED'] = 'true'
+            with self.assertRaisesRegex(unified.release.Refused, 'environment differs'):
+                unified.validate_projection(base, candidate, CANDIDATE_IMAGE, IDENTITY)
 
     def test_refuses_missing_required_inputs_and_keeps_provided_bootstrap_bindings(self):
         for key in ('AXXIUM_PRODUCTION_MAILBOX_IMAGE', 'AXXIUM_PRODUCTION_MAILBOX_IDENTITY_PATH',

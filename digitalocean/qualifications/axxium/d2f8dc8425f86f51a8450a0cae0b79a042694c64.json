@@ -1,0 +1,43 @@
+{
+  "e2e": {
+    "assertions": 570,
+    "completed_at": "2026-11-16T20:00:05.050570+00:00",
+    "evidence": {
+      "fixture_identity_log_sha256": "57b50367f77cec324f5a6b33a8ddec459851fd9927a33c0f6f1306fb5db8a7c3",
+      "isolated_compose_rollback_sha256": "00f8b62202c53b5c0892de427bdc350587061bb1745e6068d527f97d3a8aa9f0",
+      "live_read_only_compose_projection_sha256": "060f9abfac26de69226208198a84df8d0f4bcc452626865e2ca8c7b331496a60"
+    },
+    "evidence_sha256": "216917454be561610e230db3a937230fe5f8af3e1d1de1a96e2fd6fa6c8384a1",
+    "image_id": "sha256:265f085671493305eb76d2c4b46463340b915b4ad3934b0c8c33ed0c6c887f57",
+    "kind": "e2e",
+    "scope": "isolated native OAuth, actor bootstrap and Compose rollback, plus read-only live Compose projection",
+    "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64",
+    "status": "passed",
+    "timed_out": false,
+    "warnings": []
+  },
+  "image_id": "sha256:265f085671493305eb76d2c4b46463340b915b4ad3934b0c8c33ed0c6c887f57",
+  "integration": {
+    "assertion_scope": "Exact-source hosted test runner aggregate. The same job independently completed the isolated PostgreSQL OIDC store integration.",
+    "assertions": 3483,
+    "completed_at": "2026-11-14T22:03:48Z",
+    "evidence_sha256": "e88bdc05358ba3b982fe1a5e0b66a4e762576d9c47b418f2eac7b307c108315f",
+    "kind": "integration",
+    "native_ci_job_id": 132603001512,
+    "native_ci_run_id": 43645748344,
+    "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64",
+    "status": "passed",
+    "timed_out": false,
+    "warnings": []
+  },
+  "mutation_batches": [],
+  "mutation_harness": {
+    "campaign_passed": false,
+    "status": "retired"
+  },
+  "plan_sha256": "5d3c5a76a84091f2a8667092a6b4be8343559a722697eac87b514e4c8480426d",
+  "repository": "open-hax/axxium",
+  "schema": "axxium-unified-mailbox-qualification/v1",
+  "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64",
+  "status": "passed"
+}

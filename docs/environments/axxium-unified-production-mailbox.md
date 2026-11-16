@@ -65,11 +65,8 @@ minimal plan source.
 5. Verify the public mailbox discovery document identifies the apex issuer
    and resource, and that unauthenticated access to the tool endpoint is
    denied. Verify `whoami` separately from ChatGPT Work with OAuth and from
-   Codex with its own actor bootstrap. Exercise Codex SSE with an exact
-   correlated fresh message and record the target session receipt. Exercise
-   the Work scheduled inbox read and acknowledgment as a separate result.
-   Only use fresh authorized fixture messages after the routing and identity
-   checks pass.
+   Codex with its own actor bootstrap. Use identity and catalog checks for
+   this release. Verify message delivery separately when it is authorized.
 
 ## Shared Caddy candidate readback
 
@@ -88,3 +85,38 @@ configuration, and source files had matching before and after readback.
 These are readback pins for the current shared-ingress candidate. Admission
 still depends on the app image and state overlay, recovery rehearsal, and
 protected production caller.
+
+## Protected rollout and Work enrollment
+
+The `axxium-mailbox` scope of Deploy Stack uses the existing protected main
+caller and production-host queue. It checks the exact native image and
+integration/rehearsal evidence before the production job. Its app overlay
+composes after the incumbent base and retained authority overlay and preserves
+the existing database, PDS, Google client, and Caddy peer. Prepared OIDC and
+signing files are read-only app mounts. The persistent identity and mailbox
+ledgers are writable and remain available after rollback. Browser sessions
+issued with the incumbent HS256 signing key require fresh sign-in.
+
+On November 16, the primary incumbent returned HTTP 500 from the exact Work
+AT sign-in route before reaching the PDS. The original Work account still
+resolves on the canonical PDS. Its independent active AT binding is absent
+from the primary Axxium database. Work owner consent on the candidate checks
+that binding independently from the signed-in Google owner. The prepared
+controller checks both identities before acquiring a production hold.
+[Axxium #49](https://github.com/open-hax/axxium/pull/49) fixes the observed
+Node module import error and is already in the selected image.
+
+First qualify an app-only rollout of the fixed image with the existing OIDC
+authority and primary AT sign-in routes. Then bind the existing Work AT
+account through the primary issuer and take a new incumbent snapshot for the
+mailbox release. Keep mailbox routes closed through the app-only phase. Open
+the verified mailbox Caddy candidate after the app-only change and exact
+Work binding are independently observed.
+
+The production environment expects the dedicated Work OAuth client input
+and the reviewed owner seed through `AXXIUM_PRODUCTION_MAILBOX_BINDING_JSON`
+and `AXXIUM_PRODUCTION_MAILBOX_SEED_EDN`. This release seed contains the owner,
+Work, and Stealth Codex path without GitHub permissions. The incumbent OIDC
+keys and Colab client remain in place. Configure the private Work MCP
+registration for the primary HTTPS resource and verify `whoami` in Work and
+Codex separately after publication.
