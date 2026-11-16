@@ -1,0 +1,38 @@
+{
+  "e2e": {
+    "assertions": 8,
+    "completed_at": "2026-11-16T20:59:32.406669+00:00",
+    "evidence_sha256": "1443e217d20939d4d23a97fd72fdb928b67b13a793c4970c28b06e4541f9d223",
+    "image_id": "sha256:265f085671493305eb76d2c4b46463340b915b4ad3934b0c8c33ed0c6c887f57",
+    "kind": "e2e",
+    "scope": "isolated exact-image app-only Compose upgrade and rollback. Incumbent AT import error reproduced, candidate reached guarded discovery.",
+    "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64",
+    "status": "passed",
+    "timed_out": false,
+    "warnings": []
+  },
+  "image_id": "sha256:265f085671493305eb76d2c4b46463340b915b4ad3934b0c8c33ed0c6c887f57",
+  "integration": {
+    "assertion_scope": "Exact-source hosted test runner aggregate. The same job independently completed the isolated PostgreSQL OIDC store integration.",
+    "assertions": 3483,
+    "completed_at": "2026-11-14T22:03:48Z",
+    "evidence_sha256": "e88bdc05358ba3b982fe1a5e0b66a4e762576d9c47b418f2eac7b307c108315f",
+    "kind": "integration",
+    "native_ci_job_id": 132603001512,
+    "native_ci_run_id": 43645748344,
+    "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64",
+    "status": "passed",
+    "timed_out": false,
+    "warnings": []
+  },
+  "mutation_batches": [],
+  "mutation_harness": {
+    "campaign_passed": false,
+    "status": "retired"
+  },
+  "plan_sha256": "14168dbf5b67ae707dde5f833ae7a6d7abaa7fbc7d598071784aab3fa0ecf31d",
+  "repository": "open-hax/axxium",
+  "schema": "axxium-unified-mailbox-qualification/v1",
+  "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64",
+  "status": "passed"
+}

@@ -38,12 +38,17 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
     errors = []
     scope = entry["on"]["workflow_dispatch"]["inputs"].get("scope", {})
     if scope.get("default") != "stack" or scope.get("options") != [
-        "stack", "website", "proxx", "axxium", "axxium-work-pilot", "axxium-work-pilot-activate",
+        "stack", "website", "proxx", "axxium", "axxium-at-auth", "axxium-work-pilot", "axxium-work-pilot-activate",
         "axxium-work-pilot-repair-ingress", "axxium-work-pilot-teardown", "axxium-work-pilot-reopen",
         "axxium-work-pilot-close", "colab-stage", "colab", "knoxx-policy",
     ]:
         errors.append("manual scope must retain stack as default and only offer reviewed service scopes")
     jobs = chain["jobs"]
+    at_auth = jobs.get("deploy-axxium-at-auth", {})
+    if (at_auth.get("if") != "inputs.scope == 'axxium-at-auth'"
+        or at_auth.get("uses") != "./.github/workflows/deploy-axxium-at-auth.yml"
+        or at_auth.get("with") != {"source_sha": "${{ inputs.axxium_ref }}", "caller_holds_production_host_lock": "true"}):
+        errors.append("primary AT sign-in must use its exact isolated protected deployment scope")
     work_pilot = jobs.get("deploy-axxium-work-pilot", {})
     if (work_pilot.get("if") != "inputs.scope == 'axxium-work-pilot'"
         or work_pilot.get("uses") != "./.github/workflows/deploy-axxium-work-dark.yml"
