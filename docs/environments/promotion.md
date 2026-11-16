@@ -29,7 +29,9 @@ malformed or future timestamps refuse admission. Reapplying the label resets
 its timestamp; expired labels do not block a new claim. After a push, submit a
 new commit-bound authorization and reapply the label: the old label cannot
 authorize the new head.
-The existing labeled event triggers the workflow, so submit the review first.
+Submit the review before applying the label. Axxium's existing labeled event
+triggers its workflow. Knoxx uses the Services dispatch described below once
+that dispatch is active.
 Admission collects two complete, PR-number-sorted snapshots of all other open
 testing claims before returning. Each snapshot retains the selected native label
 event ID and timestamp, so a relabel is a change even within the same second.
@@ -49,7 +51,8 @@ automation token cannot read them. Prefer explicit owner handles for this initia
 installation. The current matcher supports ordinary glob rules and last-match
 precedence; escaped whitespace and email-form owners fail closed.
 
-A successfully merged PR targeting main sends its exact merge commit to staging.
+Staging admits only a merged PR targeting main whose exact merge commit is
+still the application repository's main tip.
 Production is a separate promotion, after the exact candidate passes integration,
 e2e, and four disjoint mutation batches of at least 250 test-killed mutations.
 Compile failures, warnings, timeout, no-assertion output, a failing baseline,
@@ -178,12 +181,57 @@ operator correction separately; a healthy application receipt alone does not
 make that deployment job successful.
 
 The GitHub `testing` and `staging` environments contain those restricted keys and
-verified SSH host-key variables. Callers become active when their reviewed
-workflow commits reach main. Until an admitted build reaches a slot, its HTTPS
-route returns a service-unavailable placeholder. Axxium should be deployed before
-Knoxx in the same environment when local identity sign-in is needed.
+verified SSH host-key variables for existing application callers. The Services
+Knoxx dispatch uses its own environments described below. Until an admitted build
+reaches a slot, its HTTPS route returns a service-unavailable placeholder. Axxium
+should be deployed before Knoxx in the same slot when Axxium sign-in is needed.
 
 Install reviewed templates with `prepare-service-environments.mjs ROOT TEMPLATES`;
 install the receiver root-owned, then attach only `restrict,command=...` keys.
 `install-environment-ingress.py` configures the four private Caddy relays on Knoxx.
 The Caddyfile owns exact hostnames and automatic certificate renewal.
+
+## Knoxx dispatch from Services
+
+After the workflow lands, an operator runs **Deploy Service Environment** on
+`open-hax/services` with branch `main`. Enter the Knoxx PR number and choose
+`testing` or `staging`. For the equivalent staging CLI invocation, set
+`KNOXX_PR_NUMBER` to the merged Knoxx PR number first.
+
+```sh
+gh workflow run deploy-service-environment.yml --repo open-hax/services --ref main \
+  -f environment=staging -f pull_request="$KNOXX_PR_NUMBER"
+```
+
+For testing, submit the commit-bound review and apply the label before dispatch.
+For staging, wait for the PR to merge
+and dispatch while its merge commit is still Knoxx main. The workflow uses the
+executing Services workflow SHA for the controller and the admitted Knoxx SHA for
+the application. It checks the same Knoxx evidence again after the build before
+sending the archive to the receiver. The Actions run and the receiver receipt
+should both identify the admitted SHA.
+
+Configure the Services Actions secret `KNOXX_ENVIRONMENT_ADMISSION_TOKEN` with a
+read-only credential scoped to `open-hax/knoxx`. Admission needs metadata
+(including collaborator permissions), contents, pull requests and the issue
+timeline. Use the minimum repository read permissions, with explicit
+CODEOWNERS handles as above. The Services workflow token is scoped to Services
+and cannot supply Knoxx collaborator evidence. This is a Services repository
+Actions secret available to Services workflows that reference it, so use a
+dedicated credential with no write or deployment access. The build job receives
+neither the Knoxx admission credential nor the receiver key.
+
+Configure the Services GitHub environments `knoxx-testing` and `knoxx-staging`.
+Restrict each environment's deployment branches to Services `main`, and set
+`PROMETHEAN_ENVIRONMENT_SSH_KEY` to the corresponding Knoxx slot's restricted
+receiver key. Set `PROMETHEAN_ENVIRONMENT_KNOWN_HOSTS` and
+`PROMETHEAN_ENVIRONMENT_SSH_TARGET` to the verified host key and receiver target.
+Verify that the receiver and ingress are installed and reachable before
+scheduling the first run.
+
+Coordinate the cutover with the removal of Knoxx's application-side triggers.
+Disable the old Knoxx workflow and drain its in-flight runs before the first
+Services deployment. GitHub's concurrency groups only serialize runs within one
+repository. Confirm a Services run reaches the intended slot and verify the
+published HTTPS endpoint. Axxium continues using its pinned reusable workflow.
+Production remains on Services [Deploy Stack](../../README.md#production-contract).

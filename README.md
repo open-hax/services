@@ -75,6 +75,14 @@ privacy page from existing production ingress without replacing Knoxx images.
 See the [policy release runbook](docs/knoxx-public-policy-release.md) for
 admission, verification, and handoff to the next frontend release.
 
+## Knoxx testing and staging
+
+Run **Deploy Service Environment** from Services `main` with the Knoxx PR
+number and the `testing` or `staging` target. See the
+[per-service environment runbook](docs/environments/promotion.md#knoxx-dispatch-from-services)
+for admission, protected credentials, and cutover. Use the production contract
+above to promote a qualified Knoxx revision to production.
+
 ## Operational contracts
 
 - [`docs/dev-instances.md`](docs/dev-instances.md) — host-resident development

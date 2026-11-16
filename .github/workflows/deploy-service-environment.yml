@@ -1,5 +1,16 @@
 name: Deploy Service Environment
 on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Knoxx environment
+        type: choice
+        options: [testing, staging]
+        required: true
+      pull_request:
+        description: Knoxx pull request number
+        type: string
+        required: true
   workflow_call:
     inputs:
       controller_sha:
@@ -18,6 +29,9 @@ on:
       PROMETHEAN_ENVIRONMENT_SSH_KEY:
         description: Restricted receiver key from the selected testing or staging environment.
         required: false
+      KNOXX_ENVIRONMENT_ADMISSION_TOKEN:
+        description: Read-only Knoxx admission credential used for direct Services dispatches.
+        required: false
 permissions:
   contents: read
   pull-requests: read
@@ -27,25 +41,40 @@ jobs:
     outputs:
       source_sha: ${{ steps.admission.outputs.source_sha }}
       controller_sha: ${{ steps.controller.outputs.controller_sha }}
+      source_repository: ${{ steps.controller.outputs.source_repository }}
     steps:
       - name: Validate controller arguments
         id: controller
         env:
           CONTROLLER_SHA: ${{ inputs.controller_sha }}
           WORKFLOW_CONTEXT: ${{ toJSON(job) }}
-          SERVICE: ${{ inputs.service }}
+          SERVICE: ${{ inputs.service || 'knoxx' }}
           ENVIRONMENT: ${{ inputs.environment }}
           PR_NUMBER: ${{ inputs.pull_request }}
-          SOURCE_REPOSITORY: ${{ github.repository }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUN_REF: ${{ github.ref }}
+          REF_PROTECTED: ${{ github.ref_protected }}
         run: |
           set -euo pipefail
-          [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$ENVIRONMENT" =~ ^(testing|staging)$ ]]
           [[ "$SERVICE" =~ ^(knoxx|axxium)$ ]]
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
-          test "$SOURCE_REPOSITORY" = "open-hax/$SERVICE"
-          # Native job identity names this callee; github workflow identity names its caller.
-          python3 - <<'PY'
+          source_repository="open-hax/$SERVICE"
+          if [[ "$CALLER_REPOSITORY" == open-hax/services ]]; then
+            test "$EVENT_NAME" = workflow_dispatch
+            test "$RUN_REF" = refs/heads/main
+            test "$REF_PROTECTED" = true
+            test "$WORKFLOW_REF" = open-hax/services/.github/workflows/deploy-service-environment.yml@refs/heads/main
+            test "$SERVICE" = knoxx
+            [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+            controller_sha="$WORKFLOW_SHA"
+          else
+            test "$CALLER_REPOSITORY" = "$source_repository"
+            # Native job identity names this callee; github workflow identity names its caller.
+            controller_sha="$(python3 - <<'PY'
           import json, os, re
           try:
               workflow = json.loads(os.environ['WORKFLOW_CONTEXT'])
@@ -60,9 +89,11 @@ jobs:
                   or workflow.get('workflow_ref') != f'{repository}/{path}@{sha}'
                   or os.environ['CONTROLLER_SHA'] != sha):
               raise SystemExit('Missing or invalid native reusable workflow identity')
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
-              output.write(f'controller_sha={sha}\n')
+          print(sha)
           PY
+            )"
+          fi
+          printf 'controller_sha=%s\nsource_repository=%s\n' "$controller_sha" "$source_repository" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: open-hax/services
@@ -70,11 +101,16 @@ jobs:
           persist-credentials: false
       - id: admission
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          SOURCE_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.repository != 'open-hax/services' && github.token || secrets.KNOXX_ENVIRONMENT_ADMISSION_TOKEN }}
+          SOURCE_REPOSITORY: ${{ steps.controller.outputs.source_repository }}
           PR_NUMBER: ${{ inputs.pull_request }}
           ENVIRONMENT: ${{ inputs.environment }}
-        run: python3 scripts/github_environment_admission.py "$SOURCE_REPOSITORY" "$PR_NUMBER" "$ENVIRONMENT"
+        run: |
+          if [[ -z "$GITHUB_TOKEN" ]]; then
+            echo 'Missing the Knoxx read-only admission credential.' >&2
+            exit 1
+          fi
+          python3 scripts/github_environment_admission.py "$SOURCE_REPOSITORY" "$PR_NUMBER" "$ENVIRONMENT"
   build:
     needs: admit
     runs-on: ubuntu-latest
@@ -90,11 +126,12 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          repository: ${{ needs.admit.outputs.source_repository }}
           ref: ${{ needs.admit.outputs.source_sha }}
           path: source
           persist-credentials: false
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        if: inputs.service == 'knoxx'
+        if: needs.admit.outputs.source_repository == 'open-hax/knoxx'
         with:
           repository: open-hax/openplanner
           ref: 07085d6557b75834ce6f50e6c54b8ca47e1c7c08
@@ -115,7 +152,7 @@ jobs:
           node-version: '24'
       - name: Build isolated application artifacts
         env:
-          SERVICE: ${{ inputs.service }}
+          SERVICE: ${{ inputs.service || 'knoxx' }}
           SOURCE_SHA: ${{ needs.admit.outputs.source_sha }}
         run: bash controller/scripts/build-service-environment.sh "$SERVICE" "$SOURCE_SHA" "$GITHUB_WORKSPACE/source" "$GITHUB_WORKSPACE/artifact"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -130,9 +167,9 @@ jobs:
     needs: [admit, build]
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: ${{ inputs.environment }}
+    environment: ${{ github.repository == 'open-hax/services' && format('knoxx-{0}', inputs.environment) || inputs.environment }}
     concurrency:
-      group: promethean-${{ inputs.service }}-${{ inputs.environment }}
+      group: promethean-${{ inputs.service || 'knoxx' }}-${{ inputs.environment }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -147,19 +184,23 @@ jobs:
       - name: Recheck the lease and immutable revision inside the deployment slot
         id: recheck
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          SOURCE_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.repository != 'open-hax/services' && github.token || secrets.KNOXX_ENVIRONMENT_ADMISSION_TOKEN }}
+          SOURCE_REPOSITORY: ${{ needs.admit.outputs.source_repository }}
           PR_NUMBER: ${{ inputs.pull_request }}
           ENVIRONMENT: ${{ inputs.environment }}
           BUILT_SHA: ${{ needs.admit.outputs.source_sha }}
         run: |
           set -euo pipefail
+          if [[ -z "$GITHUB_TOKEN" ]]; then
+            echo 'Missing the Knoxx read-only admission credential.' >&2
+            exit 1
+          fi
           python3 scripts/github_environment_admission.py "$SOURCE_REPOSITORY" "$PR_NUMBER" "$ENVIRONMENT" > admission.json
           test "$(python3 -c 'import json; print(json.load(open("admission.json"))["source_sha"])')" = "$BUILT_SHA"
           test "$(sha256sum artifact/images.tar | cut -d' ' -f1)" = "$(cat artifact/images.sha256)"
       - name: Deploy through the restricted environment receiver
         env:
-          SERVICE: ${{ inputs.service }}
+          SERVICE: ${{ inputs.service || 'knoxx' }}
           ENVIRONMENT: ${{ inputs.environment }}
           SOURCE_SHA: ${{ needs.admit.outputs.source_sha }}
           DEPLOY_SSH_KEY: ${{ secrets.PROMETHEAN_ENVIRONMENT_SSH_KEY }}
@@ -179,7 +220,7 @@ jobs:
             "receive $ENVIRONMENT $SERVICE $SOURCE_SHA" < artifact/images.tar
       - name: Verify public HTTPS and readiness
         env:
-          SERVICE: ${{ inputs.service }}
+          SERVICE: ${{ inputs.service || 'knoxx' }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
           curl --fail --silent --show-error --connect-timeout 10 --max-time 20 --retry 8 --retry-all-errors --retry-delay 5 \

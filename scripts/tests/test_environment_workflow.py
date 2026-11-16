@@ -1,8 +1,7 @@
-"""Inspect the shipped workflow and run its readiness shell without network.
+"""Inspect the shipped workflow and run its deployment checks without network.
 
-The curl process double records the actual command and selected exit status.
-These controls establish immutable inputs, timeout arguments and propagation;
-they do not establish hosted action execution or public application readiness.
+The process doubles record the actual commands and selected exit statuses.
+The checks cover controller identity, immutable inputs and error propagation.
 """
 import json
 import hashlib
@@ -24,11 +23,23 @@ Path(os.environ['CURL_CALLS']).write_text(json.dumps(sys.argv[1:]))
 raise SystemExit(int(os.environ['CURL_EXIT']))
 """
 CONTROLLER_SHA = "a" * 40
+CONTROLLER_REPOSITORY = "open-hax/services"
+CONTROLLER_PATH = ".github/workflows/deploy-service-environment.yml"
+MAIN_REF = "refs/heads/main"
 WORKFLOW_IDENTITY = {
     "workflow_sha": CONTROLLER_SHA,
-    "workflow_repository": "open-hax/services",
-    "workflow_file_path": ".github/workflows/deploy-service-environment.yml",
-    "workflow_ref": "open-hax/services/.github/workflows/deploy-service-environment.yml@" + CONTROLLER_SHA,
+    "workflow_repository": CONTROLLER_REPOSITORY,
+    "workflow_file_path": CONTROLLER_PATH,
+    "workflow_ref": f"{CONTROLLER_REPOSITORY}/{CONTROLLER_PATH}@{CONTROLLER_SHA}",
+}
+DISPATCH_WORKFLOW_REF = f"{CONTROLLER_REPOSITORY}/{CONTROLLER_PATH}@{MAIN_REF}"
+DISPATCH_ENV = {
+    "CALLER_REPOSITORY": CONTROLLER_REPOSITORY,
+    "EVENT_NAME": "workflow_dispatch",
+    "REF_PROTECTED": "true",
+    "RUN_REF": MAIN_REF,
+    "WORKFLOW_REF": DISPATCH_WORKFLOW_REF,
+    "WORKFLOW_SHA": CONTROLLER_SHA,
 }
 SSH = """import hashlib,json,os,stat,sys
 from pathlib import Path
@@ -74,13 +85,19 @@ class EnvironmentWorkflowTest(unittest.TestCase):
             output.write_text("preserved=value\n")
             environment = {"HOME": str(root), "PATH": os.defpath,
                 "CONTROLLER_SHA": controller, "SERVICE": "knoxx", "ENVIRONMENT": "testing",
-                "PR_NUMBER": "1", "SOURCE_REPOSITORY": "open-hax/knoxx",
+                "PR_NUMBER": "1", "CALLER_REPOSITORY": "open-hax/knoxx",
+                "EVENT_NAME": "pull_request_target", "REF_PROTECTED": "false", "RUN_REF": MAIN_REF,
+                "WORKFLOW_REF": "open-hax/knoxx/.github/workflows/environment-promotion.yml@refs/heads/main",
+                "WORKFLOW_SHA": "b" * 40,
                 "WORKFLOW_CONTEXT": context if isinstance(context, str) else json.dumps(context),
                 "GITHUB_OUTPUT": str(output)}
             environment.update(overrides)
             result = subprocess.run(["bash", "-euo", "pipefail", "-c", step["run"]],
                 cwd=root, env=environment, capture_output=True, text=True, timeout=10, check=False)
             return result, output.read_text()
+
+    def run_dispatch(self, **overrides):
+        return self.run_controller(context={}, controller="", **{**DISPATCH_ENV, **overrides})
 
     def test_native_callee_identity_is_required_before_any_controller_checkout(self):
         jobs = self.workflow["jobs"]
@@ -97,14 +114,15 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                     else "${{ needs.admit.outputs.controller_sha }}")
                 self.assertEqual(expected, checkouts[0]["with"]["ref"])
 
-    def test_matching_native_identity_emits_only_validated_immutable_sha(self):
+    def test_matching_native_identity_emits_validated_sha_and_source_repository(self):
         for service in ("knoxx", "axxium"):
             for environment in ("testing", "staging"):
                 with self.subTest(service=service, environment=environment):
                     result, output = self.run_controller(SERVICE=service,
-                        SOURCE_REPOSITORY="open-hax/"+service, ENVIRONMENT=environment)
+                        CALLER_REPOSITORY="open-hax/"+service, ENVIRONMENT=environment)
                     self.assertEqual(0, result.returncode, result.stderr)
-                    self.assertEqual("preserved=value\ncontroller_sha="+CONTROLLER_SHA+"\n", output)
+                    self.assertEqual(f"preserved=value\ncontroller_sha={CONTROLLER_SHA}\n"
+                                     f"source_repository=open-hax/{service}\n", output)
 
     def test_independently_mismatched_caller_pin_refuses_without_output(self):
         result, output = self.run_controller(controller="b" * 40)
@@ -132,12 +150,108 @@ class EnvironmentWorkflowTest(unittest.TestCase):
 
     def test_native_binding_preserves_service_repository_and_pr_validation(self):
         for invalid in ({"SERVICE": "other"}, {"ENVIRONMENT": "production"},
-                {"SOURCE_REPOSITORY": "other/knoxx"}, {"PR_NUMBER": "0"},
+                {"CALLER_REPOSITORY": "other/knoxx"}, {"PR_NUMBER": "0"},
                 {"PR_NUMBER": "1; echo bad"}):
             with self.subTest(invalid=invalid):
                 result, output = self.run_controller(**invalid)
                 self.assertNotEqual(0, result.returncode)
                 self.assertEqual("preserved=value\n", output)
+
+    def test_operator_dispatch_chooses_only_knoxx_pr_testing_or_staging(self):
+        triggers = self.workflow["on"]
+        self.assertIn("workflow_call", triggers)
+        inputs = triggers["workflow_dispatch"]["inputs"]
+        self.assertEqual({"environment", "pull_request"}, set(inputs))
+        self.assertEqual("choice", inputs["environment"]["type"])
+        self.assertEqual(["testing", "staging"], inputs["environment"]["options"])
+        self.assertEqual("true", inputs["environment"]["required"])
+        self.assertEqual("true", inputs["pull_request"]["required"])
+        env = self.workflow["jobs"]["admit"]["steps"][0]["env"]
+        self.assertEqual("${{ inputs.service || 'knoxx' }}", env["SERVICE"])
+        for key, expected in {"EVENT_NAME": "event_name", "CALLER_REPOSITORY": "repository",
+                              "REF_PROTECTED": "ref_protected",
+                              "RUN_REF": "ref", "WORKFLOW_REF": "workflow_ref",
+                              "WORKFLOW_SHA": "workflow_sha"}.items():
+            with self.subTest(variable=key):
+                self.assertEqual("${{ github." + expected + " }}", env[key])
+
+    def test_services_main_dispatch_emits_github_workflow_sha_and_knoxx_repository(self):
+        for environment in ("testing", "staging"):
+            with self.subTest(environment=environment):
+                result, output = self.run_dispatch(ENVIRONMENT=environment)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(f"preserved=value\ncontroller_sha={CONTROLLER_SHA}\n"
+                                 "source_repository=open-hax/knoxx\n", output)
+
+    def test_services_dispatch_rejects_untrusted_identity_scope_and_arguments(self):
+        cases = (
+            {"CALLER_REPOSITORY": "fork/services"},
+            {"EVENT_NAME": "push"},
+            {"REF_PROTECTED": "false"},
+            {"RUN_REF": "refs/heads/candidate"},
+            {"RUN_REF": "refs/tags/main"},
+            {"WORKFLOW_REF": DISPATCH_WORKFLOW_REF.replace("refs/heads/main", "refs/heads/candidate")},
+            {"WORKFLOW_REF": DISPATCH_WORKFLOW_REF.replace("open-hax/services", "fork/services")},
+            {"WORKFLOW_REF": DISPATCH_WORKFLOW_REF.replace(CONTROLLER_PATH, ".github/workflows/other.yml")},
+            {"WORKFLOW_REF": DISPATCH_WORKFLOW_REF + "\n"},
+            {"WORKFLOW_SHA": ""},
+            {"WORKFLOW_SHA": "A" * 40},
+            {"WORKFLOW_SHA": CONTROLLER_SHA + "\n"},
+            {"SERVICE": "axxium"},
+            {"ENVIRONMENT": "production"},
+            {"PR_NUMBER": "0"},
+            {"PR_NUMBER": "1\nsource_repository=fork/knoxx"},
+        )
+        for invalid in cases:
+            with self.subTest(invalid=invalid):
+                result, output = self.run_dispatch(**invalid)
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual("preserved=value\n", output)
+
+    def test_both_admissions_and_candidate_checkout_use_validated_source_repository(self):
+        jobs = self.workflow["jobs"]
+        controller_repo = "${{ steps.controller.outputs.source_repository }}"
+        admitted_repo = "${{ needs.admit.outputs.source_repository }}"
+        self.assertEqual(controller_repo, jobs["admit"]["outputs"]["source_repository"])
+        admission = next(s for s in jobs["admit"]["steps"] if s.get("id") == "admission")
+        recheck = next(s for s in jobs["deploy"]["steps"] if s.get("id") == "recheck")
+        self.assertEqual(controller_repo, admission["env"]["SOURCE_REPOSITORY"])
+        self.assertEqual(admitted_repo, recheck["env"]["SOURCE_REPOSITORY"])
+        admission_token = ("${{ github.repository != 'open-hax/services' && github.token || "
+                           "secrets.KNOXX_ENVIRONMENT_ADMISSION_TOKEN }}")
+        for step in (admission, recheck):
+            self.assertIn('scripts/github_environment_admission.py "$SOURCE_REPOSITORY"', step["run"])
+            self.assertEqual(admission_token, step["env"]["GITHUB_TOKEN"])
+        source = next(s for s in jobs["build"]["steps"] if s.get("with", {}).get("path") == "source")
+        self.assertEqual(admitted_repo, source["with"]["repository"])
+        self.assertEqual("${{ needs.admit.outputs.source_sha }}", source["with"]["ref"])
+        self.assertEqual("false", source["with"]["persist-credentials"])
+        self.assertNotIn("secrets.", json.dumps(jobs["build"]))
+        self.assertNotIn("environment", jobs["build"])
+
+    def test_absent_knoxx_admission_token_fails_before_invoking_the_api_script(self):
+        for job, step_id in (("admit", "admission"), ("deploy", "recheck")):
+            with self.subTest(step=step_id), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "scripts").mkdir()
+                (root / "scripts/github_environment_admission.py").write_text(
+                    "from pathlib import Path\nPath('invoked').touch()\n")
+                steps = self.workflow["jobs"][job]["steps"]
+                step = next(s for s in steps if s.get("id") == step_id)
+                result = subprocess.run(["bash", "-euo", "pipefail", "-c", step["run"]],
+                    cwd=root, env={"PATH": os.defpath, "GITHUB_TOKEN": "",
+                                   "SOURCE_REPOSITORY": "open-hax/knoxx", "PR_NUMBER": "1",
+                                   "ENVIRONMENT": "staging", "BUILT_SHA": "c" * 40},
+                    capture_output=True, text=True, timeout=10, check=False)
+                self.assertEqual(1, result.returncode, result.stderr)
+                self.assertIn("Missing the Knoxx read-only admission credential", result.stderr)
+                self.assertFalse((root / "invoked").exists())
+
+    def test_services_dispatch_uses_separate_protected_deployment_environments(self):
+        deploy = self.workflow["jobs"]["deploy"]
+        self.assertEqual("${{ github.repository == 'open-hax/services' && "
+                         "format('knoxx-{0}', inputs.environment) || inputs.environment }}",
+                         deploy["environment"])
 
     def run_deployment(self, service, environment, exit_code):
         step = next(s for s in self.workflow["jobs"]["deploy"]["steps"]
@@ -234,7 +348,7 @@ class EnvironmentWorkflowTest(unittest.TestCase):
                     self.assertIn("--retry-all-errors", args)
                     self.assertIn("--fail", args)
                     self.assertEqual(f"https://{environment}.{service}.promethean.rest/api/auth/config", args[-1])
-                    self.assertEqual("promethean-${{ inputs.service }}-${{ inputs.environment }}",
+                    self.assertEqual("promethean-${{ inputs.service || 'knoxx' }}-${{ inputs.environment }}",
                                      self.workflow["jobs"]["deploy"]["concurrency"]["group"])
                     self.assertEqual("false", self.workflow["jobs"]["deploy"]["concurrency"]["cancel-in-progress"])
 
