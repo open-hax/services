@@ -1,9 +1,13 @@
 """Exercise the actual native collector with complete, local GitHub responses."""
 import base64
+from contextlib import redirect_stdout
 import copy
 from datetime import datetime, timedelta, timezone
 import importlib.util
+from io import StringIO
+import json
 from pathlib import Path
+import runpy
 import sys
 import unittest
 from unittest.mock import patch
@@ -18,6 +22,44 @@ spec.loader.exec_module(admission)
 NOW = datetime(2026, 10, 15, 13, 0, tzinfo=timezone.utc)
 HEAD = "a" * 40
 OWNER = {"login": "owner", "id": 101, "type": "User"}
+
+
+class AdmissionCredentialsTests(unittest.TestCase):
+    def test_anonymous_knoxx_staging_reads_only_merged_pr_and_current_main(self):
+        responses = [
+            StringIO(json.dumps({"merged": True, "base": {"ref": "main"}, "merge_commit_sha": HEAD})),
+            StringIO(json.dumps({"commit": {"sha": HEAD}})),
+        ]
+        stdout = StringIO()
+        with patch.dict("os.environ", {}, clear=True), patch("urllib.request.urlopen", side_effect=responses) as send, \
+                patch.object(sys, "argv", [spec.origin, "open-hax/knoxx", "1", "staging"]), redirect_stdout(stdout):
+            runpy.run_path(spec.origin, run_name="__main__")
+        result = json.loads(stdout.getvalue())
+        self.assertTrue(result["admitted"])
+        self.assertEqual(HEAD, result["source_sha"])
+        self.assertEqual(["https://api.github.com/repos/open-hax/knoxx/pulls/1",
+                          "https://api.github.com/repos/open-hax/knoxx/branches/main"],
+                         [call.args[0].full_url for call in send.call_args_list])
+        for call in send.call_args_list:
+            self.assertFalse(call.args[0].has_header("Authorization"))
+
+    def test_other_admissions_require_authentication_before_reading_github(self):
+        for repository, environment in (("knoxx", "testing"), ("axxium", "testing"), ("axxium", "staging")):
+            with self.subTest(repository=repository, environment=environment), \
+                    patch.dict("os.environ", {"GITHUB_TOKEN": ""}, clear=True), \
+                    patch("urllib.request.urlopen") as send, \
+                    patch.object(sys, "argv", [spec.origin, f"open-hax/{repository}", "1", environment]):
+                with self.assertRaisesRegex(SystemExit, "GitHub authentication is required"):
+                    runpy.run_path(spec.origin, run_name="__main__")
+                send.assert_not_called()
+
+    def test_api_preserves_bearer_authentication_with_a_token(self):
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "synthetic credential"}, clear=True), \
+                patch.object(admission, "urlopen", return_value=StringIO("{}")) as send:
+            self.assertEqual({}, admission.api("repos/open-hax/knoxx/pulls/1"))
+        request = send.call_args.args[0]
+        self.assertEqual("Bearer synthetic credential", request.get_header("Authorization"))
+        self.assertEqual("application/vnd.github+json", request.get_header("Accept"))
 
 
 class Clock(datetime):
