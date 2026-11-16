@@ -125,7 +125,11 @@ def validate_plan(plan):
 
 def execute(plan, host, *, recover_interrupted=False):
     """Order the native transaction; uncertain effects never authorize rollback."""
-    validate_plan(plan)
+    return execute_admitted(validate_plan(plan), host, recover_interrupted=recover_interrupted)
+
+
+def execute_admitted(plan, host, *, recover_interrupted=False):
+    """Run the shared transaction for an already validated release plan."""
     with host.lock():
         if recover_interrupted:
             host.recovery_preflight(plan)
@@ -182,6 +186,11 @@ def execute(plan, host, *, recover_interrupted=False):
 
 
 class NativeHost:
+    release_source = SOURCE
+    release_image = IMAGE
+    changed_environment = frozenset(('PATH', 'NODE_VERSION', 'YARN_VERSION',
+                                     'AXXIUM_OIDC_CONFIG_FILE', 'AXXIUM_TRUST_PROXY'))
+
     def __init__(self,plan_digest=None,*,lock_path=None,pending_path=None):
         self.operation = None; self.sequence = 0; self.uncertain = False
         self.lock_fd = None; self.lock_identity = None
@@ -194,10 +203,10 @@ class NativeHost:
         self.candidate_id=None
         self.incumbent_image_id=None;self.rollback_id=None
 
-    def command(self,args,*,data=None,timeout=60,output=None,effect=False,pass_fds=()):
+    def command(self,args,*,data=None,timeout=60,output=None,effect=False,pass_fds=(),env=None):
         try:
             result=subprocess.run(args,input=data,stdout=output or subprocess.PIPE,
-                                  stderr=subprocess.PIPE,timeout=timeout,pass_fds=pass_fds)
+                                  stderr=subprocess.PIPE,timeout=timeout,pass_fds=pass_fds,env=env)
         except (OSError,subprocess.TimeoutExpired):
             self.uncertain=True; raise Uncertain('Native command outcome unavailable') from None
         if result.returncode:
@@ -322,13 +331,16 @@ class NativeHost:
         if self.proxy_ip!=e['caddy_proxy_ip']:raise Refused('Observed trusted proxy address differs')
         self.original=CADDY.read_bytes()
         if digest(self.original)!=e['caddyfile_sha256']:raise Refused('Incumbent ingress bytes changed')
-        self.final=prepare(self.original,e['caddyfile_sha256'])
-        self.maintenance=maintenance(self.original,e['caddyfile_sha256'])
+        self.maintenance,self.final=self.route_candidates(plan)
         for data in (self.maintenance,self.final):self.validate_caddy(data)
         self.old_environment=dict(x.split('=',1) for x in old['Config']['Env'])
         self.original_layer(plan)
         size=int(self.sql('axxium',"SELECT pg_database_size(current_database())").strip())
         if shutil.disk_usage(STATE).free<max(1024**3,size*4):raise Refused('Insufficient private backup space')
+
+    def route_candidates(self,plan):
+        expected=plan['expected']['caddyfile_sha256']
+        return maintenance(self.original,expected),prepare(self.original,expected)
 
     def recovery_preflight(self,plan):
         """Accept only the exact interrupted operation, with its hold retained."""
@@ -388,6 +400,9 @@ class NativeHost:
         try:os.fsync(fd)
         finally:os.close(fd)
 
+    def operation_name(self,plan):
+        return plan['source_sha']
+
     def claim(self,plan):
         self.incumbent_image_id=plan['expected']['app_image_id']
         root=STATE/'operations'
@@ -395,13 +410,13 @@ class NativeHost:
         meta=root.lstat()
         if not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=os.getuid() or stat.S_IMODE(meta.st_mode)!=0o700:
             raise Refused('Private operation directory protection refused')
-        self.operation=root/plan['source_sha']
+        self.operation=root/self.operation_name(plan)
         try:self.operation.mkdir(mode=0o700)
         except FileExistsError:raise Refused('Existing operation requires independent recovery; no replay') from None
         self.sync_directory(root)
         self.private_write(self.operation/'plan.json',(json.dumps(plan,sort_keys=True,separators=(',',':'))+'\n').encode())
         marker=json.dumps({'schema':'axxium-production-pending/v1','operation':str(self.operation),
-                           'source_sha':SOURCE,'plan_sha256':self.plan_digest},sort_keys=True).encode()
+                           'source_sha':plan['source_sha'],'plan_sha256':self.plan_digest},sort_keys=True).encode()
         self.private_write(PENDING,marker)
         self.pending_bytes=marker
         for source,name in ((RUNTIME/'compose.yaml','incumbent.compose.yaml'),(RUNTIME/'.env','incumbent.env'),(CADDY,'incumbent.Caddyfile')):
@@ -510,9 +525,10 @@ class NativeHost:
         self.backups[label]={'path':str(path),'sha256':file_digest(path),'database':clone}
         self.private_write(self.operation/(label+'-backup.json'),json.dumps(self.backups[label],sort_keys=True).encode())
 
-    def probe(self,plan,database,image,credentials,signup):
+    def probe(self,plan,database,image,credentials,signup,*,candidate=False):
         name='axxium-verify-'+secrets.token_hex(12)
         values=rehearsal_environment(self.old_environment,database,self.proxy_ip)
+        values,mounts=self.probe_profile(plan,image,name,values,candidate=candidate)
         env=self.operation/(name+'.env')
         if any('\n' in v or '\r' in v for v in values.values()):raise Refused('Unrepresentable private environment')
         self.private_write(env,('\n'.join(k+'='+v for k,v in values.items())+'\n').encode())
@@ -520,9 +536,7 @@ class NativeHost:
         self.command(['docker','run','-d','--pull','never','--name',name,'--network','axxium_database','--user','1000:1000',
             '--label','open-hax.axxium-operation='+self.operation.name,
             '--cap-drop','ALL','--security-opt','no-new-privileges','--memory','512m','--pids-limit','256',
-            '--tmpfs','/tmp:rw,noexec,nosuid,size=16m','--env-file',str(env),
-            '--mount','type=bind,src='+str(STATE/'google-client.json')+',dst=/run/axxium/google-client.json,readonly',
-            '--mount','type=bind,src='+str(STATE/'oidc')+',dst=/run/axxium/oidc,readonly',image],effect=True)
+            '--tmpfs','/tmp:rw,noexec,nosuid,size=16m','--env-file',str(env),*mounts,image],effect=True)
         self.wait_app(name)
         program='''const fs=require('fs');(async()=>{const d=JSON.parse(fs.readFileSync(0,'utf8'));const origin='http://127.0.0.1:8787';if(d.signup){const s=await fetch(origin+'/api/auth/signup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d.credentials)});if(s.status!==200)throw Error('signup');}const r=await fetch(origin+'/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d.credentials)});if(r.status!==200)throw Error('login');const b=await r.json();const cookie=r.headers.get('set-cookie')?.split(';')[0];if(!cookie||typeof b.actor?.id!=='string')throw Error('session');const m=await fetch(origin+'/api/actors/me',{headers:{cookie}});const body=await m.json();if(m.status!==200||body.actor?.id!==b.actor.id)throw Error('me');console.log(b.actor.id);})().catch(()=>process.exit(1));'''
         raw=self.command(['docker','exec','-i',name,'node','-e',program],data=json.dumps({'signup':signup,'credentials':credentials}).encode(),effect=True)
@@ -539,13 +553,19 @@ class NativeHost:
         self.command(['docker','stop','--time','610',name],timeout=660,effect=True)
         self.command(['docker','rm',name],effect=True)
 
+    def probe_profile(self,plan,image,name,values,*,candidate):
+        return values,[
+            '--mount','type=bind,src='+str(STATE/'google-client.json')+',dst=/run/axxium/google-client.json,readonly',
+            '--mount','type=bind,src='+str(STATE/'oidc')+',dst=/run/axxium/oidc,readonly',
+        ]
+
     def rehearse(self,plan,label,*,candidate):
         credentials={'email':'adoption-'+secrets.token_hex(12)+'@invalid.test','password':secrets.token_urlsafe(36)}
         clone=self.backups[label]['database']
-        if candidate:self.probe(plan,clone,plan['image_id'],credentials,True)
+        if candidate:self.probe(plan,clone,plan['image_id'],credentials,True,candidate=True)
         self.probe(plan,clone,plan['expected']['app_image_id'],credentials,not candidate)
         self.command(['docker','exec',DB,'dropdb','-U','axxium',clone],effect=True)
-        self.private_write(self.operation/(label+'-compatibility.json'),json.dumps({'source_sha':SOURCE,'image_id':IMAGE,'old_image_id':plan['expected']['app_image_id'],'candidate_then_old':candidate,'password_session_roundtrip':True}).encode())
+        self.private_write(self.operation/(label+'-compatibility.json'),json.dumps({'source_sha':plan['source_sha'],'image_id':plan['image_id'],'old_image_id':plan['expected']['app_image_id'],'candidate_then_old':candidate,'password_session_roundtrip':True}).encode())
 
     def wait_app(self,name):
         for _ in range(60):
@@ -580,7 +600,7 @@ class NativeHost:
         if d['Image']!=plan['image_id'] or d['Id']!=self.candidate_id:raise Uncertain('Selected application identity differs')
         env=dict(x.split('=',1) for x in d['Config']['Env'])
         for key,value in self.old_environment.items():
-            if key not in ('PATH','NODE_VERSION','YARN_VERSION','AXXIUM_OIDC_CONFIG_FILE','AXXIUM_TRUST_PROXY') and env.get(key)!=value:
+            if key not in self.changed_environment and env.get(key)!=value:
                 raise Uncertain('Incumbent application setting was not preserved')
         if self.inspect(PROXY)['NetworkSettings']['Networks']['open-hax']['IPAddress']!=self.proxy_ip:
             raise Uncertain('Trusted proxy address changed')
@@ -644,13 +664,17 @@ class NativeHost:
                 or current['State'].get('Health',{}).get('Status')!='healthy'
                 or self.environment_hash(current)!=plan['expected']['app_environment_sha256']):
             raise Uncertain('Final rollback selection differs from incumbent observation')
+        self.verify_rollback(plan,current)
         self.rollback_id=current['Id']
         self.private_write(self.operation/'deployment.json',json.dumps(self.receipt('rolled_back'),sort_keys=True).encode())
 
+    def verify_rollback(self,plan,current):
+        """Allow the release profile to verify its preserved state before the receipt."""
+
     def receipt(self,status):
         return {'schema':'axxium-minimal-deployment/v1','status':status,
-                'requested_source_sha':SOURCE,'source_sha':SOURCE if status=='healthy' else None,
-                'candidate_image_id':IMAGE,'image_id':IMAGE if status=='healthy' else self.incumbent_image_id,
+                'requested_source_sha':self.release_source,'source_sha':self.release_source if status=='healthy' else None,
+                'candidate_image_id':self.release_image,'image_id':self.release_image if status=='healthy' else self.incumbent_image_id,
                 'app_container_id':self.candidate_id if status=='healthy' else self.rollback_id,
                 'plan_sha256':self.plan_digest,'incumbent_source_sha':None,'operation':str(self.operation),
                 'backup_sha256':{key:value['sha256'] for key,value in self.backups.items()},
