@@ -85,19 +85,21 @@ def verify_native_integration(source, receipt):
             "native unified mailbox integration completion differs from the receipt")
 
 
-def admit(plan_bytes, controller_sha, archive, *, now=None):
+def admit(plan_bytes, controller_sha, archive, *, now=None, plan_path=PLAN_PATH,
+          plan_schema=PLAN_SCHEMA, qualification_scope="unified-mailbox", qualification_suffix=""):
+    """Verify native custody and exact-source evidence for a fixed release lane."""
     observed_at = now or datetime.now(timezone.utc)
     require(0 < len(plan_bytes) <= MAX_PLAN, "unified mailbox production plan unavailable")
     plan = strict_json(plan_bytes)
-    require(isinstance(plan, dict) and plan.get("schema") == PLAN_SCHEMA,
+    require(isinstance(plan, dict) and plan.get("schema") == plan_schema,
             "unsupported unified mailbox production plan")
     # Both plans share the immutable host and artifact-custody fields.
     validate_plan({**plan, "schema": "axxium-minimal-production/v1"})
     main_ancestor(SERVICES, controller_sha)
-    require(native_file(SERVICES, PLAN_PATH, controller_sha, MAX_PLAN) == plan_bytes,
+    require(native_file(SERVICES, plan_path, controller_sha, MAX_PLAN) == plan_bytes,
             "unified mailbox plan differs from accepted immutable controller")
     plan_hash = sha256(plan_bytes).hexdigest()
-    qualification_path = f"digitalocean/qualifications/axxium/{plan['source_sha']}.json"
+    qualification_path = f"digitalocean/qualifications/axxium/{plan['source_sha']}{qualification_suffix}.json"
     try:
         proof = strict_json(native_file(SERVICES, qualification_path, controller_sha))
     except Exception as error:
@@ -110,12 +112,12 @@ def admit(plan_bytes, controller_sha, archive, *, now=None):
     main_ancestor(SERVICES, controller_sha)
     current_artifact = verify_native_stage(plan, now or datetime.now(timezone.utc))
     require(current_artifact["size_in_bytes"] == artifact["size_in_bytes"], "native artifact size changed")
-    return {"admitted": True, "qualification": "unified-mailbox", "source_sha": plan["source_sha"],
+    return {"admitted": True, "qualification": qualification_scope, "source_sha": plan["source_sha"],
             "plan_sha256": plan_hash, "image_id": plan["image_id"], "mutationHarness": "retired",
             "mutationCampaignPassed": False}
 
 
-def main():
+def main(verifier=admit):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--controller-sha", required=True)
@@ -124,7 +126,7 @@ def main():
     try:
         require(args.plan.is_file() and 0 < args.plan.stat().st_size <= MAX_PLAN,
                 "unified mailbox production plan unavailable")
-        verdict = admit(args.plan.read_bytes(), args.controller_sha, args.archive)
+        verdict = verifier(args.plan.read_bytes(), args.controller_sha, args.archive)
     except Refusal as error:
         verdict = {"admitted": False, "reason": str(error)}
     except Exception:

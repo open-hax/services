@@ -121,6 +121,15 @@ jobs:
       recover_interrupted: ${{ inputs.axxium_recover_interrupted }}
     secrets: inherit
 
+  deploy-axxium-at-auth:
+    if: inputs.scope == 'axxium-at-auth'
+    uses: ./.github/workflows/deploy-axxium-at-auth.yml
+    with:
+      source_sha: ${{ inputs.axxium_ref }}
+      caller_holds_production_host_lock: true
+    secrets:
+      DIGITALOCEAN_SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+
   deploy-axxium-mailbox:
     if: inputs.scope == 'axxium-mailbox'
     uses: ./.github/workflows/deploy-axxium-unified-mailbox.yml

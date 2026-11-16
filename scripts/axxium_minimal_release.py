@@ -400,6 +400,9 @@ class NativeHost:
         try:os.fsync(fd)
         finally:os.close(fd)
 
+    def operation_name(self,plan):
+        return plan['source_sha']
+
     def claim(self,plan):
         self.incumbent_image_id=plan['expected']['app_image_id']
         root=STATE/'operations'
@@ -407,7 +410,7 @@ class NativeHost:
         meta=root.lstat()
         if not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=os.getuid() or stat.S_IMODE(meta.st_mode)!=0o700:
             raise Refused('Private operation directory protection refused')
-        self.operation=root/plan['source_sha']
+        self.operation=root/self.operation_name(plan)
         try:self.operation.mkdir(mode=0o700)
         except FileExistsError:raise Refused('Existing operation requires independent recovery; no replay') from None
         self.sync_directory(root)
@@ -522,7 +525,7 @@ class NativeHost:
         self.backups[label]={'path':str(path),'sha256':file_digest(path),'database':clone}
         self.private_write(self.operation/(label+'-backup.json'),json.dumps(self.backups[label],sort_keys=True).encode())
 
-    def probe(self,plan,database,image,credentials,signup,*,candidate):
+    def probe(self,plan,database,image,credentials,signup,*,candidate=False):
         name='axxium-verify-'+secrets.token_hex(12)
         values=rehearsal_environment(self.old_environment,database,self.proxy_ip)
         values,mounts=self.probe_profile(plan,image,name,values,candidate=candidate)
