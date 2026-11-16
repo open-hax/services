@@ -47,9 +47,13 @@ minimal plan source.
 3. Route exact `/api/mailbox/mcp` and
    `/.well-known/oauth-protected-resource/api/mailbox/mcp` on the apex to
    Axxium. Both paths currently fall through to the PDS. The incumbent app
-   also returns 404 directly and predates the unified mailbox release. Rehearse
-   both changes together, preserving PDS XRPC and account OAuth, the service
-   DID, and unrelated sites. The [dedicated ingress adoption](../../digitalocean/ingress/axxium-production/controller-handoff.md)
+   also returns 404 directly and predates the unified mailbox release. For
+   the inline shared ingress, use the existing digest-guarded
+   [`prepare_mailbox`](../../scripts/axxium_oidc_ingress.py) byte transform
+   to generate fenced and live candidates. It includes the companion OIDC
+   discovery and identity administration paths. Rehearse the app and ingress
+   changes together, preserving PDS XRPC and account OAuth, the service DID,
+   and unrelated sites. The [dedicated ingress adoption](../../digitalocean/ingress/axxium-production/controller-handoff.md)
    can qualify with its current matcher. A combined rollout needs new Caddy
    phase digests and rollback readback for the expanded matcher.
 4. Verify recovery under the existing hold across app recreation and an
