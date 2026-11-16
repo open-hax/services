@@ -145,6 +145,10 @@ jobs:
       - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # v13.6.1
         with:
           cli: 1.12.5.1664
+          clj-kondo: ${{ needs.admit.outputs.source_repository == 'open-hax/knoxx' && '2025.07.28' || '' }}
+      - name: Check Knoxx lint test executable
+        if: needs.admit.outputs.source_repository == 'open-hax/knoxx'
+        run: clj-kondo --version
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: 10.20.0
