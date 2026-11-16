@@ -1,7 +1,7 @@
 {:model/id "openai/gpt-6.1-sol"
  :model/provider :proxx
  :model/api "openai-completions"
- :model/label "Sol 6.1 via Proxx ChatGPT OAuth"
+ :model/label "GPT 6.1 Sol via Proxx"
  :model/allowlisted true
  :model/reasoning true
  :model/default-thinking :medium
