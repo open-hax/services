@@ -13,11 +13,14 @@ from axxium_production_qualification import (
     strict_json, validate_plan, verify_archive, verify_native_stage,
 )
 from environment_policy import timestamp
+from github_environment_admission import api
 
 PLAN_PATH = "digitalocean/services/axxium/unified-mailbox-production-plan.json"
 PLAN_SCHEMA = "axxium-unified-mailbox-production/v1"
 QUALIFICATION_SCHEMA = "axxium-unified-mailbox-qualification/v1"
 MAX_PLAN = 65536
+CI_WORKFLOW = ".github/workflows/ci.yml"
+INTEGRATION_STEP = "Verify durable shared-login authority"
 
 
 def verify_qualification(proof, plan, plan_hash, now):
@@ -50,6 +53,38 @@ def verify_qualification(proof, plan, plan_hash, now):
             "unified mailbox qualification must explicitly record retired mutation harness")
 
 
+def verify_native_integration(source, receipt):
+    run_id = receipt.get("native_ci_run_id")
+    job_id = receipt.get("native_ci_job_id")
+    require(type(run_id) is int and run_id > 0 and type(job_id) is int and job_id > 0,
+            "native unified mailbox integration run and job required")
+    run = api(f"repos/{REPOSITORY}/actions/runs/{run_id}")
+    require(run.get("id") == run_id and run.get("repository", {}).get("full_name") == REPOSITORY
+            and run.get("head_repository", {}).get("full_name") == REPOSITORY
+            and run.get("head_sha") == source and run.get("head_branch") == "main"
+            and run.get("path") == CI_WORKFLOW and run.get("event") == "push"
+            and run.get("status") == "completed" and run.get("conclusion") == "success",
+            "native unified mailbox integration run differs from exact source CI")
+    job = api(f"repos/{REPOSITORY}/actions/jobs/{job_id}")
+    attempt = run.get("run_attempt")
+    require(type(attempt) is int and attempt > 0 and job.get("run_attempt") == attempt
+            and job.get("id") == job_id and job.get("run_id") == run_id and job.get("head_sha") == source
+            and job.get("name") == "build" and job.get("status") == "completed"
+            and job.get("conclusion") == "success" and isinstance(job.get("steps"), list),
+            "native unified mailbox integration job differs from successful run")
+    selected = {}
+    for step in job["steps"]:
+        name = step.get("name")
+        if name in ("Test", INTEGRATION_STEP):
+            require(name not in selected and step.get("status") == "completed"
+                    and step.get("conclusion") == "success", "native unified mailbox integration step not successful")
+            selected[name] = step
+    require(set(selected) == {"Test", INTEGRATION_STEP}, "native unified mailbox integration step unavailable")
+    require(timestamp(selected["Test"]["completed_at"]) <= timestamp(receipt["completed_at"])
+            and timestamp(selected[INTEGRATION_STEP]["completed_at"]) == timestamp(receipt["completed_at"]),
+            "native unified mailbox integration completion differs from the receipt")
+
+
 def admit(plan_bytes, controller_sha, archive, *, now=None):
     observed_at = now or datetime.now(timezone.utc)
     require(0 < len(plan_bytes) <= MAX_PLAN, "unified mailbox production plan unavailable")
@@ -68,6 +103,7 @@ def admit(plan_bytes, controller_sha, archive, *, now=None):
     except Exception as error:
         raise Refusal("immutable unified mailbox source qualification unavailable") from error
     verify_qualification(proof, plan, plan_hash, observed_at)
+    verify_native_integration(plan["source_sha"], proof["integration"])
     artifact = verify_native_stage(plan, observed_at)
     require(archive.stat().st_size == artifact["size_in_bytes"], "archive differs from native size")
     verify_archive(plan, archive)
