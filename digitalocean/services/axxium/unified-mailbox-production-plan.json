@@ -1,16 +1,22 @@
 {
   "artifact_id": 14133886771,
   "artifact_sha256": "a7cae9fa6ea2e41a84156746265589b1b06568a97c829b1403b4d8bdcc804ad9",
+  "at_auth": {
+    "actor_signing_sha256": "914834f318a5250e58f46152f4e19fb23fcbe780077e7c5f20719ffb5135b18a",
+    "overlay_path": "/srv/open-hax/state/axxium/operations/d2f8dc8425f86f51a8450a0cae0b79a042694c64-at-auth/candidate.compose.json",
+    "overlay_sha256": "32b2dff0b3e4f9eb9907c21aa4c4612a79c4d75d7f7cf3383cf60e5606e0d9b9",
+    "receipt_sha256": "bce66264814b13660852a03dd085991d1298f8c3b636ee17d9e1283c0a34aaab"
+  },
   "authority": {
     "callback_uri": "https://chatgpt.com/connector_platform_oauth_redirect",
     "client_id": "axxium-mailbox-chatgpt-production",
     "issuer": "https://axxium.promethean.rest/oidc"
   },
   "expected": {
-    "app_container_id": "5d06dd8eb67d2356891b14d1e09ae3b77b1c97921220acf742b71b14c87a7862",
-    "app_environment_sha256": "34bae238bbae2755ae5ba215191754a2cdd15e1c052684aad9b4d7c62c69d546",
-    "app_image_id": "sha256:6aed20a3439dc29c6bcb43cf3f1e0bf41f65a72734975eb2db922898c45e4652",
-    "app_writable_layer_sha256": "63a6fbf88bd307e96c037f1ca9a70a080e7f9b985145bfee5f8abd80f3fb547c",
+    "app_container_id": "53a7b36ff0fc9671c24cfbc1640fe19661f03c1144347d57fdfde6aba1878959",
+    "app_environment_sha256": "be94699d52dc53b86db526858b89b8dfe7eaa6cc19b70a51172af052ef496719",
+    "app_image_id": "sha256:265f085671493305eb76d2c4b46463340b915b4ad3934b0c8c33ed0c6c887f57",
+    "app_writable_layer_sha256": "cbebeea87f9023d11b91b1e6410dd5d7955a28a965f29ac1916f18adda0062d0",
     "caddy_container_id": "5ef621be013356092ea07330a7e5dbc9c50b49cc55da46b09f3a935d0cac6992",
     "caddy_image_id": "sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17",
     "caddy_proxy_ip": "172.18.0.9",
@@ -29,7 +35,9 @@
   "host": "knoxx.promethean.rest",
   "identity": {
     "incumbent_authority_sha256": "3f63c99c09deca8e917e810f87da0c79a9356644877c317327a434123d41de8d",
-    "seed_sha256": "b1dad487dff51ab091c4f5f18787959a1b575f7c22522734181a9dd81019168f",
+    "seed_sha256": "4726287f7cc2a819d7e9d6a0f08fed0a5bf9375f803f1d225eb3e19780f19013",
+    "work_actor_id": "actor_122e0b09-e016-469e-9e7c-8bf183d1de29",
+    "work_atproto_did": "did:plc:mbew7r6ca3pg3lbebfck4gjf",
     "work_client_id": "axxium-mailbox-chatgpt-production"
   },
   "image_id": "sha256:265f085671493305eb76d2c4b46463340b915b4ad3934b0c8c33ed0c6c887f57",
@@ -47,7 +55,7 @@
       "root_sha256": "633c271a867a85a160f2d3d521c33cb8d9f4ce3d0ad5c6bb6e71199b36a9d46c"
     }
   },
-  "overlay_sha256": "350d998968bb2c0c1f1f97e9498b97694b91024edb8ecb17d64e34d9fe8cd093",
+  "overlay_sha256": "419b2a5f2c589ccec227b13e15aa9a61a8a238826fd992ad788eda87cf30948b",
   "schema": "axxium-unified-mailbox-production/v1",
   "source_pr": 83,
   "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64",
