@@ -2,6 +2,8 @@
 
 These inputs prepare a rehearsal for [Services #92](https://github.com/open-hax/services/pull/92).
 The production workflows retain their current entry points and guard.
+The [unified production mailbox release](../../../docs/environments/axxium-unified-production-mailbox.md)
+adds two apex paths and app configuration under the same Axxium authority.
 
 `render-caddy-root.py` removes one verified incumbent Axxium site block from a
 local copy of the root Caddyfile. Pass the digest recorded independently from

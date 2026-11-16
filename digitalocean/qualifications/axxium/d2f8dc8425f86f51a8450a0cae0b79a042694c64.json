@@ -1,0 +1,45 @@
+{
+  "e2e": {
+    "assertions": 570,
+    "completed_at": "2026-11-16T21:18:17.027884+00:00",
+    "evidence": {
+      "fixture_identity_log_sha256": "57b50367f77cec324f5a6b33a8ddec459851fd9927a33c0f6f1306fb5db8a7c3",
+      "isolated_compose_rollback_sha256": "00f8b62202c53b5c0892de427bdc350587061bb1745e6068d527f97d3a8aa9f0",
+      "isolated_same_image_mailbox_rollback_sha256": "086905694bd24c55c221beaf021cb11d26c8dddd8cd6ae4b391caf8b122f0636",
+      "isolated_same_image_session_continuity_sha256": "d1fa8885404ac09f53473dbe395f3b29594be3d253758c17b614a69507ebd56b",
+      "live_read_only_compose_projection_sha256": "060f9abfac26de69226208198a84df8d0f4bcc452626865e2ca8c7b331496a60"
+    },
+    "evidence_sha256": "6b5aa8c3b33a5fa9724aa7c25f9b9ce6d7b39a43b17a38682b5c65a2b0e13038",
+    "image_id": "sha256:265f085671493305eb76d2c4b46463340b915b4ad3934b0c8c33ed0c6c887f57",
+    "kind": "e2e",
+    "scope": "Exact-image OAuth and actor-bootstrap fixture, same-image Compose rollback and browser session continuity, read-only production Compose projection",
+    "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64",
+    "status": "passed",
+    "timed_out": false,
+    "warnings": []
+  },
+  "image_id": "sha256:265f085671493305eb76d2c4b46463340b915b4ad3934b0c8c33ed0c6c887f57",
+  "integration": {
+    "assertion_scope": "Exact-source hosted test runner aggregate. The same job independently completed the isolated PostgreSQL OIDC store integration.",
+    "assertions": 3483,
+    "completed_at": "2026-11-14T22:03:48Z",
+    "evidence_sha256": "e88bdc05358ba3b982fe1a5e0b66a4e762576d9c47b418f2eac7b307c108315f",
+    "kind": "integration",
+    "native_ci_job_id": 132603001512,
+    "native_ci_run_id": 43645748344,
+    "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64",
+    "status": "passed",
+    "timed_out": false,
+    "warnings": []
+  },
+  "mutation_batches": [],
+  "mutation_harness": {
+    "campaign_passed": false,
+    "status": "retired"
+  },
+  "plan_sha256": "e00fb46d7be9d3bb833bddab9419e9fb3f4baa517d537f65d7e7122a446344b4",
+  "repository": "open-hax/axxium",
+  "schema": "axxium-unified-mailbox-qualification/v1",
+  "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64",
+  "status": "passed"
+}

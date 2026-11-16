@@ -1,0 +1,160 @@
+name: Deploy the unified Axxium mailbox
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      caller_holds_production_host_lock:
+        required: true
+        type: boolean
+    secrets:
+      DIGITALOCEAN_SSH_PRIVATE_KEY:
+        required: true
+      AXXIUM_PRODUCTION_MAILBOX_BINDING_JSON:
+        required: false
+      AXXIUM_PRODUCTION_MAILBOX_SEED_EDN:
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+env:
+  PLAN: digitalocean/services/axxium/unified-mailbox-production-plan.json
+
+jobs:
+  admit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      plan_sha256: ${{ steps.qualification.outputs.plan_sha256 }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Admit the fixed candidate and its exact evidence
+        id: qualification
+        env:
+          CALLER_LOCKED: ${{ inputs.caller_holds_production_host_lock }}
+          CALLER_WORKFLOW: ${{ github.workflow_ref }}
+          CALLER_REF_PROTECTED: ${{ github.ref_protected }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CONTROLLER_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$CALLER_LOCKED" = true
+          test "$CALLER_REF_PROTECTED" = true
+          test "$CALLER_WORKFLOW" = 'open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main'
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$SOURCE_SHA" = "$(jq -er .source_sha "$PLAN")"
+          artifact=$(jq -er '.artifact_id | select(type == "number" and . > 0 and floor == .)' "$PLAN")
+          timeout --kill-after=5s 120s gh api "repos/open-hax/axxium/actions/artifacts/$artifact/zip" > stage.zip
+          if ! python3 scripts/axxium_unified_mailbox_admission.py --plan "$PLAN" --controller-sha "$CONTROLLER_SHA" --archive stage.zip > admission.json; then
+            jq -c '{admitted, reason}' admission.json
+            exit 1
+          fi
+          jq -er 'select(.admitted == true) | "plan_sha256=" + (.plan_sha256 | select(test("^[0-9a-f]{64}$")))' admission.json >> "$GITHUB_OUTPUT"
+      - name: Publish sanitized admission evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: axxium-unified-mailbox-admission
+          path: admission.json
+          if-no-files-found: ignore
+
+  deploy:
+    needs: admit
+    if: needs.admit.outputs.plan_sha256 != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: production
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Recheck qualification inside the protected environment
+        env:
+          CONTROLLER_SHA: ${{ github.sha }}
+          PLAN_SHA256: ${{ needs.admit.outputs.plan_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$PLAN_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$(sha256sum "$PLAN" | cut -d' ' -f1)" = "$PLAN_SHA256"
+          artifact=$(jq -er '.artifact_id | select(type == "number" and . > 0 and floor == .)' "$PLAN")
+          timeout --kill-after=5s 120s gh api "repos/open-hax/axxium/actions/artifacts/$artifact/zip" > stage.zip
+          python3 scripts/axxium_unified_mailbox_admission.py --plan "$PLAN" --controller-sha "$CONTROLLER_SHA" --archive stage.zip > admission.json
+          jq -e --arg sha "$PLAN_SHA256" '.admitted == true and .plan_sha256 == $sha' admission.json >/dev/null
+      - name: Verify production hold and run the fixed mailbox controller
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
+          BINDING_JSON: ${{ secrets.AXXIUM_PRODUCTION_MAILBOX_BINDING_JSON }}
+          OWNER_SEED: ${{ secrets.AXXIUM_PRODUCTION_MAILBOX_SEED_EDN }}
+          CONTROLLER_SHA: ${{ github.sha }}
+          PLAN_SHA256: ${{ needs.admit.outputs.plan_sha256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$CONTROLLER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PLAN_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test -n "$SSH_PRIVATE_KEY" && test -n "$BINDING_JSON" && test -n "$OWNER_SEED"
+          . digitalocean/lib/host-contract.sh
+          load_host_contract production
+          assert_pinned_host_key
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/digitalocean
+          chmod 600 ~/.ssh/digitalocean
+          install -m 600 "$OPEN_HAX_KNOWN_HOSTS" ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<CONFIG
+          Host open-hax-target
+            HostName $OPEN_HAX_HOST
+            User $OPEN_HAX_SSH_USER
+            IdentityFile ~/.ssh/digitalocean
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            ConnectTimeout 10
+            ServerAliveInterval 10
+            ServerAliveCountMax 6
+          CONFIG
+          chmod 600 ~/.ssh/config
+          ssh -G open-hax-target >/dev/null
+          ssh open-hax-target 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
+          controller="$OPEN_HAX_SERVICES_ROOT/axxium/controllers/$CONTROLLER_SHA"
+          printf '%s' "$BINDING_JSON" > production-mailbox-binding.json
+          printf '%s' "$OWNER_SEED" > production-mailbox-seed.edn
+          tar --mode=u=rw,go= -cf controller.tar \
+            "$PLAN" digitalocean/services/axxium/mailbox-production.overlay.yaml \
+            scripts/axxium_unified_mailbox_release.py scripts/axxium_minimal_release.py \
+            scripts/axxium_ingress_caddy.py scripts/axxium_oidc_ingress.py \
+            scripts/axxium_production_qualification.py scripts/environment_policy.py \
+            scripts/github_environment_admission.py scripts/provision_axxium_colab_identity.py \
+            scripts/provision_axxium_mailbox_identity.py \
+            production-mailbox-binding.json production-mailbox-seed.edn
+          # Remote command paths come from the host contract and validated SHA values.
+          # shellcheck disable=SC2029
+          ssh open-hax-target "umask 077; mkdir -p '$OPEN_HAX_SERVICES_ROOT/axxium/controllers'; mkdir -m 700 '$controller' && tar --no-same-owner -xf - -C '$controller'" < controller.tar
+          # shellcheck disable=SC2029
+          ssh open-hax-target "umask 077; python3 -B '$controller/scripts/axxium_unified_mailbox_release.py' --plan '$controller/$PLAN' --plan-sha256 '$PLAN_SHA256' --apply >'$controller/mailbox-release.stdout' 2>'$controller/mailbox-release.stderr'; result=\$?; printf '%s\\n' \"\$result\" >'$controller/mailbox-release-status.tmp' && mv '$controller/mailbox-release-status.tmp' '$controller/mailbox-release-status' || exit 1; cat '$controller/mailbox-release.stdout' || exit 1; exit \"\$result\"" </dev/null > release-receipt.json
+          jq -e '.status == "healthy" and .mailbox_discovery_verified == true' release-receipt.json >/dev/null
+      - name: Publish sanitized deployment evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: axxium-unified-mailbox-production
+          path: |
+            admission.json
+            release-receipt.json
+          if-no-files-found: ignore
+      - name: Remove runner credential copies
+        if: always()
+        run: rm -f ~/.ssh/digitalocean production-mailbox-binding.json production-mailbox-seed.edn controller.tar stage.zip

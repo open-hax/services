@@ -563,7 +563,7 @@ class NativeHost:
         credentials={'email':'adoption-'+secrets.token_hex(12)+'@invalid.test','password':secrets.token_urlsafe(36)}
         clone=self.backups[label]['database']
         if candidate:self.probe(plan,clone,plan['image_id'],credentials,True,candidate=True)
-        self.probe(plan,clone,plan['expected']['app_image_id'],credentials,not candidate)
+        self.probe(plan,clone,plan['expected']['app_image_id'],credentials,not candidate,candidate=False)
         self.command(['docker','exec',DB,'dropdb','-U','axxium',clone],effect=True)
         self.private_write(self.operation/(label+'-compatibility.json'),json.dumps({'source_sha':plan['source_sha'],'image_id':plan['image_id'],'old_image_id':plan['expected']['app_image_id'],'candidate_then_old':candidate,'password_session_roundtrip':True}).encode())
 
