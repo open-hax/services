@@ -222,7 +222,7 @@ class Host(release.NativeHost):
 
     def verify_runtime(self, current, *, candidate):
         mounts = {row['Destination']: (row['Type'], row['Source'], row['RW']) for row in current['Mounts']}
-        environment = dict(entry.split('=',1) for entry in current['Config']['Env'])
+        environment = release.container_environment(current)
         expected_key = ('bind', str(self.signing_key), False) if candidate else None
         if (mounts.get(KEY_TARGET) != expected_key or
                 mounts.get('/run/axxium/oidc') != ('bind', str(AUTHORITY.parent), False) or

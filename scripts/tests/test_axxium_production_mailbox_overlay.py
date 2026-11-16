@@ -30,6 +30,46 @@ BINDINGS = f'[["{WORK_DID}" "{ROOT_DID}:work"]]'
 OIDC_MOUNT = '/run/axxium/oidc'
 
 
+class MailboxRuntimeHealthTest(unittest.TestCase):
+    def test_bare_docker_environment_entry_is_unset_and_explicit_values_are_preserved(self):
+        plan = {'at_auth': {'overlay_path': '/fixture/at-auth.compose.json'}, 'image_id': CANDIDATE_IMAGE}
+        host = unified.Host(plan, Path('/fixture/plan.json'), 'a' * 64)
+        host.candidate_id = 'candidate'
+        host.proxy_ip = '172.18.0.9'
+        host.old_environment = {'INCUMBENT_EMPTY': '', 'INCUMBENT_VALUE': 'one=two'}
+        optional = 'AXXIUM_MAILBOX_BOUND_BOOTSTRAP_BINDINGS'
+        selected = {'Id': host.candidate_id, 'Image': CANDIDATE_IMAGE, 'Mounts': [], 'Config': {'Env': []}}
+        proxy = {'NetworkSettings': {'Networks': {'open-hax': {'IPAddress': host.proxy_ip}}}}
+        projection = {'environment': {optional: None}, 'volumes': []}
+        oidc = {'issuer': unified.release.ISSUER, 'code_challenge_methods_supported': ['S256']}
+        metadata = {'resource': unified.ORIGIN + unified.RESOURCE_PATH,
+                    'authorization_servers': [unified.release.ISSUER],
+                    'scopes_supported': ['mailbox:events', 'mailbox:actors', 'mailbox:inbox']}
+
+        def probe(command):
+            result = metadata if command[-1].endswith(unified.METADATA_PATH) else oidc
+            return json.dumps(result).encode()
+
+        with (mock.patch.object(host, 'wait_app'), mock.patch.object(host, 'unchanged_dependencies'),
+              mock.patch.object(host, 'identity_check'), mock.patch.object(host, 'http', return_value=(503, b'')),
+              mock.patch.object(host, 'mailbox_projection', return_value=projection),
+              mock.patch.object(host, 'inspect', side_effect=lambda name: selected if name == unified.release.APP else proxy),
+              mock.patch.object(host, 'command', side_effect=probe)):
+            original = ['INCUMBENT_EMPTY=', 'INCUMBENT_VALUE=one=two', optional]
+            selected['Config']['Env'] = original
+            host.private_health(plan)
+
+            for entries, reason in (
+                (['INCUMBENT_EMPTY=', 'INCUMBENT_VALUE=one=two', optional + '='], 'Running mailbox environment differs'),
+                (['INCUMBENT_EMPTY', 'INCUMBENT_VALUE=one=two', optional], 'Incumbent application setting was not preserved'),
+                (['INCUMBENT_EMPTY=', 'INCUMBENT_VALUE=one', optional], 'Incumbent application setting was not preserved'),
+            ):
+                with self.subTest(entries=entries):
+                    selected['Config']['Env'] = entries
+                    with self.assertRaisesRegex(unified.release.Uncertain, reason):
+                        host.private_health(plan)
+
+
 @unittest.skipUnless(shutil.which('docker'), 'Docker CLI unavailable')
 class ProductionMailboxOverlayTest(unittest.TestCase):
     def setUp(self):
