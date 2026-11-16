@@ -59,6 +59,11 @@ def controlled_file(path,*,secret=False):
     return info
 
 
+def container_environment(container):
+    """Decode Docker Config.Env, where a bare name explicitly unsets a variable."""
+    return dict(entry.split('=', 1) for entry in container['Config']['Env'] if '=' in entry)
+
+
 def rehearsal_environment(original,database,proxy_ip):
     """Use only the fixed discrete DB configuration of the selected source.
 
@@ -333,7 +338,7 @@ class NativeHost:
         if digest(self.original)!=e['caddyfile_sha256']:raise Refused('Incumbent ingress bytes changed')
         self.maintenance,self.final=self.route_candidates(plan)
         for data in (self.maintenance,self.final):self.validate_caddy(data)
-        self.old_environment=dict(x.split('=',1) for x in old['Config']['Env'])
+        self.old_environment=container_environment(old)
         self.original_layer(plan)
         size=int(self.sql('axxium',"SELECT pg_database_size(current_database())").strip())
         if shutil.disk_usage(STATE).free<max(1024**3,size*4):raise Refused('Insufficient private backup space')
@@ -598,7 +603,7 @@ class NativeHost:
         if self.http('/health')[0]!=503:raise KnownFailure('Authority maintenance fence is no longer observed')
         d=self.inspect(APP)
         if d['Image']!=plan['image_id'] or d['Id']!=self.candidate_id:raise Uncertain('Selected application identity differs')
-        env=dict(x.split('=',1) for x in d['Config']['Env'])
+        env=container_environment(d)
         for key,value in self.old_environment.items():
             if key not in self.changed_environment and env.get(key)!=value:
                 raise Uncertain('Incumbent application setting was not preserved')

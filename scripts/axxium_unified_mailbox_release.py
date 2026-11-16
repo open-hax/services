@@ -342,7 +342,7 @@ class Host(release.NativeHost):
         self.identity_check()
         service = self.mailbox_projection(plan)
         selected = self.inspect(release.APP)
-        environment = dict(entry.split('=', 1) for entry in selected['Config']['Env'])
+        environment = release.container_environment(selected)
         mounts = {volume['Destination']: (volume['Source'], volume['RW']) for volume in selected['Mounts']}
         for key, value in service['environment'].items():
             if key.startswith(('AXXIUM_MAILBOX_', 'AXXIUM_IDENTITY_', 'AXXIUM_GITHUB_IDENTITY_')) or key in (
