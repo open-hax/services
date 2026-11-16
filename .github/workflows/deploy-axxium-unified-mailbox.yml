@@ -118,7 +118,7 @@ jobs:
             HostName $OPEN_HAX_HOST
             User $OPEN_HAX_SSH_USER
             IdentityFile ~/.ssh/digitalocean
-            IdentityOnly yes
+            IdentitiesOnly yes
             BatchMode yes
             StrictHostKeyChecking yes
             UserKnownHostsFile ~/.ssh/known_hosts
@@ -127,6 +127,7 @@ jobs:
             ServerAliveCountMax 6
           CONFIG
           chmod 600 ~/.ssh/config
+          ssh -G open-hax-target >/dev/null
           ssh open-hax-target 'sh -s' < digitalocean/scripts/check-axxium-production-hold.sh
           controller="$OPEN_HAX_SERVICES_ROOT/axxium/controllers/$CONTROLLER_SHA"
           printf '%s' "$BINDING_JSON" > production-mailbox-binding.json
