@@ -522,10 +522,10 @@ class NativeHost:
         self.backups[label]={'path':str(path),'sha256':file_digest(path),'database':clone}
         self.private_write(self.operation/(label+'-backup.json'),json.dumps(self.backups[label],sort_keys=True).encode())
 
-    def probe(self,plan,database,image,credentials,signup):
+    def probe(self,plan,database,image,credentials,signup,*,candidate):
         name='axxium-verify-'+secrets.token_hex(12)
         values=rehearsal_environment(self.old_environment,database,self.proxy_ip)
-        values,mounts=self.probe_profile(plan,image,name,values)
+        values,mounts=self.probe_profile(plan,image,name,values,candidate=candidate)
         env=self.operation/(name+'.env')
         if any('\n' in v or '\r' in v for v in values.values()):raise Refused('Unrepresentable private environment')
         self.private_write(env,('\n'.join(k+'='+v for k,v in values.items())+'\n').encode())
@@ -550,7 +550,7 @@ class NativeHost:
         self.command(['docker','stop','--time','610',name],timeout=660,effect=True)
         self.command(['docker','rm',name],effect=True)
 
-    def probe_profile(self,plan,image,name,values):
+    def probe_profile(self,plan,image,name,values,*,candidate):
         return values,[
             '--mount','type=bind,src='+str(STATE/'google-client.json')+',dst=/run/axxium/google-client.json,readonly',
             '--mount','type=bind,src='+str(STATE/'oidc')+',dst=/run/axxium/oidc,readonly',
@@ -559,8 +559,8 @@ class NativeHost:
     def rehearse(self,plan,label,*,candidate):
         credentials={'email':'adoption-'+secrets.token_hex(12)+'@invalid.test','password':secrets.token_urlsafe(36)}
         clone=self.backups[label]['database']
-        if candidate:self.probe(plan,clone,plan['image_id'],credentials,True)
-        self.probe(plan,clone,plan['expected']['app_image_id'],credentials,not candidate)
+        if candidate:self.probe(plan,clone,plan['image_id'],credentials,True,candidate=True)
+        self.probe(plan,clone,plan['expected']['app_image_id'],credentials,not candidate,candidate=False)
         self.command(['docker','exec',DB,'dropdb','-U','axxium',clone],effect=True)
         self.private_write(self.operation/(label+'-compatibility.json'),json.dumps({'source_sha':plan['source_sha'],'image_id':plan['image_id'],'old_image_id':plan['expected']['app_image_id'],'candidate_then_old':candidate,'password_session_roundtrip':True}).encode())
 

@@ -13,6 +13,7 @@ import provision_axxium_mailbox_identity as subject
 
 SOURCE = '1' * 40
 ACTOR = 'actor_00000000-0000-0000-0000-000000000001'
+WORK_ACCOUNT = 'actor_00000000-0000-0000-0000-000000000002'
 MAILBOX = 'did:plc:' + 'a' * 24
 SEED = b'{:root {:id "err"} :nodes [{:id "err:work"}]}'
 
@@ -51,7 +52,8 @@ class ProvisionTest(unittest.TestCase):
         self.write(self.request, subject.json_bytes(self.request_value))
         self.plan_value = {'source_sha': SOURCE, 'identity': {
             'incumbent_authority_sha256': subject.digest(self.authority.read_bytes()),
-            'seed_sha256': subject.digest(SEED), 'work_client_id': subject.WORK_CLIENT}}
+            'seed_sha256': subject.digest(SEED), 'work_client_id': subject.WORK_CLIENT,
+            'work_atproto_did': MAILBOX, 'work_actor_id': WORK_ACCOUNT}}
         self.write(self.plan, subject.json_bytes(self.plan_value))
         self.marker = {'schema': 'axxium-production-pending/v1', 'operation': str(self.operation),
                        'source_sha': SOURCE, 'plan_sha256': subject.digest(self.plan.read_bytes())}
@@ -93,6 +95,15 @@ class ProvisionTest(unittest.TestCase):
         self.assertFalse(self.identity.exists())
         self.assertFalse(self.mailbox.exists())
 
+    def test_preflight_matches_protected_did_to_the_exact_observed_actor(self):
+        self.invoke()
+        self.assertEqual(self.work_account.call_args.args[1:], (MAILBOX, WORK_ACCOUNT))
+        self.work_account.reset_mock()
+        self.write(self.request, subject.json_bytes({**self.request_value, 'work_mailbox_did': 'did:plc:' + 'b' * 24}))
+        with self.assertRaisesRegex(subject.Refusal, 'registration input differs'):
+            self.invoke()
+        self.work_account.assert_not_called()
+
     def test_interrupted_key_durable_link_recovers_without_rekey(self):
         self.with_lock(lambda fd: self.invoke(prepare=True, lock_fd=fd))
         key = self.identity / 'owner/identity.key'
@@ -119,9 +130,10 @@ class ProvisionTest(unittest.TestCase):
         dotenv = (self.identity / 'mailbox.env').read_text()
         self.assertIn(f"AXXIUM_MAILBOX_ACTOR_BINDINGS='[[\"{MAILBOX}\",\"{subject.WORK_ACTOR}\"]]'", dotenv)
         self.assertIn(f"AXXIUM_MAILBOX_BOOTSTRAP_ACTOR_DIDS='{subject.CODEX_ACTOR}'", dotenv)
-        keys = {path: path.read_bytes() for path in (self.identity / 'actor-signing.pem',
-                self.identity / 'owner/identity.key', self.identity / 'oidc/mailbox-webhook.key')}
-        self.assertEqual(len(set(keys.values())), 3)
+        self.assertFalse((self.identity / 'actor-signing.pem').exists())
+        keys = {path: path.read_bytes() for path in (self.identity / 'owner/identity.key',
+                self.identity / 'oidc/mailbox-webhook.key')}
+        self.assertEqual(len(set(keys.values())), 2)
         self.mailbox.write_bytes(b'accepted mailbox bytes\n')
         self.actor_ledger.write_bytes(b'accepted actor bytes\n')
         ledger_id = self.mailbox.stat().st_ino

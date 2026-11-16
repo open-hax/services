@@ -22,12 +22,15 @@ SOURCE = 'd2f8dc8425f86f51a8450a0cae0b79a042694c64'
 IMAGE = 'sha256:265f085671493305eb76d2c4b46463340b915b4ad3934b0c8c33ed0c6c887f57'
 INCUMBENT_SOURCE = '58234df96ca86507e6cdd87f65aaa9ab35621415'
 INCUMBENT = release.STATE / 'operations' / INCUMBENT_SOURCE / 'candidate.compose.json'
+SIGNING_TARGET = '/run/axxium/actor-signing.pem'
 ROOT = Path(__file__).resolve().parents[1]
 OVERLAY = ROOT / 'digitalocean/services/axxium/mailbox-production.overlay.yaml'
 INPUT = ROOT / 'production-mailbox-binding.json'
 SEED = ROOT / 'production-mailbox-seed.edn'
 PROVISIONER = Path(__file__).with_name('provision_axxium_mailbox_identity.py')
 HEX = re.compile(r'[0-9a-f]{64}')
+ACTOR = re.compile(r'actor_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}')
+ATPROTO_DID = re.compile(r'did:plc:[a-z2-7]{24}')
 ROOT_ACTOR = 'did:web:axxium.promethean.rest:actors:err'
 CODEX_ACTOR = ROOT_ACTOR + ':hosts:stealth:codex'
 FIXTURE_MAILBOX = 'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa'
@@ -39,7 +42,7 @@ PREFLIGHT_BINDING = {
     'AXXIUM_MAILBOX_BOOTSTRAP_ACTOR_DIDS': CODEX_ACTOR,
 }
 WRITABLE = frozenset(('/var/lib/axxium/identity/ledger.edn', '/var/lib/axxium/mailbox/ledger.edn'))
-CONFIG_PATHS = ('mailbox.env', 'actor-signing.pem', 'oidc/authority.json', 'oidc/mailbox-webhook.key',
+CONFIG_PATHS = ('mailbox.env', 'oidc/authority.json', 'oidc/mailbox-webhook.key',
                 'owner/identity.key', 'owner/foresight-tree.edn')
 
 
@@ -52,10 +55,14 @@ def digest_value(value):
     return isinstance(value, str) and HEX.fullmatch(value)
 
 
+def at_auth_operation():
+    return release.STATE / 'operations' / (SOURCE + '-at-auth')
+
+
 def validate_plan(plan):
     keys = {'schema','host','source_sha','image_id','source_pr','artifact_id','artifact_sha256',
             'stage_run_id','stage_workflow_path','stage_controller_sha','expected','authority',
-            'identity','ingress','overlay_sha256'}
+            'identity','at_auth','ingress','overlay_sha256'}
     require(isinstance(plan, dict) and set(plan) == keys and plan['schema'] == SCHEMA
             and plan['source_sha'] == SOURCE and plan['image_id'] == IMAGE and plan['source_pr'] == 83
             and plan['host'] == 'knoxx.promethean.rest', 'Unreviewed unified mailbox plan')
@@ -65,8 +72,9 @@ def validate_plan(plan):
                 'pds_environment_sha256','caddy_container_id','caddy_image_id','compose_sha256',
                 'environment_file_sha256','caddyfile_sha256','managed_caddy_sha256','caddy_proxy_ip',
                 'incumbent_overlay_sha256'}
-    require(isinstance(plan['expected'], dict) and set(plan['expected']) == expected,
-            'Incomplete incumbent snapshot')
+    require(isinstance(plan['expected'], dict) and set(plan['expected']) == expected
+            and plan['expected']['app_image_id'] == IMAGE,
+            'Incomplete app-only incumbent snapshot')
     for key, value in plan['expected'].items():
         if key == 'caddy_proxy_ip':
             ipaddress.IPv4Address(value)
@@ -78,11 +86,18 @@ def validate_plan(plan):
     require(plan['authority'] == {'issuer': release.ISSUER, 'client_id': 'axxium-mailbox-chatgpt-production',
                                  'callback_uri': 'https://chatgpt.com/connector_platform_oauth_redirect'},
             'Production Work authority differs')
-    keys = {'incumbent_authority_sha256','seed_sha256','work_client_id'}
+    auth = plan['at_auth']
+    pins = {'overlay_sha256','actor_signing_sha256','receipt_sha256'}
+    require(isinstance(auth, dict) and set(auth) == pins | {'overlay_path'}
+            and auth['overlay_path'] == str(at_auth_operation() / 'candidate.compose.json')
+            and all(digest_value(auth[key]) for key in pins), 'Incomplete app-only AT release pins')
+    keys = {'incumbent_authority_sha256','seed_sha256','work_client_id','work_atproto_did','work_actor_id'}
     identity = plan['identity']
     require(isinstance(identity, dict) and set(identity) == keys
             and identity['work_client_id'] == plan['authority']['client_id']
-            and all(digest_value(identity[key]) for key in keys - {'work_client_id'}),
+            and isinstance(identity['work_atproto_did'], str) and ATPROTO_DID.fullmatch(identity['work_atproto_did'])
+            and isinstance(identity['work_actor_id'], str) and ACTOR.fullmatch(identity['work_actor_id'])
+            and all(digest_value(identity[key]) for key in ('incumbent_authority_sha256','seed_sha256')),
             'Incomplete production identity binding')
     ingress = plan['ingress']
     require(isinstance(ingress, dict) and set(ingress) == {'incumbent','fenced','live'},
@@ -104,15 +119,16 @@ def verify_metadata(raw):
         raise release.KnownFailure('Mailbox discovery differs from the production resource')
 
 
-def validate_projection(current, candidate, image, identity_directory):
+def validate_projection(current, candidate, image, identity_directory, signing_path):
     baseline, selected = (d['services']['axxium'] for d in (current, candidate))
     for document in (current, candidate):
         document['services'].pop('axxium')
     require(current == candidate, 'Mailbox Compose changed unrelated services or project settings')
     env, original = selected['environment'], baseline['environment']
-    settings = {'JWT_AUDIENCE':'promethean+production',
-                'AXXIUM_SIGNING_KEY_FILE':'/run/axxium/actor-signing.pem',
-                'AXXIUM_OIDC_CONFIG_FILE':'/run/axxium/oidc/authority.json',
+    require(baseline['image'] == image and original.get('JWT_AUDIENCE') == 'promethean+production'
+            and original.get('AXXIUM_SIGNING_KEY_FILE') == SIGNING_TARGET,
+            'App-only signing environment differs')
+    settings = {'AXXIUM_OIDC_CONFIG_FILE':'/run/axxium/oidc/authority.json',
                 'AXXIUM_GITHUB_IDENTITY_KEY_FILE':'/run/axxium/owner/identity.key',
                 'AXXIUM_GITHUB_IDENTITY_LEDGER_FILE':'/var/lib/axxium/identity/ledger.edn',
                 'AXXIUM_IDENTITY_SEED_FILE':'/run/axxium/owner/foresight-tree.edn',
@@ -123,8 +139,7 @@ def validate_projection(current, candidate, image, identity_directory):
                 'AXXIUM_MAILBOX_WEBHOOK_KEY_FILE':'/run/axxium/oidc/mailbox-webhook.key'}
     work = env['AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID']
     operator = env['AXXIUM_IDENTITY_ROOT_OPERATOR_ACTOR_ID']
-    require(re.fullmatch(r'did:plc:[a-z2-7]{24}', work)
-            and re.fullmatch(r'actor_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', operator),
+    require(ATPROTO_DID.fullmatch(work) and ACTOR.fullmatch(operator),
             'Resolved owner or Work actor differs')
     settings.update(AXXIUM_MAILBOX_WEBHOOK_ACTOR_DID=work,
                     AXXIUM_IDENTITY_ROOT_OPERATOR_ACTOR_ID=operator,
@@ -141,9 +156,12 @@ def validate_projection(current, candidate, image, identity_directory):
         require(len(volumes) == len(service['volumes']), 'Ambiguous Axxium mount targets')
         return volumes
     before, after = by_target(baseline), by_target(selected)
+    signing = before.get(SIGNING_TARGET, {})
+    require(signing.get('type') == 'bind' and signing.get('source') == str(signing_path)
+            and signing.get('read_only') is True and signing.get('bind', {}).get('create_host_path') is False,
+            'App-only signing bind differs')
     expected = {
         '/run/axxium/oidc': (identity_directory / 'oidc', True),
-        '/run/axxium/actor-signing.pem': (identity_directory / 'actor-signing.pem', True),
         '/run/axxium/owner/identity.key': (identity_directory / 'owner/identity.key', True),
         '/run/axxium/owner/foresight-tree.edn': (identity_directory / 'owner/foresight-tree.edn', True),
         '/var/lib/axxium/identity/ledger.edn': (release.STATE / 'identity/ledger.edn', False),
@@ -165,7 +183,6 @@ def validate_projection(current, candidate, image, identity_directory):
 class Host(release.NativeHost):
     release_source = SOURCE
     release_image = IMAGE
-    changed_environment = release.NativeHost.changed_environment | {'JWT_AUDIENCE'}
 
     def __init__(self, plan, plan_path, plan_hash):
         super().__init__(plan_hash)
@@ -173,6 +190,8 @@ class Host(release.NativeHost):
         self.plan = plan
         self.target_operation = release.STATE / 'operations' / SOURCE
         self.secret_directory = self.target_operation / 'mailbox-identity'
+        self.at_auth_overlay = Path(plan['at_auth']['overlay_path'])
+        self.at_auth_signing = at_auth_operation() / 'actor-signing.pem'
         self.prepared = None
         self.phase = 'incumbent'
         self.before_caddy = None
@@ -183,6 +202,24 @@ class Host(release.NativeHost):
         if (release.file_digest(INCUMBENT) != plan['expected']['incumbent_overlay_sha256']
                 or release.file_digest(OVERLAY) != plan['overlay_sha256']):
             raise release.Uncertain('Retained Compose or mailbox overlay changed')
+        operation = at_auth_operation()
+        pins = plan['at_auth']
+        if operation.resolve() != operation:
+            raise release.Uncertain('App-only AT operation path differs')
+        for file, pin in ((self.at_auth_overlay, 'overlay_sha256'),
+                          (self.at_auth_signing, 'actor_signing_sha256')):
+            if release.digest(release.private_read(file)) != pins[pin]:
+                raise release.Uncertain('App-only AT overlay or signing key changed')
+        raw = release.private_read(operation / 'deployment.json')
+        if release.digest(raw) != pins['receipt_sha256']:
+            raise release.Uncertain('App-only AT deployment receipt changed')
+        receipt = strict_json(raw)
+        expected = {'schema':'axxium-at-auth-deployment/v1', 'status':'healthy', 'source_sha':SOURCE,
+                    'image_id':IMAGE, 'app_container_id':plan['expected']['app_container_id'],
+                    'operation':str(operation), 'actor_signing_sha256':pins['actor_signing_sha256'],
+                    'retained_overlay_sha256':pins['overlay_sha256']}
+        if not isinstance(receipt, dict) or any(receipt.get(key) != value for key, value in expected.items()):
+            raise release.Uncertain('App-only AT deployment differs from the reviewed incumbent')
 
     def provision(self, mode):
         args = [sys.executable, str(PROVISIONER), mode, '--plan', str(self.plan_path),
@@ -193,6 +230,7 @@ class Host(release.NativeHost):
             self.command(args)
 
     def identity_preflight(self):
+        self.verify_signing_bind(self.inspect(release.APP))
         self.provision('--preflight')
         self.mailbox_projection(self.plan, preflight=True)
 
@@ -242,7 +280,7 @@ class Host(release.NativeHost):
         if overlay == OVERLAY and not preflight:
             self.identity_check()
             command += ['--env-file',str(self.secret_directory / 'mailbox.env')]
-        command += ['-f',str(runtime / 'compose.yaml'),'-f',str(INCUMBENT)]
+        command += ['-f',str(runtime / 'compose.yaml'),'-f',str(INCUMBENT),'-f',str(self.at_auth_overlay)]
         if overlay is not None:
             command += ['-f',str(overlay)]
         return command
@@ -262,11 +300,13 @@ class Host(release.NativeHost):
         def config(overlay):
             command = self.compose_command(overlay, preflight=preflight)
             return strict_json(self.command(command + ['config','--format','json'], env=env))
-        return validate_projection(config(None), config(OVERLAY), plan['image_id'], self.secret_directory)
+        return validate_projection(config(None), config(OVERLAY), plan['image_id'], self.secret_directory,
+                                   self.at_auth_signing)
 
-    def probe_profile(self, plan, image, name, values):
-        if image != plan['image_id']:
-            return super().probe_profile(plan, image, name, values)
+    def probe_profile(self, plan, image, name, values, *, candidate):
+        if not candidate:
+            values, mounts = super().probe_profile(plan, image, name, values, candidate=False)
+            return values, mounts + ['--mount', f'type=bind,src={self.at_auth_signing},dst={SIGNING_TARGET},readonly']
         service = self.mailbox_projection(plan)
         values.update({key: value for key, value in service['environment'].items()
                        if value is not None and (key.startswith(('AXXIUM_MAILBOX_', 'AXXIUM_IDENTITY_',
@@ -346,11 +386,20 @@ class Host(release.NativeHost):
 
     def verify_rollback(self, plan, selected):
         self.verify_preserved_public_routes()
+        self.verify_signing_bind(selected)
+        if self.http(METADATA_PATH)[0] != 404 or self.http(RESOURCE_PATH)[0] != 404:
+            raise release.Uncertain('Rollback did not close the production mailbox')
         authorities = [row for row in selected['Mounts'] if row['Destination'] == '/run/axxium/oidc']
         if (len(authorities) != 1 or authorities[0]['Type'] != 'bind' or authorities[0]['RW'] is not False
                 or authorities[0]['Source'] != str(release.STATE / 'oidc')
                 or release.file_digest(release.STATE / 'oidc/authority.json') != plan['identity']['incumbent_authority_sha256']):
             raise release.Uncertain('Rollback did not restore the existing OIDC authority bind')
+
+    def verify_signing_bind(self, selected):
+        mounts = [row for row in selected['Mounts'] if row['Destination'] == SIGNING_TARGET]
+        if (len(mounts) != 1 or mounts[0]['Type'] != 'bind' or mounts[0]['RW'] is not False
+                or mounts[0]['Source'] != str(self.at_auth_signing)):
+            raise release.Uncertain('App-only actor signing key bind differs')
 
     def commit(self, plan):
         self.unchanged_dependencies(plan)

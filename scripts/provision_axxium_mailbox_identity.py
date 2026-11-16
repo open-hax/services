@@ -72,13 +72,15 @@ def existing_google_owner(binding):
         "AND a.status='active' AND e.kind='human' AND p.provider='google');")
 
 
-def existing_atproto_work(binding, mailbox):
+def existing_atproto_work(binding, mailbox, work_actor):
     actor = binding['actor_id']
-    require(incumbent.ACTOR.fullmatch(actor) and WORK_MAILBOX.fullmatch(mailbox),
+    require(incumbent.ACTOR.fullmatch(actor) and WORK_MAILBOX.fullmatch(mailbox)
+            and incumbent.ACTOR.fullmatch(work_actor) and work_actor != actor,
             'Invalid production Work account identity')
     return database_exists(
-        "SELECT count(*)=1 FROM actors a JOIN provider_bindings p ON p.actor_id=a.id "
-        "WHERE a.id<>'" + actor + "' AND a.status='active' AND p.provider='atproto' "
+        "SELECT count(*)=1 AND coalesce(bool_and(a.id='" + work_actor + "'),false) "
+        "FROM actors a JOIN provider_bindings p ON p.actor_id=a.id "
+        "WHERE a.status='active' AND p.provider='atproto' "
         "AND p.subject='" + mailbox + "';")
 
 
@@ -131,27 +133,12 @@ def require_live_lock(lock_fd, operation, plan_sha, source):
     require(incumbent.read_json(incumbent.PENDING) == expected, 'The production hold differs')
 
 
-def openssl(args, data=None):
-    result = subprocess.run(['/usr/bin/openssl', *args], input=data, capture_output=True, timeout=10,
-                            env={'LC_ALL': 'C'}, check=False)
-    require(result.returncode == 0, 'Actor signing key verification failed')
-    return result.stdout
-
-
 def prepared_key(path, generate):
     stage = incumbent.stage_path(path)
     for existing in (stage, path):
         if incumbent.present(existing):
             return incumbent.read_bytes(existing, max_links=2)
     return generate()
-
-
-def signing_key(path):
-    data = prepared_key(path, lambda: openssl(['genpkey', '-algorithm', 'ED25519']))
-    require(data.startswith(b'-----BEGIN PRIVATE KEY-----\n') and
-            b'ED25519 Public-Key:' in openssl(['pkey', '-text_pub', '-noout'], data),
-            'Actor signing key must be an Ed25519 private PEM')
-    incumbent.publish_identity_file(path, data)
 
 
 def symmetric_key(path):
@@ -191,13 +178,16 @@ def provision(plan_path, input_path, seed_path, operation, *, prepare=False, loc
     source = plan.get('source_sha')
     require(isinstance(source, str) and COMMIT.fullmatch(source) and operation == STATE / 'operations' / source,
             'The production operation does not match the admitted source')
-    require(isinstance(pin, dict) and set(pin) == {'incumbent_authority_sha256', 'seed_sha256', 'work_client_id'}
-            and pin['work_client_id'] == WORK_CLIENT, 'The protected mailbox identity pin differs')
+    require(isinstance(pin, dict) and set(pin) == {'incumbent_authority_sha256', 'seed_sha256', 'work_client_id',
+                                                  'work_atproto_did', 'work_actor_id'}
+            and pin['work_client_id'] == WORK_CLIENT and isinstance(pin['work_atproto_did'], str)
+            and WORK_MAILBOX.fullmatch(pin['work_atproto_did']) and isinstance(pin['work_actor_id'], str)
+            and incumbent.ACTOR.fullmatch(pin['work_actor_id']), 'The protected mailbox identity pin differs')
     request_bytes = incumbent.read_bytes(input_path)
     request = json_object(request_bytes)
     require(set(request) == {'schema', 'work_mailbox_did', 'work_client_secret'} and
-            request['schema'] == REQUEST_SCHEMA and isinstance(request['work_mailbox_did'], str) and
-            WORK_MAILBOX.fullmatch(request['work_mailbox_did']) and isinstance(request['work_client_secret'], str) and
+            request['schema'] == REQUEST_SCHEMA and request['work_mailbox_did'] == pin['work_atproto_did'] and
+            isinstance(request['work_client_secret'], str) and
             WORK_SECRET.fullmatch(request['work_client_secret']), 'The protected Work registration input differs')
     seed = incumbent.read_bytes(seed_path, private=False)
     authority = incumbent.read_bytes(incumbent.AUTHORITY)
@@ -205,7 +195,7 @@ def provision(plan_path, input_path, seed_path, operation, *, prepare=False, loc
             'The incumbent authority or owner seed does not match the plan')
     binding = incumbent.load_binding()
     require(existing_google_owner(binding), 'The existing production Google owner could not be verified')
-    require(existing_atproto_work(binding, request['work_mailbox_did']),
+    require(existing_atproto_work(binding, pin['work_atproto_did'], pin['work_actor_id']),
             'The exact distinct production Work AT Protocol account could not be verified')
     candidate = json_bytes(authority_with_work(json_object(authority), request))
     plan_sha = digest(plan_bytes)
@@ -242,7 +232,6 @@ def provision(plan_path, input_path, seed_path, operation, *, prepare=False, loc
         incumbent.make_private_directory(directory)
     for path, contents in files.items():
         incumbent.publish_identity_file(path, contents)
-    signing_key(identity / 'actor-signing.pem')
     symmetric_key(identity / 'owner/identity.key')
     symmetric_key(identity / 'oidc/mailbox-webhook.key')
     for ledger, capacity in ledgers:

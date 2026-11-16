@@ -22,6 +22,7 @@ INCUMBENT_IMAGE = 'sha256:' + '1' * 64
 CANDIDATE_IMAGE = 'sha256:' + '2' * 64
 STATE = Path('/fixture/state/axxium')
 IDENTITY = STATE / 'operations/candidate/mailbox-identity'
+AT_SIGNING = STATE / 'operations' / (unified.SOURCE + '-at-auth') / 'actor-signing.pem'
 OWNER = 'actor_00000000-0000-4000-8000-000000000001'
 ROOT_DID = 'did:web:axxium.promethean.rest:actors:owner'
 WORK_DID = 'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa'
@@ -62,9 +63,17 @@ class ProductionMailboxOverlayTest(unittest.TestCase):
             'volumes': [{'type': 'bind', 'source': str(STATE / 'oidc'), 'target': OIDC_MOUNT,
                          'read_only': True, 'bind': {'create_host_path': False}}],
         }}}))
+        self.at_auth = self.retained.with_name('at-auth.compose.json')
+        self.at_auth.write_text(json.dumps({'services': {'axxium': {
+            'image': CANDIDATE_IMAGE,
+            'environment': {'JWT_AUDIENCE': 'promethean+production',
+                            'AXXIUM_SIGNING_KEY_FILE': unified.SIGNING_TARGET},
+            'volumes': [{'type': 'bind', 'source': str(AT_SIGNING), 'target': unified.SIGNING_TARGET,
+                         'read_only': True, 'bind': {'create_host_path': False}}],
+        }}}))
 
     def render(self, *overlays, env=None):
-        files = [arg for path in (BASE, self.retained, *overlays) for arg in ('-f', str(path))]
+        files = [arg for path in (BASE, self.retained, self.at_auth, *overlays) for arg in ('-f', str(path))]
         return subprocess.run(['docker', 'compose', '--project-name', 'axxium', *files,
                                'config', '--format', 'json'], env=self.env if env is None else env,
                               text=True, capture_output=True, check=False)
@@ -80,8 +89,6 @@ class ProductionMailboxOverlayTest(unittest.TestCase):
         app['image'] = previous['image']
 
         expected_env = {
-            'JWT_AUDIENCE': 'promethean+production',
-            'AXXIUM_SIGNING_KEY_FILE': '/run/axxium/actor-signing.pem',
             'AXXIUM_GITHUB_IDENTITY_KEY_FILE': '/run/axxium/owner/identity.key',
             'AXXIUM_GITHUB_IDENTITY_LEDGER_FILE': '/var/lib/axxium/identity/ledger.edn',
             'AXXIUM_IDENTITY_SEED_FILE': '/run/axxium/owner/foresight-tree.edn',
@@ -99,11 +106,9 @@ class ProductionMailboxOverlayTest(unittest.TestCase):
         }
         for key, value in expected_env.items():
             self.assertEqual(app['environment'].pop(key, None), value, key)
-        app['environment']['JWT_AUDIENCE'] = previous['environment']['JWT_AUDIENCE']
 
         expected_mounts = {
             OIDC_MOUNT: (IDENTITY / 'oidc', True),
-            '/run/axxium/actor-signing.pem': (IDENTITY / 'actor-signing.pem', True),
             '/run/axxium/owner/identity.key': (IDENTITY / 'owner/identity.key', True),
             '/run/axxium/owner/foresight-tree.edn': (IDENTITY / 'owner/foresight-tree.edn', True),
             '/var/lib/axxium/identity/ledger.edn': (STATE / 'identity/ledger.edn', False),
@@ -125,6 +130,8 @@ class ProductionMailboxOverlayTest(unittest.TestCase):
                 app['volumes'].remove(mount)
         [old_oidc] = [v for v in previous['volumes'] if v['target'] == OIDC_MOUNT]
         app['volumes'].append(old_oidc)
+        for service in (app, previous):
+            service['volumes'].sort(key=lambda volume: volume['target'])
         self.assertEqual(candidate, base)
 
     def test_production_controller_checks_complete_compose_delta(self):
@@ -139,11 +146,35 @@ class ProductionMailboxOverlayTest(unittest.TestCase):
         with mock.patch.object(unified.release, 'STATE', STATE):
             selected = unified.validate_projection(json.loads(renders[0].stdout),
                                                    json.loads(renders[1].stdout),
-                                                   CANDIDATE_IMAGE, IDENTITY)
+                                                   CANDIDATE_IMAGE, IDENTITY, AT_SIGNING)
             self.assertEqual(app, selected)
+            self.assertEqual(next(row['source'] for row in selected['volumes']
+                                  if row['target'] == unified.SIGNING_TARGET), str(AT_SIGNING))
+            signing = next(row for row in app['volumes'] if row['target'] == unified.SIGNING_TARGET)
+            signing['source'] = str(IDENTITY / 'rotated-signing.pem')
+            with self.assertRaisesRegex(unified.release.Refused, 'incumbent application settings'):
+                unified.validate_projection(json.loads(renders[0].stdout), json.loads(json.dumps(candidate)),
+                                            CANDIDATE_IMAGE, IDENTITY, AT_SIGNING)
+            signing['source'] = str(AT_SIGNING)
             app['environment']['AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED'] = 'true'
             with self.assertRaisesRegex(unified.release.Refused, 'environment differs'):
-                unified.validate_projection(base, candidate, CANDIDATE_IMAGE, IDENTITY)
+                unified.validate_projection(base, candidate, CANDIDATE_IMAGE, IDENTITY, AT_SIGNING)
+
+    def test_same_image_rehearsal_uses_explicit_candidate_and_incumbent_profiles(self):
+        with mock.patch.object(unified.release, 'STATE', STATE):
+            host = unified.Host({'at_auth': {'overlay_path': str(self.at_auth)}}, Path('/plan'), 'a' * 64)
+        plan = {'image_id': CANDIDATE_IMAGE, 'expected': {'app_image_id': CANDIDATE_IMAGE}}
+        host.backups = {'before': {'database': 'rehearsal_fixture'}}
+        with (mock.patch.object(host, 'probe') as probe, mock.patch.object(host, 'command'),
+              mock.patch.object(host, 'private_write')):
+            host.operation = IDENTITY.parent
+            host.rehearse({**plan, 'source_sha': unified.SOURCE}, 'before', candidate=True)
+        self.assertEqual([call.args[2] for call in probe.call_args_list], [CANDIDATE_IMAGE, CANDIDATE_IMAGE])
+        self.assertEqual([call.kwargs['candidate'] for call in probe.call_args_list], [True, False])
+        values, mounts = host.probe_profile(plan, CANDIDATE_IMAGE, 'fixture', {}, candidate=False)
+        self.assertEqual(values, {})
+        self.assertIn(f'type=bind,src={AT_SIGNING},dst={unified.SIGNING_TARGET},readonly', mounts)
+        self.assertFalse(any(str(IDENTITY) in mount for mount in mounts))
 
     def test_refuses_missing_required_inputs_and_keeps_provided_bootstrap_bindings(self):
         for key in ('AXXIUM_PRODUCTION_MAILBOX_IMAGE', 'AXXIUM_PRODUCTION_MAILBOX_IDENTITY_PATH',

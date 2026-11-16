@@ -1,13 +1,10 @@
-# Apply after the host's base and retained authority overlay. The protected
-# caller supplies the admitted image, private inputs, and operation directory.
+# Apply after the base, retained authority and app-only AT overlays.
+# The retained app-only overlay also supplies the existing signing key.
 services:
   axxium:
     image: ${AXXIUM_PRODUCTION_MAILBOX_IMAGE:?Set the admitted production mailbox image}
     environment:
-      # The mailbox release derives its actor token audience from service and environment.
-      JWT_AUDIENCE: promethean+production
       AXXIUM_OIDC_CONFIG_FILE: /run/axxium/oidc/authority.json
-      AXXIUM_SIGNING_KEY_FILE: /run/axxium/actor-signing.pem
       AXXIUM_GITHUB_IDENTITY_KEY_FILE: /run/axxium/owner/identity.key
       AXXIUM_GITHUB_IDENTITY_LEDGER_FILE: /var/lib/axxium/identity/ledger.edn
       AXXIUM_IDENTITY_SEED_FILE: /run/axxium/owner/foresight-tree.edn
@@ -28,12 +25,6 @@ services:
       - type: bind
         source: ${AXXIUM_PRODUCTION_MAILBOX_IDENTITY_PATH:?Set the prepared production mailbox identity path}/oidc
         target: /run/axxium/oidc
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${AXXIUM_PRODUCTION_MAILBOX_IDENTITY_PATH:?Set the prepared production mailbox identity path}/actor-signing.pem
-        target: /run/axxium/actor-signing.pem
         read_only: true
         bind:
           create_host_path: false
