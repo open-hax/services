@@ -16,20 +16,20 @@ IDs. The historical public Work pilot is closed.
 | Producer | [Axxium staging run 43645748878](https://github.com/open-hax/axxium/actions/runs/43645748878) |
 | Native staging artifact | [14133886771](https://github.com/open-hax/axxium/actions/runs/43645748878/artifacts/14133886771), ZIP SHA-256 `a7cae9fa6ea2e41a84156746265589b1b06568a97c829b1403b4d8bdcc804ad9`, hosted expiration 2026-11-17 22:03:52 UTC |
 | Image archive and descriptor | `images.tar` SHA-256 `3752308795346c32424802c81af50a7e47ff3374f1b9a692b2aa894c127628c8`, OCI index `sha256:265f085671493305eb76d2c4b46463340b915b4ad3934b0c8c33ed0c6c887f57` |
-| Production incumbent | [Fixed minimal plan](../../digitalocean/services/axxium/minimal-production-plan.json) source `58234df96ca86507e6cdd87f65aaa9ab35621415`, OCI index `sha256:6aed20a3439dc29c6bcb43cf3f1e0bf41f65a72734975eb2db922898c45e4652` |
+| Production incumbent | App-only rollout [43957461297](https://github.com/open-hax/services/actions/runs/43957461297), on the same source and OCI index as the mailbox candidate |
 
 The staging run/archive, archive inner hash and live staging image agree.
 Retain the verified archive for comparison. A release must still establish
 its own native custody and deployment admission, including after artifact
-expiration. The current Axxium production dispatch accepts only the fixed
-minimal plan source.
+expiration.
 
 ## Prepare the production release
 
 1. Add the exact production candidate and rollback pins to the protected
    Services caller in the existing `digitalocean-production-host` queue.
-   Use current successful integration and end-to-end receipts for the chosen
-   source. The historical mutation exception in the existing admission code
+   Use current successful integration and exact-image OAuth, bootstrap, and
+   rollback rehearsal receipts for the chosen source. The historical
+   mutation exception in the existing admission code
    is bound to the previous candidate. The successor admission change must
    record the owner-directed retirement of that harness without representing
    mutation testing as passed or changing admission for other services.
@@ -46,8 +46,7 @@ minimal plan source.
    grants or mailbox history.
 3. Route exact `/api/mailbox/mcp` and
    `/.well-known/oauth-protected-resource/api/mailbox/mcp` on the apex to
-   Axxium. Both paths currently fall through to the PDS. The incumbent app
-   also returns 404 directly and predates the unified mailbox release. For
+   Axxium. Both paths remain closed before activation. For
    the inline shared ingress, use the existing digest-guarded
    [`prepare_mailbox`](../../scripts/axxium_oidc_ingress.py) byte transform
    to generate fenced and live candidates. It includes the companion OIDC
@@ -94,24 +93,19 @@ integration/rehearsal evidence before the production job. Its app overlay
 composes after the incumbent base and retained authority overlay and preserves
 the existing database, PDS, Google client, and Caddy peer. Prepared OIDC and
 signing files are read-only app mounts. The persistent identity and mailbox
-ledgers are writable and remain available after rollback. Browser sessions
-issued with the incumbent HS256 signing key require fresh sign-in.
+ledgers are writable and remain available after rollback. Both Compose
+profiles retain the AT signing key installed by the app-only rollout.
 
-On November 16, the primary incumbent returned HTTP 500 from the exact Work
-AT sign-in route before reaching the PDS. The original Work account still
-resolves on the canonical PDS. Its independent active AT binding is absent
-from the primary Axxium database. Work owner consent on the candidate checks
-that binding independently from the signed-in Google owner. The prepared
-controller checks both identities before acquiring a production hold.
-[Axxium #49](https://github.com/open-hax/axxium/pull/49) fixes the observed
-Node module import error and is already in the selected image.
+The app-only rollout deployed the [Axxium #49](https://github.com/open-hax/axxium/pull/49)
+AT sign-in fix with the mailbox routes closed. The existing Work account
+completed primary sign-in and an independent readback verified its active
+binding. The mailbox plan pins that binding and the live app-only terminal
+receipt. The controller checks the Work binding independently of the Google
+owner before acquiring a production hold.
 
-First qualify an app-only rollout of the fixed image with the existing OIDC
-authority and primary AT sign-in routes. Then bind the existing Work AT
-account through the primary issuer and take a new incumbent snapshot for the
-mailbox release. Keep mailbox routes closed through the app-only phase. Open
-the verified mailbox Caddy candidate after the app-only change and exact
-Work binding are independently observed.
+The release rehearsal covers OAuth, actor bootstrap, and rollback. Delivery
+acceptance requires a separately authorized correlated task through Work and
+a subscribed actor, with the result returned to Work and acknowledged.
 
 The production environment expects the dedicated Work OAuth client input
 and the reviewed owner seed through `AXXIUM_PRODUCTION_MAILBOX_BINDING_JSON`
