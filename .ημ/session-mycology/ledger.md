@@ -279,3 +279,13 @@
   spore: none
   receipt-refs: 2026-10-30T13:37:58Z
   note: Test recovery only for owned durable staging and preserve unknown partial files.
+
+- ts: 2026-11-17T22:53:33.385909Z
+  session: /root/actor_roadmap
+  task: Prepare the fixed active-mailbox production successor without enabling webhook enrollment
+  p-efficiency: 0.78
+  p-friction: 0.38
+  p-skill-candidate: 0.4
+  spore: none
+  receipt-refs: 2026-11-17T22:53:33.385909Z
+  note: Reuse the deployment transaction while replacing only profile semantics that belong to first activation. Carry the complete retained Compose chain and current ACK state through both images. Compare actual incumbent mounts before fencing so recreation cannot normalize unreviewed drift. Keep missing exact-source qualification and unsupported recovery explicit rather than substituting fixture success. Preserve this existing reflection ledger without format migration.

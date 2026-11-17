@@ -76,3 +76,13 @@ def prepare_mailbox(config, expected_sha256):
         raise IngressRefused('Observed Axxium ingress contains multiple authority matchers')
     candidate = _replace_matcher(config, expected_sha256, NEW, MAILBOX)
     return _fence(candidate), candidate
+
+
+def prepare_active_mailbox(config, expected_sha256):
+    """Fence the existing mailbox API and retain its exact live route bytes."""
+    if (not isinstance(config, bytes) or len(config) > 2 * 1024 * 1024
+            or hashlib.sha256(config).hexdigest() != expected_sha256
+            or config.count(SITE) != 1 or config.count(MAILBOX) != 1
+            or OLD in config or NEW in config):
+        raise IngressRefused('Observed active mailbox ingress differs from the reviewed plan')
+    return _fence(config), config
