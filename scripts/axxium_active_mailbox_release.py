@@ -4,10 +4,12 @@ This adapter preserves the complete active configuration for candidate and
 rollback. The protected caller must admit the exact source and evidence before
 using it. No dispatch scope or recovery command is added here.
 """
+import argparse
 from copy import deepcopy
 from hashlib import sha256
 import json
 from pathlib import Path
+import sys
 
 import axxium_ingress_caddy as caddy
 from axxium_ingress_host import IngressHost
@@ -332,3 +334,34 @@ class Host(IngressHost):
         return {**super().receipt(status), "schema": "axxium-active-mailbox-deployment/v1",
                 "incumbent_source_sha": INCUMBENT_SOURCE, "mailbox_discovery_verified": status == "healthy",
                 "mailbox_messages_sent": False, "connector_identity_verified": False, "webhook_enrollment": "held"}
+
+
+class _Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise Refusal("Invalid active mailbox invocation")
+
+
+def main(argv=None):
+    """Run only the fixed active upgrade after the protected caller admits it."""
+    try:
+        parser = _Parser(description=__doc__)
+        parser.add_argument("--plan", required=True, type=Path)
+        parser.add_argument("--plan-sha256", required=True)
+        parser.add_argument("--apply", required=True, action="store_true")
+        args = parser.parse_args(argv)
+        raw = release.private_read(args.plan, maximum=65536)
+        require(raw == PLAN_BYTES and args.plan_sha256 == PLAN_SHA256,
+                "Reviewed active mailbox plan bytes or digest differ")
+        plan = validate_plan(strict_json(raw))
+        result = execute_admitted(plan, Host(args.plan_sha256))
+        print(json.dumps(result, sort_keys=True))
+        return 0 if result["status"] == "healthy" else 3
+    except Exception:
+        # Never expose private native command output or exception text. The
+        # transaction owns durable hold/recovery semantics even on failure.
+        print("Active Axxium mailbox release refused. Preserve the native operation journal.", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

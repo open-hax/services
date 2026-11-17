@@ -48,9 +48,20 @@ operation retains its original hold and journal. A separate recovery must be
 qualified against that actual operation. Protocol probes must avoid
 dispatching retained events.
 
-The prepared host adapter is callable after admission through
-`execute_admitted(plan, host)`. This change does not select it in a workflow
-or add a dispatch scope. Adoption must switch the protected caller's plan,
-admission and host adapter together after review and exact qualification.
-Keep the current production transport profile while the native Events
-operator and requesting Dot target remain unresolved.
+The existing `axxium-mailbox` scope selects the successor plan, both active
+admission checks and the active release CLI together. The protected-main
+caller and existing production-host queue remain the deployment authority.
+The CLI accepts only `--apply`, verifies the exact reviewed plan bytes and
+digest before creating a host adapter, and calls `execute_admitted(plan, host)`.
+It has no check or historical recovery mode. Refusals print no private detail.
+
+The delivered controller archive includes the complete imported module closure
+and the retained prior unified plan for receipt lineage. The upgrade verifies
+the host's existing identity; it neither requests nor uploads a fresh identity
+binding or seed. Tests unpack the actual archive selected by the workflow and
+exercise isolated imports, active CLI selection and refusals.
+
+This caller adoption adds no dispatch scope or qualification evidence. Missing
+genuine exact-source qualification still refuses in admission before SSH or
+the runner secret step. Keep the current production transport profile while
+the native Events operator and requesting Dot target remain unresolved.

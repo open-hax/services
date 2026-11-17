@@ -289,3 +289,13 @@
   spore: none
   receipt-refs: 2026-11-17T22:53:33.385909Z
   note: Reuse the deployment transaction while replacing only profile semantics that belong to first activation. Carry the complete retained Compose chain and current ACK state through both images. Compare actual incumbent mounts before fencing so recreation cannot normalize unreviewed drift. Keep missing exact-source qualification and unsupported recovery explicit rather than substituting fixture success. Preserve this existing reflection ledger without format migration.
+
+- ts: 2026-11-17T23:17:25.177091Z
+  session: /root/actor_roadmap
+  task: Adopt the active mailbox caller without manufacturing release qualification
+  p-efficiency: 0.9
+  p-friction: 0.2
+  p-skill-candidate: 0.4
+  spore: none
+  receipt-refs: 2026-11-17T23:17:25.177091Z
+  note: Build and unpack the actual workflow-selected controller archive in tests, then import and invoke it outside the source checkout. This exposes transitive module and runtime data dependencies that source-string checks miss. Switch plan, both admissions and executable selection together; retain real missing-proof refusal and existing host authority.
