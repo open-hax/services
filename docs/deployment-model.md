@@ -62,8 +62,12 @@ against the actual image ID before host capability is granted. It does not build
 load or retag application source on the host. Only the accepted controller and
 service definitions are delivered through the same Deploy Stack queue. This
 specific reuse of the staged image preserves its original bytes; subsequent
-services continue to use the GHCR delivery above. The ordinary production
-qualification and required service health gate remain enforced.
+services continue to use the GHCR delivery above. Axxium production admission
+still requires integration and e2e receipts and this native custody. It does
+not require the mutation campaign retired by
+[open-hax/axxium#58](https://github.com/open-hax/axxium/pull/58), and four
+mutation batches do not block it. Knoxx still uses its own mutation path. The
+required service health gate remains enforced.
 
 The fixed Cloud Cuckoo transport-stage scope also runs inside Deploy Stack's
 existing host lock and uses a public immutable GHCR image built by its source

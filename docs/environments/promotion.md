@@ -58,6 +58,12 @@ e2e, and four disjoint mutation batches of at least 250 test-killed mutations.
 Compile failures, warnings, timeout, no-assertion output, a failing baseline,
 survivors, duplicate fingerprints and evidence from another commit reject the
 promotion. No push or `deploy` label is sufficient production authorization.
+Axxium does not use that mutation campaign.
+[open-hax/axxium#58](https://github.com/open-hax/axxium/pull/58) retired the
+Axxium qualification workflows, and Axxium production admission is not blocked
+on four mutation batches. Integration, e2e, and custody checks still apply to
+Axxium. Knoxx still uses its own mutation path, including the four-batch rule
+above.
 
 Build PR code on ephemeral GitHub-hosted runners with contents-read permissions,
 no environment secrets, no persisted checkout token and no host Docker socket.

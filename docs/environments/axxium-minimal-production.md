@@ -5,14 +5,21 @@ production queue. It uses the current production deployment account and SSH
 credential. It does not require adoption of the separate protected-receiver,
 foreign-runtime or ingress-owner proposals in PRs #105, #112 and #114.
 
-The merged authority remains `docs/environments/promotion.md` and
-`environment_policy.production_admission`: the exact application source needs
-passing integration and e2e receipts and four disjoint batches of at least 250
-test-killed mutations. The new workflow enforces that rule before receiving
-production environment secrets and rechecks native source/artifact custody in
-the serialized production job. There is no qualification override in this
-implementation. Missing qualification refuses before identity provisioning or
-production runtime work.
+The merged authority for promotion remains `docs/environments/promotion.md`.
+Axxium production admission requires passing integration and e2e receipts for
+the exact application source, plus artifact and staging custody, host checks,
+rollback, and review. It does not require four mutation batches.
+[open-hax/axxium#58](https://github.com/open-hax/axxium/pull/58) retired the
+Axxium mutation qualification pilot; that campaign must not block this
+production path. The shared `environment_policy.production_admission` function
+still requires four mutation batches for callers that use it, including Knoxx.
+This workflow applies that function's integration and e2e receipt rules and
+does not apply its mutation-batch requirement, including when `mutation_batches`
+is empty or absent and when `mutation_campaign_passed` is false. It enforces
+the remaining checks before receiving production environment secrets and
+rechecks native source/artifact custody in the serialized production job.
+There is no candidate-specific mutation waiver. Missing or invalid integration,
+e2e, or custody refuses before identity provisioning or production runtime work.
 
 ## Fixed candidate and observed incumbent
 
@@ -181,7 +188,8 @@ before this boundary.
 Unit and filesystem tests cover transaction ordering, refusal, native command
 uncertainty, clone selection, held-inode publication, process exclusion and
 crash/hold behavior. They are not the application's release qualification or
-evidence that this native transaction has run on production. The current normal
-qualification gate remains unsatisfied. Real human Axxium consent and an actual
-ChatGPT-origin Colab tool call must be verified after the admitted application
-and gateway releases; discovery or the synthetic rehearsal user is insufficient.
+evidence that this native transaction has run on production. Mutation batches
+are not part of the Axxium production gate. Real human Axxium consent and an
+actual ChatGPT-origin Colab tool call must be verified after the admitted
+application and gateway releases; discovery or the synthetic rehearsal user is
+insufficient.

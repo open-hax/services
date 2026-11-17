@@ -616,8 +616,8 @@ def verify_durable_relay(*, armed):
     for unit in (SOCKET, RELAY):
         verify_relay_unit(unit, UNITS / unit, (PACKAGE / "ingress/units" / unit).read_bytes())
     require(all(systemd_property(unit, "ActiveState") == "inactive"
-                and systemd_property(unit, "UnitFileState") in ("static", "disabled") for unit in (TIMER, STOP)),
-            "the previous Work pilot timer or stop service is still active")
+                and systemd_property(unit, "UnitFileState") in ("static", "disabled", "") for unit in (TIMER, STOP)),
+            "the previous Work pilot timer or stop service is active or enabled")
     link = UNITS / "multi-user.target.wants" / SOCKET
     if armed:
         require(link.is_symlink() and link.lstat().st_uid == 0 and link.resolve() == UNITS / SOCKET

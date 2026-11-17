@@ -27,6 +27,26 @@ class WorkDarkHostTest(unittest.TestCase):
             with self.assertRaisesRegex(host.Refused, "index or manifest"):
                 host.verified_image("tag", "config", "index", "manifest")
 
+    def test_deploy_requires_the_production_uid(self):
+        with patch.object(host.os, "geteuid", return_value=1001):
+            with self.assertRaisesRegex(host.Refused, "production deploy user"):
+                host.deploy(object())
+
+    def test_pinned_database_image_is_pulled_before_inspection(self):
+        calls = []
+
+        def docker(*args, reason, timeout=30, data=None):
+            calls.append((args, timeout))
+            return b""
+
+        with patch.object(host, "docker", side_effect=docker), patch.object(
+            host, "verified_image", return_value="database-id",
+        ) as inspected:
+            self.assertEqual(host.prepare_database_image(), "database-id")
+        self.assertEqual(calls, [(("pull", host.POSTGRES), 180)])
+        inspected.assert_called_once_with(
+            host.POSTGRES, host.POSTGRES_CONFIG, host.POSTGRES_INDEX, host.POSTGRES_MANIFEST)
+
     def test_existing_unlabeled_volume_name_refuses_pilot(self):
         with tempfile.TemporaryDirectory() as scratch, patch.object(host, "SLOT", Path(scratch)):
             outputs = [b"", b"", b"", b"", (host.PROJECT + "_database\n").encode()]

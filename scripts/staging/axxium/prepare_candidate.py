@@ -18,19 +18,8 @@ import axxium_production_qualification as qualification
 FIXTURE_PLAN_SHA256 = '6025ff0257a28711cc7847ca6935b97ffc3b11e4ccef76c3eb27a89f16bcafe1'
 # The classic Docker save also emitted unreferenced legacy layer JSON records.
 # These are the exact blob names in the historical fixture, never runnable
-# image data. The strict OCI verifier checks the projected archive separately.
-LEGACY_LAYER_METADATA = frozenset('blobs/sha256/' + digest for digest in (
-    '05ebb58fc71038f0063523ef6f23ef3b51d4f07f0149f48b092676ce3da0d7fd',
-    '30a7ed937ab3c0c0c06cf8968ca222a545e4333273eee8915b2af8ae721d6a0e',
-    '6b20faf0102614b1290e22d7dbe66115ea1cb6d3edcdde901ad3f42c7b68089c',
-    '8bd87858499b8778b26ed35a9cc052fea5798d6b61664c0059a53fd451e07f89',
-    'ac6cab210f037bd9e93403f75c93cf24e4cb034fd351a830308a69573c2177a0',
-    'bddbf4942d1ab783b05a2e3236eae2421716bc495afe94ced7427180b1756eb7',
-    'c97b03879397d8cde4b4cb3eaee9686dbccda3affa7a55448bcf9d42c3cabffe',
-    'ca33e2ee30da2a366fea20ce00bf7945c2a3634c6f2b46dec3aa594d9018201b',
-    'e39ae583f7c887dd4347dcfb7f35080daa4af10379d1d86466025645b927256b',
-    'e7e153ad5535ed1231d4f5816471d555e38fce149ca7b2eb47aac3665f0c93d3',
-))
+# image data. Production admission allows only this same set.
+LEGACY_LAYER_METADATA = qualification.LEGACY_LAYER_METADATA
 
 
 def project_fixture_tar(plan, archive, output):
