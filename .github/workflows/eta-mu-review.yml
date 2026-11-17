@@ -11,7 +11,7 @@ permissions:
 jobs:
   review:
     name: Evidence-first review (eta-mu)
-    uses: open-hax/eta-mu/.github/workflows/opencode-code-review.yml@4eaa34d18b5e07d9f26f0ebe4d20cf7e65ef9a41
+    uses: open-hax/eta-mu/.github/workflows/opencode-code-review.yml@40058f43f47e9f793210803f185159cd81999986
     with:
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       opencode_version: '1.18.31'

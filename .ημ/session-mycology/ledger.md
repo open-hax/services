@@ -279,3 +279,8 @@
   spore: none
   receipt-refs: 2026-10-30T13:37:58Z
   note: Test recovery only for owned durable staging and preserve unknown partial files.
+
+## MiMo consumer retirement 2026-11-17
+- Scoped pin-only migration to merged eta-mu#388. Gate/auth bytes preserved.
+- Friction: source inventory can drift; compare fresh default, not cached caller content.
+- Local actionlint and exact-delta checks passed; hosted verification pending. No spore promoted.
