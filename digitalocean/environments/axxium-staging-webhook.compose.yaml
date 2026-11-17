@@ -1,0 +1,16 @@
+services:
+  axxium:
+    extends:
+      file: axxium-staging-drive.compose.yaml
+      service: axxium
+    environment:
+      AXXIUM_MAILBOX_STREAM_ENABLED: "true"
+      AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED: "true"
+      AXXIUM_MAILBOX_TRANSPORT_COEXISTENCE: "true"
+  database:
+    extends:
+      file: axxium-staging-drive.compose.yaml
+      service: database
+
+volumes:
+  postgres-data:
