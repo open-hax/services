@@ -260,6 +260,8 @@ def verify_archive_members(plan, archive):
         with package.open("images.tar") as stream:
             tar_digest, _ = stream_digest(stream, MAX_TAR)
         require(tar_digest == checksum.strip(), "inner archive checksum mismatch")
+        if "images_tar_sha256" in plan:
+            require(tar_digest == plan["images_tar_sha256"], "inner archive differs from reviewed archive digest")
         with package.open("images.tar") as stream, tarfile.open(fileobj=stream, mode="r|") as image:
             count = 0
             captured = 0
