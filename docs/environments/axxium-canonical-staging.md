@@ -103,6 +103,41 @@ to use its own actor DID and bootstrap key with the existing AT mailbox DID.
 Recreate only the app using the fixed-slot procedure above and read back the
 exact effective pair. Keep webhook subscriptions disabled.
 
+## Rehearse webhook and SSE coexistence
+
+Render the [webhook profile](../../digitalocean/environments/axxium-staging-webhook.compose.yaml)
+against an isolated fixture first. It extends the Drive-capable staging
+profile and selects the three mailbox transport flags. Render the previous
+selection alongside it and compare the image, database, issuer, bind
+mounts, actor settings and ledger paths.
+
+For a live staging rehearsal, use an admitted Axxium image with transport
+coexistence and the existing owner-consented Work OAuth authority. Before
+enabling the worker, stop if the selected Work mailbox has an active
+subscription, an eligible pending or retryable notification, or an uncertain
+in-flight callback. An eligible retained subscription can resume immediately
+when the worker starts.
+
+Under the existing environment receiver lock, preserve the original Compose
+bytes, image, private configuration and deployment receipt. Install the exact
+reviewed Drive profile as `axxium-staging-drive.compose.yaml` alongside its
+canonical, owner, Google and mailbox dependencies, then select the webhook
+profile as `compose.yaml`. Run Compose `config --quiet` for the
+`axxium-staging` project in the fixed slot with its private `.env` and the
+exact admitted `release.env`. Recreate only the app on the admitted image.
+Read back the running image, transport flags, database container, mounts,
+and retained state against the original selection. Use the
+[fixed-slot recovery procedure](axxium-staging-mailbox.md#operator-recovery)
+to restore the original selection.
+
+Use one exact Work or Dot monitor. Verify the plugin catalog, callback
+challenge and durable subscription. Record a fresh authorized message's ID,
+the provider delivery receipt and its visible task execution. Verify native
+SSE separately. Remove the monitor while the grant can still unsubscribe,
+verify the removal and drain any in-flight callback, then restore the
+original Compose selection. Confirm the earlier SSE profile and mailbox
+ledger are available after recovery.
+
 ## Verify the shared service
 
 - Confirm the single app and retained database container identities, exact

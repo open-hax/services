@@ -16,6 +16,7 @@ GOOGLE = ROOT / 'digitalocean/environments/axxium-staging-google.compose.yaml'
 OWNER = ROOT / 'digitalocean/environments/axxium-staging-owner.compose.yaml'
 CANONICAL = ROOT / 'digitalocean/environments/axxium-staging-canonical.compose.yaml'
 DRIVE = ROOT / 'digitalocean/environments/axxium-staging-drive.compose.yaml'
+WEBHOOK = ROOT / 'digitalocean/environments/axxium-staging-webhook.compose.yaml'
 ROOT_ENV = {
     'AXXIUM_IDENTITY_ROOT_OPERATOR_ACTOR_ID': 'actor_00000000-0000-4000-8000-000000000001',
     'AXXIUM_IDENTITY_ROOT_DID': 'did:web:staging.axxium.promethean.rest:actors:owner',
@@ -226,6 +227,21 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
                 self.assertNotEqual(refused.returncode, 0)
                 self.assertIn(required, refused.stderr)
 
+    def test_explicit_webhook_profile_changes_only_mailbox_transport_flags(self):
+        settings = {**OWNER_ENV, 'AXXIUM_MAILBOX_STREAM_ENABLED': 'true'}
+        drive = self.render(DRIVE, settings=settings)
+        webhook = self.render(WEBHOOK, settings=settings)
+        self.assertEqual(drive.returncode, 0, drive.stderr)
+        self.assertEqual(webhook.returncode, 0, webhook.stderr)
+        expected = json.loads(drive.stdout)
+        env = expected['services']['axxium']['environment']
+        self.assertEqual(env['AXXIUM_MAILBOX_STREAM_ENABLED'], 'true')
+        self.assertEqual(env['AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED'], 'false')
+        self.assertNotIn('AXXIUM_MAILBOX_TRANSPORT_COEXISTENCE', env)
+        env.update(AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED='true',
+                   AXXIUM_MAILBOX_TRANSPORT_COEXISTENCE='true')
+        self.assertEqual(json.loads(webhook.stdout), expected)
+
     def test_drive_adds_its_private_key_ledger_and_disabled_actor_access(self):
         canonical = self.render(CANONICAL, settings=OWNER_ENV)
         drive = self.render(DRIVE, settings=OWNER_ENV)
@@ -259,10 +275,10 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
     def test_receiver_entrypoint_resolves_reviewed_profiles_in_the_fixed_slot(self):
         with tempfile.TemporaryDirectory() as directory:
             slot = Path(directory)
-            for dependency in (MAILBOX, GOOGLE, OWNER, CANONICAL):
+            for dependency in (MAILBOX, GOOGLE, OWNER, CANONICAL, DRIVE):
                 shutil.copyfile(dependency, slot / dependency.name)
             selected = slot / 'compose.yaml'
-            for profile in (CANONICAL, DRIVE):
+            for profile in (CANONICAL, DRIVE, WEBHOOK):
                 with self.subTest(profile=profile.name):
                     shutil.copyfile(profile, selected)
                     result = self.render(selected, settings=OWNER_ENV, project_directory=slot)
