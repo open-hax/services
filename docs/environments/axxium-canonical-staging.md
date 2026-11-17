@@ -119,12 +119,19 @@ in-flight callback. An eligible retained subscription can resume immediately
 when the worker starts.
 
 Under the existing environment receiver lock, preserve the original Compose
-bytes, image, private configuration and deployment receipt. Install the exact
-reviewed Drive profile as `axxium-staging-drive.compose.yaml` alongside its
-canonical, owner, Google and mailbox dependencies, then select the webhook
-profile as `compose.yaml`. Run Compose `config --quiet` for the
-`axxium-staging` project in the fixed slot with its private `.env` and the
-exact admitted `release.env`. Recreate only the app on the admitted image.
+bytes, image, private configuration and deployment receipt. Verify the required
+`drive/token.key` and `drive/ledger.edn` bind sources using the
+[Drive runbook](axxium-staging-drive.md#prepare-the-existing-slot). If either
+file is absent, follow the runbook's create-only procedure for that file and
+verify both sources before selecting the webhook profile. Preserve the existing
+key and ledger contents.
+
+While holding the lock, install the exact reviewed Drive profile as
+`axxium-staging-drive.compose.yaml` alongside its canonical, owner, Google and
+mailbox dependencies, then select the webhook profile as `compose.yaml`.
+Run Compose `config --quiet` for the `axxium-staging` project in the fixed
+slot with its private `.env` and the exact admitted `release.env`. Recreate only
+the app on the admitted image.
 Read back the running image, transport flags, database container, mounts,
 and retained state against the original selection. Use the
 [fixed-slot recovery procedure](axxium-staging-mailbox.md#operator-recovery)

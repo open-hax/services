@@ -228,19 +228,23 @@ class StagingAuthorityTemplateTest(unittest.TestCase):
                 self.assertIn(required, refused.stderr)
 
     def test_explicit_webhook_profile_changes_only_mailbox_transport_flags(self):
-        settings = {**OWNER_ENV, 'AXXIUM_MAILBOX_STREAM_ENABLED': 'true'}
-        drive = self.render(DRIVE, settings=settings)
-        webhook = self.render(WEBHOOK, settings=settings)
-        self.assertEqual(drive.returncode, 0, drive.stderr)
-        self.assertEqual(webhook.returncode, 0, webhook.stderr)
-        expected = json.loads(drive.stdout)
-        env = expected['services']['axxium']['environment']
-        self.assertEqual(env['AXXIUM_MAILBOX_STREAM_ENABLED'], 'true')
-        self.assertEqual(env['AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED'], 'false')
-        self.assertNotIn('AXXIUM_MAILBOX_TRANSPORT_COEXISTENCE', env)
-        env.update(AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED='true',
-                   AXXIUM_MAILBOX_TRANSPORT_COEXISTENCE='true')
-        self.assertEqual(json.loads(webhook.stdout), expected)
+        stream = 'AXXIUM_MAILBOX_STREAM_ENABLED'
+        for incumbent in ({}, {stream: 'false'}, {stream: 'true'}):
+            with self.subTest(incumbent=incumbent):
+                settings = {**OWNER_ENV, **incumbent, 'AXXIUM_DRIVE_ACTOR_ACCESS_ENABLED': 'true'}
+                drive = self.render(DRIVE, settings=settings)
+                webhook = self.render(WEBHOOK, settings=settings)
+                self.assertEqual(drive.returncode, 0, drive.stderr)
+                self.assertEqual(webhook.returncode, 0, webhook.stderr)
+                expected = json.loads(drive.stdout)
+                env = expected['services']['axxium']['environment']
+                self.assertEqual(env[stream], incumbent.get(stream, 'false'))
+                self.assertEqual(env['AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED'], 'false')
+                self.assertNotIn('AXXIUM_MAILBOX_TRANSPORT_COEXISTENCE', env)
+                env.update(AXXIUM_MAILBOX_STREAM_ENABLED='true',
+                           AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED='true',
+                           AXXIUM_MAILBOX_TRANSPORT_COEXISTENCE='true')
+                self.assertEqual(json.loads(webhook.stdout), expected)
 
     def test_drive_adds_its_private_key_ledger_and_disabled_actor_access(self):
         canonical = self.render(CANONICAL, settings=OWNER_ENV)
