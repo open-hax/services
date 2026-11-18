@@ -299,3 +299,43 @@
   spore: none
   receipt-refs: 2026-11-17T23:17:25.177091Z
   note: Build and unpack the actual workflow-selected controller archive in tests, then import and invoke it outside the source checkout. This exposes transitive module and runtime data dependencies that source-string checks miss. Switch plan, both admissions and executable selection together; retain real missing-proof refusal and existing host authority.
+
+- ts: 2026-11-18T00:01:21.267326Z
+  session: /root/actor_roadmap
+  task: Prepare a genuine active-upgrade fixture without weakening production guards
+  p-efficiency: 0.82
+  p-friction: 0.32
+  p-skill-candidate: 0.5
+  spore: none
+  receipt-refs: 2026-11-18T00:01:21.267326Z
+  note: Lazy durable-ledger loading makes health and discovery insufficient parser proof. Generate canonical setup through the actual isolated service, retain the same credential and MCP session, and assert known ACK semantics on every real image boundary. Bind runtime config IDs to verified descriptor chains, audit every synthetic plan change, and keep source preparation distinct from future hosted execution. Preserve the historical fixture and use the existing native transaction rather than writing a parallel phase loop.
+
+- ts: 2026-11-18T00:38:04.355915Z
+  session: /root/actor_roadmap
+  task: Preserve safe phase evidence for an actual failed active-fixture run
+  p-efficiency: 0.82
+  p-friction: 0.58
+  p-skill-candidate: 0.55
+  spore: none
+  receipt-refs: 2026-11-18T00:38:04.355915Z
+  note: A generic exception plus an empty artifact makes a real hosted failure unlocatable despite green source tests. Preserve closed phase/category and bounded status evidence while maintaining native uncertainty and excluding private output. Verify immutable native contracts before guessing a fix, distinguish a verified later-path defect from the unknown initial failure, and keep the aggregate repair packet open until actual diagnostic execution.
+
+- ts: 2026-11-18T00:58:40.397654Z
+  session: /root/actor_roadmap
+  task: Repair canonical Host transport after exact-runtime diagnosis
+  p-efficiency: 0.8
+  p-friction: 0.55
+  p-skill-candidate: 0.55
+  spore: none
+  receipt-refs: 2026-11-18T00:58:40.397654Z
+  note: A high-level Fetch headers object is not wire evidence. Bind the runtime version, inspect its actual dispatch semantics, and compare actual serialized headers before changing identity or authorization. Preserve the original failed run, distinguish Node-only transport proof from application qualification, keep native denial and uncertainty guards, and record unchanged-test timeouts instead of broadening their limits or claiming a full pass.
+
+- ts: 2026-11-18T01:29:12.635165Z
+  session: /root/actor_roadmap
+  task: Bound recovered readiness diagnostics to the actual native retry operation
+  p-efficiency: 0.87
+  p-friction: 0.35
+  p-skill-candidate: 0.5
+  spore: none
+  receipt-refs: 2026-11-18T01:29:12.635165Z
+  note: A command exception caught by a native retry loop is provisional. Checkpoint diagnostic state at that operation boundary, keep earlier genuine failures, and commit only an escaping failure or successful recovery without replacing the native loop. Test the actual inherited retry implementation rather than a stand-in, including later privacy-safe403, uncertainty and deadline paths. Explicit renewed authorization permits this focused repair; it does not reset the default review bound or turn prior-source hosted evidence into current-head proof.
