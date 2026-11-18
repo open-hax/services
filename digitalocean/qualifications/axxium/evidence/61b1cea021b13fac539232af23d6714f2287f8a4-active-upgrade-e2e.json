@@ -1,0 +1,483 @@
+{
+  "application_source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+  "archive_bindings": {
+    "candidate": {
+      "artifact_sha256": "01731eedb9acd923e1664b3aef90a72631da0192e0b648e410d60506e39816a7",
+      "image_config_digest": "sha256:c35a6986d7b040813c9434387626f07d2a8f03de80ccf66c2a7eb0de0d67dbb8",
+      "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+      "image_manifest_digest": "sha256:e7d36f0ccfbba0246370da12d0f7d93d42d45fc1fa932f7cb289301b1360fe97",
+      "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4"
+    },
+    "incumbent": {
+      "artifact_sha256": "a7cae9fa6ea2e41a84156746265589b1b06568a97c829b1403b4d8bdcc804ad9",
+      "image_config_digest": "sha256:c4489c885da2e33958e6adf14ed1395632fc9f98e8864479facaf80dfd409a30",
+      "image_id": "sha256:265f085671493305eb76d2c4b46463340b915b4ad3934b0c8c33ed0c6c887f57",
+      "image_manifest_digest": "sha256:199f65be321b9d3c1fa0c667f5fd628b35e64843f6d7470253df97ca0067ca50",
+      "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64"
+    }
+  },
+  "assertion_count": {
+    "assertions": 60,
+    "checks_per_parser_call": 3,
+    "excluded": [
+      "distinct-ID requirement",
+      "native guards",
+      "archive custody",
+      "unit test assertions"
+    ],
+    "formula": "3 * sum(native_parser_checks across all four roles and three cases)",
+    "parser_calls": 20,
+    "source_function_sha256": "faa2b547fe6a931cf0af34fd5cf7399bac7bc3ddec1bb07739456fc74e546192"
+  },
+  "candidate_image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+  "cases": [
+    {
+      "artifact_zip": {
+        "bytes": 843,
+        "sha256": "77d22e59abc8fe3b1bec08f0af54fd4330dbfeb660035a1f4c64cc1eb2fb2593"
+      },
+      "counted_parser_state_require_invocations": 27,
+      "expected_terminal_status": "healthy",
+      "native_artifact": {
+        "archive_download_url": "https://api.github.com/repos/open-hax/services/actions/artifacts/14388119098/zip",
+        "created_at": "2026-11-18T01:33:29Z",
+        "digest": "sha256:77d22e59abc8fe3b1bec08f0af54fd4330dbfeb660035a1f4c64cc1eb2fb2593",
+        "expired": false,
+        "expires_at": "2027-02-16T01:31:32Z",
+        "id": 14388119098,
+        "name": "active-mailbox-fixture-healthy",
+        "size_in_bytes": 843,
+        "updated_at": "2026-11-18T01:33:29Z",
+        "url": "https://api.github.com/repos/open-hax/services/actions/artifacts/14388119098",
+        "workflow_run": {
+          "head_branch": "feat/axxium-active-upgrade-fixture",
+          "head_repository_id": 1401249433,
+          "head_sha": "e2c25c28605e74acb179d5c835d68a9264220a44",
+          "id": 44216465897,
+          "repository_id": 1256602077
+        }
+      },
+      "native_job": {
+        "completed_at": "2026-11-18T01:33:32Z",
+        "conclusion": "success",
+        "head_sha": "e2c25c28605e74acb179d5c835d68a9264220a44",
+        "html_url": "https://github.com/open-hax/services/actions/runs/44216465897/job/134507418378",
+        "id": 134507418378,
+        "name": "active-mailbox-upgrade (healthy)",
+        "run_attempt": 1,
+        "run_id": 44216465897,
+        "started_at": "2026-11-18T01:31:35Z",
+        "status": "completed"
+      },
+      "native_transaction_step": {
+        "completed_at": "2026-11-18T01:33:28Z",
+        "conclusion": "success",
+        "name": "Run the real active transaction in the isolated fixture namespace",
+        "number": 6,
+        "started_at": "2026-11-18T01:32:25Z",
+        "status": "completed"
+      },
+      "native_unit_step": {
+        "completed_at": "2026-11-18T01:32:04Z",
+        "conclusion": "success",
+        "name": "Validate active fixture source without daemon effects",
+        "number": 3,
+        "started_at": "2026-11-18T01:31:38Z",
+        "status": "completed"
+      },
+      "result": {
+        "bytes": 1550,
+        "candidate_acknowledgement": false,
+        "member": "active-upgrade-result.json",
+        "native_parser_checks": {
+          "candidate": 5,
+          "clone_candidate": 1,
+          "clone_incumbent": 2,
+          "incumbent": 1
+        },
+        "production_fingerprints_match": false,
+        "production_qualified": false,
+        "provider_login_verified": false,
+        "sha256": "7c1a394f43e8bc0ad58549db28cebed5d6c3dec4bedb9210745617f9775b6738",
+        "status": "healthy",
+        "webhook_enrollment": "disabled"
+      },
+      "scenario": "healthy",
+      "transaction_output": {
+        "application_errors": [],
+        "application_warnings": [],
+        "full_log_bytes": 33537,
+        "full_log_sha256": "eb45427203de0d0effd096bb90a681e2bfa821afccfb2363a449677ffd9ca2a0",
+        "result_matches_artifact": true,
+        "runtime_line_count": 77,
+        "timed_out": false,
+        "transaction_step_bytes": 11281,
+        "transaction_step_sha256": "bb53da6679d36a5ea61944de3d2a43da0f656d93878bb750ba974732cde7222c"
+      },
+      "unit_output": {
+        "unit_passed": true,
+        "unit_seconds": 25.93,
+        "unit_step_bytes": 856,
+        "unit_step_sha256": "8fe62d756657718e533390cacf6cab464f6795596e9e9fe373faef4b12cf19a1",
+        "unit_tests": 71
+      }
+    },
+    {
+      "artifact_zip": {
+        "bytes": 858,
+        "sha256": "5ed99567be6b8ae71e3c32462d8c91bec40edba0d13d4272ad52160014c5b4b9"
+      },
+      "counted_parser_state_require_invocations": 24,
+      "expected_terminal_status": "rolled_back",
+      "native_artifact": {
+        "archive_download_url": "https://api.github.com/repos/open-hax/services/actions/artifacts/14387264749/zip",
+        "created_at": "2026-11-18T01:33:13Z",
+        "digest": "sha256:5ed99567be6b8ae71e3c32462d8c91bec40edba0d13d4272ad52160014c5b4b9",
+        "expired": false,
+        "expires_at": "2027-02-16T01:31:32Z",
+        "id": 14387264749,
+        "name": "active-mailbox-fixture-known-failure",
+        "size_in_bytes": 858,
+        "updated_at": "2026-11-18T01:33:13Z",
+        "url": "https://api.github.com/repos/open-hax/services/actions/artifacts/14387264749",
+        "workflow_run": {
+          "head_branch": "feat/axxium-active-upgrade-fixture",
+          "head_repository_id": 1401249433,
+          "head_sha": "e2c25c28605e74acb179d5c835d68a9264220a44",
+          "id": 44216465897,
+          "repository_id": 1256602077
+        }
+      },
+      "native_job": {
+        "completed_at": "2026-11-18T01:33:14Z",
+        "conclusion": "success",
+        "head_sha": "e2c25c28605e74acb179d5c835d68a9264220a44",
+        "html_url": "https://github.com/open-hax/services/actions/runs/44216465897/job/134507418423",
+        "id": 134507418423,
+        "name": "active-mailbox-upgrade (known-failure)",
+        "run_attempt": 1,
+        "run_id": 44216465897,
+        "started_at": "2026-11-18T01:31:34Z",
+        "status": "completed"
+      },
+      "native_transaction_step": {
+        "completed_at": "2026-11-18T01:33:12Z",
+        "conclusion": "success",
+        "name": "Run the real active transaction in the isolated fixture namespace",
+        "number": 6,
+        "started_at": "2026-11-18T01:32:14Z",
+        "status": "completed"
+      },
+      "native_unit_step": {
+        "completed_at": "2026-11-18T01:31:57Z",
+        "conclusion": "success",
+        "name": "Validate active fixture source without daemon effects",
+        "number": 3,
+        "started_at": "2026-11-18T01:31:36Z",
+        "status": "completed"
+      },
+      "result": {
+        "bytes": 1559,
+        "candidate_acknowledgement": true,
+        "member": "active-upgrade-result.json",
+        "native_parser_checks": {
+          "candidate": 2,
+          "clone_candidate": 1,
+          "clone_incumbent": 2,
+          "incumbent": 3
+        },
+        "production_fingerprints_match": false,
+        "production_qualified": false,
+        "provider_login_verified": false,
+        "sha256": "ea9d2885384e1f31eae509694ec98db8158738f5b006dda25dfdde3fc12d324b",
+        "status": "rolled_back",
+        "webhook_enrollment": "disabled"
+      },
+      "scenario": "known-failure",
+      "transaction_output": {
+        "application_errors": [],
+        "application_warnings": [],
+        "full_log_bytes": 32737,
+        "full_log_sha256": "6c0d6598cba35dca95a813314f4bf112a8d80d78951d963c3ded04be0c476fcd",
+        "result_matches_artifact": true,
+        "runtime_line_count": 64,
+        "timed_out": false,
+        "transaction_step_bytes": 10463,
+        "transaction_step_sha256": "49d211009b1968e79bb008333838d9235645cd5315052a2d4dd2e3d697ee8b82"
+      },
+      "unit_output": {
+        "unit_passed": true,
+        "unit_seconds": 20.583,
+        "unit_step_bytes": 856,
+        "unit_step_sha256": "0ea198513156d06064892c6518df742922988905740685609f521e9443d016e5",
+        "unit_tests": 71
+      }
+    },
+    {
+      "artifact_zip": {
+        "bytes": 849,
+        "sha256": "7153cf76bfd7dc04c7b54bff63798f064c8955e4474f289bf671386fd484e98b"
+      },
+      "counted_parser_state_require_invocations": 9,
+      "expected_terminal_status": "held",
+      "native_artifact": {
+        "archive_download_url": "https://api.github.com/repos/open-hax/services/actions/artifacts/14388632597/zip",
+        "created_at": "2026-11-18T01:32:51Z",
+        "digest": "sha256:7153cf76bfd7dc04c7b54bff63798f064c8955e4474f289bf671386fd484e98b",
+        "expired": false,
+        "expires_at": "2027-02-16T01:31:32Z",
+        "id": 14388632597,
+        "name": "active-mailbox-fixture-uncertain",
+        "size_in_bytes": 849,
+        "updated_at": "2026-11-18T01:32:51Z",
+        "url": "https://api.github.com/repos/open-hax/services/actions/artifacts/14388632597",
+        "workflow_run": {
+          "head_branch": "feat/axxium-active-upgrade-fixture",
+          "head_repository_id": 1401249433,
+          "head_sha": "e2c25c28605e74acb179d5c835d68a9264220a44",
+          "id": 44216465897,
+          "repository_id": 1256602077
+        }
+      },
+      "native_job": {
+        "completed_at": "2026-11-18T01:32:53Z",
+        "conclusion": "success",
+        "head_sha": "e2c25c28605e74acb179d5c835d68a9264220a44",
+        "html_url": "https://github.com/open-hax/services/actions/runs/44216465897/job/134507418354",
+        "id": 134507418354,
+        "name": "active-mailbox-upgrade (uncertain)",
+        "run_attempt": 1,
+        "run_id": 44216465897,
+        "started_at": "2026-11-18T01:31:34Z",
+        "status": "completed"
+      },
+      "native_transaction_step": {
+        "completed_at": "2026-11-18T01:32:50Z",
+        "conclusion": "success",
+        "name": "Run the real active transaction in the isolated fixture namespace",
+        "number": 6,
+        "started_at": "2026-11-18T01:32:12Z",
+        "status": "completed"
+      },
+      "native_unit_step": {
+        "completed_at": "2026-11-18T01:31:55Z",
+        "conclusion": "success",
+        "name": "Validate active fixture source without daemon effects",
+        "number": 3,
+        "started_at": "2026-11-18T01:31:37Z",
+        "status": "completed"
+      },
+      "result": {
+        "bytes": 1549,
+        "candidate_acknowledgement": false,
+        "member": "active-upgrade-result.json",
+        "native_parser_checks": {
+          "candidate": 0,
+          "clone_candidate": 1,
+          "clone_incumbent": 1,
+          "incumbent": 1
+        },
+        "production_fingerprints_match": false,
+        "production_qualified": false,
+        "provider_login_verified": false,
+        "sha256": "baf4ba0a293f4644b65b5745a0fb90eea241f7ea7297f5f1c7e1d4a9c0ad8ded",
+        "status": "held",
+        "webhook_enrollment": "disabled"
+      },
+      "scenario": "uncertain",
+      "transaction_output": {
+        "application_errors": [],
+        "application_warnings": [],
+        "full_log_bytes": 30984,
+        "full_log_sha256": "b4dd6daf756aa29cc1f8a400e99e738b7789122a435c36c31768a85767375074",
+        "result_matches_artifact": true,
+        "runtime_line_count": 37,
+        "timed_out": false,
+        "transaction_step_bytes": 8726,
+        "transaction_step_sha256": "ecc4599738657a061e3586597c65055addc5039b4b2016837866736eb54a4b1b"
+      },
+      "unit_output": {
+        "unit_passed": true,
+        "unit_seconds": 17.794,
+        "unit_step_bytes": 856,
+        "unit_step_sha256": "82a59b28531ad43dc45e4e47767b8cf6fda1944e7886b1e6a9c2bba691b04880",
+        "unit_tests": 71
+      }
+    }
+  ],
+  "claim_scope": "Disposable synthetic image upgrade, preservation of current state during rollback, and a hold after an uncertain effect. No production activation, production mailbox send or event replay, native Events enrollment, or provider delivery.",
+  "completed_at": "2026-11-18T01:33:28Z",
+  "effects_scope": {
+    "additional_current_candidate_acknowledgements_known_failure_case": 1,
+    "copied_state_parser_reads": "Actual live/clone parsers intentionally load and read/re-read the same isolated synthetic accepted/ACK state across both images; these reads are not production event dispatch or provider delivery",
+    "external_provider_delivery": false,
+    "intentional_synthetic_setup_messages_per_case": 2,
+    "intentional_synthetic_setup_messages_total": 6,
+    "production_events_replayed_or_dispatched": 0,
+    "production_messages_sent": 0,
+    "synthetic_case_count": 3,
+    "synthetic_setup_acknowledgements_per_case": 1,
+    "webhook_enrollment": "disabled"
+  },
+  "exclusions": [
+    "Actual disposable synthetic execution only",
+    "No production fingerprints, provider login, public TLS, production PDS, native Events/target enrollment or SSH disconnect proof",
+    "Prior run44212462397 remains bound to b738; earlier failed runs and local timeout are preserved separately",
+    "No GitHub mutation, dispatch, rerun or mailbox operation by evidence auditor",
+    "No hidden native command stderr/stdout or unexported service-log warning-free claim",
+    "No accepted qualification or live production activation claim",
+    "Prior failed runs and local15-second timeout remain failed/incomplete separate evidence"
+  ],
+  "fixture_run": {
+    "conclusion": "success",
+    "created_at": "2026-11-18T01:31:32Z",
+    "event": "pull_request",
+    "head_repository": "riatzukiza/services",
+    "head_sha": "e2c25c28605e74acb179d5c835d68a9264220a44",
+    "html_url": "https://github.com/open-hax/services/actions/runs/44216465897",
+    "id": 44216465897,
+    "name": "Axxium recovery staging",
+    "path": ".github/workflows/axxium-recovery-staging.yml",
+    "repository": "open-hax/services",
+    "run_attempt": 1,
+    "status": "completed",
+    "tree_id": "c0e6fa6f4f6a429b5d12591bccb7b12e89bc539e",
+    "updated_at": "2026-11-18T01:33:33Z"
+  },
+  "fresh_candidate_native_custody_snapshot": {
+    "candidate-artifact.json": {
+      "bytes": 718,
+      "sha256": "ef6dec1e9e015e9908fc55c778cf770be5c8449cdf4f216ea1d1b35912e072e9"
+    },
+    "candidate-stage-run.json": {
+      "bytes": 12058,
+      "sha256": "16f4fdb405c032f0bd9a505974ffe0831100a7c50fd7798bacf6d07999483e39"
+    }
+  },
+  "native_capture_hashes": {
+    "native-audit.json": {
+      "bytes": 20828,
+      "sha256": "fc44012dba836954da18629c1ea4879eb3f40ce870eff9d693fd7e8109100b43"
+    },
+    "native-metadata.json": {
+      "bytes": 30587,
+      "sha256": "673ac11930e78cd0cd291f4c467ce587b33cc985a499b9b516c46bbdb497d3ca"
+    },
+    "native-step-log-audit.json": {
+      "bytes": 8273,
+      "sha256": "49992a21e76e0bdc1196e0e4afd7a6310ed4ccf748b388b02bd9ba4a55988330"
+    },
+    "native-summary.json": {
+      "bytes": 8111,
+      "sha256": "07bc6aa829c3debb93441c92765f16d65f9dd5afcd101666187d1105e23bcd6d"
+    }
+  },
+  "platform_annotations": {
+    "capture_sha256": "9c50b75d564a399bf9e9095bdc55c54b00b598feb54e54b6554016df5ed32f34",
+    "notice": "ubuntu-latest migration notice",
+    "per_active_job": {
+      "notices": 1,
+      "warnings": 1
+    },
+    "scope": "Outside the native application transaction output; retained unchanged. No claim that the whole job is warning-free.",
+    "warning": "The upload-artifact action targets Node 20 and is forced to Node 24."
+  },
+  "production_plan": {
+    "path": "digitalocean/services/axxium/active-mailbox-upgrade-production-plan.json",
+    "sha256": "ae9076c680e23fa6020b35ec796cbe8698dec84e00df9fc01d75a4d6641e437e"
+  },
+  "record_kind": "observed-active-mailbox-upgrade-e2e-evidence",
+  "source_hashes": {
+    ".github/workflows/axxium-recovery-staging.yml": {
+      "bytes": 13338,
+      "sha256": "769816f6677dde44ff4e2ae051d29fc03b287ca9967a4af6254ce8b28793b57c"
+    },
+    "digitalocean/services/axxium/active-mailbox-upgrade-production-plan.json": {
+      "bytes": 6695,
+      "sha256": "ae9076c680e23fa6020b35ec796cbe8698dec84e00df9fc01d75a4d6641e437e"
+    },
+    "digitalocean/services/axxium/unified-mailbox-production-plan.json": {
+      "bytes": 3978,
+      "sha256": "e00fb46d7be9d3bb833bddab9419e9fb3f4baa517d537f65d7e7122a446344b4"
+    },
+    "scripts/axxium_active_mailbox_release.py": {
+      "bytes": 18857,
+      "sha256": "b2802ac2450407390581b33437c70f89b5166a6fa172da81b1606c306d13bd35"
+    },
+    "scripts/axxium_ingress_caddy.py": {
+      "bytes": 15070,
+      "sha256": "4845c6483067d3b190f731e1d7707e51112358231c95305586eac6ca90c61675"
+    },
+    "scripts/axxium_ingress_host.py": {
+      "bytes": 3164,
+      "sha256": "5dd96e1f68330cda2b1faa40ee6ed152eafba7f45bbf6c8e68b099bd3f374e14"
+    },
+    "scripts/axxium_ingress_transaction.py": {
+      "bytes": 12729,
+      "sha256": "9d76a2ccda3a69749fd7cfd0bdb237753c62ba5af9d2039683eaa1e756713301"
+    },
+    "scripts/axxium_interrupted_handoff.py": {
+      "bytes": 5439,
+      "sha256": "690b8280e5c03214cdd28a82ed3becb8eeaa50b485ba1e77b1ddd37de4840ca5"
+    },
+    "scripts/axxium_minimal_release.py": {
+      "bytes": 43416,
+      "sha256": "ca760a1a884aff8253cd10f46fb67910bcf9393c11577e1620e84cf46ab3588d"
+    },
+    "scripts/axxium_oidc_ingress.py": {
+      "bytes": 3781,
+      "sha256": "31140df45244f74990b5d8f01c715b23ae67dff42d5c286668de8a5ed3392413"
+    },
+    "scripts/axxium_production_qualification.py": {
+      "bytes": 24383,
+      "sha256": "ac7473eef432b9e2a9ae58f60bc158891e41df9ce2215db9d2239682a920ff99"
+    },
+    "scripts/axxium_unified_mailbox_release.py": {
+      "bytes": 25859,
+      "sha256": "4db5adfff3c029b0e6eb7311c76d21d66c8fb1327bd3992eb4df1fddaab9dbbd"
+    },
+    "scripts/environment_policy.py": {
+      "bytes": 8402,
+      "sha256": "b32748ae2d103cacb9ccdecf17119659aac9c0797461e32d5ce96b2e1ce58b33"
+    },
+    "scripts/github_environment_admission.py": {
+      "bytes": 8118,
+      "sha256": "e1e01f12024ad74b704c48bf8f0320b09e22fd2e310cc91d16645f8917982735"
+    },
+    "scripts/staging/axxium/ACTIVE-UPGRADE.md": {
+      "bytes": 6276,
+      "sha256": "0b92df8b5b4ce5864da9dc49b56117cd9790b7f14a4e6850929343c8721269e6"
+    },
+    "scripts/staging/axxium/active_upgrade_fixture.py": {
+      "bytes": 39135,
+      "sha256": "50cbb69007fa2ac9dd26be2f710bf59f9aa4065819f7b2c886c9a29006696740"
+    },
+    "scripts/staging/axxium/fixture_netns.py": {
+      "bytes": 1036,
+      "sha256": "79e0e7e4848fd61ed13028f8a6e70103de4bace4ade0b588d62accac15431431"
+    },
+    "scripts/staging/axxium/full_recovery_probe.py": {
+      "bytes": 14825,
+      "sha256": "e9975c819a4dbb921cff7c35d5181ea962c2d883827ba9c12feaff1c8344ed9c"
+    },
+    "scripts/staging/axxium/identity_fixture.py": {
+      "bytes": 8777,
+      "sha256": "a98898eb04c78ad8c6c0e614e1c67be20cf3c0ea9cd72907d6cbfc775f968edf"
+    },
+    "scripts/staging/axxium/network_fixture.py": {
+      "bytes": 11968,
+      "sha256": "181940de610ecbd1fcd76432a946841d4fd78da7ac28cb9431685bafc43d80c2"
+    },
+    "scripts/staging/axxium/prepare_active_images.py": {
+      "bytes": 2794,
+      "sha256": "65ea68059fb9833bb23b9f5e301187bdf4b497e152659e87a13f18d3356d4a79"
+    },
+    "scripts/staging/axxium/test_active_upgrade_fixture.py": {
+      "bytes": 42459,
+      "sha256": "c2b99a6da2ae51a89d49e46ec4e82eddb3a6aa02fc1adeff5902deac7ecd3572"
+    }
+  },
+  "timed_out": false,
+  "warning_scope": "Actually read every emitted transaction runtime line and the full fixture unit step. No emitted application warning/error/timeout. Private native command stderr and unexported service logs remain outside this claim. Platform upload-artifact Node20-to-Node24 warning and ubuntu-latest migration notice are retained separately.",
+  "warnings": []
+}

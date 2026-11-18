@@ -1,0 +1,61 @@
+{
+  "e2e": {
+    "assertion_scope": "Counts only executed parser-state require invocations: three checks for each of 20 audited parser calls across healthy, known-failure and uncertainty cases. Excludes repeated distinct-ID checks, native guards, archive verification and unit assertions.",
+    "assertions": 60,
+    "completed_at": "2026-11-18T01:33:28Z",
+    "evidence": {
+      "manifest": "digitalocean/qualifications/axxium/evidence/61b1cea021b13fac539232af23d6714f2287f8a4-active-upgrade-e2e.json",
+      "native_fixture_head_sha": "e2c25c28605e74acb179d5c835d68a9264220a44",
+      "native_fixture_job_ids": [
+        134507418378,
+        134507418423,
+        134507418354
+      ],
+      "native_fixture_repository": "open-hax/services",
+      "native_fixture_run_attempt": 1,
+      "native_fixture_run_id": 44216465897
+    },
+    "evidence_sha256": "e880278df81828b11f9f39729ca9f5413466095c4e92c4a082326336a351a916",
+    "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+    "kind": "e2e",
+    "scope": "Exact verified candidate and incumbent OCI images through the existing native active-mailbox transaction, with intentionally created synthetic messages and acknowledgments, a retained bearer and MCP session, and retained signing/account/session material. Cases cover a healthy candidate, rollback to the active incumbent after acknowledging a current candidate message, and a hold after an uncertain start that refuses retry and historical recovery. Parsing and reading copied synthetic state is intentional. This does not claim production sends or event replay, provider delivery, or native Events enrollment.",
+    "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+    "status": "passed",
+    "timed_out": false,
+    "warning_scope": "Actually read every emitted transaction runtime line and the full fixture unit step. No emitted application warning/error/timeout. Private native command stderr and unexported service logs remain outside this claim. Platform upload-artifact Node20-to-Node24 warning and ubuntu-latest migration notice are retained separately.",
+    "warnings": []
+  },
+  "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+  "integration": {
+    "assertion_scope": "One observed Clojure test-suite count, 326 tests / 3696 assertions. The suite prints twice; repeats are not added. Additional Node tests and durable authority PASS checkpoints are excluded from this count.",
+    "assertions": 3696,
+    "completed_at": "2026-11-17T20:19:26Z",
+    "evidence": {
+      "capture_manifest_sha256": "3f04dbc563718bfdab13b92562b04321ad2c9b14961c37bf6b195401eebc278d",
+      "capture_v2_sha256": "6f2a3b71ad4d14dac4fae5ff8d3ce1a13b40ead0b79f8b58a45072cf3d626f02",
+      "fresh_native_integration_verifier_observation_sha256": "0d7c8c0d94399c3e5a06cf188605592a1d6c416944df23b63a1f17c6d237c04d",
+      "fresh_native_integration_verifier_observed_at": "2026-11-18T01:37:58.020291Z",
+      "fresh_native_verifier_scope": "unchanged native integration verifier only; no complete qualification/admission",
+      "log_url": "https://github.com/open-hax/axxium/actions/runs/44167334328/job/134336774803"
+    },
+    "evidence_sha256": "fe882cf443cc1c6a9cfd341d6d4b2a477892b7e2b8403eb2d008361c440bfa08",
+    "kind": "integration",
+    "native_ci_job_id": 134336774803,
+    "native_ci_run_id": 44167334328,
+    "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+    "status": "passed",
+    "timed_out": false,
+    "warning_scope": "No nonzero compiler/test warnings within required command groups. Durable group ends at first Post job cleanup marker, because native metadata seconds truncate final output timestamps. Full job contains post-job runtime deprecations.",
+    "warnings": []
+  },
+  "mutation_batches": [],
+  "mutation_harness": {
+    "campaign_passed": false,
+    "status": "retired"
+  },
+  "plan_sha256": "ae9076c680e23fa6020b35ec796cbe8698dec84e00df9fc01d75a4d6641e437e",
+  "repository": "open-hax/axxium",
+  "schema": "axxium-unified-mailbox-qualification/v1",
+  "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+  "status": "passed"
+}
