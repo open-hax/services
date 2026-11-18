@@ -14,10 +14,12 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
+import axxium_events_profile as events
 import axxium_unified_mailbox_release as unified
 
 BASE = ROOT / 'digitalocean/services/axxium/compose.yaml'
 MAILBOX = BASE.with_name('mailbox-production.overlay.yaml')
+EVENTS = BASE.with_name('mailbox-events-production.overlay.yaml')
 INCUMBENT_IMAGE = 'sha256:' + '1' * 64
 CANDIDATE_IMAGE = 'sha256:' + '2' * 64
 STATE = Path('/fixture/state/axxium')
@@ -215,6 +217,21 @@ class ProductionMailboxOverlayTest(unittest.TestCase):
         self.assertEqual(values, {})
         self.assertIn(f'type=bind,src={AT_SIGNING},dst={unified.SIGNING_TARGET},readonly', mounts)
         self.assertFalse(any(str(IDENTITY) in mount for mount in mounts))
+
+    def test_same_image_events_overlay_preserves_the_active_compose_chain(self):
+        active = self.retained.with_name('active-mailbox.compose.json')
+        active_image = 'sha256:' + '3' * 64
+        active.write_text(json.dumps({'services': {'axxium': {'image': active_image}}}))
+        incumbent = self.render(MAILBOX, active)
+        candidate = self.render(MAILBOX, active, EVENTS)
+        for result in (incumbent, candidate):
+            self.assertEqual(result.returncode, 0, result.stderr)
+        events.validate_projection(
+            json.loads(incumbent.stdout),
+            json.loads(candidate.stdout),
+            image_id=active_image,
+            recipient_did=WORK_DID,
+        )
 
     def test_refuses_missing_required_inputs_and_keeps_provided_bootstrap_bindings(self):
         for key in ('AXXIUM_PRODUCTION_MAILBOX_IMAGE', 'AXXIUM_PRODUCTION_MAILBOX_IDENTITY_PATH',

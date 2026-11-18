@@ -1,0 +1,5 @@
+services:
+  axxium:
+    environment:
+      AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED: "true"
+      AXXIUM_MAILBOX_TRANSPORT_COEXISTENCE: "true"
