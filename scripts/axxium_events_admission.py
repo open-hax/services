@@ -3,7 +3,10 @@
 
 from datetime import datetime, timezone
 from hashlib import sha256
+import io
 from pathlib import Path
+import subprocess
+import zipfile
 
 import axxium_active_mailbox_release as active
 from axxium_production_qualification import (
@@ -31,6 +34,8 @@ CENSUS_FILES = (
     "scripts/staging/axxium/events-census/verify_build.py",
 )
 SCENARIOS = {"healthy", "known-failure", "uncertain"}
+MAX_REHEARSAL_ARCHIVE = 8192
+MAX_REHEARSAL_RECEIPT = 8192
 # Every native release module staged into the rehearsal is covered by its
 # native head and must be unchanged when the protected caller admits it.
 REHEARSED_FILES = (
@@ -174,6 +179,28 @@ def verify_rehearsal_evidence(plan, e2e, controller_sha, now):
                 and artifact.get("expired") is False and timestamp(artifact["expires_at"]) > now
                 and custody.get("id") == evidence["run_id"] and custody.get("head_sha") == evidence["controller_head"],
                 "Native Events rehearsal artifact custody differs")
+        verify_native_receipt(artifact, row)
+
+
+def verify_native_receipt(artifact, row):
+    size = artifact.get("size_in_bytes")
+    require(type(size) is int and 0 < size <= MAX_REHEARSAL_ARCHIVE,
+            "Native Events rehearsal archive size differs")
+    result = subprocess.run(
+        ["gh", "api", f"repos/{SERVICES}/actions/artifacts/{artifact['id']}/zip"],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30, check=False,
+    )
+    require(result.returncode == 0 and len(result.stdout) == size
+            and sha256(result.stdout).hexdigest() == row["archive_sha256"],
+            "Native Events rehearsal archive bytes differ")
+    with zipfile.ZipFile(io.BytesIO(result.stdout)) as archive:
+        members = archive.infolist()
+        require(len(members) == 1 and members[0].filename == "events-restart-result.json"
+                and 0 < members[0].file_size <= MAX_REHEARSAL_RECEIPT,
+                "Native Events rehearsal receipt member differs")
+        raw = archive.read(members[0])
+    require(sha256(raw).hexdigest() == row["receipt_sha256"] and strict_json(raw) == row["receipt"],
+            "Native Events rehearsal receipt differs from the admitted copy")
 
 
 def admit_events(plan_bytes, controller_sha, archive, *, now=None):
