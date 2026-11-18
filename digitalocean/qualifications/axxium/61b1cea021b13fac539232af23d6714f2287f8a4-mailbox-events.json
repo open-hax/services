@@ -1,0 +1,48 @@
+{
+  "e2e": {
+    "assertions": 3,
+    "completed_at": "2026-11-18T16:40:29Z",
+    "evidence_sha256": "dc4ed5504260467c44a4080bc74f14b84def31e5adba0c893c082b250d970818",
+    "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+    "kind": "e2e",
+    "rehearsal_head": "93217abe1ea4c04b0a7c881de369c1d07e4d03e8",
+    "rehearsal_run_id": 44349667941,
+    "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+    "status": "passed",
+    "timed_out": false,
+    "warnings": []
+  },
+  "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+  "integration": {
+    "assertion_scope": "One observed Clojure test-suite count, 326 tests / 3696 assertions. The suite prints twice; repeats are not added. Additional Node tests and durable authority PASS checkpoints are excluded from this count.",
+    "assertions": 3696,
+    "completed_at": "2026-11-17T20:19:26Z",
+    "evidence": {
+      "capture_manifest_sha256": "3f04dbc563718bfdab13b92562b04321ad2c9b14961c37bf6b195401eebc278d",
+      "capture_v2_sha256": "6f2a3b71ad4d14dac4fae5ff8d3ce1a13b40ead0b79f8b58a45072cf3d626f02",
+      "fresh_native_integration_verifier_observation_sha256": "0d7c8c0d94399c3e5a06cf188605592a1d6c416944df23b63a1f17c6d237c04d",
+      "fresh_native_integration_verifier_observed_at": "2026-11-18T01:37:58.020291Z",
+      "fresh_native_verifier_scope": "unchanged native integration verifier only; no complete qualification/admission",
+      "log_url": "https://github.com/open-hax/axxium/actions/runs/44167334328/job/134336774803"
+    },
+    "evidence_sha256": "fe882cf443cc1c6a9cfd341d6d4b2a477892b7e2b8403eb2d008361c440bfa08",
+    "kind": "integration",
+    "native_ci_job_id": 134336774803,
+    "native_ci_run_id": 44167334328,
+    "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+    "status": "passed",
+    "timed_out": false,
+    "warning_scope": "No nonzero compiler/test warnings within required command groups. Durable group ends at first Post job cleanup marker, because native metadata seconds truncate final output timestamps. Full job contains post-job runtime deprecations.",
+    "warnings": []
+  },
+  "mutation_batches": [],
+  "mutation_harness": {
+    "campaign_passed": false,
+    "status": "retired"
+  },
+  "plan_sha256": "9de498fb60dbb10f573d6b9fabef2b46d8ac7366aef95e730a4c139fecdd6b6f",
+  "repository": "open-hax/axxium",
+  "schema": "axxium-unified-mailbox-qualification/v1",
+  "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+  "status": "passed"
+}

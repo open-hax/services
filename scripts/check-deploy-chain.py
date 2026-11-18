@@ -52,7 +52,7 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
         errors.append("primary AT sign-in must use its exact isolated protected deployment scope")
     mailbox = jobs.get("deploy-axxium-mailbox", {})
     if (mailbox.get("if") != "inputs.scope == 'axxium-mailbox'"
-        or mailbox.get("uses") != "./.github/workflows/deploy-axxium-unified-mailbox.yml"
+        or mailbox.get("uses") != "./.github/workflows/deploy-axxium-events.yml"
         or mailbox.get("with") != {"source_sha": "${{ inputs.axxium_ref }}", "caller_holds_production_host_lock": "true"}):
         errors.append("unified Axxium mailbox must retain its isolated scope, immutable source and enclosing host queue")
     work_pilot = jobs.get("deploy-axxium-work-pilot", {})

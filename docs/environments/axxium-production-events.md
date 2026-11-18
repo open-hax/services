@@ -53,9 +53,14 @@ and acknowledgments, and that an uncertain effect leaves the hold and journal
 in place.
 
 The comparison tool has no deployment entry point. A passing local render
-supplies projection evidence. Protected admission still needs the exact
-reviewed successor plan and a real restart and rollback rehearsal on the
-admitted image.
+supplies projection evidence. The protected Deploy Stack `axxium-mailbox`
+scope uses the [Events plan](../../digitalocean/services/axxium/mailbox-events-production-plan.json)
+and requires the reviewed staging image, the source-bound census artifact, and
+the successful native restart, rollback and interruption receipts. Keep the
+deployment serial with the production host queue. The native transaction
+publishes a receipt with the server profile enabled and provider enrollment
+held. After the restart, verify the existing Stealth receiver reconnects over
+SSE before starting Dot enrollment.
 
 ## Verify the exact Dot
 
