@@ -299,3 +299,13 @@
   spore: none
   receipt-refs: 2026-11-17T23:17:25.177091Z
   note: Build and unpack the actual workflow-selected controller archive in tests, then import and invoke it outside the source checkout. This exposes transitive module and runtime data dependencies that source-string checks miss. Switch plan, both admissions and executable selection together; retain real missing-proof refusal and existing host authority.
+
+- ts: 2026-11-18T00:01:21.267326Z
+  session: /root/actor_roadmap
+  task: Prepare a genuine active-upgrade fixture without weakening production guards
+  p-efficiency: 0.82
+  p-friction: 0.32
+  p-skill-candidate: 0.5
+  spore: none
+  receipt-refs: 2026-11-18T00:01:21.267326Z
+  note: Lazy durable-ledger loading makes health and discovery insufficient parser proof. Generate canonical setup through the actual isolated service, retain the same credential and MCP session, and assert known ACK semantics on every real image boundary. Bind runtime config IDs to verified descriptor chains, audit every synthetic plan change, and keep source preparation distinct from future hosted execution. Preserve the historical fixture and use the existing native transaction rather than writing a parallel phase loop.

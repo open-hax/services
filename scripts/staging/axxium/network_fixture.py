@@ -129,7 +129,7 @@ def preflight(root, image_ids):
             raise FixtureError('Fixture image is not locally pinned')
 
 
-def setup(root, image_id, postgres_image, caddy_image):
+def setup(root, image_id, postgres_image, caddy_image, *, prepare_app=None):
     """Create a fixture and return synthetic paths and selected container IDs.
 
     On failure, retain the synthetic resources for CI inspection. The enclosing
@@ -146,7 +146,16 @@ def setup(root, image_id, postgres_image, caddy_image):
         os.chmod(directory, 0o700)
     private_write(state / 'google-client.json', b'{"synthetic":true}\n')
     private_write(runtime / '.env', b'# synthetic fixture only\n')
-    private_write(caddy_dir / 'Caddyfile', CADDYFILE, mode=0o644)
+    # An active-profile fixture may prepare its own synthetic keys and mounts,
+    # but only after the existing disposable-VM preflight has admitted setup.
+    profile = prepare_app(root) if prepare_app is not None else None
+    if profile is not None and (not isinstance(profile, dict)
+            or set(profile) != {'environment', 'volumes', 'caddyfile'}
+            or not isinstance(profile['environment'], dict)
+            or not isinstance(profile['volumes'], list)
+            or not isinstance(profile['caddyfile'], bytes)):
+        raise FixtureError('Unexpected synthetic active profile')
+    private_write(caddy_dir / 'Caddyfile', CADDYFILE if profile is None else profile['caddyfile'], mode=0o644)
 
     postgres = {'POSTGRES_USER': 'axxium', 'POSTGRES_DB': 'axxium',
                 'POSTGRES_PASSWORD': 'synthetic-fixture-database-password'}
@@ -157,6 +166,8 @@ def setup(root, image_id, postgres_image, caddy_image):
                'JWT_SECRET': 'synthetic-fixture-jwt-secret-value-only',
                'JWT_ISSUER': 'axxium', 'JWT_AUDIENCE': 'promethean',
                'SESSION_COOKIE_SECURE': 'true', 'SESSION_COOKIE_SAME_SITE': 'lax'}
+    if profile is not None:
+        app_env.update(profile['environment'])
     compose = {'services': {
         'axxium-db': {'image': postgres_image, 'environment': postgres,
             'tmpfs': ['/var/lib/postgresql/data:rw,uid=70,gid=70', '/var/run/postgresql:rw,uid=70,gid=70'],
@@ -173,6 +184,10 @@ def setup(root, image_id, postgres_image, caddy_image):
         'networks': {'default': {'external': True, 'name': 'open-hax'},
                      'database': {'external': True, 'name': 'axxium_database'}}}
     private_write(runtime / 'compose.yaml', (json.dumps(compose, sort_keys=True) + '\n').encode(), mode=0o644)
+    if profile is not None:
+        compose['services']['axxium']['volumes'] = profile['volumes']
+        # This file is still fixture-owned setup data, before the app exists.
+        (runtime / 'compose.yaml').write_bytes((json.dumps(compose, sort_keys=True) + '\n').encode())
 
     for network in NETWORKS:
         command('docker', 'network', 'create', '--internal', '--label', LABEL, network)
@@ -183,9 +198,13 @@ def setup(root, image_id, postgres_image, caddy_image):
             '--network', 'open-hax', '--network-alias', 'axxium-pds', '--health-cmd', pds_health,
             '--health-interval', '2s', '--health-timeout', '3s', '--health-retries', '40',
             '--entrypoint', 'node', image_id, '-e', PDS_JS)
+    caddy_mounts = ['--mount', 'type=bind,src=' + str(caddy_dir / 'Caddyfile') + ',dst=/etc/caddy/Caddyfile'
+                    + (',readonly' if profile is not None else '')]
+    if profile is not None:
+        caddy_mounts += ['--mount', 'type=bind,src=' + str(managed) + ',dst=/etc/caddy/managed,readonly']
     command('docker', 'run', '-d', '--pull', 'never', '--name', CADDY, '--label', LABEL,
             '--network', 'open-hax', '--network-alias', 'axxium.promethean.rest',
-            '--mount', 'type=bind,src=' + str(caddy_dir / 'Caddyfile') + ',dst=/etc/caddy/Caddyfile',
+            *caddy_mounts,
             '--health-cmd', 'wget -q -O - http://127.0.0.1:2019/config/ >/dev/null',
             '--health-interval', '2s', '--health-timeout', '3s', '--health-retries', '40', caddy_image)
     compose_prefix = ('docker', 'compose', '--project-name', 'axxium', '--project-directory', str(runtime),

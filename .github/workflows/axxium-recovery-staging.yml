@@ -12,6 +12,14 @@ on:
       - 'scripts/axxium_production_qualification.py'
       - 'scripts/provision_axxium_colab_identity.py'
       - 'scripts/axxium_oidc_ingress.py'
+      - 'scripts/axxium_active_mailbox_release.py'
+      - 'scripts/axxium_active_mailbox_admission.py'
+      - 'scripts/axxium_ingress_host.py'
+      - 'scripts/axxium_ingress_transaction.py'
+      - 'scripts/axxium_ingress_caddy.py'
+      - 'scripts/axxium_unified_mailbox_release.py'
+      - 'digitalocean/services/axxium/active-mailbox-upgrade-production-plan.json'
+      - 'digitalocean/services/axxium/unified-mailbox-production-plan.json'
       - 'digitalocean/services/axxium/minimal-production-plan.json'
       - 'digitalocean/scripts/check-axxium-production-hold.sh'
       - 'scripts/staging/axxium/**'
@@ -112,3 +120,93 @@ jobs:
                 DOCKER_HOST=unix:///var/run/docker.sock PYTHONDONTWRITEBYTECODE=1 FIXTURE_HOST_NETNS_FD=3 \
                 python3 "$1"
           ' sh "$fixture_source/scripts/staging/axxium/full_recovery_probe.py" "$PATH"
+
+  active-mailbox-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [healthy, known-failure, uncertain]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Validate active fixture source without daemon effects
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s scripts/staging/axxium -p 'test_*.py'
+      - name: Refuse shared state or remote Docker before image setup
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test ! -e /srv/open-hax
+          test -z "${DOCKER_HOST:-}"
+          test -z "${DOCKER_CONTEXT:-}"
+          test "$(docker context show)" = default
+          test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock
+      - name: Verify and load both exact fixture image roles
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          timeout --kill-after=5s 120s gh api repos/open-hax/axxium/actions/artifacts/14366915569/zip > "$RUNNER_TEMP/candidate.zip"
+          # The historical release tag is only the retained archive container.
+          # Its name does not supply the d2 source or image identity.
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            --max-time 120 --max-filesize 268435456 --output "$RUNNER_TEMP/incumbent.zip" \
+            'https://github.com/open-hax/axxium/releases/download/recovery-ci-fixture-58234df96ca8/staging-artifact-14133886771.zip'
+          PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/staging/axxium/prepare_active_images.py \
+            --candidate "$RUNNER_TEMP/candidate.zip" --incumbent "$RUNNER_TEMP/incumbent.zip" --output "$RUNNER_TEMP"
+          docker load --input "$RUNNER_TEMP/candidate-images.tar"
+          docker load --input "$RUNNER_TEMP/incumbent-images.tar"
+          docker pull postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+          docker pull caddy@sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17
+      - name: Run the real active transaction in the isolated fixture namespace
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test ! -e /srv/open-hax
+          command -v setfacl >/dev/null
+          command -v setpriv >/dev/null
+          command -v unshare >/dev/null
+          case "$SCENARIO" in healthy|known-failure|uncertain) ;; *) exit 2 ;; esac
+          fixture_source=$(mktemp -d /tmp/axxium-active-workspace.XXXXXXXX)
+          install -d -m 700 "$fixture_source/scripts/staging/axxium" "$fixture_source/digitalocean/services/axxium"
+          for file in axxium_active_mailbox_release.py axxium_unified_mailbox_release.py axxium_minimal_release.py \
+            axxium_ingress_host.py axxium_ingress_transaction.py axxium_interrupted_handoff.py axxium_ingress_caddy.py \
+            axxium_oidc_ingress.py axxium_production_qualification.py environment_policy.py github_environment_admission.py; do
+            test -f "$GITHUB_WORKSPACE/scripts/$file" && test ! -L "$GITHUB_WORKSPACE/scripts/$file"
+            install -m 600 "$GITHUB_WORKSPACE/scripts/$file" "$fixture_source/scripts/$file"
+          done
+          for file in active_upgrade_fixture.py prepare_active_images.py network_fixture.py fixture_netns.py full_recovery_probe.py identity_fixture.py; do
+            install -m 600 "$GITHUB_WORKSPACE/scripts/staging/axxium/$file" "$fixture_source/scripts/staging/axxium/$file"
+          done
+          for file in active-mailbox-upgrade-production-plan.json unified-mailbox-production-plan.json; do
+            install -m 600 "$GITHUB_WORKSPACE/digitalocean/services/axxium/$file" "$fixture_source/digitalocean/services/axxium/$file"
+          done
+          install -m 600 "$RUNNER_TEMP/candidate.zip" "$fixture_source/candidate.zip"
+          install -m 600 "$RUNNER_TEMP/incumbent.zip" "$fixture_source/incumbent.zip"
+          sudo chown -R 1000:1000 "$fixture_source"
+          sudo mkdir -m 700 /srv/open-hax
+          sudo chown 1000:1000 /srv/open-hax
+          sudo setfacl -m u:1000:rw /var/run/docker.sock
+          sudo sh -c '
+            exec 3</proc/1/ns/net
+            exec unshare --net --fork setpriv --reuid=1000 --regid=1000 --clear-groups \
+              env -i PATH="$2" HOME=/tmp GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted \
+                DOCKER_HOST=unix:///var/run/docker.sock PYTHONDONTWRITEBYTECODE=1 FIXTURE_HOST_NETNS_FD=3 \
+                python3 -B "$1/scripts/staging/axxium/active_upgrade_fixture.py" \
+                  --candidate "$1/candidate.zip" --incumbent "$1/incumbent.zip" --scenario "$3"
+          ' sh "$fixture_source" "$PATH" "$SCENARIO" | tee "$RUNNER_TEMP/active-upgrade-result.json"
+      - name: Retain sanitized native fixture result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: active-mailbox-fixture-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/active-upgrade-result.json
+          if-no-files-found: ignore
