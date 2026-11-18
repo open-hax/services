@@ -15,6 +15,7 @@ import tarfile
 import tempfile
 import unittest
 from unittest import mock
+from zipfile import ZipFile
 
 import yaml
 
@@ -135,7 +136,7 @@ class PlanContinuityTests(unittest.TestCase):
 
 class NativeRehearsalTests(unittest.TestCase):
     def setUp(self):
-        self.e2e = {'rehearsal_head': HEAD, 'rehearsal_run_id': RUN}
+        self.e2e = {'rehearsal_head': HEAD, 'rehearsal_run_id': RUN, 'rehearsal_attempt': 1}
         self.run = {'id': RUN, 'head_sha': HEAD, 'repository': {'full_name': admission.SERVICES},
                     'path': admission.WORKFLOW, 'event': 'pull_request', 'run_attempt': 1,
                     'status': 'completed', 'conclusion': 'success', 'updated_at': '2026-11-18T18:00:00Z'}
@@ -177,6 +178,27 @@ class NativeRehearsalTests(unittest.TestCase):
                      'scripts/staging/axxium/fixture_netns.py', admission.PLAN_PATH):
             with self.subTest(path=path), self.assertRaisesRegex(Refusal, 'differs from the hosted candidate'):
                 self.verify(different=path)
+
+    def test_later_attempt_cannot_admit_receipts_for_the_prior_attempt(self):
+        self.run['run_attempt'] = 2
+        with self.assertRaisesRegex(Refusal, 'differs from the accepted binding'):
+            self.verify()
+
+    def test_native_receipt_body_must_match_even_when_archive_metadata_is_correct(self):
+        receipt = {'status': 'rolled_back', 'rollback_verified': True}
+        raw = json.dumps(receipt).encode()
+        stream = io.BytesIO()
+        with ZipFile(stream, 'w') as package:
+            package.writestr('events-restart-result.json', raw)
+        zipped = stream.getvalue()
+        artifact = {'id': 123, 'size_in_bytes': len(zipped)}
+        evidence = {'archive_sha256': sha256(zipped).hexdigest(),
+                    'receipt_sha256': sha256(raw).hexdigest(), 'receipt': receipt}
+        with mock.patch.object(admission.subprocess, 'run', return_value=mock.Mock(returncode=0, stdout=zipped)):
+            admission.verify_native_receipt(artifact, evidence)
+            drifted = {**evidence, 'receipt': {**receipt, 'rollback_verified': False}}
+            with self.assertRaisesRegex(Refusal, 'differs from the admitted copy'):
+                admission.verify_native_receipt(artifact, drifted)
 
     def test_failed_exact_rehearsal_prevents_census_build_credit(self):
         proof = json.dumps({'e2e': self.e2e}).encode()

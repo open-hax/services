@@ -117,6 +117,7 @@ def verify_native_census_build(pins, controller_sha, now):
 def verify_native_rehearsal(e2e, controller_sha, now):
     head = e2e.get("rehearsal_head")
     run_id = e2e.get("rehearsal_run_id")
+    attempt = e2e.get("rehearsal_attempt")
     require(isinstance(head, str) and SHA.fullmatch(head) and type(run_id) is int and run_id > 0,
             "Native Events rehearsal binding required")
     main_ancestor(SERVICES, head)
@@ -124,11 +125,10 @@ def verify_native_rehearsal(e2e, controller_sha, now):
     require(run.get("id") == run_id and run.get("head_sha") == head
             and run.get("repository", {}).get("full_name") == SERVICES
             and run.get("path") == WORKFLOW and run.get("event") in {"pull_request", "workflow_dispatch"}
+            and type(attempt) is int and attempt > 0 and run.get("run_attempt") == attempt
             and run.get("status") == "completed" and run.get("conclusion") == "success"
             and timestamp(run["updated_at"]) <= now,
             "Native Events rehearsal run differs from the accepted binding")
-    attempt = run.get("run_attempt")
-    require(type(attempt) is int and attempt > 0, "Native Events rehearsal attempt unavailable")
     response = api(f"repos/{SERVICES}/actions/runs/{run_id}/attempts/{attempt}/jobs")
     jobs = response.get("jobs", [])
     expected = {f"same-image ({scenario})" for scenario in SCENARIOS}
@@ -139,9 +139,10 @@ def verify_native_rehearsal(e2e, controller_sha, now):
     for path in REHEARSED_FILES:
         require(native_file(SERVICES, path, head) == native_file(SERVICES, path, controller_sha),
                 "Protected Events runtime or rehearsal input differs from the hosted candidate")
+    return run
 
 
-def verify_rehearsal_evidence(plan, e2e, controller_sha, now):
+def verify_rehearsal_evidence(plan, e2e, run, controller_sha, now):
     path = f"digitalocean/qualifications/axxium/evidence/{plan['source_sha']}{SUFFIX}-e2e.json"
     raw = native_file(SERVICES, path, controller_sha)
     require(sha256(raw).hexdigest() == e2e["evidence_sha256"],
@@ -149,6 +150,7 @@ def verify_rehearsal_evidence(plan, e2e, controller_sha, now):
     evidence = strict_json(raw)
     require(evidence.get("schema") == "axxium-events-native-rehearsal/v1"
             and evidence.get("run_id") == e2e["rehearsal_run_id"]
+            and evidence.get("run_attempt") == e2e["rehearsal_attempt"]
             and evidence.get("controller_head") == e2e["rehearsal_head"]
             and evidence.get("source_sha") == plan["source_sha"]
             and evidence.get("census_module_sha256") == plan["census"]["module_sha256"]
@@ -177,6 +179,7 @@ def verify_rehearsal_evidence(plan, e2e, controller_sha, now):
         require(artifact.get("id") == row["artifact_id"] and artifact.get("name") == "axxium-events-fixture-" + name
                 and artifact.get("digest") == "sha256:" + row["archive_sha256"]
                 and artifact.get("expired") is False and timestamp(artifact["expires_at"]) > now
+                and timestamp(run["run_started_at"]) <= timestamp(artifact["created_at"]) <= timestamp(run["updated_at"])
                 and custody.get("id") == evidence["run_id"] and custody.get("head_sha") == evidence["controller_head"],
                 "Native Events rehearsal artifact custody differs")
         verify_native_receipt(artifact, row)
@@ -212,8 +215,8 @@ def admit_events(plan_bytes, controller_sha, archive, *, now=None):
     )
     path = f"digitalocean/qualifications/axxium/{plan['source_sha']}{SUFFIX}.json"
     proof = strict_json(native_file(SERVICES, path, controller_sha))
-    verify_native_rehearsal(proof["e2e"], controller_sha, observed_at)
-    verify_rehearsal_evidence(plan, proof["e2e"], controller_sha, observed_at)
+    run = verify_native_rehearsal(proof["e2e"], controller_sha, observed_at)
+    verify_rehearsal_evidence(plan, proof["e2e"], run, controller_sha, observed_at)
     verify_native_census_build(plan["census"], controller_sha, observed_at)
     return verdict
 

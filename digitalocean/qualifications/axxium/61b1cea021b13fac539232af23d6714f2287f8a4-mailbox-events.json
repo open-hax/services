@@ -5,6 +5,7 @@
     "evidence_sha256": "dc4ed5504260467c44a4080bc74f14b84def31e5adba0c893c082b250d970818",
     "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
     "kind": "e2e",
+    "rehearsal_attempt": 1,
     "rehearsal_head": "93217abe1ea4c04b0a7c881de369c1d07e4d03e8",
     "rehearsal_run_id": 44349667941,
     "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
