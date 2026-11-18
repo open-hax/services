@@ -66,7 +66,8 @@ target Dot. This event accepts empty arguments and delivers a message ID for
 the authorized recipient. A fresh subscription starts at the current sequence.
 A live callback to a different target blocks enrollment.
 
-Record the provider-created subscription and its generation, the signed
-challenge outcome, and the HTTPS delivery receipt for one fresh synthetic
-message. Verify a distinct turn in the exact Dot with the same message ID.
+Wait for the provider's signed challenge to succeed. Read back the active
+subscription bound to the exact Dot and record its generation. Send one fresh
+synthetic message only after both checks succeed. Record the HTTPS delivery
+receipt and verify a distinct turn in the exact Dot with the same message ID.
 Unsubscribe after the test and verify zero active subscriptions. [OpenAI MCP Events](https://developers.openai.com/plugins/build/mcp-events)
