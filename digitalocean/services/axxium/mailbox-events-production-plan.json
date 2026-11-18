@@ -1,0 +1,131 @@
+{
+  "artifact_id": 14366915569,
+  "artifact_sha256": "01731eedb9acd923e1664b3aef90a72631da0192e0b648e410d60506e39816a7",
+  "census": {
+    "artifact_id": 14448515270,
+    "artifact_sha256": "ec0e40223a33a5cd8a67eb95f20bf976edcffe3876eadc1b32815939222db13e",
+    "build_attempt": 1,
+    "build_head": "efe7cf2f412429e6255d345a334c7dfb8ed93065",
+    "build_run_id": 44349132091,
+    "driver_sha256": "c75dcd16544a70a0f969fb018ae438195284cd4dae2f152f1028798c83dd39a7",
+    "module_sha256": "0e6c0270fba247dd7327e78f0ede98aa9d120c5ef839f56dfad844714ae56a27"
+  },
+  "compose_chain": [
+    {
+      "bytes": 3315,
+      "path": "/srv/open-hax/services/axxium/compose.yaml",
+      "sha256": "6185dee425d257803a045a99fb96c9b3be270dbb08337745400914056c0aed79"
+    },
+    {
+      "bytes": 416,
+      "path": "/srv/open-hax/state/axxium/operations/58234df96ca86507e6cdd87f65aaa9ab35621415/candidate.compose.json",
+      "sha256": "9517e32ad815c9f1ba3c26407b071a75692f2b226274fb0fcb4f93bf55c1173a"
+    },
+    {
+      "bytes": 476,
+      "path": "/srv/open-hax/state/axxium/operations/d2f8dc8425f86f51a8450a0cae0b79a042694c64-at-auth/candidate.compose.json",
+      "sha256": "32b2dff0b3e4f9eb9907c21aa4c4612a79c4d75d7f7cf3383cf60e5606e0d9b9"
+    },
+    {
+      "bytes": 2776,
+      "path": "/srv/open-hax/services/axxium/controllers/f641bb2370c362cde79c0d354f92b4fb0aee2e41/digitalocean/services/axxium/mailbox-production.overlay.yaml",
+      "sha256": "419b2a5f2c589ccec227b13e15aa9a61a8a238826fd992ad788eda87cf30948b"
+    },
+    {
+      "bytes": 108,
+      "path": "/srv/open-hax/state/axxium/operations/61b1cea021b13fac539232af23d6714f2287f8a4-active-mailbox/candidate.compose.json",
+      "sha256": "a75d9469689ee96cfa40a08ac094d545df07107090ef37da74dcd9e3e24c3eb9"
+    }
+  ],
+  "expected": {
+    "app_container_id": "6f2d6d7935ef0c5d5ed90b19d78f181b80ebc60a8858b8b619821bdb9d892fff",
+    "app_environment_sha256": "dc7ae7c8661cf3613f522ee123611c90d6b0766929d0de68ed54d4499e63b20a",
+    "app_image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+    "app_writable_layer_sha256": "cf3f4ee7b89491f03eb5b806ea96531f964086f2b71bc957b209347f9abd5498",
+    "caddy_container_id": "5ef621be013356092ea07330a7e5dbc9c50b49cc55da46b09f3a935d0cac6992",
+    "caddy_image_id": "sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17",
+    "caddy_proxy_ip": "172.18.0.9",
+    "caddyfile_sha256": "633c271a867a85a160f2d3d521c33cb8d9f4ce3d0ad5c6bb6e71199b36a9d46c",
+    "compose_sha256": "6185dee425d257803a045a99fb96c9b3be270dbb08337745400914056c0aed79",
+    "db_container_id": "b66563abe4e7ad99cc1ae805dc676394524830f2d9adfcc5a62a46c82ecd0ea8",
+    "db_environment_sha256": "533205d4649345a4cd4938c045dc31864b1e868d027328c0decc0f4f81c1f16e",
+    "db_image_id": "sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825",
+    "environment_file_sha256": "e173b2f5d640e4328d6a4524bdce8b1a74bc8e19f01bd26530ea848d3b3f9354",
+    "incumbent_overlay_sha256": "9517e32ad815c9f1ba3c26407b071a75692f2b226274fb0fcb4f93bf55c1173a",
+    "managed_caddy_sha256": "e4ffec1b627fcfa3b98cf33e9813df80ca4a86d65fcd629eb54c00a0fe554648",
+    "pds_container_id": "fe02d8d9860e30c0ed1e6f33031568de41407eeb53c6c1e439300d2c80199a49",
+    "pds_environment_sha256": "c9782b89055d9360654346d5a5c8dfc21110427f12d79c32316f329b1e4f38eb",
+    "pds_image_id": "sha256:95d6179bc9fb10cc36ccd6dea0407fc6d99f21374bf2a1f9e8f28c0427c7e336"
+  },
+  "host": "knoxx.promethean.rest",
+  "identity": {
+    "actor_signing_sha256": "914834f318a5250e58f46152f4e19fb23fcbe780077e7c5f20719ffb5135b18a",
+    "client_id": "axxium-mailbox-chatgpt-production",
+    "issuer": "https://axxium.promethean.rest/oidc",
+    "work_actor_id": "actor_122e0b09-e016-469e-9e7c-8bf183d1de29",
+    "work_atproto_did": "did:plc:mbew7r6ca3pg3lbebfck4gjf"
+  },
+  "image_config_digest": "sha256:c35a6986d7b040813c9434387626f07d2a8f03de80ccf66c2a7eb0de0d67dbb8",
+  "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+  "image_manifest_digest": "sha256:e7d36f0ccfbba0246370da12d0f7d93d42d45fc1fa932f7cb289301b1360fe97",
+  "images_tar_sha256": "0aa3581fa31a56c4817ca32937215d4b1bfa77eba0aeab7ac3c52f3fe811de50",
+  "incumbent": {
+    "plan_sha256": "ae9076c680e23fa6020b35ec796cbe8698dec84e00df9fc01d75a4d6641e437e",
+    "receipt_sha256": "62fae1de328f00ffcbe93013686d8d2e3a71eaa4ff2cd2a255c478ce2fa537e3",
+    "schema": "axxium-active-mailbox-deployment/v1",
+    "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4"
+  },
+  "ingress": {
+    "fenced": {
+      "adapted_sha256": "fc56a3b3a57e99803e2dd728fd275b791fd7f1193822a0b2eb847c850ecf086b",
+      "root_sha256": "6bb4f7e056865770ff2d0b933566f5a5bcb61b33a5d262975cabc304cccb68d7"
+    },
+    "live": {
+      "adapted_sha256": "e46ece791a71b583d6c706172ec53504070947301d6bbbf59be3d5a689d73ee2",
+      "root_sha256": "633c271a867a85a160f2d3d521c33cb8d9f4ce3d0ad5c6bb6e71199b36a9d46c"
+    }
+  },
+  "recipient_did": "did:plc:mbew7r6ca3pg3lbebfck4gjf",
+  "retained_config": [
+    {
+      "bytes": 579,
+      "path": "/srv/open-hax/state/axxium/operations/d2f8dc8425f86f51a8450a0cae0b79a042694c64/mailbox-identity/mailbox.env",
+      "sha256": "b6d6cc3fdf680b56ff6210a15e7eb814b37905884bfa6e31844193360b992523"
+    },
+    {
+      "bytes": 3346,
+      "path": "/srv/open-hax/state/axxium/operations/d2f8dc8425f86f51a8450a0cae0b79a042694c64/mailbox-identity/oidc/authority.json",
+      "sha256": "007b8f8730490106b1548ccecb679d46911c69a62dcf888234b6b90ce911df9f"
+    },
+    {
+      "bytes": 45,
+      "path": "/srv/open-hax/state/axxium/operations/d2f8dc8425f86f51a8450a0cae0b79a042694c64/mailbox-identity/oidc/mailbox-webhook.key",
+      "sha256": "c4f7a5ad8bb007367cbd3808d3cd5a4f58c377317810e710975af83e0e9a4253"
+    },
+    {
+      "bytes": 45,
+      "path": "/srv/open-hax/state/axxium/operations/d2f8dc8425f86f51a8450a0cae0b79a042694c64/mailbox-identity/owner/identity.key",
+      "sha256": "c43373e71f036b5858671836b0652f9f84f8b654c4198d00c2d60ab0ef8880b7"
+    },
+    {
+      "bytes": 497,
+      "path": "/srv/open-hax/state/axxium/operations/d2f8dc8425f86f51a8450a0cae0b79a042694c64/mailbox-identity/owner/foresight-tree.edn",
+      "sha256": "4726287f7cc2a819d7e9d6a0f08fed0a5bf9375f803f1d225eb3e19780f19013"
+    },
+    {
+      "bytes": 456,
+      "path": "/srv/open-hax/state/axxium/operations/d2f8dc8425f86f51a8450a0cae0b79a042694c64/mailbox-identity-pins.json",
+      "sha256": "4e7a0c4b7c2a7da3d8d6766a8ab0fa5f816b5bf84f25a252e041455a8a9680cf"
+    }
+  ],
+  "schema": "axxium-mailbox-events-production/v1",
+  "source_pr": 88,
+  "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+  "stage_controller_sha": "a2aee9a01a51ef1481dcc6d1071104f449dcf6bd",
+  "stage_run_id": 44167338860,
+  "stage_workflow_path": ".github/workflows/service-environment-staging.yml",
+  "transport": {
+    "AXXIUM_MAILBOX_STREAM_ENABLED": "true",
+    "AXXIUM_MAILBOX_SUBSCRIPTIONS_ENABLED": "false"
+  }
+}

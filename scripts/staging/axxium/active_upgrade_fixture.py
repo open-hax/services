@@ -272,8 +272,9 @@ def bind(source, target, readonly=True):
 
 
 class Fixture:
-    def __init__(self, images):
+    def __init__(self, images, *, probe_operation=None):
         self.images = images
+        self.probe_operation = probe_operation or active.SOURCE + '-active-mailbox'
         self.token = self.sid = self.a = self.b = None
         self.acked_b = False
         self.checks = {'candidate': 0, 'incumbent': 0, 'clone_candidate': 0, 'clone_incumbent': 0}
@@ -283,7 +284,7 @@ class Fixture:
         labels = record['Config'].get('Labels') or {}
         probe = container.startswith('axxium-verify-')
         require((not probe and container == native.APP and labels.get('codex.axxium-recovery-fixture') == 'synthetic')
-                or (probe and labels.get('open-hax.axxium-operation') == active.SOURCE + '-active-mailbox'),
+                or (probe and labels.get('open-hax.axxium-operation') == self.probe_operation),
                 'Fixture MCP target is not owned')
         require(record['Image'] in set(self.images.values()) and not record['HostConfig'].get('PortBindings')
                 and set(record['NetworkSettings']['Networks']) == ({'axxium_database'} if probe else set(network.NETWORKS)),
@@ -334,12 +335,15 @@ class Fixture:
 
     def verify(self, container, host=None):
         record = self.owned(container)
+        role = self.runtime_role(container, record)
         inbox = self.tool(container, 'read_inbox', host=host)  # No explicit after: ACK filter must apply.
         a = self.tool(container, 'get_delivery', {'message_id': self.a}, host)
         b = self.tool(container, 'get_delivery', {'message_id': self.b}, host)
         check_semantics(self.a, self.b, self.acked_b, inbox, a, b)
-        role = next(role for role, image in self.images.items() if record['Image'] == image)
         self.checks[('clone_' if container.startswith('axxium-verify-') else '') + role] += 1
+
+    def runtime_role(self, container, record):
+        return next(role for role, image in self.images.items() if record['Image'] == image)
 
     def profile(self, root):
         identity = active.IDENTITY
@@ -540,7 +544,14 @@ class Host(active.Host):
         self.fixture.verify(native.APP, self)
 
 
-def project_plan(fixture):
+def bind_plan(plan):
+    """Bind the isolated active release hooks to the projected fixture inputs."""
+    active.PLAN, active.PLAN_BYTES = plan, encode(plan)
+    active.PLAN_SHA256, active.IMAGE = native.digest(active.PLAN_BYTES), plan['image_id']
+    active.Host.release_image = plan['image_id']
+
+
+def project_plan(fixture, *, bind_active_upgrade=True):
     plan = deepcopy(ORIGINAL_PLAN)
     observer = native.NativeHost()
     plan['image_id'] = fixture.images['candidate']
@@ -579,11 +590,37 @@ def project_plan(fixture):
     plan['ingress'] = {'live': {'root_sha256': live['root_sha256'], 'adapted_sha256': live['active_sha256']},
                        'fenced': {'root_sha256': native.digest(fenced), 'adapted_sha256': ingress._config_hash(adapted)}}
     differences = audit_projection(ORIGINAL_PLAN, plan)
-    require(plan['image_id'] != plan['incumbent']['image_id'], 'Fixture requires distinct real image roles')
-    active.PLAN, active.PLAN_BYTES = plan, encode(plan)
-    active.PLAN_SHA256, active.IMAGE = native.digest(active.PLAN_BYTES), plan['image_id']
-    active.Host.release_image = plan['image_id']
+    if bind_active_upgrade:
+        require(plan['image_id'] != plan['incumbent']['image_id'], 'Fixture requires distinct real image roles')
+        bind_plan(plan)
     return plan, differences
+
+
+def require_hosted_fixture():
+    with DIAG.phase('environment-guard'):
+        require(os.getuid() == 1000 and os.environ.get('GITHUB_ACTIONS') == 'true'
+                and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+                and os.environ.get('DOCKER_HOST') == 'unix:///var/run/docker.sock' and not os.environ.get('DOCKER_CONTEXT'),
+                'Disposable hosted VM and local Unix Docker required')
+        os.umask(0o077)
+        fixture_netns.require_isolated()
+
+
+def setup_fixture(fixture):
+    with DIAG.phase('topology-setup'):
+        network.setup(ROOT, fixture.images['incumbent'], wire.image_id('postgres@' + POSTGRES),
+                      wire.image_id('caddy@' + CADDY), prepare_app=fixture.profile)
+    DIAG.call('account-setup', fixture.setup_accounts_and_state)
+
+
+def verify_held(plan, host, retry, execute):
+    hold = native.PENDING.read_bytes()
+    journal = {p.name: native.file_digest(p) for p in host.operation.glob('*.json')}
+    require_refusal('native-retry', execute, plan, retry)
+    for method in (retry.recovery_preflight, retry.recovery_claim):
+        require_refusal('native-recovery-refusal', method, plan)
+    require(native.PENDING.read_bytes() == hold and journal == {p.name: native.file_digest(p) for p in host.operation.glob('*.json')},
+            'Uncertain hold or journal changed on retry')
 
 
 def main():
@@ -593,22 +630,13 @@ def main():
     parser.add_argument('--scenario', choices=('healthy', 'known-failure', 'uncertain'), required=True)
     with DIAG.phase('arguments'):
         args = parser.parse_args()
-    with DIAG.phase('environment-guard'):
-        require(os.getuid() == 1000 and os.environ.get('GITHUB_ACTIONS') == 'true'
-                and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
-                and os.environ.get('DOCKER_HOST') == 'unix:///var/run/docker.sock' and not os.environ.get('DOCKER_CONTEXT'),
-                'Disposable hosted VM and local Unix Docker required')
-        os.umask(0o077)
-        fixture_netns.require_isolated()
+    require_hosted_fixture()
     with DIAG.phase('archive-custody'):
         bindings = {role: verify_role(role, getattr(args, role)) for role in ('candidate', 'incumbent')}
     with DIAG.phase('image-resolution'):
         images = {role: runtime_id(role, wire.image_id('promethean-axxium:' + role_plan(role)['source_sha'])) for role in bindings}
     fixture = Fixture(images)
-    with DIAG.phase('topology-setup'):
-        network.setup(ROOT, images['incumbent'], wire.image_id('postgres@' + POSTGRES), wire.image_id('caddy@' + CADDY),
-                      prepare_app=fixture.profile)
-    DIAG.call('account-setup', fixture.setup_accounts_and_state)
+    setup_fixture(fixture)
     plan, differences = DIAG.call('plan-projection', project_plan, fixture)
     private(ROOT / 'state/active-fixture-projection.json', encode({'scope': 'synthetic fixture only', 'differences': differences}))
     material_paths = [active.SIGNING, *(Path(row['path']) for row in plan['retained_config'])]
@@ -621,14 +649,7 @@ def main():
             require(host.injected and native.PENDING.is_file(), 'Actual uncertain effect did not retain its hold')
         else:
             raise RuntimeError('Uncertainty was not observed')
-        hold = native.PENDING.read_bytes()
-        journal = {p.name: native.file_digest(p) for p in host.operation.glob('*.json')}
-        retry = Host(active.PLAN_SHA256, fixture, 'healthy')
-        require_refusal('native-retry', active.execute_admitted, plan, retry)
-        for method in (retry.recovery_preflight, retry.recovery_claim):
-            require_refusal('native-recovery-refusal', method, plan)
-        require(native.PENDING.read_bytes() == hold and journal == {p.name: native.file_digest(p) for p in host.operation.glob('*.json')},
-                'Uncertain hold or journal changed on retry')
+        verify_held(plan, host, Host(active.PLAN_SHA256, fixture, 'healthy'), active.execute_admitted)
         status = 'held'
     else:
         result = DIAG.call('native-transaction', active.execute_admitted, plan, host)

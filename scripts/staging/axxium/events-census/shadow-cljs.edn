@@ -1,0 +1,8 @@
+{:source-paths ["src/cljs" "probe-src"]
+ :dependencies [[metosin/malli "0.16.4"] [funcool/promesa "11.0.678"]
+                [com.github.seancorfield/honeysql "2.7.1368"] [org.clojure/test.check "1.1.1"]
+                [borkdude/edamame "1.6.42"]]
+ :builds {:probe {:target :esm :runtime :node :output-dir "../probe-dist"
+                  :modules {:probe {:exports {:summarize axxium.extern.rehearsal-probe/summarize}}}
+                  :compiler-options {:parallel-build false :output-feature-set :es-next :optimizations :simple
+                                     :infer-externs false}}}}

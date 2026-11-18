@@ -1,0 +1,109 @@
+{
+  "census_module_sha256": "0e6c0270fba247dd7327e78f0ede98aa9d120c5ef839f56dfad844714ae56a27",
+  "controller_head": "93217abe1ea4c04b0a7c881de369c1d07e4d03e8",
+  "run_attempt": 1,
+  "run_id": 44349667941,
+  "scenarios": {
+    "healthy": {
+      "archive_sha256": "bd35279aae0b5a3a81eb106d6173295af829eeac69ec83cee50a3eda555f8ca0",
+      "artifact_id": 14447841964,
+      "receipt": {
+        "actual_candidate_starts": 2,
+        "archive_binding": {
+          "artifact_sha256": "01731eedb9acd923e1664b3aef90a72631da0192e0b648e410d60506e39816a7",
+          "image_config_digest": "sha256:c35a6986d7b040813c9434387626f07d2a8f03de80ccf66c2a7eb0de0d67dbb8",
+          "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+          "image_manifest_digest": "sha256:e7d36f0ccfbba0246370da12d0f7d93d42d45fc1fa932f7cb289301b1360fe97",
+          "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4"
+        },
+        "candidate_acknowledgement": false,
+        "census_module_sha256": "0e6c0270fba247dd7327e78f0ede98aa9d120c5ef839f56dfad844714ae56a27",
+        "held_callback_census_checks": 2,
+        "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+        "native_parser_checks": {
+          "candidate": 5,
+          "clone_candidate": 1,
+          "clone_incumbent": 2,
+          "incumbent": 1
+        },
+        "production_qualified": false,
+        "provider_login_verified": false,
+        "rollback_verified": false,
+        "same_image_restart_verified": true,
+        "scenario": "healthy",
+        "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+        "status": "healthy",
+        "webhook_enrollment": "not-exercised"
+      },
+      "receipt_sha256": "116ccb84c602d636150cf4b6d685c396527566568bd346932913d9d4e84e819f"
+    },
+    "known-failure": {
+      "archive_sha256": "cddaa470f74a39ae24548375293f2d1a351b5e183d2061d9dfd3c58c6ce5aa71",
+      "artifact_id": 14446998520,
+      "receipt": {
+        "actual_candidate_starts": 1,
+        "archive_binding": {
+          "artifact_sha256": "01731eedb9acd923e1664b3aef90a72631da0192e0b648e410d60506e39816a7",
+          "image_config_digest": "sha256:c35a6986d7b040813c9434387626f07d2a8f03de80ccf66c2a7eb0de0d67dbb8",
+          "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+          "image_manifest_digest": "sha256:e7d36f0ccfbba0246370da12d0f7d93d42d45fc1fa932f7cb289301b1360fe97",
+          "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4"
+        },
+        "candidate_acknowledgement": true,
+        "census_module_sha256": "0e6c0270fba247dd7327e78f0ede98aa9d120c5ef839f56dfad844714ae56a27",
+        "held_callback_census_checks": 1,
+        "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+        "native_parser_checks": {
+          "candidate": 2,
+          "clone_candidate": 1,
+          "clone_incumbent": 2,
+          "incumbent": 3
+        },
+        "production_qualified": false,
+        "provider_login_verified": false,
+        "rollback_verified": true,
+        "same_image_restart_verified": true,
+        "scenario": "known-failure",
+        "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+        "status": "rolled_back",
+        "webhook_enrollment": "not-exercised"
+      },
+      "receipt_sha256": "037f833330051483decc2ca4931c988bc8b05cb881f185f9cd2524e1a2233932"
+    },
+    "uncertain": {
+      "archive_sha256": "168767a1857839991ce45341ffe058a73d29a164c187ed0246e455cb5287e0b2",
+      "artifact_id": 14446589262,
+      "receipt": {
+        "actual_candidate_starts": 1,
+        "archive_binding": {
+          "artifact_sha256": "01731eedb9acd923e1664b3aef90a72631da0192e0b648e410d60506e39816a7",
+          "image_config_digest": "sha256:c35a6986d7b040813c9434387626f07d2a8f03de80ccf66c2a7eb0de0d67dbb8",
+          "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+          "image_manifest_digest": "sha256:e7d36f0ccfbba0246370da12d0f7d93d42d45fc1fa932f7cb289301b1360fe97",
+          "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4"
+        },
+        "candidate_acknowledgement": false,
+        "census_module_sha256": "0e6c0270fba247dd7327e78f0ede98aa9d120c5ef839f56dfad844714ae56a27",
+        "held_callback_census_checks": 1,
+        "image_id": "sha256:37efbd996a12bd326b4e9d451c969c71d021c7f68f7775db8daaf42e236b1946",
+        "native_parser_checks": {
+          "candidate": 0,
+          "clone_candidate": 1,
+          "clone_incumbent": 1,
+          "incumbent": 1
+        },
+        "production_qualified": false,
+        "provider_login_verified": false,
+        "rollback_verified": false,
+        "same_image_restart_verified": true,
+        "scenario": "uncertain",
+        "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+        "status": "held",
+        "webhook_enrollment": "not-exercised"
+      },
+      "receipt_sha256": "1bcde9afa3674193c99ab24199ecbad067a651c03423988c35b32784b72899d7"
+    }
+  },
+  "schema": "axxium-events-native-rehearsal/v1",
+  "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4"
+}

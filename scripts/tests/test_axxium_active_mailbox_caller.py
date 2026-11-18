@@ -82,7 +82,7 @@ class ActiveMailboxCallerTests(unittest.TestCase):
                          {"group": "digitalocean-production-host", "cancel-in-progress": False})
         caller = chain["jobs"]["deploy-axxium-mailbox"]
         self.assertEqual(caller["if"], "inputs.scope == 'axxium-mailbox'")
-        self.assertEqual(caller["uses"], "./" + WORKFLOW)
+        self.assertEqual(caller["uses"], "./.github/workflows/deploy-axxium-events.yml")
         self.assertIs(caller["with"]["caller_holds_production_host_lock"], True)
         self.assertEqual(set(body.get("on", body.get(True))), {"workflow_call"})
         self.assertFalse(any("concurrency" in job for job in body["jobs"].values()))
