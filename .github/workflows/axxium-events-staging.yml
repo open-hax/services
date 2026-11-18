@@ -41,6 +41,11 @@ jobs:
           test -z "${DOCKER_CONTEXT:-}"
           test "$(docker context show)" = default
           test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock
+          plan=digitalocean/services/axxium/mailbox-events-production-plan.json
+          census_artifact=$(jq -er '.census.artifact_id | select(type == "number" and . > 0 and floor == .)' "$plan")
+          timeout --kill-after=5s 120s gh api "repos/open-hax/services/actions/artifacts/$census_artifact/zip" > "$RUNNER_TEMP/census.zip"
+          python3 -B scripts/axxium_events_census_archive.py --plan "$plan" --archive "$RUNNER_TEMP/census.zip" --output "$RUNNER_TEMP/census"
+          PATH=/usr/local/bin:/usr/bin:/bin command -v node >/dev/null
           timeout --kill-after=5s 120s gh api repos/open-hax/axxium/actions/artifacts/14366915569/zip > "$RUNNER_TEMP/candidate.zip"
           python3 -B - "$RUNNER_TEMP" <<'PY'
           from pathlib import Path
@@ -63,7 +68,7 @@ jobs:
           case "$SCENARIO" in healthy|known-failure|uncertain) ;; *) exit 2 ;; esac
           fixture_source=$(mktemp -d /tmp/axxium-events-workspace.XXXXXXXX)
           install -d -m 700 "$fixture_source/scripts/staging/axxium" "$fixture_source/digitalocean/services/axxium"
-          for file in axxium_events_profile.py axxium_events_release.py axxium_active_mailbox_release.py \
+          for file in axxium_events_profile.py axxium_events_release.py axxium_events_census.py axxium_active_mailbox_release.py \
             axxium_unified_mailbox_release.py axxium_minimal_release.py axxium_ingress_host.py \
             axxium_ingress_transaction.py axxium_interrupted_handoff.py axxium_ingress_caddy.py \
             axxium_oidc_ingress.py axxium_production_qualification.py environment_policy.py github_environment_admission.py; do
@@ -79,6 +84,8 @@ jobs:
             install -m 600 "$GITHUB_WORKSPACE/digitalocean/services/axxium/$file" "$fixture_source/digitalocean/services/axxium/$file"
           done
           install -m 600 "$RUNNER_TEMP/candidate.zip" "$fixture_source/candidate.zip"
+          install -d -m 700 "$fixture_source/census"
+          install -m 600 "$RUNNER_TEMP/census/probe.js" "$RUNNER_TEMP/census/probe.mjs" "$fixture_source/census"
           sudo chown -R 1000:1000 "$fixture_source"
           sudo mkdir -m 700 /srv/open-hax
           sudo chown 1000:1000 /srv/open-hax
@@ -90,7 +97,7 @@ jobs:
               env -i PATH="$2" HOME=/tmp GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted \
                 DOCKER_HOST=unix:///var/run/docker.sock PYTHONDONTWRITEBYTECODE=1 FIXTURE_HOST_NETNS_FD=3 \
                 python3 -B "$1/scripts/staging/axxium/events_restart_fixture.py" \
-                  --archive "$1/candidate.zip" --scenario "$3"
+                  --archive "$1/candidate.zip" --scenario "$3" --census-dir "$1/census"
           ' sh "$fixture_source" "$PATH" "$SCENARIO" | tee "$RUNNER_TEMP/events-restart-result.json"
           fixture_status=("${PIPESTATUS[@]}")
           set -e

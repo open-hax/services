@@ -2,8 +2,13 @@
   "artifact_id": 14366915569,
   "artifact_sha256": "01731eedb9acd923e1664b3aef90a72631da0192e0b648e410d60506e39816a7",
   "census": {
+    "artifact_id": 14448515270,
+    "artifact_sha256": "ec0e40223a33a5cd8a67eb95f20bf976edcffe3876eadc1b32815939222db13e",
+    "build_attempt": 1,
+    "build_head": "efe7cf2f412429e6255d345a334c7dfb8ed93065",
+    "build_run_id": 44349132091,
     "driver_sha256": "c75dcd16544a70a0f969fb018ae438195284cd4dae2f152f1028798c83dd39a7",
-    "module_sha256": "b25904cc8d4c3e9262db9e3288d5883e8fa10b03e07ae8d5a2b97c52a9b9967e"
+    "module_sha256": "0e6c0270fba247dd7327e78f0ede98aa9d120c5ef839f56dfad844714ae56a27"
   },
   "compose_chain": [
     {

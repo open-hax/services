@@ -5,11 +5,14 @@ import json
 from pathlib import Path
 
 import active_upgrade_fixture as base
+from axxium_events_census import PinnedCensus
 import axxium_events_profile as profile
 import axxium_events_release as events
+from axxium_production_qualification import strict_json
 
 native = base.native
 active = base.active
+CENSUS_PLAN = Path('digitalocean/services/axxium/mailbox-events-production-plan.json')
 
 
 class Fixture(base.Fixture):
@@ -38,21 +41,30 @@ class Fixture(base.Fixture):
         return role
 
 
-class SyntheticCensus:
-    """Keep the production census boundary explicit in the network-isolated fixture."""
+def load_census(directory):
+    """Pin the fixture projector to the exact digests in the retained production plan."""
+    pins = strict_json((active.ROOT / CENSUS_PLAN).read_bytes())['census']
+    module_sha256 = pins['module_sha256']
+    census = PinnedCensus(directory / 'probe.js', directory / 'probe.mjs',
+                          module_sha256=module_sha256, driver_sha256=pins['driver_sha256'])
+    return census, module_sha256
 
-    def __init__(self, baseline):
+
+class FixtureCensus:
+    """Project the preserved fixture mailbox for each held candidate start."""
+
+    def __init__(self, projector, baseline):
+        self.projector = projector
         self.baseline = baseline
         self.reads = 0
 
     def __call__(self, ledger_bytes, recipient_did):
         base.require(recipient_did == base.DID and self.baseline
                      and isinstance(ledger_bytes, bytes) and ledger_bytes.startswith(self.baseline),
-                     'Synthetic census requires the retained fixture mailbox ledger')
+                     'Callback census requires the retained fixture mailbox ledger')
+        counts = self.projector(ledger_bytes, recipient_did)
         self.reads += 1
-        # No fixture phase enrolls a callback, and the hosted topology has only
-        # internal networks. This is a model input, not a ledger parser result.
-        return dict.fromkeys(profile.CALLBACK_COUNTS, 0)
+        return counts
 
 
 class Host(events.EventsHost):
@@ -168,12 +180,14 @@ def run_scenario(plan, fixture, scenario, census):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--archive', type=Path, required=True)
+    parser.add_argument('--census-dir', type=Path, required=True)
     parser.add_argument('--scenario', choices=('healthy', 'known-failure', 'uncertain'), required=True)
     with base.DIAG.phase('arguments'):
         args = parser.parse_args()
     base.require_hosted_fixture()
     with base.DIAG.phase('archive-custody'):
         binding = base.verify_role('candidate', args.archive)
+        projector, census_module_sha256 = load_census(args.census_dir)
     with base.DIAG.phase('image-resolution'):
         image = base.runtime_id('candidate', base.wire.image_id('promethean-axxium:' + binding['source_sha']))
     fixture = Fixture(image)
@@ -185,7 +199,7 @@ def main():
     }))
     paths = [active.SIGNING, *(Path(row['path']) for row in plan['retained_config'])]
     material = {path: native.file_digest(path) for path in paths}
-    census = SyntheticCensus(fixture.initial_ledgers['mailbox'])
+    census = FixtureCensus(projector, fixture.initial_ledgers['mailbox'])
     host, status = run_scenario(plan, fixture, args.scenario, census)
 
     with base.DIAG.phase('terminal-verification'):
@@ -198,10 +212,10 @@ def main():
         expected_starts = 2 if status == 'healthy' else 1
         base.require(census.reads == len(host.started) == expected_starts
                      and plan['expected']['app_container_id'] not in host.started,
-                     'Expected actual starts and held synthetic census checks differ')
+                     'Expected actual starts and held callback census checks differ')
     print(json.dumps({'status': status, 'scenario': args.scenario, 'source_sha': plan['source_sha'],
                       'image_id': image, 'archive_binding': binding, 'native_parser_checks': fixture.checks,
-                      'held_synthetic_census_checks': census.reads,
+                      'held_callback_census_checks': census.reads, 'census_module_sha256': census_module_sha256,
                       'same_image_restart_verified': True, 'candidate_acknowledgement': fixture.acked_b,
                       'actual_candidate_starts': len(host.started), 'rollback_verified': status == 'rolled_back',
                       'provider_login_verified': False, 'webhook_enrollment': 'not-exercised',

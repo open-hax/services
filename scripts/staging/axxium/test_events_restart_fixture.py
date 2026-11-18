@@ -1,5 +1,10 @@
 """Unit checks for the disposable native Events fixture, without Docker."""
+from contextlib import redirect_stderr
 from copy import deepcopy
+from io import StringIO
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import TestCase, mock
 
 import events_restart_fixture as runner
@@ -65,18 +70,44 @@ class RuntimeRoleTests(TestCase):
 
 
 class FixtureGuardTests(TestCase):
-    def test_synthetic_census_requires_the_fixture_recipient_and_preserved_ledger(self):
-        census = runner.SyntheticCensus(b'fixture\n')
-        counts = census(b'fixture\nsupplement\n', runner.base.DID)
-        runner.profile.validate_census(counts)
+    def test_pinned_census_uses_fixed_plan_hashes_and_fixed_artifact_names(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan_path = root / runner.CENSUS_PLAN
+            plan_path.parent.mkdir(parents=True)
+            module_sha256, driver_sha256 = 'a' * 64, 'b' * 64
+            plan_path.write_text(json.dumps({'census': {
+                'module_sha256': module_sha256, 'driver_sha256': driver_sha256,
+                'unrelated': 'must never be forwarded',
+            }}))
+            artifact_dir = root / 'artifact'
+            with mock.patch.object(runner.active, 'ROOT', root), mock.patch.object(runner, 'PinnedCensus') as pin:
+                projector, observed_digest = runner.load_census(artifact_dir)
+            pin.assert_called_once_with(artifact_dir / 'probe.js', artifact_dir / 'probe.mjs',
+                                        module_sha256=module_sha256, driver_sha256=driver_sha256)
+            self.assertIs(projector, pin.return_value)
+            self.assertEqual(observed_digest, module_sha256)
+
+    def test_census_projects_only_the_preserved_ledger_and_recipient(self):
+        counts = {'retained-subscriptions': 1}
+        projector = mock.Mock(return_value=counts)
+        census = runner.FixtureCensus(projector, b'fixture\n')
+        ledger_bytes = b'fixture\nsupplement\n'
+        self.assertIs(census(ledger_bytes, runner.base.DID), counts)
+        projector.assert_called_once_with(ledger_bytes, runner.base.DID)
         self.assertEqual(census.reads, 1)
         for ledger, did in ((b'', runner.base.DID), (b'other\n', runner.base.DID), (b'fixture\n', 'did:plc:other')):
             with self.subTest(ledger=ledger, did=did), self.assertRaises(RuntimeError):
                 census(ledger, did)
+        projector.assert_called_once()
+        projector.side_effect = runner.native.Refused('parser refused')
+        with self.assertRaisesRegex(runner.native.Refused, 'parser refused'):
+            census(ledger_bytes, runner.base.DID)
         self.assertEqual(census.reads, 1)
 
     def test_main_reuses_hosted_guard_and_verify_archive_before_topology_effects(self):
-        argv = ['events_restart_fixture.py', '--archive', '/fixture/candidate.zip', '--scenario', 'healthy']
+        argv = ['events_restart_fixture.py', '--archive', '/fixture/candidate.zip', '--scenario', 'healthy',
+                '--census-dir', '/fixture/census']
         with mock.patch('sys.argv', argv), \
                 mock.patch.object(runner.base, 'require_hosted_fixture', side_effect=RuntimeError('guard')), \
                 mock.patch.object(runner.base, 'verify_role') as verify, \
@@ -91,6 +122,25 @@ class FixtureGuardTests(TestCase):
                 mock.patch.object(runner.base, 'setup_fixture') as setup:
             with self.assertRaisesRegex(ValueError, 'archive'):
                 runner.main()
+            setup.assert_not_called()
+
+    def test_missing_census_refuses_before_runtime_observation_or_setup(self):
+        argv = ['events_restart_fixture.py', '--archive', '/fixture/candidate.zip', '--scenario', 'healthy']
+        with mock.patch('sys.argv', argv), redirect_stderr(StringIO()), \
+                mock.patch.object(runner.base, 'require_hosted_fixture') as guard:
+            with self.assertRaises(SystemExit) as error:
+                runner.main()
+            self.assertEqual(error.exception.code, 2)
+            guard.assert_not_called()
+
+        with TemporaryDirectory() as directory, mock.patch('sys.argv', argv + ['--census-dir', directory]), \
+                mock.patch.object(runner.base, 'require_hosted_fixture'), \
+                mock.patch.object(runner.base, 'verify_role'), \
+                mock.patch.object(runner.base.wire, 'image_id') as image_id, \
+                mock.patch.object(runner.base, 'setup_fixture') as setup:
+            with self.assertRaisesRegex(runner.native.Refused, 'artifact custody'):
+                runner.main()
+            image_id.assert_not_called()
             setup.assert_not_called()
 
     def test_failure_is_injected_after_observed_candidate_and_restore_checks_the_old_profile(self):
