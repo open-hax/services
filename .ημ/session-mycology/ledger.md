@@ -329,3 +329,13 @@
   spore: none
   receipt-refs: 2026-11-18T00:58:40.397654Z
   note: A high-level Fetch headers object is not wire evidence. Bind the runtime version, inspect its actual dispatch semantics, and compare actual serialized headers before changing identity or authorization. Preserve the original failed run, distinguish Node-only transport proof from application qualification, keep native denial and uncertainty guards, and record unchanged-test timeouts instead of broadening their limits or claiming a full pass.
+
+- ts: 2026-11-18T01:29:12.635165Z
+  session: /root/actor_roadmap
+  task: Bound recovered readiness diagnostics to the actual native retry operation
+  p-efficiency: 0.87
+  p-friction: 0.35
+  p-skill-candidate: 0.5
+  spore: none
+  receipt-refs: 2026-11-18T01:29:12.635165Z
+  note: A command exception caught by a native retry loop is provisional. Checkpoint diagnostic state at that operation boundary, keep earlier genuine failures, and commit only an escaping failure or successful recovery without replacing the native loop. Test the actual inherited retry implementation rather than a stand-in, including later privacy-safe403, uncertainty and deadline paths. Explicit renewed authorization permits this focused repair; it does not reset the default review bound or turn prior-source hosted evidence into current-head proof.

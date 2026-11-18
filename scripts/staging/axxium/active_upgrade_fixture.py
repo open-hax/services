@@ -493,6 +493,20 @@ class Host(active.Host):
                 DIAG.remember(error)
             raise
 
+    def wait_app(self, name):
+        # The native loop owns retries. Its swallowed observations are not a
+        # failed operation; retain only an error that escapes this boundary.
+        prior = DIAG.failed
+        try:
+            result = super().wait_app(name)
+        except Exception as error:
+            DIAG.failed = prior
+            if DIAG.enabled:
+                DIAG.remember(error)
+            raise
+        DIAG.failed = prior
+        return result
+
     def record(self, name, status):
         super().record(name, status)
         DIAG.native_phase = name if name in NATIVE_PHASES else 'none'

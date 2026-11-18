@@ -472,6 +472,133 @@ const write=process.stdout.write.bind(process.stdout);process.stdout.write=(text
             fixture.require_refusal('native-retry', refusal)
             self.assertEqual(diagnostics.failure_report(RuntimeError('private-later')), first)
 
+    def test_actual_readiness_retry_success_preserves_later_client_http403(self):
+        diagnostics = fixture.Diagnostics(enabled=True)
+        client = fixture.Fixture({})
+        client.owned = mock.Mock()
+        host = fixture.Host(fixture.active.PLAN_SHA256, client, 'healthy')
+        healthy = {'State': {'Status': 'running', 'Health': {'Status': 'healthy'}}}
+        response = subprocess.CompletedProcess([], 40,
+            b'{"fixture_client_code":40,"fixture_http_status":403}', b'private-child-error')
+        emitted = io.StringIO()
+        with (mock.patch.object(fixture, 'DIAG', diagnostics), redirect_stderr(emitted),
+              mock.patch.object(fixture.native.NativeHost, 'command',
+                                side_effect=[fixture.native.KnownFailure('private-recovered-poll'), b'']) as command,
+              mock.patch.object(host, 'inspect', return_value=healthy),
+              mock.patch.object(fixture.native.time, 'sleep') as sleep,
+              mock.patch.object(fixture.subprocess, 'run', return_value=response) as child):
+            diagnostics.native_phase = 'candidate_rollback_rehearsal'
+            diagnostics.call('native-transaction', host.wait_app, 'fixture-only-app')
+            self.assertEqual(command.call_count, 2)
+            sleep.assert_called_once_with(2)
+            diagnostics.native_phase = 'private_candidate_health'
+            with self.assertRaises(fixture.ClientFailure) as error:
+                client.request(fixture.native.APP, {'request': {'method': 'initialize'}})
+            report = diagnostics.failure_report(error.exception)
+            child.assert_called_once()
+        self.assertEqual(report['phase'], 'mcp-initialize')
+        self.assertEqual(report['category'], 'mcp-http-refused')
+        self.assertEqual(report['http_status'], 403)
+        self.assertEqual(report['native_phase'], 'private_candidate_health')
+        self.assertNotIn('private-', json.dumps(report) + emitted.getvalue())
+
+    def test_actual_readiness_recovery_preserves_later_terminal_and_native_failures(self):
+        healthy = {'State': {'Status': 'running', 'Health': {'Status': 'healthy'}}}
+        for error, category in ((RuntimeError('private-terminal'), 'operation-refused'),
+                                (fixture.native.KnownFailure('private-native'), 'native-known-failure'),
+                                (fixture.native.Uncertain('private-uncertain'), 'native-uncertain')):
+            diagnostics = fixture.Diagnostics(enabled=True)
+            host = fixture.Host(fixture.active.PLAN_SHA256, mock.Mock(), 'healthy')
+            def later():
+                if isinstance(error, fixture.native.KnownFailure) or isinstance(error, fixture.native.Uncertain):
+                    host.command(['synthetic-native-observation'])
+                raise error
+            calls = [fixture.native.KnownFailure('private-recovered-poll'), b'', error]
+            with (self.subTest(category=category), mock.patch.object(fixture, 'DIAG', diagnostics),
+                  redirect_stderr(io.StringIO()),
+                  mock.patch.object(fixture.native.NativeHost, 'command', side_effect=calls),
+                  mock.patch.object(host, 'inspect', return_value=healthy),
+                  mock.patch.object(fixture.native.time, 'sleep'),
+                  mock.patch.object(fixture.subprocess, 'run', side_effect=AssertionError('Unexpected subprocess'))):
+                diagnostics.call('candidate-health', host.wait_app, 'fixture-only-app')
+                diagnostics.native_phase = 'final_identity_and_state'
+                with self.assertRaises(type(error)) as caught:
+                    diagnostics.call('terminal-verification', later)
+                report = diagnostics.failure_report(caught.exception)
+                self.assertEqual(report['phase'], 'terminal-verification')
+                self.assertEqual(report['category'], category)
+                self.assertEqual(report['native_phase'], 'final_identity_and_state')
+                self.assertNotIn('http_status', report)
+                self.assertNotIn('private-', json.dumps(report))
+
+    def test_readiness_recovery_keeps_prior_genuine_failure_and_expected_faults_nonpoisoning(self):
+        diagnostics = fixture.Diagnostics(enabled=True)
+        host = fixture.Host(fixture.active.PLAN_SHA256, mock.Mock(), 'healthy')
+        healthy = {'State': {'Status': 'running', 'Health': {'Status': 'healthy'}}}
+        def fail(error):
+            raise error
+        with (mock.patch.object(fixture, 'DIAG', diagnostics), redirect_stderr(io.StringIO()),
+              mock.patch.object(fixture.native.NativeHost, 'command',
+                                side_effect=[fixture.native.KnownFailure('private-poll'), b'',
+                                             fixture.native.KnownFailure('private-recovered-again'), b'']),
+              mock.patch.object(host, 'inspect', return_value=healthy),
+              mock.patch.object(fixture.native.time, 'sleep'),
+              mock.patch.object(fixture.subprocess, 'run', side_effect=AssertionError('Unexpected subprocess'))):
+            for expected in (fixture.ExpectedKnownFailure, fixture.ExpectedUncertainty):
+                with self.assertRaises(expected):
+                    diagnostics.call('native-transaction', fail, expected('private-expected'))
+            self.assertIsNone(diagnostics.failed)
+            diagnostics.call('candidate-health', host.wait_app, 'fixture-only-app')
+            self.assertIsNone(diagnostics.failed)
+            with self.assertRaises(fixture.ClientFailure) as error:
+                diagnostics.call('mcp-initialize', fail, fixture.ClientFailure('mcp-http-refused', 403))
+            first = diagnostics.failure_report(error.exception)
+            diagnostics.call('public-health', host.wait_app, 'fixture-only-app')
+            for expected in (fixture.ExpectedKnownFailure, fixture.ExpectedUncertainty):
+                with self.assertRaises(expected):
+                    diagnostics.call('native-transaction', fail, expected('private-expected'))
+            fixture.require_refusal('native-retry', fail, fixture.native.Refused('private-expected'))
+            self.assertEqual(diagnostics.failure_report(RuntimeError('private-later')), first)
+
+    def test_actual_readiness_exhaustion_and_escaping_inventory_or_uncertainty_remain_visible(self):
+        healthy = {'State': {'Status': 'running', 'Health': {'Status': 'healthy'}}}
+        cases = (
+            ('deadline', [healthy] * 60, [fixture.native.KnownFailure('private-poll')] * 60,
+             fixture.native.KnownFailure, 'native-known-failure', 60),
+            ('stopped', [healthy, {'State': {'Status': 'exited'}}], [fixture.native.KnownFailure('private-poll')],
+             fixture.native.KnownFailure, 'native-known-failure', 1),
+            ('inventory', [healthy, fixture.native.Refused('private-inventory')], [fixture.native.KnownFailure('private-poll')],
+             fixture.native.Refused, 'native-refused', 1),
+            ('uncertain', [healthy, healthy], [fixture.native.KnownFailure('private-poll'), fixture.native.Uncertain('private-timeout')],
+             fixture.native.Uncertain, 'native-uncertain', 2),
+        )
+        for name, inventory, commands, kind, category, expected_calls in cases:
+            diagnostics = fixture.Diagnostics(enabled=True)
+            host = fixture.Host(fixture.active.PLAN_SHA256, mock.Mock(), 'healthy')
+            with (self.subTest(name=name), mock.patch.object(fixture, 'DIAG', diagnostics),
+                  redirect_stderr(io.StringIO()), mock.patch.object(host, 'inspect', side_effect=inventory),
+                  mock.patch.object(fixture.native.NativeHost, 'command', side_effect=commands) as command,
+                  mock.patch.object(fixture.native.time, 'sleep'),
+                  mock.patch.object(fixture.subprocess, 'run', side_effect=AssertionError('Unexpected subprocess'))):
+                diagnostics.native_phase = 'private_candidate_health'
+                with self.assertRaises(kind) as error:
+                    diagnostics.call('candidate-health', host.wait_app, 'fixture-only-app')
+                report = diagnostics.failure_report(error.exception)
+                self.assertEqual(command.call_count, expected_calls)
+                self.assertEqual(report['phase'], 'candidate-health')
+                self.assertEqual(report['category'], category)
+                self.assertEqual(report['native_phase'], 'private_candidate_health')
+                self.assertNotIn('private-', json.dumps(report))
+
+        disabled = fixture.Diagnostics(enabled=False)
+        host = fixture.Host(fixture.active.PLAN_SHA256, mock.Mock(), 'healthy')
+        with (mock.patch.object(fixture, 'DIAG', disabled),
+              mock.patch.object(host, 'inspect', side_effect=fixture.native.Uncertain('private-unavailable')),
+              mock.patch.object(fixture.subprocess, 'run', side_effect=AssertionError('Unexpected subprocess'))):
+            with self.assertRaises(fixture.native.Uncertain):
+                host.wait_app('fixture-only-app')
+        self.assertIsNone(disabled.failed)
+
     def test_real_guard_failure_produces_a_nonempty_safe_result_before_docker(self):
         script = ROOT / 'scripts/staging/axxium/active_upgrade_fixture.py'
         result = subprocess.run([sys.executable, '-B', str(script), '--candidate', '/fixture/no-candidate',

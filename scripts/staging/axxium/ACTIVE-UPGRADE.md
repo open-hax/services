@@ -88,3 +88,10 @@ no Origin, exact request bytes, and retained SID/protocol headers. Existing
 401/403 denial and private-safe error behavior remain required. All three
 real transaction scenarios must still pass a new hosted execution; this
 fixture transport repair does not turn the failed runs into passing evidence.
+
+Fixture readiness diagnostics follow the existing native retry boundary. A
+successful `wait_app` discards its recovered poll errors; an error escaping
+that call records the actual failure while preserving any earlier genuine
+failure. The native polling loop, deadline, uncertainty and phase tracking
+remain unchanged. This diagnostic repair requires new current-head checks;
+earlier hosted results remain bound to their original source.
