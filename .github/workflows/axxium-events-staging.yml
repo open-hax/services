@@ -4,9 +4,11 @@ on:
   pull_request:
     paths:
       - '.github/workflows/axxium-events-staging.yml'
-      - 'digitalocean/services/axxium/mailbox-events-production-plan.json'
-      - 'scripts/axxium_events_*.py'
-      - 'scripts/staging/axxium/*events_restart_fixture.py'
+      - 'digitalocean/services/axxium/*production-plan.json'
+      - 'scripts/axxium_*.py'
+      - 'scripts/environment_policy.py'
+      - 'scripts/github_environment_admission.py'
+      - 'scripts/staging/axxium/**'
   workflow_dispatch:
 
 permissions:
@@ -24,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Verify the disposable runner and exact stage image
         env:

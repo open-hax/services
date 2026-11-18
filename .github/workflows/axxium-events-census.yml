@@ -1,0 +1,63 @@
+name: Build the Axxium Events callback census
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/axxium-events-census.yml'
+      - 'scripts/staging/axxium/events-census/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: open-hax/axxium
+          ref: 61b1cea021b13fac539232af23d6714f2287f8a4
+          path: axxium-source
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Build the projector from the pinned Axxium source
+        run: |
+          set -euo pipefail
+          test "$(git -C axxium-source rev-parse HEAD)" = 61b1cea021b13fac539232af23d6714f2287f8a4
+          recipe="$PWD/scripts/staging/axxium/events-census"
+          workspace=$(mktemp -d "$RUNNER_TEMP/axxium-events-census.XXXXXXXX")
+          install -d "$workspace/source"
+          git -C axxium-source archive HEAD | tar -x -C "$workspace/source"
+          cd "$workspace/source"
+          install -D "$recipe/rehearsal_probe.cljs" probe-src/axxium/extern/rehearsal_probe.cljs
+          install "$recipe/shadow-cljs.edn" shadow-cljs.edn
+          cat "$recipe/mailbox_events_export.cljc" >> src/cljs/axxium/domain/mailbox_events.cljc
+          npm ci --ignore-scripts
+          npx --no-install shadow-cljs release probe
+          mkdir -p "$RUNNER_TEMP/events-census-artifact"
+          install -m 600 ../probe-dist/probe.js "$RUNNER_TEMP/events-census-artifact/probe.js"
+          install -m 600 "$recipe/probe.mjs" "$RUNNER_TEMP/events-census-artifact/probe.mjs"
+      - name: Verify the exact compiled callback census
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 -B scripts/staging/axxium/events-census/verify_build.py "$RUNNER_TEMP/events-census-artifact"
+      - name: Retain the exact build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: axxium-events-census
+          path: ${{ runner.temp }}/events-census-artifact/
+          if-no-files-found: error
+          retention-days: 30
