@@ -339,3 +339,13 @@
   spore: none
   receipt-refs: 2026-11-18T01:29:12.635165Z
   note: A command exception caught by a native retry loop is provisional. Checkpoint diagnostic state at that operation boundary, keep earlier genuine failures, and commit only an escaping failure or successful recovery without replacing the native loop. Test the actual inherited retry implementation rather than a stand-in, including later privacy-safe403, uncertainty and deadline paths. Explicit renewed authorization permits this focused repair; it does not reset the default review bound or turn prior-source hosted evidence into current-head proof.
+
+- ts: 2026-11-18T01:51:19.788006Z
+  session: /root/actor_roadmap
+  task: Preserve reviewed exact-run evidence as receipt-only release data
+  p-efficiency: 0.9
+  p-friction: 0.18
+  p-skill-candidate: 0.35
+  spore: none
+  receipt-refs: 2026-11-18T01:51:19.788006Z
+  note: Refresh provenance from actual new native runs and artifact custody rather than relabeling earlier passing bytes. Keep conservative executed assertion counts auditable, preserve earlier failures and scoped platform warnings, and distinguish production sends/replay from intentional synthetic setup and copied-state parser reads. Copy independently reviewed data byte-for-byte, retain legacy ledger prefixes, and keep source acceptance, receipt publication and protected native admission as separate boundaries.
