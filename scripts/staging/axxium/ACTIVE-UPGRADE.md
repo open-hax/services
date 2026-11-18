@@ -63,3 +63,28 @@ labeled internal bridge and preserves that exact `AXXIUM_TRUST_PROXY` value in
 both setup Compose inputs before recreation. HTTPS enforcement remains enabled.
 This addresses a verified missing-proxy setting on the private-health path;
 it does not establish that this was attempt 1's initial failure.
+
+Diagnostic run `44209739212` at `a75c52a` narrows the actual setup failure to
+MCP initialization: signup, simulated AT proof, live credential readback,
+proxy trust and profile recreation completed; initialization returned HTTP
+403 before any native transaction phase. Both credential-match booleans were
+true. The retained failure remains a failed run, with no e2e qualification.
+
+The pinned d2 route's `admitted-origin?` compares the raw Host header with the
+configured `axxium.promethean.rest`; the fixture's public base URL is already
+correct. The exact image's Node 22.23.5 Fetch implementation unconditionally
+removes a supplied Host before dispatch. A bounded exact-image Node-only
+transport experiment independently confirmed that Fetch drops the canonical
+Host while `node:http` preserves it. That experiment ran no Axxium server,
+credentials or mailbox operation and supplies no application qualification.
+
+The fixture MCP client therefore uses `node:http` with a fixed loopback
+address, port and path, while explicitly sending the canonical Host. It does
+not follow redirects or change the server's origin, identity, account binding
+or directory authorization. The offline regression executes the actual old
+Fetch through a no-network dispatcher (HTTP 403), then the corrected client's
+real HTTP serializer through an in-memory Duplex. It checks canonical Host,
+no Origin, exact request bytes, and retained SID/protocol headers. Existing
+401/403 denial and private-safe error behavior remain required. All three
+real transaction scenarios must still pass a new hosted execution; this
+fixture transport repair does not turn the failed runs into passing evidence.

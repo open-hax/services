@@ -306,7 +306,15 @@ class ActiveFixtureDiagnosticTests(unittest.TestCase):
         response = {'status': 200, 'body': {'ok': True, 'actor': {'id': actor}, 'token': 'synthetic-jwt'},
                     'cookie': 'axxium_session=synthetic-jwt; Secure; HttpOnly'}
         def run_client(value, reply):
-            prelude = 'const response=' + json.dumps(reply) + ';global.fetch=async()=>({status:response.status,headers:{get:n=>n===\'set-cookie\'?response.cookie:null},json:async()=>response.body});\n'
+            prelude = r'''(()=>{const response=''' + json.dumps(reply) + r''';
+global.fetch=async()=>({status:response.status,headers:{get:n=>n==='set-cookie'?response.cookie:null},json:async()=>response.body});
+require('node:http').request=(options,callback)=>{
+ const {Readable}=require('node:stream'),{EventEmitter}=require('node:events');
+ const request=new EventEmitter();request.setTimeout=()=>request;
+ request.end=()=>{const reply=Readable.from([Buffer.from(JSON.stringify(response.body))]);
+ reply.statusCode=response.status;reply.headers={};callback(reply);};return request;
+};})();
+'''
             return subprocess.run(['node', '-e', prelude + fixture.CLIENT], input=json.dumps(value),
                                   capture_output=True, text=True, timeout=10)
         result = run_client({'mode': 'signup', 'account': {'email': 'fixture@example.invalid', 'password': 'synthetic-password'}}, response)
@@ -321,15 +329,73 @@ class ActiveFixtureDiagnosticTests(unittest.TestCase):
         for reply, code in (({**response, 'body': {}}, 21), ({**response, 'cookie': None}, 22)):
             self.assertEqual(run_client({'mode': 'signup', 'account': {}}, reply).returncode, code)
         for reply, code in (({'status': 401, 'body': {}}, 40),
+                            ({'status': 403, 'body': {'error': 'Mailbox origin refused'}}, 40),
+                            ({'status': 403, 'body': {'error': 'Mailbox access refused', 'private': 'never-print'}}, 40),
                             ({'status': 200, 'body': {'error': {'message': 'private-response'}}}, 41),
                             ({'status': 200, 'body': {'result': {'isError': True, 'content': ['private-response']}}}, 42)):
             result = run_client({'token': 'fixture-test', 'sid': None, 'request': {}}, reply)
             self.assertEqual(result.returncode, code)
             expected = {'fixture_client_code': code}
             if code == 40:
-                expected['fixture_http_status'] = 401
+                expected['fixture_http_status'] = reply['status']
             self.assertEqual(json.loads(result.stdout), expected)
             self.assertEqual(result.stderr, '')
+
+    def test_mcp_canonical_host_survives_real_http_serialization_without_network(self):
+        # In-memory Duplex exercises node:http's real serializer. The old Fetch
+        # path also uses the real Fetch implementation, with a no-network
+        # dispatcher, so its dropped Host produces the native route's refusal.
+        prelude = r'''
+(()=>{
+const assert=require('node:assert/strict'),http=require('node:http'),{Duplex}=require('node:stream');
+const response=JSON.stringify({result:{structuredContent:{fixture:true}}});
+let serialized=false;
+const nativeFetch=global.fetch;
+global.fetch=(url,options)=>nativeFetch(url,{...options,dispatcher:{dispatch(o,h){
+ const headers=new Headers(o.headers),status=headers.get('host')==='axxium.promethean.rest'?200:403;
+ const body=status===200?response:JSON.stringify({error:'Mailbox origin refused'});
+ h.onConnect(()=>{});h.onHeaders(status,[Buffer.from('content-type'),Buffer.from('application/json')],()=>{},'');
+ h.onData(Buffer.from(body));h.onComplete([]);return true;
+}}});
+http.globalAgent.createConnection=(options)=>{
+ assert.equal(options.host,'127.0.0.1');assert.equal(Number(options.port),8787);
+ let wire='',answered=false;
+ const socket=new Duplex({read(){},write(chunk,encoding,done){
+  wire+=chunk.toString();const end=wire.indexOf('\r\n\r\n');
+  if(end>=0&&!answered){
+   const lines=wire.slice(0,end).split('\r\n'),headers=Object.fromEntries(lines.slice(1).map(line=>{
+    const i=line.indexOf(':');return [line.slice(0,i).toLowerCase(),line.slice(i+1).trim()];}));
+   if(Buffer.byteLength(wire.slice(end+4))>=Number(headers['content-length'])){
+    answered=true;assert.equal(lines[0],'POST /api/mailbox/mcp HTTP/1.1');
+    assert.equal(headers.host,'axxium.promethean.rest');assert.equal(headers.origin,undefined);
+    assert.equal(headers.authorization,'Bearer synthetic-fixture-token');
+    assert.equal(headers.accept,'application/json, text/event-stream');
+    assert.equal(headers['content-type'],'application/json');
+    assert.deepEqual(JSON.parse(wire.slice(end+4)),JSON.parse(process.env.FIXTURE_PACKET).request);
+    const sid=JSON.parse(process.env.FIXTURE_PACKET).sid;
+    assert.equal(headers['mcp-session-id'],sid);
+    assert.equal(headers['mcp-protocol-version'],sid?'2025-06-18':undefined);
+    serialized=true;
+    socket.push('HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nMcp-Session-Id: fixture-session\r\nContent-Length: '
+      +Buffer.byteLength(response)+'\r\nConnection: close\r\n\r\n'+response);socket.push(null);
+   }
+  }done();}});
+ socket.setNoDelay=socket.setKeepAlive=socket.setTimeout=()=>socket;
+ socket.ref=socket.unref=()=>socket;return socket;
+};
+process.on('beforeExit',()=>assert.equal(serialized,true));
+})();
+'''
+        for sid in (None, '22222222-2222-4222-8222-222222222222'):
+            packet = {'token': 'synthetic-fixture-token', 'request': {'jsonrpc': '2.0', 'id': 1,
+                      'method': 'initialize' if sid is None else 'tools/list', 'params': {}}}
+            if sid:
+                packet['sid'] = sid
+            with self.subTest(sid=sid):
+                result = subprocess.run(['node', '-e', prelude + fixture.CLIENT], input=json.dumps(packet),
+                    env={**os.environ, 'FIXTURE_PACKET': json.dumps(packet)}, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                self.assertEqual(json.loads(result.stdout), {'sid': 'fixture-session', 'result': {'fixture': True}})
 
     def test_simulated_at_preserves_signed_native_claims_and_credential_uuid(self):
         prelude = r'''

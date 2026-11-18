@@ -230,7 +230,7 @@ const rsa=c.generateKeyPairSync('rsa',{modulusLength:3072});
 process.stdout.write(JSON.stringify({pem:ed.privateKey.export({type:'pkcs8',format:'pem'}),
 jwk:{...rsa.privateKey.export({format:'jwk'}),alg:'RS256',use:'sig',kid:'fixture-oidc'}}));"""
 
-CLIENT = r"""const fs=require('node:fs'),c=require('node:crypto');
+CLIENT = r"""const fs=require('node:fs'),c=require('node:crypto'),http=require('node:http');
 const fail=(code,status)=>{const out={fixture_client_code:code};
  if(Number.isInteger(status)&&status>=100&&status<=599)out.fixture_http_status=status;
  fs.writeSync(1,JSON.stringify(out));process.exit(code);};
@@ -252,9 +252,17 @@ if(d.mode==='simulate-at'){
 }
 const headers={host:'axxium.promethean.rest',accept:'application/json, text/event-stream','content-type':'application/json',authorization:'Bearer '+d.token};
 if(d.sid){headers['mcp-session-id']=d.sid;headers['mcp-protocol-version']='2025-06-18';}
-const r=await fetch('http://127.0.0.1:8787/api/mailbox/mcp',{method:'POST',headers,body:JSON.stringify(d.request)});
-if(r.status!==200)fail(40,r.status);const j=await r.json();if(j.error)fail(41);if(j.result?.isError)fail(42);
-process.stdout.write(JSON.stringify({sid:r.headers.get('mcp-session-id'),result:j.result?.structuredContent??j.result}));
+// Fetch removes a supplied Host. Keep the native canonical-origin guard while
+// connecting only to this already ownership-checked container's loopback.
+const body=JSON.stringify(d.request);headers['content-length']=Buffer.byteLength(body);
+const r=await new Promise((resolve,reject)=>{
+ const request=http.request({hostname:'127.0.0.1',port:8787,path:'/api/mailbox/mcp',method:'POST',headers},resolve);
+ request.on('error',reject);request.setTimeout(30000,()=>request.destroy(new Error('Fixture client timeout')));request.end(body);
+});
+if(r.statusCode!==200){r.resume();fail(40,r.statusCode);}
+const chunks=[];for await(const chunk of r)chunks.push(chunk);
+const j=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(j.error)fail(41);if(j.result?.isError)fail(42);
+process.stdout.write(JSON.stringify({sid:r.headers['mcp-session-id'],result:j.result?.structuredContent??j.result}));
 })().catch(()=>fail(59));"""
 
 

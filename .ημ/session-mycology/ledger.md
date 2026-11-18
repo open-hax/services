@@ -319,3 +319,13 @@
   spore: none
   receipt-refs: 2026-11-18T00:38:04.355915Z
   note: A generic exception plus an empty artifact makes a real hosted failure unlocatable despite green source tests. Preserve closed phase/category and bounded status evidence while maintaining native uncertainty and excluding private output. Verify immutable native contracts before guessing a fix, distinguish a verified later-path defect from the unknown initial failure, and keep the aggregate repair packet open until actual diagnostic execution.
+
+- ts: 2026-11-18T00:58:40.397654Z
+  session: /root/actor_roadmap
+  task: Repair canonical Host transport after exact-runtime diagnosis
+  p-efficiency: 0.8
+  p-friction: 0.55
+  p-skill-candidate: 0.55
+  spore: none
+  receipt-refs: 2026-11-18T00:58:40.397654Z
+  note: A high-level Fetch headers object is not wire evidence. Bind the runtime version, inspect its actual dispatch semantics, and compare actual serialized headers before changing identity or authorization. Preserve the original failed run, distinguish Node-only transport proof from application qualification, keep native denial and uncertainty guards, and record unchanged-test timeouts instead of broadening their limits or claiming a full pass.
