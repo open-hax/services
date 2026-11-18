@@ -195,6 +195,9 @@ jobs:
           sudo mkdir -m 700 /srv/open-hax
           sudo chown 1000:1000 /srv/open-hax
           sudo setfacl -m u:1000:rw /var/run/docker.sock
+          # Preserve a constant fallback if launch/import fails before Python
+          # can emit its allowlisted phase/category result.
+          set +e
           sudo sh -c '
             exec 3</proc/1/ns/net
             exec unshare --net --fork setpriv --reuid=1000 --regid=1000 --clear-groups \
@@ -203,6 +206,13 @@ jobs:
                 python3 -B "$1/scripts/staging/axxium/active_upgrade_fixture.py" \
                   --candidate "$1/candidate.zip" --incumbent "$1/incumbent.zip" --scenario "$3"
           ' sh "$fixture_source" "$PATH" "$SCENARIO" | tee "$RUNNER_TEMP/active-upgrade-result.json"
+          fixture_status=("${PIPESTATUS[@]}")
+          set -e
+          if [ ! -s "$RUNNER_TEMP/active-upgrade-result.json" ]; then
+            printf '%s\n' '{"status":"failed","phase":"launch","category":"runner-no-report"}' > "$RUNNER_TEMP/active-upgrade-result.json"
+            exit 2
+          fi
+          test "${fixture_status[0]}" -eq 0 && test "${fixture_status[1]}" -eq 0
       - name: Retain sanitized native fixture result
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

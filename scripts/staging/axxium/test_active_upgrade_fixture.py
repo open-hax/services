@@ -1,8 +1,10 @@
 """Offline active-upgrade fixture laws; these tests never invoke Docker."""
 from copy import deepcopy
+from contextlib import redirect_stderr, redirect_stdout
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import shlex
 import subprocess
@@ -219,6 +221,218 @@ class ActiveFixtureWorkflowTests(unittest.TestCase):
                                     cwd=directory, capture_output=True, text=True, timeout=15)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, 'isolated fixture imports passed\n')
+
+
+class ActiveFixtureDiagnosticTests(unittest.TestCase):
+    def test_actual_workflow_capture_tail_retains_failure_and_never_passes_an_empty_result(self):
+        document = yaml.safe_load((ROOT / '.github/workflows/axxium-recovery-staging.yml').read_text())
+        step = next(row for row in document['jobs']['active-mailbox-upgrade']['steps']
+                    if 'fixture_status=(' in row.get('run', ''))
+        tail = step['run'][step['run'].index('fixture_status=('):]
+        safe = {'status': 'failed', 'phase': 'owner-signup', 'category': 'signup-http-refused', 'http_status': 500}
+        for child, expected, passes in (
+                ('false', {'status': 'failed', 'phase': 'launch', 'category': 'runner-no-report'}, False),
+                ('true', {'status': 'failed', 'phase': 'launch', 'category': 'runner-no-report'}, False),
+                ("(printf '%s\\n' '" + json.dumps(safe) + "'; exit 2)", safe, False),
+                ("printf '%s\\n' '{\"status\":\"healthy\"}'", {'status': 'healthy'}, True)):
+            with self.subTest(child=child), tempfile.TemporaryDirectory() as directory:
+                command = 'set -euo pipefail\nset +e\n' + child + ' | tee "$RUNNER_TEMP/active-upgrade-result.json"\n' + tail
+                result = subprocess.run(['bash', '-c', command],
+                    env={'PATH': os.environ['PATH'], 'RUNNER_TEMP': directory}, capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, passes)
+                self.assertEqual(json.loads((Path(directory) / 'active-upgrade-result.json').read_text()), expected)
+
+    def test_observed_proxy_requires_owned_image_internal_bridge_and_exact_ip(self):
+        client = fixture.Fixture({})
+        image = 'sha256:' + 'c' * 64
+        cid, address = 'a' * 64, '172.29.0.3'
+        record = {'Id': cid, 'Image': image, 'State': {'Running': True},
+                  'Config': {'Labels': {'codex.axxium-recovery-fixture': 'synthetic'}},
+                  'HostConfig': {'PortBindings': {}},
+                  'NetworkSettings': {'Networks': {'open-hax': {'IPAddress': address}}}}
+        bridge = {'Internal': True, 'Labels': {'codex.axxium-recovery-fixture': 'synthetic'},
+                  'Containers': {cid: {'IPv4Address': address + '/16'}}}
+        with mock.patch.object(fixture.wire, 'inspect', return_value=record), \
+                mock.patch.object(fixture.wire, 'image_id', return_value=image), \
+                mock.patch.object(fixture.wire, 'cmd', return_value=json.dumps([bridge]).encode()):
+            self.assertEqual(client.proxy_ip(), address)
+            for wrong in ({**record, 'Image': 'sha256:' + 'd' * 64},
+                          {**record, 'Config': {'Labels': {}}},
+                          {**record, 'HostConfig': {'PortBindings': {'443/tcp': [{}]}}}):
+                with self.subTest(record=wrong), mock.patch.object(fixture.wire, 'inspect', return_value=wrong):
+                    with self.assertRaises(RuntimeError):
+                        client.proxy_ip()
+            for wrong in ({**bridge, 'Internal': False}, {**bridge, 'Labels': {}},
+                          {**bridge, 'Containers': {cid: {'IPv4Address': '172.29.0.4/16'}}}):
+                with self.subTest(bridge=wrong), mock.patch.object(fixture.wire, 'cmd', return_value=json.dumps([wrong]).encode()):
+                    with self.assertRaises(RuntimeError):
+                        client.proxy_ip()
+
+    def exercise_profile(self, module=fixture):
+        """Run the actual setup writer with private temporary files and no I/O seams."""
+        owner, work = 'actor_' + '1' * 8 + '-1111-4111-8111-' + '1' * 12, 'actor_' + '2' * 8 + '-2222-4222-8222-' + '2' * 12
+        cred, sid = '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444'
+        client = module.Fixture({'incumbent': 'old', 'candidate': 'new'})
+        client.environment, client.volumes = {'AXXIUM_IDENTITY_ROOT_OPERATOR_ACTOR_ID': module.PLACEHOLDER}, []
+        client.request = mock.Mock(side_effect=[{'actor': owner, 'token': 'owner-test'},
+            {'actor': work, 'token': 'work-test'}, {'actor': work, 'cred': cred, 'token': 'signed-test', 'hash': 'a' * 64},
+            {'sid': sid}])
+        client.tool = mock.Mock(side_effect=[{}, {'message_id': 'a'}, {'message_id': 'b'}, {}])
+        client.verify, client.identity_hash = mock.Mock(), mock.Mock(return_value='retained')
+        client.proxy_ip = mock.Mock(return_value='172.29.0.3')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'compose.yaml').write_text(json.dumps({'services': {'axxium': {'environment': {}}}}))
+            overlay = root / 'retained.json'
+            plan = deepcopy(module.active.PLAN)
+            plan['compose_chain'][-1]['path'] = str(overlay)
+            with mock.patch.object(module.native, 'RUNTIME', root), mock.patch.object(module.active, 'PLAN', plan), \
+                    mock.patch.object(module.native, 'NativeHost') as host, mock.patch.object(module.wire, 'cmd'), \
+                    mock.patch.object(module.network, 'wait_healthy'), mock.patch.object(module.active, 'ledger_bytes', return_value={}):
+                host.return_value.sql.return_value = b't\n'
+                client.setup_accounts_and_state()
+            base = json.loads((root / 'compose.yaml').read_bytes())['services']['axxium']['environment']
+            retained = json.loads(overlay.read_bytes())['services']['axxium']['environment']
+        return base, retained
+
+    def test_exact_proxy_trust_is_present_in_both_selected_profile_inputs(self):
+        base, retained = self.exercise_profile()
+        self.assertEqual(base.get('AXXIUM_TRUST_PROXY'), '172.29.0.3')
+        self.assertEqual(retained.get('AXXIUM_TRUST_PROXY'), '172.29.0.3')
+        self.assertEqual(base, retained)
+
+    def test_native_signup_and_mcp_contract_fixtures_use_actual_embedded_client(self):
+        actor = 'actor_11111111-1111-4111-8111-111111111111'
+        response = {'status': 200, 'body': {'ok': True, 'actor': {'id': actor}, 'token': 'synthetic-jwt'},
+                    'cookie': 'axxium_session=synthetic-jwt; Secure; HttpOnly'}
+        def run_client(value, reply):
+            prelude = 'const response=' + json.dumps(reply) + ';global.fetch=async()=>({status:response.status,headers:{get:n=>n===\'set-cookie\'?response.cookie:null},json:async()=>response.body});\n'
+            return subprocess.run(['node', '-e', prelude + fixture.CLIENT], input=json.dumps(value),
+                                  capture_output=True, text=True, timeout=10)
+        result = run_client({'mode': 'signup', 'account': {'email': 'fixture@example.invalid', 'password': 'synthetic-password'}}, response)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout), {'actor': actor, 'token': 'synthetic-jwt'})
+        for status in (400, 403, 409, 500):
+            result = run_client({'mode': 'signup', 'account': {}}, {**response, 'status': status,
+                                'body': {'error': 'private-response-do-not-print'}})
+            self.assertEqual(result.returncode, 20)
+            self.assertEqual(json.loads(result.stdout), {'fixture_client_code': 20, 'fixture_http_status': status})
+            self.assertEqual(result.stderr, '')
+        for reply, code in (({**response, 'body': {}}, 21), ({**response, 'cookie': None}, 22)):
+            self.assertEqual(run_client({'mode': 'signup', 'account': {}}, reply).returncode, code)
+        for reply, code in (({'status': 401, 'body': {}}, 40),
+                            ({'status': 200, 'body': {'error': {'message': 'private-response'}}}, 41),
+                            ({'status': 200, 'body': {'result': {'isError': True, 'content': ['private-response']}}}, 42)):
+            result = run_client({'token': 'fixture-test', 'sid': None, 'request': {}}, reply)
+            self.assertEqual(result.returncode, code)
+            expected = {'fixture_client_code': code}
+            if code == 40:
+                expected['fixture_http_status'] = 401
+            self.assertEqual(json.loads(result.stdout), expected)
+            self.assertEqual(result.stderr, '')
+
+    def test_simulated_at_preserves_signed_native_claims_and_credential_uuid(self):
+        prelude = r'''
+(()=>{
+const crypto=require('node:crypto'),fs=require('node:fs');
+const pair=crypto.generateKeyPairSync('ed25519');
+const claims={sub:'actor_11111111-1111-4111-8111-111111111111',cred_id:'22222222-2222-4222-8222-222222222222',
+iss:'axxium',aud:'promethean+production',env:'production',iat:1900000000,exp:1900003600};
+const header=Buffer.from(JSON.stringify({alg:'EdDSA',typ:'JWT',kid:'fixture-active'})).toString('base64url');
+const payload=Buffer.from(JSON.stringify(claims)).toString('base64url'),input=header+'.'+payload;
+const original=input+'.'+crypto.sign(null,Buffer.from(input),pair.privateKey).toString('base64url');
+const packet={mode:'simulate-at',token:original,did:'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa'};
+const read=fs.readFileSync;fs.readFileSync=(path,...args)=>path===0?Buffer.from(JSON.stringify(packet)):
+path==='/run/axxium/actor-signing.pem'?pair.privateKey.export({type:'pkcs8',format:'pem'}):read(path,...args);
+const write=process.stdout.write.bind(process.stdout);process.stdout.write=(text)=>{
+ const result=JSON.parse(text),[h,p,s]=result.token.split('.'),next=JSON.parse(Buffer.from(p,'base64url'));
+ if(h!==header||next.atproto_did!==packet.did||result.actor!==claims.sub||result.cred!==claims.cred_id)process.exit(10);
+ delete next.atproto_did;if(JSON.stringify(next)!==JSON.stringify(claims))process.exit(11);
+ if(!crypto.verify(null,Buffer.from(h+'.'+p),pair.publicKey,Buffer.from(s,'base64url')))process.exit(12);
+ if(result.hash!==crypto.createHash('sha256').update(result.token).digest('hex'))process.exit(13);
+ return write('{"verified":true}\n');};
+})();
+'''
+        result = subprocess.run(['node', '-e', prelude + fixture.CLIENT], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, '{"verified":true}\n')
+
+    def test_child_error_data_is_replaced_by_constant_category(self):
+        client = fixture.Fixture({})
+        client.owned = mock.Mock()
+        response = subprocess.CompletedProcess([], 20, b'private-response', b'private-key')
+        with mock.patch.object(fixture.subprocess, 'run', return_value=response):
+            with self.assertRaises(fixture.ClientFailure) as result:
+                client.request(fixture.native.APP, {'mode': 'signup', 'account': {}})
+        self.assertEqual(result.exception.category, 'signup-http-refused')
+        self.assertNotIn('private', str(result.exception))
+
+    def test_numeric_http_metadata_is_bounded_and_native_uncertainty_stays_held(self):
+        for status in (100, 401, 599, 99, 600, True, '401'):
+            raw = json.dumps({'fixture_client_code': 40, 'fixture_http_status': status}).encode()
+            failure = fixture.client_problem(raw, returncode=40)
+            expected = status if type(status) is int and 100 <= status <= 599 else None
+            self.assertEqual(failure.http_status, expected)
+        malformed = fixture.client_problem(b'{"fixture_client_code":40,"fixture_http_status":401,"body":"private"}', returncode=40)
+        self.assertIsNone(malformed.http_status)
+        client = fixture.Fixture({})
+        client.owned = mock.Mock()
+        host = mock.Mock()
+        def refused(*args, **kwargs):
+            self.assertIs(kwargs['effect'], True)
+            kwargs['output'].write(b'{"fixture_client_code":40,"fixture_http_status":401}')
+            raise fixture.native.Uncertain('private-native-error')
+        host.command.side_effect = refused
+        with self.assertRaises(fixture.ClientUncertainty) as failure:
+            client.request(fixture.native.APP, {'request': {'method': 'initialize'}}, host)
+        self.assertNotIsInstance(failure.exception, fixture.native.KnownFailure)
+        self.assertEqual(failure.exception.http_status, 401)
+        self.assertEqual(failure.exception.category, 'mcp-http-refused')
+
+    def test_expected_refusal_preserves_first_real_failure_and_later_terminal_scope(self):
+        diagnostics = fixture.Diagnostics(enabled=True)
+        def refusal():
+            raise fixture.native.Refused('private-expected-denial')
+        def terminal():
+            raise RuntimeError('private-terminal-error')
+        with mock.patch.object(fixture, 'DIAG', diagnostics), redirect_stderr(io.StringIO()):
+            fixture.require_refusal('native-retry', refusal)
+            fixture.require_refusal('native-recovery-refusal', refusal)
+            self.assertIsNone(diagnostics.failed)
+            with self.assertRaises(RuntimeError) as error:
+                diagnostics.call('terminal-verification', terminal)
+            first = diagnostics.failure_report(error.exception)
+            self.assertEqual(first['phase'], 'terminal-verification')
+            fixture.require_refusal('native-retry', refusal)
+            self.assertEqual(diagnostics.failure_report(RuntimeError('private-later')), first)
+
+    def test_real_guard_failure_produces_a_nonempty_safe_result_before_docker(self):
+        script = ROOT / 'scripts/staging/axxium/active_upgrade_fixture.py'
+        result = subprocess.run([sys.executable, '-B', str(script), '--candidate', '/fixture/no-candidate',
+                                 '--incumbent', '/fixture/no-incumbent', '--scenario', 'healthy'],
+                                env={'PATH': os.environ['PATH'], 'GITHUB_ACTIONS': 'false'},
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 2)
+        self.assertTrue(result.stdout.strip(), 'A failed fixture must leave a safe phase/category result')
+        report = json.loads(result.stdout)
+        self.assertEqual(report['status'], 'failed')
+        self.assertEqual(report['phase'], 'environment-guard')
+        self.assertEqual(report['category'], 'operation-refused')
+        self.assertNotIn('/fixture/no-candidate', result.stdout)
+
+    def test_nested_unknown_exception_and_native_details_never_leave_diagnostics(self):
+        diagnostics = fixture.Diagnostics(enabled=True)
+        output, error = io.StringIO(), io.StringIO()
+        def fail():
+            raise RuntimeError('private-token-key-account-row-do-not-print')
+        with redirect_stdout(output), redirect_stderr(error):
+            self.assertEqual(fixture.run(lambda: diagnostics.call('owner-signup', fail), diagnostics), 2)
+        report = json.loads(output.getvalue())
+        self.assertEqual(report['phase'], 'owner-signup')
+        self.assertEqual(report['category'], 'operation-refused')
+        self.assertNotIn('private-token-key-account-row', output.getvalue() + error.getvalue())
+        with self.assertRaises(ValueError):
+            diagnostics.call('untrusted-phase-do-not-print', lambda: None)
 
 
 if __name__ == "__main__":

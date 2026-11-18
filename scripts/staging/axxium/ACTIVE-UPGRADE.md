@@ -44,3 +44,22 @@ both exact images is required before any e2e qualification can be considered.
 The PDS responder and internal-CA ingress are synthetic dependencies, so this
 fixture cannot qualify production PDS behavior, public TLS, SSH disconnects,
 the real production queue, a provider callback or a requesting Dot target.
+
+Run `44204685935` attempt 1 verified and loaded both fixed image roles, then
+all three active scenarios failed during isolated setup/transaction execution.
+Its generic error and empty result artifact do not identify the failing phase.
+Keep that failure as evidence; the offline tests did not establish execution.
+
+The diagnostic checkpoint emits only allowlisted phase/category names,
+credential-match booleans and HTTP status integers from 100 through 599. It
+never emits exception text, child output, response bodies, headers, bearer
+tokens, keys or database rows. A native uncertain outcome remains uncertain;
+expected retry/recovery refusals do not replace the first real diagnostic.
+Launch/import failures receive a constant failed result instead of an empty
+artifact. This enables diagnosis and does not claim the runtime failure fixed.
+
+The fixture explicitly resolves the owned Caddy container's current IP on its
+labeled internal bridge and preserves that exact `AXXIUM_TRUST_PROXY` value in
+both setup Compose inputs before recreation. HTTPS enforcement remains enabled.
+This addresses a verified missing-proxy setting on the private-health path;
+it does not establish that this was attempt 1's initial failure.

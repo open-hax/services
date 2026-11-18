@@ -309,3 +309,13 @@
   spore: none
   receipt-refs: 2026-11-18T00:01:21.267326Z
   note: Lazy durable-ledger loading makes health and discovery insufficient parser proof. Generate canonical setup through the actual isolated service, retain the same credential and MCP session, and assert known ACK semantics on every real image boundary. Bind runtime config IDs to verified descriptor chains, audit every synthetic plan change, and keep source preparation distinct from future hosted execution. Preserve the historical fixture and use the existing native transaction rather than writing a parallel phase loop.
+
+- ts: 2026-11-18T00:38:04.355915Z
+  session: /root/actor_roadmap
+  task: Preserve safe phase evidence for an actual failed active-fixture run
+  p-efficiency: 0.82
+  p-friction: 0.58
+  p-skill-candidate: 0.55
+  spore: none
+  receipt-refs: 2026-11-18T00:38:04.355915Z
+  note: A generic exception plus an empty artifact makes a real hosted failure unlocatable despite green source tests. Preserve closed phase/category and bounded status evidence while maintaining native uncertainty and excluding private output. Verify immutable native contracts before guessing a fix, distinguish a verified later-path defect from the unknown initial failure, and keep the aggregate repair packet open until actual diagnostic execution.

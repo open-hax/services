@@ -1,13 +1,17 @@
 """Real active-host transaction in a disposable, synthetic, internal-only VM."""
 import argparse
+from contextlib import contextmanager
 from copy import deepcopy
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
 import re
 import secrets
+import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import axxium_active_mailbox_release as active
@@ -27,6 +31,139 @@ PLACEHOLDER = 'actor_00000000-0000-4000-8000-000000000000'
 POSTGRES = 'sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685'
 CADDY = 'sha256:af32e97399febea808609119bb21544d0265c58a02836576e32a2d082c262c17'
 ORIGINAL_PLAN = deepcopy(active.PLAN)
+
+SAFE_PHASES = frozenset({'launch', 'arguments', 'environment-guard', 'archive-custody', 'image-resolution',
+    'topology-setup', 'fixture-key-generation', 'account-setup', 'owner-signup', 'work-signup', 'simulate-at',
+    'credential-binding', 'credential-readback', 'proxy-trust', 'profile-restart', 'mcp-initialize', 'mcp-request',
+    'mailbox-register', 'mailbox-send', 'mailbox-ack', 'mailbox-read', 'mailbox-delivery', 'plan-projection',
+    'native-transaction', 'native-retry', 'native-recovery-refusal', 'candidate-health', 'public-health',
+    'ingress-http', 'terminal-verification'})
+SAFE_CATEGORIES = frozenset({'operation-refused', 'input-malformed', 'filesystem-refused', 'topology-refused',
+    'native-known-failure', 'native-uncertain', 'native-refused', 'client-command-refused',
+    'client-transport-refused', 'signup-http-refused', 'signup-response-refused', 'signup-cookie-refused',
+    'simulated-claims-refused', 'simulated-signing-refused', 'mcp-http-refused', 'mcp-rpc-refused',
+    'mcp-tool-refused', 'unclassified'})
+CLIENT_CATEGORIES = {20: 'signup-http-refused', 21: 'signup-response-refused', 22: 'signup-cookie-refused',
+                     30: 'simulated-claims-refused', 31: 'simulated-signing-refused',
+                     40: 'mcp-http-refused', 41: 'mcp-rpc-refused', 42: 'mcp-tool-refused',
+                     59: 'client-transport-refused'}
+NATIVE_PHASES = frozenset({'none', 'fence_public_api', 'stop_incumbent', 'verified_before_backup',
+    'provision_identity', 'candidate_rollback_rehearsal', 'start_candidate', 'private_candidate_health',
+    'stop_candidate_for_after_backup', 'verified_after_backup', 'current_state_rollback_rehearsal',
+    'restart_verified_candidate', 'final_identity_and_state', 'publish_oidc_route', 'public_oidc_health',
+    'healthy_receipt', 'rollback', 'transaction'})
+
+
+class ClientFailure(native.KnownFailure):
+    def __init__(self, category, http_status=None):
+        self.category = category if category in SAFE_CATEGORIES else 'unclassified'
+        self.http_status = http_status if self.category in {'signup-http-refused', 'mcp-http-refused'} \
+            and type(http_status) is int and 100 <= http_status <= 599 else None
+        super().__init__('Isolated fixture client refused')
+
+
+class ClientUncertainty(native.Uncertain):
+    def __init__(self, category, http_status=None):
+        safe = ClientFailure(category, http_status)
+        self.category, self.http_status = safe.category, safe.http_status
+        super().__init__('Isolated fixture client outcome uncertain')
+
+
+def client_problem(raw, *, returncode=None, uncertain=False):
+    category = CLIENT_CATEGORIES.get(returncode, 'client-command-refused')
+    status = None
+    try:
+        data = json.loads(raw)
+        if (isinstance(data, dict) and set(data) <= {'fixture_client_code', 'fixture_http_status'}
+                and type(data.get('fixture_client_code')) is int and data['fixture_client_code'] in CLIENT_CATEGORIES
+                and (returncode is None or returncode == data['fixture_client_code'])):
+            category = CLIENT_CATEGORIES[data['fixture_client_code']]
+            status = data.get('fixture_http_status')
+    except (ValueError, TypeError):
+        pass
+    return (ClientUncertainty if uncertain else ClientFailure)(category, status)
+
+
+class ExpectedKnownFailure(native.KnownFailure):
+    pass
+
+
+class ExpectedUncertainty(native.Uncertain):
+    pass
+
+
+class Diagnostics:
+    """Emit only registered constants/booleans; never exception or child text."""
+    def __init__(self, enabled=False):
+        self.enabled = enabled
+        self.scopes = []
+        self.failed = None
+        self.native_phase = 'none'
+        self.booleans = {}
+
+    def category(self, error):
+        if isinstance(error, (ClientFailure, ClientUncertainty)):
+            return error.category
+        for kind, category in ((native.Uncertain, 'native-uncertain'), (native.KnownFailure, 'native-known-failure'),
+                               (native.Refused, 'native-refused'), (network.FixtureError, 'topology-refused'),
+                               (OSError, 'filesystem-refused'), ((ValueError, KeyError, TypeError), 'input-malformed')):
+            if isinstance(error, kind):
+                return category
+        return 'operation-refused' if isinstance(error, RuntimeError) else 'unclassified'
+
+    def remember(self, error):
+        if self.failed is None and not isinstance(error, (ExpectedKnownFailure, ExpectedUncertainty)):
+            self.failed = {'phase': self.scopes[-1] if self.scopes else 'launch',
+                           'phase_path': list(self.scopes), 'category': self.category(error),
+                           'native_phase': self.native_phase}
+            if isinstance(error, (ClientFailure, ClientUncertainty)) and error.http_status is not None:
+                self.failed['http_status'] = error.http_status
+
+    @contextmanager
+    def phase(self, name):
+        if name not in SAFE_PHASES:
+            raise ValueError('Unknown fixture diagnostic phase')
+        if not self.enabled:
+            yield
+            return
+        self.scopes.append(name)
+        print(json.dumps({'fixture_phase': name}), file=sys.stderr, flush=True)
+        try:
+            yield
+        except Exception as error:
+            self.remember(error)
+            raise
+        finally:
+            self.scopes.pop()
+
+    def call(self, name, function, *args, **kwargs):
+        with self.phase(name):
+            return function(*args, **kwargs)
+
+    def boolean(self, name, value):
+        if name not in {'owner_binding_current', 'work_session_current'} or type(value) is not bool:
+            raise ValueError('Unknown fixture diagnostic boolean')
+        self.booleans[name] = value
+        if self.enabled:
+            print(json.dumps({'fixture_check': name, 'passed': value}), file=sys.stderr, flush=True)
+
+    def failure_report(self, error):
+        self.remember(error)
+        return {'status': 'failed', **(self.failed or {'phase': 'launch', 'phase_path': [],
+                'category': 'unclassified', 'native_phase': self.native_phase}), 'checks': dict(self.booleans)}
+
+
+DIAG = Diagnostics()
+
+
+def require_refusal(phase, operation, *args):
+    """Catch only the expected negative observation inside its diagnostic scope."""
+    with DIAG.phase(phase):
+        try:
+            operation(*args)
+        except native.Refused:
+            return
+        raise RuntimeError('Expected native refusal was not observed')
 
 
 def require(condition, reason):
@@ -94,28 +231,31 @@ process.stdout.write(JSON.stringify({pem:ed.privateKey.export({type:'pkcs8',form
 jwk:{...rsa.privateKey.export({format:'jwk'}),alg:'RS256',use:'sig',kid:'fixture-oidc'}}));"""
 
 CLIENT = r"""const fs=require('node:fs'),c=require('node:crypto');
+const fail=(code,status)=>{const out={fixture_client_code:code};
+ if(Number.isInteger(status)&&status>=100&&status<=599)out.fixture_http_status=status;
+ fs.writeSync(1,JSON.stringify(out));process.exit(code);};
 (async()=>{const d=JSON.parse(fs.readFileSync(0,'utf8'));
 if(d.mode==='signup'){
  const r=await fetch('http://127.0.0.1:8787/api/auth/signup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d.account)});
- if(r.status!==200)throw Error('signup');const j=await r.json();
+ if(r.status!==200)fail(20,r.status);const j=await r.json();
  const token=r.headers.get('set-cookie')?.split(';')[0].split('=').slice(1).join('=');
- if(!j.actor?.id||!token)throw Error('session');
+ if(!j.actor?.id)fail(21);if(!token)fail(22);
  process.stdout.write(JSON.stringify({actor:j.actor.id,token}));return;
 }
 if(d.mode==='simulate-at'){
- const [h,p]=d.token.split('.'),claims=JSON.parse(Buffer.from(p,'base64url'));
+ const [h,p]=d.token.split('.');let claims;try{claims=JSON.parse(Buffer.from(p,'base64url'));}catch{fail(30);}
  claims.atproto_did=d.did;
  const payload=Buffer.from(JSON.stringify(claims)).toString('base64url'),input=h+'.'+payload;
- const key=c.createPrivateKey(fs.readFileSync('/run/axxium/actor-signing.pem'));
- const token=input+'.'+c.sign(null,Buffer.from(input),key).toString('base64url');
+ let token;try{const key=c.createPrivateKey(fs.readFileSync('/run/axxium/actor-signing.pem'));
+ token=input+'.'+c.sign(null,Buffer.from(input),key).toString('base64url');}catch{fail(31);}
  process.stdout.write(JSON.stringify({actor:claims.sub,cred:claims.cred_id,token,hash:c.createHash('sha256').update(token).digest('hex')}));return;
 }
 const headers={host:'axxium.promethean.rest',accept:'application/json, text/event-stream','content-type':'application/json',authorization:'Bearer '+d.token};
 if(d.sid){headers['mcp-session-id']=d.sid;headers['mcp-protocol-version']='2025-06-18';}
 const r=await fetch('http://127.0.0.1:8787/api/mailbox/mcp',{method:'POST',headers,body:JSON.stringify(d.request)});
-const j=await r.json();if(r.status!==200||j.error||j.result?.isError)throw Error('mcp');
+if(r.status!==200)fail(40,r.status);const j=await r.json();if(j.error)fail(41);if(j.result?.isError)fail(42);
 process.stdout.write(JSON.stringify({sid:r.headers.get('mcp-session-id'),result:j.result?.structuredContent??j.result}));
-})().catch(()=>process.exit(2));"""
+})().catch(()=>fail(59));"""
 
 
 def bind(source, target, readonly=True):
@@ -147,10 +287,37 @@ class Fixture:
         return record
 
     def request(self, container, value, host=None):
-        self.owned(container)  # Recheck before every synthetic MCP/read/setup effect.
-        args = ['docker', 'exec', '-i', container, 'node', '-e', CLIENT]
-        raw = wire.cmd(args, data=encode(value)) if host is None else host.command(args, data=encode(value), effect=True)
-        return json.loads(raw)
+        def perform():
+            self.owned(container)  # Recheck before every synthetic MCP/read/setup effect.
+            args = ['docker', 'exec', '-i', container, 'node', '-e', CLIENT]
+            if host is None:
+                try:
+                    result = subprocess.run(args, input=encode(value), stdout=subprocess.PIPE,
+                                            stderr=subprocess.PIPE, timeout=120)
+                except (OSError, subprocess.TimeoutExpired):
+                    raise ClientFailure('client-command-refused') from None
+                if result.returncode:
+                    raise client_problem(result.stdout, returncode=result.returncode)
+                raw = result.stdout
+            else:
+                # Preserve native effect/lock/timeout behavior. Only the private
+                # client output is captured so a failure can retain bounded
+                # status metadata; an uncertain native outcome stays uncertain.
+                with tempfile.TemporaryFile() as output:
+                    try:
+                        host.command(args, data=encode(value), effect=True, output=output)
+                    except (native.Uncertain, native.KnownFailure) as error:
+                        output.seek(0)
+                        raise client_problem(output.read(4096), uncertain=isinstance(error, native.Uncertain)) from None
+                    output.seek(0)
+                    raw = output.read()
+            return json.loads(raw)
+        method = value.get('request', {}).get('method')
+        tool = value.get('request', {}).get('params', {}).get('name')
+        phase = {'register_mailbox': 'mailbox-register', 'send_message': 'mailbox-send',
+                 'acknowledge_message': 'mailbox-ack', 'read_inbox': 'mailbox-read',
+                 'get_delivery': 'mailbox-delivery'}.get(tool, 'mcp-initialize' if method == 'initialize' else 'mcp-request')
+        return perform() if value.get('mode') else DIAG.call(phase, perform)
 
     def tool(self, container, name, arguments=None, host=None):
         request = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
@@ -168,7 +335,7 @@ class Fixture:
 
     def profile(self, root):
         identity = active.IDENTITY
-        material = json.loads(wire.cmd(['docker', 'run', '--rm', '--pull', 'never', '--network', 'none',
+        material = json.loads(DIAG.call('fixture-key-generation', wire.cmd, ['docker', 'run', '--rm', '--pull', 'never', '--network', 'none',
                                        '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
                                        '--entrypoint', 'node', self.images['incumbent'], '-e', KEYS]))
         private(active.SIGNING, material['pem'].encode())
@@ -210,24 +377,51 @@ class Fixture:
         caddyfile = network.CADDYFILE.replace(OLD, MAILBOX) + b'\nimport /etc/caddy/managed/*.caddy\n'
         return {'environment': self.environment, 'volumes': self.volumes, 'caddyfile': caddyfile}
 
+    def proxy_ip(self):
+        """Trust only the exact current fixture Caddy on its owned internal bridge."""
+        record = wire.inspect(native.PROXY)
+        require(record['State']['Running'] is True
+                and record['Config'].get('Labels', {}).get('codex.axxium-recovery-fixture') == 'synthetic'
+                and record['Image'] == wire.image_id('caddy@' + CADDY)
+                and not record['HostConfig'].get('PortBindings')
+                and set(record['NetworkSettings']['Networks']) == {'open-hax'}, 'Fixture proxy scope differs')
+        bridge = json.loads(wire.cmd(['docker', 'network', 'inspect', 'open-hax']))[0]
+        address = str(ipaddress.IPv4Address(record['NetworkSettings']['Networks']['open-hax']['IPAddress']))
+        require(bridge.get('Internal') is True
+                and bridge.get('Labels', {}).get('codex.axxium-recovery-fixture') == 'synthetic'
+                and bridge.get('Containers', {}).get(record['Id'], {}).get('IPv4Address', '').split('/')[0] == address,
+                'Fixture proxy bridge ownership differs')
+        return address
+
     def setup_accounts_and_state(self):
         accounts = []
         for name in ('owner', 'work'):
-            account = self.request(native.APP, {'mode': 'signup', 'account': {
+            account = DIAG.call('owner-signup' if name == 'owner' else 'work-signup', self.request, native.APP, {'mode': 'signup', 'account': {
                 'email': 'active-fixture-' + name + '@example.invalid', 'password': secrets.token_urlsafe(36)}})
             require(re.fullmatch(r'actor_[0-9a-f-]{36}', account['actor']), 'Synthetic account ID differs')
             accounts.append(account)
         owner, work = accounts
-        proof = self.request(native.APP, {'mode': 'simulate-at', 'token': work['token'], 'did': DID})
+        proof = DIAG.call('simulate-at', self.request, native.APP, {'mode': 'simulate-at', 'token': work['token'], 'did': DID})
         require(proof['actor'] == work['actor'] and re.fullmatch(r'[0-9a-f-]{36}', proof['cred'])
                 and re.fullmatch(r'[0-9a-f]{64}', proof['hash']), 'Synthetic AT proof fields differ')
         self.owner_actor, self.work_actor = owner['actor'], work['actor']
         self.token, self.cred = proof['token'], proof['cred']
         host = native.NativeHost()
-        host.sql('axxium', "INSERT INTO provider_bindings(provider,subject,actor_id) VALUES "
+        DIAG.call('credential-binding', host.sql, 'axxium', "INSERT INTO provider_bindings(provider,subject,actor_id) VALUES "
                  "('google','synthetic-fixture-owner','" + self.owner_actor + "'),('atproto','" + DID + "','" + self.work_actor + "');"
                  "UPDATE sessions SET token_hash='" + proof['hash'] + "' WHERE id='" + self.cred + "' AND actor_id='" + self.work_actor + "';")
+        with DIAG.phase('credential-readback'):
+            owner_current = host.sql('axxium', "SELECT EXISTS(SELECT 1 FROM actors a JOIN entities e ON e.id=a.entity_id "
+                "JOIN provider_bindings p ON p.actor_id=a.id WHERE a.id='" + self.owner_actor + "' AND a.status='active' "
+                "AND e.kind='human' AND p.provider='google' AND p.subject='synthetic-fixture-owner')")
+            work_current = host.sql('axxium', "SELECT EXISTS(SELECT 1 FROM actors a JOIN sessions s ON s.actor_id=a.id "
+                "JOIN provider_bindings p ON p.actor_id=a.id WHERE a.id='" + self.work_actor + "' AND a.status='active' "
+                "AND s.id='" + self.cred + "' AND s.token_hash='" + proof['hash'] + "' AND s.expires_at>now() "
+                "AND p.provider='atproto' AND p.subject='" + DID + "')")
+            DIAG.boolean('owner_binding_current', owner_current.strip() == b't')
+            DIAG.boolean('work_session_current', work_current.strip() == b't')
         self.environment['AXXIUM_IDENTITY_ROOT_OPERATOR_ACTOR_ID'] = self.owner_actor
+        self.environment['AXXIUM_TRUST_PROXY'] = DIAG.call('proxy-trust', self.proxy_ip)
         # Finish fixture setup before capturing the incumbent. No transaction
         # has begun, and only the two setup-owned app/profile files change.
         base = json.loads((native.RUNTIME / 'compose.yaml').read_bytes())
@@ -237,8 +431,9 @@ class Fixture:
         last.write_bytes(encode({'services': {'axxium': {'environment': self.environment, 'volumes': self.volumes}}}))
         prefix = ['docker', 'compose', '--project-name', 'axxium', '--project-directory', str(native.RUNTIME),
                   '--env-file', str(native.RUNTIME / '.env'), '-f', str(native.RUNTIME / 'compose.yaml')]
-        wire.cmd(prefix + ['up', '-d', '--no-deps', '--pull', 'never', 'axxium'])
-        network.wait_healthy(native.APP)
+        with DIAG.phase('profile-restart'):
+            wire.cmd(prefix + ['up', '-d', '--no-deps', '--pull', 'never', 'axxium'])
+            network.wait_healthy(native.APP)
         initialized = self.request(native.APP, {'token': self.token, 'request': {
             'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {
                 'protocolVersion': '2025-06-18', 'capabilities': {}, 'clientInfo': {'name': 'isolated-fixture', 'version': '1'}}}})
@@ -271,7 +466,7 @@ class Host(active.Host):
         self.injected = False
 
     def http(self, path):
-        return wire.container_http(native.PROXY, path)
+        return DIAG.call('ingress-http', wire.container_http, native.PROXY, path)
 
     def probe(self, *args, **kwargs):
         self.probing = True
@@ -283,16 +478,28 @@ class Host(active.Host):
     def command(self, args, **kwargs):
         if self.probing and args[:4] == ['docker', 'stop', '--time', '610']:
             self.fixture.verify(args[4], self)
-        return super().command(args, **kwargs)
+        try:
+            return super().command(args, **kwargs)
+        except Exception as error:
+            if DIAG.enabled and not (args and args[-1] == CLIENT):
+                DIAG.remember(error)
+            raise
+
+    def record(self, name, status):
+        super().record(name, status)
+        DIAG.native_phase = name if name in NATIVE_PHASES else 'none'
 
     def start_candidate(self, plan):
         super().start_candidate(plan)
         if self.scenario == 'uncertain':
             require(self.inspect(native.APP)['State']['Running'], 'Actual candidate start not established')
             self.injected = True
-            raise native.Uncertain('Synthetic uncertainty after actual candidate start')
+            raise ExpectedUncertainty('Synthetic uncertainty after actual candidate start')
 
     def private_health(self, plan):
+        return DIAG.call('candidate-health', self._private_health, plan)
+
+    def _private_health(self, plan):
         super().private_health(plan)
         self.fixture.verify(native.APP, self)
         if self.scenario == 'known-failure' and not self.injected:
@@ -301,9 +508,12 @@ class Host(active.Host):
             self.fixture.verify(native.APP, self)
             self.fixture.failure_ledgers = active.ledger_bytes(active.LEDGERS)
             self.injected = True
-            raise native.KnownFailure('Synthetic known failure after real candidate ACK')
+            raise ExpectedKnownFailure('Synthetic known failure after real candidate ACK')
 
     def public_health(self, plan):
+        return DIAG.call('public-health', self._public_health, plan)
+
+    def _public_health(self, plan):
         super().public_health(plan)
         self.fixture.verify(native.APP, self)
 
@@ -359,27 +569,32 @@ def main():
     parser.add_argument('--candidate', type=Path, required=True)
     parser.add_argument('--incumbent', type=Path, required=True)
     parser.add_argument('--scenario', choices=('healthy', 'known-failure', 'uncertain'), required=True)
-    args = parser.parse_args()
-    require(os.getuid() == 1000 and os.environ.get('GITHUB_ACTIONS') == 'true'
-            and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
-            and os.environ.get('DOCKER_HOST') == 'unix:///var/run/docker.sock' and not os.environ.get('DOCKER_CONTEXT'),
-            'Disposable hosted VM and local Unix Docker required')
-    os.umask(0o077)
-    fixture_netns.require_isolated()
-    bindings = {role: verify_role(role, getattr(args, role)) for role in ('candidate', 'incumbent')}
-    images = {role: runtime_id(role, wire.image_id('promethean-axxium:' + role_plan(role)['source_sha'])) for role in bindings}
+    with DIAG.phase('arguments'):
+        args = parser.parse_args()
+    with DIAG.phase('environment-guard'):
+        require(os.getuid() == 1000 and os.environ.get('GITHUB_ACTIONS') == 'true'
+                and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+                and os.environ.get('DOCKER_HOST') == 'unix:///var/run/docker.sock' and not os.environ.get('DOCKER_CONTEXT'),
+                'Disposable hosted VM and local Unix Docker required')
+        os.umask(0o077)
+        fixture_netns.require_isolated()
+    with DIAG.phase('archive-custody'):
+        bindings = {role: verify_role(role, getattr(args, role)) for role in ('candidate', 'incumbent')}
+    with DIAG.phase('image-resolution'):
+        images = {role: runtime_id(role, wire.image_id('promethean-axxium:' + role_plan(role)['source_sha'])) for role in bindings}
     fixture = Fixture(images)
-    network.setup(ROOT, images['incumbent'], wire.image_id('postgres@' + POSTGRES), wire.image_id('caddy@' + CADDY),
-                  prepare_app=fixture.profile)
-    fixture.setup_accounts_and_state()
-    plan, differences = project_plan(fixture)
+    with DIAG.phase('topology-setup'):
+        network.setup(ROOT, images['incumbent'], wire.image_id('postgres@' + POSTGRES), wire.image_id('caddy@' + CADDY),
+                      prepare_app=fixture.profile)
+    DIAG.call('account-setup', fixture.setup_accounts_and_state)
+    plan, differences = DIAG.call('plan-projection', project_plan, fixture)
     private(ROOT / 'state/active-fixture-projection.json', encode({'scope': 'synthetic fixture only', 'differences': differences}))
     material_paths = [active.SIGNING, *(Path(row['path']) for row in plan['retained_config'])]
     material_hashes = {str(path): native.file_digest(path) for path in material_paths}
     host = Host(active.PLAN_SHA256, fixture, args.scenario)
     if args.scenario == 'uncertain':
         try:
-            active.execute_admitted(plan, host)
+            DIAG.call('native-transaction', active.execute_admitted, plan, host)
         except native.Uncertain:
             require(host.injected and native.PENDING.is_file(), 'Actual uncertain effect did not retain its hold')
         else:
@@ -387,24 +602,14 @@ def main():
         hold = native.PENDING.read_bytes()
         journal = {p.name: native.file_digest(p) for p in host.operation.glob('*.json')}
         retry = Host(active.PLAN_SHA256, fixture, 'healthy')
-        try:
-            active.execute_admitted(plan, retry)
-        except native.Refused:
-            pass
-        else:
-            raise RuntimeError('Uncertain operation was replayed')
+        require_refusal('native-retry', active.execute_admitted, plan, retry)
         for method in (retry.recovery_preflight, retry.recovery_claim):
-            try:
-                method(plan)
-            except native.Refused:
-                pass
-            else:
-                raise RuntimeError('Historical recovery was admitted')
+            require_refusal('native-recovery-refusal', method, plan)
         require(native.PENDING.read_bytes() == hold and journal == {p.name: native.file_digest(p) for p in host.operation.glob('*.json')},
                 'Uncertain hold or journal changed on retry')
         status = 'held'
     else:
-        result = active.execute_admitted(plan, host)
+        result = DIAG.call('native-transaction', active.execute_admitted, plan, host)
         status = result['status']
         require(status == ('healthy' if args.scenario == 'healthy' else 'rolled_back') and not native.PENDING.exists(),
                 'Native terminal result differs')
@@ -427,9 +632,17 @@ def main():
         'production_qualified': False, 'provider_login_verified': False, 'webhook_enrollment': 'disabled'}, sort_keys=True))
 
 
-if __name__ == '__main__':
+def run(operation=None, diagnostics=None):
+    diagnostics = DIAG if diagnostics is None else diagnostics
+    diagnostics.enabled = True
     try:
-        main()
-    except Exception:
+        (main if operation is None else operation)()
+        return 0
+    except Exception as error:
+        print(json.dumps(diagnostics.failure_report(error), sort_keys=True), flush=True)
         print('Isolated active-upgrade fixture failed; retain its private state and native journal.', file=sys.stderr)
-        raise SystemExit(2)
+        return 2
+
+
+if __name__ == '__main__':
+    raise SystemExit(run())
