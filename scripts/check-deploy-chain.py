@@ -41,7 +41,7 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
         "stack", "website", "proxx", "axxium", "axxium-at-auth", "axxium-mailbox",
         "axxium-work-pilot", "axxium-work-pilot-activate",
         "axxium-work-pilot-repair-ingress", "axxium-work-pilot-teardown", "axxium-work-pilot-reopen",
-        "axxium-work-pilot-close", "colab-stage", "colab", "knoxx-policy",
+        "axxium-work-pilot-close", "colab-stage", "colab", "knoxx-policy", "knoxx-policy-preflight",
     ]:
         errors.append("manual scope must retain stack as default and only offer reviewed service scopes")
     jobs = chain["jobs"]
@@ -182,20 +182,25 @@ def knoxx_policy_path_errors(entry: dict, chain: dict, policy: dict) -> list[str
     errors = []
     decide = entry["jobs"]["authorize"]["steps"][0]
     if (decide.get("env", {}).get("CALLER_REF_PROTECTED") != "${{ github.ref_protected }}"
-        or 'if [ "$DEPLOY_SCOPE" = knoxx-policy ]; then' not in decide.get("run", "")
+        or 'if [ "$DEPLOY_SCOPE" = knoxx-policy ] || [ "$DEPLOY_SCOPE" = knoxx-policy-preflight ]; then'
+        not in decide.get("run", "")
         or 'Knoxx public policy requires protected main' not in decide.get("run", "")):
         errors.append("Knoxx policy dispatch must require protected main and reject source overrides")
     dispatch = chain["jobs"].get("deploy-knoxx-policy", {})
-    if (dispatch.get("if") != "inputs.scope == 'knoxx-policy'"
+    if (dispatch.get("if") != "inputs.scope == 'knoxx-policy' || inputs.scope == 'knoxx-policy-preflight'"
         or dispatch.get("uses") != "./.github/workflows/deploy-knoxx-public-policy.yml"
-        or dispatch.get("with") != {"caller_holds_production_host_lock": "true"}
+        or dispatch.get("with") != {
+            "caller_holds_production_host_lock": "true",
+            "operation": "${{ inputs.scope == 'knoxx-policy-preflight' && 'prepare-retirement' || 'activate' }}",
+        }
         or dispatch.get("secrets") != {"DIGITALOCEAN_SSH_PRIVATE_KEY":
                                       "${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}"}):
         errors.append("Knoxx policy must use only the isolated scope and enclosing host lock")
     call = policy.get("on", {}).get("workflow_call", {})
     if (set(policy.get("on", {})) != {"workflow_call"} or "concurrency" in policy
         or call.get("inputs") != {
-            "caller_holds_production_host_lock": {"required": "true", "type": "boolean"}
+            "operation": {"required": "true", "type": "string"},
+            "caller_holds_production_host_lock": {"required": "true", "type": "boolean"},
         } or policy.get("env") != {
             "POLICY_BUNDLE": "digitalocean/services/knoxx/public-policy",
             "POLICY_CONTROLLER": "scripts/knoxx_public_policy_release.py",
@@ -209,11 +214,18 @@ def knoxx_policy_path_errors(entry: dict, chain: dict, policy: dict) -> list[str
         or "if" in deploy or deploy.get("continue-on-error") == "true"):
         errors.append("Knoxx policy production access must depend on successful credentialless admission")
     admission = "\n".join(step.get("run", "") for step in admit.get("steps", []))
+    trusted = next((step for step in admit.get("steps", []) if step.get("id") == "trusted"), {})
+    if (trusted.get("env", {}).get("POLICY_OPERATION") != "${{ inputs.operation }}"
+        or admit.get("outputs", {}).get("operation") != "${{ steps.trusted.outputs.operation }}"):
+        errors.append("Knoxx policy operation must come from credentialless protected admission")
     for clause in (
         'test "$CALLER_WORKFLOW" = open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main',
+        'test "$CALLER_REF" = refs/heads/main',
         'test "$CALLER_REF_PROTECTED" = true',
         'test "$CALLER_EVENT" = workflow_dispatch',
         'test "$CALLER_LOCKED" = true',
+        'activate|prepare-retirement) ;;',
+        'printf "operation=%s\\n" "$POLICY_OPERATION" >> "$GITHUB_OUTPUT"',
         '.merge_base_commit.sha == $source',
         'contents/frontend/public/legal/privacy.html?ref=$source_sha',
         'cmp -s "$RUNNER_TEMP/reviewed-knoxx-privacy.html" "$POLICY_BUNDLE/privacy.html"',
@@ -233,6 +245,12 @@ def knoxx_policy_path_errors(entry: dict, chain: dict, policy: dict) -> list[str
           or "assert_pinned_host_key" not in steps[ordered[1]].get("run", "")
           or any("if" in steps[index] for index in ordered)):
         errors.append("Knoxx policy may not skip bundle verification or pinned host trust")
+    if ordered[2] >= 0:
+        apply = steps[ordered[2]]
+        if (apply.get("env", {}).get("POLICY_OPERATION") != "${{ needs.admit.outputs.operation }}"
+            or 'set -- --prepare-retirement' not in apply.get("run", "")
+            or '.phase == "prepared" and .result == "incumbent_verified"' not in apply.get("run", "")):
+            errors.append("Knoxx preflight must select the read-only controller and prepared result")
     if any("secrets." in str(step) for step in admit.get("steps", [])):
         errors.append("Knoxx policy admission must not use deployment secrets")
     return errors

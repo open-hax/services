@@ -48,6 +48,15 @@ class KnoxxPolicyStackHoldTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     hold.stack_is_clear(self.state)
 
+    def test_unadmitted_retirement_receipt_holds_stack_without_overlay(self):
+        self.managed.mkdir(parents=True)
+        self.record("retired")
+        receipt = json.loads(self.receipt.read_text())
+        receipt["version"] = 2
+        self.receipt.write_text(json.dumps(receipt))
+        with self.assertRaises(ValueError):
+            hold.stack_is_clear(self.state)
+
     def test_running_controller_holds_stack_before_prepared_receipt(self):
         self.managed.mkdir(parents=True)
         lock = self.caddy / ".knoxx-public-policy-release.lock"

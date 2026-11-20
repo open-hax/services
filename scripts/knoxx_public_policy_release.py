@@ -31,6 +31,9 @@ RECEIPT = ".knoxx-public-policy-release.json"
 LOCK = ".knoxx-public-policy-release.lock"
 MOUNT = "/etc/caddy/managed"
 BASE_IMPORT = f"import {MOUNT}/*.caddy".encode()
+FRONTEND_DIAL = "knoxx-frontend:80"
+RETIREMENT_FRONTEND = "knoxx-policy-retirement-incumbent"
+RETIREMENT_DIAL = RETIREMENT_FRONTEND + ":80"
 LOGGER = "knoxx_policy_unassigned"
 ACCESS_LOGGER = f"http.log.access.{LOGGER}"
 HEX = re.compile(r"[0-9a-f]{64}")
@@ -304,6 +307,145 @@ def verify_route_delta(incumbent, proposed):
             "unrelated Caddy configuration or logging changed")
 
 
+def retirement_bridge(base, snippet):
+    """Build the one-file restart-safe bridge from the exact mounted inputs."""
+    host_block = b"{$CADDY_KNOXX_HOST} {"
+    sites = re.findall(rb"^" + re.escape(host_block) + rb"\n.*?^}\n", base,
+                       flags=re.MULTILINE | re.DOTALL)
+    require(len(sites) == 1, "mounted Knoxx site is missing or ambiguous")
+    site, = sites
+    common = re.findall(rb"^\(common\) \{\n(.*?)^}\n", base, flags=re.MULTILINE | re.DOTALL)
+    require(len(common) == 1 and site.count(b"\timport common\n") == 1,
+            "mounted Knoxx common handling is missing or ambiguous")
+    # The base host already supplies access logging for this hostname. Use
+    # the overlay's no-host logger instead of adding or disabling a host logger.
+    shared, count = re.subn(rb"^\tlog \{\n.*?^\t}\n", b"", common[0],
+                            flags=re.MULTILINE | re.DOTALL)
+    require(count == 1, "expected exactly one incumbent common logger")
+    shared += f"\tlog {LOGGER} {{\n\t\tno_hostname\n\t}}\n".encode()
+    upstream = b"reverse_proxy " + FRONTEND_DIAL.encode() + b" {"
+    target = b"reverse_proxy " + RETIREMENT_DIAL.encode() + b" {"
+    require(site.count(upstream) == snippet.count(upstream) == 1,
+            "expected exactly one frontend proxy in each Knoxx route")
+    wildcard = site.replace(host_block, b"{$CADDY_KNOXX_HOST}/* {", 1)
+    wildcard = wildcard.replace(b"\timport common\n", shared, 1).replace(upstream, target, 1)
+    return snippet.replace(upstream, target, 1) + b"\n" + wildcard
+
+
+def replace_frontend_dial(route, old, new):
+    """Retarget exactly one known proxy in a copied adapted site route."""
+    pending = [route]
+    matched = []
+    while pending:
+        part = pending.pop()
+        if isinstance(part, list):
+            pending.extend(part)
+        elif isinstance(part, dict):
+            if part.get("handler") == "reverse_proxy":
+                matched.extend(upstream for upstream in part.get("upstreams", [])
+                               if upstream.get("dial") == old)
+            pending.extend(part.values())
+    require(len(matched) == 1, "adapted Knoxx route does not contain its single frontend target")
+    matched[0]["dial"] = new
+
+
+def verify_retirement_bridge(native, active, bridge):
+    """Prove only the fixed Knoxx ingress is redirected during replacement."""
+    verify_route_delta(native, active)
+    restored = deepcopy(bridge)
+    temporary_match = [{"host": [HOST], "path": ["/*"]}]
+    base_match = [{"host": [HOST]}]
+    temporary_routes = [(server, index, route)
+                        for server in routes(restored).values()
+                        for index, route in enumerate(server["routes"])
+                        if route.get("match") == temporary_match]
+    require(len(temporary_routes) == 1, "retirement must add one temporary Knoxx wildcard route")
+    server, index, temporary = temporary_routes[0]
+    ordered = server["routes"]
+    policies = [(position, route) for position, route in enumerate(ordered) if policy_paths(route)]
+    bases = [(position, route) for position, route in enumerate(ordered) if route.get("match") == base_match]
+    require(len(bases) == 1 and policies
+            and all(position < index < bases[0][0] for position, _ in policies),
+            "retirement bridge must follow policy routes and precede native routing")
+    expected = deepcopy(bases[0][1])
+    expected["match"] = temporary_match
+    replace_frontend_dial(expected, FRONTEND_DIAL, RETIREMENT_DIAL)
+    require(normalized_config(temporary) == normalized_config(expected),
+            "retirement bridge changed the native Knoxx handlers")
+    ordered.pop(index)
+    for _, route in policies:
+        replace_frontend_dial(route, RETIREMENT_DIAL, FRONTEND_DIAL)
+    require(normalized_config(restored) == normalized_config(active),
+            "retirement bridge changed unrelated ingress or policy handlers")
+
+
+# On-disk Caddy stages precede their corresponding reload. During a reload
+# the old config may still be live. A restart takes the disk branch instead.
+RETIREMENT_READBACKS = {
+    "prepared": (("active", "active"),),
+    "install_bridge": (("active", "active"), ("bridge", "active"), ("bridge", "bridge")),
+    "switch_frontend": (("bridge", "bridge"),),
+    "install_native": (("bridge", "bridge"), ("native", "bridge"), ("native", "native")),
+    "retired": (("native", "native"),),
+    "restore_bridge": (("native", "native"), ("bridge", "native"), ("bridge", "bridge")),
+    "restore_frontend": (("bridge", "bridge"),),
+    "restore_active": (("bridge", "bridge"), ("active", "bridge"), ("active", "active")),
+    "restored": (("active", "active"),),
+}
+
+
+def retirement_record(active_receipt, configs, controller_sha):
+    """Describe a prospective transition while retaining the exact v1 receipt."""
+    prior = json.loads(active_receipt, object_pairs_hook=unique_keys)
+    hashes = {state: config_digest(config) for state, config in configs.items()}
+    require(set(hashes) == {"native", "active", "bridge"} and len(set(hashes.values())) == 3,
+            "ambiguous retirement configuration identities")
+    require(isinstance(prior, dict) and prior.get("version", 1) == 1 and prior.get("phase") == "active"
+            and prior.get("incumbent_config_sha256") == hashes["native"]
+            and prior.get("candidate_config_sha256") == hashes["active"]
+            and SOURCE.fullmatch(controller_sha), "retirement does not match an active receipt")
+    require(all(isinstance(prior.get(key), str) and regex.fullmatch(prior[key])
+                for key, regex in (("controller_sha", SOURCE), ("plan_sha256", HEX))),
+            "invalid active policy receipt provenance")
+    return {"version": 2, "phase": "prepared", "controller_sha": controller_sha,
+            "active_receipt_sha256": digest(active_receipt), "configs": hashes}
+
+
+def verify_retirement_checkpoint(receipt, disk, live, frontend, *, shadow,
+                                 frontend_verified=False, archive_verified=False):
+    """Require a known restart-safe observation for the journaled step."""
+    phase = receipt.get("phase")
+    require(receipt.get("version") == 2 and phase in RETIREMENT_READBACKS
+            and all(isinstance(receipt.get(key), str) and pattern.fullmatch(receipt[key])
+                    for key, pattern in (("active_receipt_sha256", HEX), ("controller_sha", SOURCE))),
+            "invalid retirement journal phase")
+    configs = receipt.get("configs", {})
+    require(set(configs) == {"native", "active", "bridge"} and
+            all(isinstance(value, str) and HEX.fullmatch(value) for value in configs.values()) and
+            len(set(configs.values())) == 3, "invalid retirement configuration identity")
+    require((disk, live) in {(configs[left], configs[right]) for left, right in RETIREMENT_READBACKS[phase]},
+            "retirement interrupted in an unknown ingress state")
+    if phase == "prepared":
+        require(frontend == "incumbent" and frontend_verified and shadow == "absent",
+                "active frontend must be verified before preparing a retirement")
+    elif phase in {"retired", "restored"}:
+        expected = "candidate" if phase == "retired" else "incumbent"
+        require(frontend == expected and frontend_verified and archive_verified and shadow == "absent",
+                "retirement terminal state is not fully recorded and drained")
+    else:
+        require(shadow == "ready", "retirement requires a verified incumbent recovery frontend")
+        if phase == "install_bridge":
+            require(frontend == "incumbent" and frontend_verified,
+                    "the original frontend must remain live until the bridge is installed")
+        elif phase in {"install_native", "restore_bridge", "restore_active"}:
+            expected = "incumbent" if phase == "restore_active" else "candidate"
+            require(frontend == expected and frontend_verified,
+                    "frontend must be verified before changing the bridge route")
+        else:
+            require(frontend in {"incumbent", "candidate", "replacing"},
+                    "unrecognized frontend during the bridged replacement")
+
+
 def compose_candidate(base, managed):
     lines = base.splitlines(keepends=True)
     matches = [i for i, line in enumerate(lines) if line.rstrip(b"\r\n") == BASE_IMPORT]
@@ -387,6 +529,16 @@ class Host:
                         "active Caddy configuration probe failed")
         return json.loads(raw)
 
+    def startup_config(self):
+        raw = self.exec(CADDY, ["caddy", "adapt", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"],
+                        "mounted Caddyfile cannot be adapted")
+        return json.loads(raw)
+
+    def shadow_absent(self):
+        found = self.docker(["ps", "--all", "--filter", f"name=^/{RETIREMENT_FRONTEND}$",
+                             "--format", "{{.ID}}"], "retirement frontend inventory failed")
+        return not found.strip()
+
     def adapt(self, data):
         raw = self.exec(CADDY, ["caddy", "adapt", "--config", "/dev/stdin", "--adapter", "caddyfile"],
                         "Caddy adaptation rejected the release configuration", data)
@@ -438,6 +590,37 @@ def exact_disk(host, artifacts):
     require(all(value is None or value == artifacts[name] for name, value in disk.items()),
             "unknown or stale policy bytes on disk")
     return paths, disk
+
+
+def prepare_retirement(host, plan, plan_hash, artifacts, controller_sha):
+    """Read and bind the exact incumbent. No deployment action consumes this result yet."""
+    stat_info = host.receipt.lstat()
+    require(stat.S_ISREG(stat_info.st_mode) and stat_info.st_uid == os.geteuid()
+            and not stat_info.st_mode & 0o077, "unsafe active policy receipt")
+    active_receipt = read_file(host.receipt)
+    prior = json.loads(active_receipt, object_pairs_hook=unique_keys)
+    require(isinstance(prior, dict) and prior.get("phase") == "active"
+            and prior.get("plan_sha256") == plan_hash, "policy bundle does not match the active receipt")
+    initial = host.identities(plan)
+    for name in (FRONTEND, BACKEND, CADDY):
+        require(all(initial[name][field] == prior.get("containers", {}).get(name, {}).get(field)
+                    for field in ("Id", "Image")), "active policy container or image identity has changed")
+    require(digest(host.index()) == plan["incumbent_index_sha256"], "incumbent frontend index changed")
+    _, disk = exact_disk(host, artifacts)
+    require(all(value is not None for value in disk.values()), "active policy artifacts are incomplete")
+    native, active = host.configs(artifacts[SNIPPET])
+    same_native, bridge = host.configs(retirement_bridge(read_file(host.base), artifacts[SNIPPET]))
+    require(config_digest(same_native) == config_digest(native), "managed ingress changed during preflight")
+    verify_retirement_bridge(native, active, bridge)
+    journal = retirement_record(active_receipt, {"native": native, "active": active, "bridge": bridge},
+                                controller_sha)
+    verify_public(prior["public_before"], host.public(), artifacts)
+    require(host.identities(plan) == initial and read_file(host.receipt) == active_receipt
+            and exact_disk(host, artifacts)[1] == disk and host.shadow_absent(),
+            "active policy changed during preflight")
+    verify_retirement_checkpoint(journal, config_digest(host.startup_config()), config_digest(host.current()),
+                                 "incumbent", shadow="absent", frontend_verified=True)
+    return {**journal, "result": "incumbent_verified", "plan_sha256": plan_hash, "containers": initial}
 
 
 def record(path, value):
@@ -567,6 +750,7 @@ def main():
     parser.add_argument("--services-root", required=True, type=Path)
     parser.add_argument("--state-root", required=True, type=Path)
     parser.add_argument("--controller-sha", required=True)
+    parser.add_argument("--prepare-retirement", action="store_true", help="Inspect the incumbent without changing it")
     args = parser.parse_args()
     try:
         require(args.services_root == SERVICES_ROOT and args.state_root == STATE_ROOT
@@ -576,7 +760,8 @@ def main():
         plan, plan_hash, artifacts = load_bundle(args.bundle, args.services_root)
         host = Host(args.services_root, args.state_root)
         with host_lock(host.lock):
-            result = release(host, plan, plan_hash, artifacts, args.controller_sha)
+            run = prepare_retirement if args.prepare_retirement else release
+            result = run(host, plan, plan_hash, artifacts, args.controller_sha)
         print(json.dumps(result, sort_keys=True))
     except Refused as error:
         print(f"Knoxx policy release refused: {error}", file=sys.stderr)
