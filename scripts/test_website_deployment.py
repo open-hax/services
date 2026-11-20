@@ -284,6 +284,8 @@ esac
     def test_proxx_scope_guard_rejects_digest_and_host_verification_bypasses(self):
         for job, field, value in (("deploy-proxx-only", "needs", ["build-proxx"]),
                                    ("deploy-proxx-only", "if", "always()"),
+                                   ("build-proxx-only", "if", "inputs.scope == 'proxx'"),
+                                   ("select-proxx-only", "permissions", {"packages": "write"}),
                                    ("verify-proxx-host", "if", "always()")):
             broken = copy.deepcopy(self.chain)
             broken["jobs"][job][field] = value
