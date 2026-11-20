@@ -1,13 +1,12 @@
-"""Inspect real Caddy 2.8.4 adapter output; no listener or backend is started.
-
-These controls prove configuration routing, not live HTTP, authentication or MCP
-protocol behavior. The owning workflow supplies the checksum-pinned test tool.
-"""
+"""Check pinned Caddy adaptation and serve the frontend on isolated loopback."""
+import http.client
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -25,14 +24,15 @@ class EnvironmentCaddyTest(unittest.TestCase):
             raise RuntimeError("CADDY_TEST_BINARY is not an executable file")
         temporary = tempfile.TemporaryDirectory(prefix="environment caddy ")
         cls.addClassCleanup(temporary.cleanup)
-        environment = {"HOME": temporary.name, "PATH": os.defpath}
-        version = subprocess.run([str(binary), "version"], env=environment,
+        cls.binary = str(binary)
+        cls.environment = {"HOME": temporary.name, "PATH": os.defpath}
+        version = subprocess.run([cls.binary, "version"], env=cls.environment,
                                  capture_output=True, text=True, timeout=10, check=True)
         if version.stdout.split()[0] != "v2.8.4":
             raise RuntimeError("Routing controls require the pinned Caddy 2.8.4 tool")
         adapted = subprocess.run(
-            [str(binary), "adapt", "--config", str(CONFIG), "--adapter", "caddyfile"],
-            env=environment, capture_output=True, text=True, timeout=10, check=True,
+            [cls.binary, "adapt", "--config", str(CONFIG), "--adapter", "caddyfile"],
+            env=cls.environment, capture_output=True, text=True, timeout=10, check=True,
         )
         cls.adapted = json.loads(adapted.stdout)
         cls.server = cls.adapted["apps"]["http"]["servers"]["srv0"]
@@ -88,6 +88,78 @@ class EnvironmentCaddyTest(unittest.TestCase):
         self.assertEqual(handlers[0]["root"], "/srv")
         files = fallback["handle"][0]["routes"][1]["match"][0]["file"]["try_files"]
         self.assertEqual(files, ["{http.request.uri.path}", "/index.html"])
+
+    def test_anonymous_privacy_uses_the_document_and_fails_closed_if_missing(self):
+        with tempfile.TemporaryDirectory(prefix="knoxx frontend ") as temporary:
+            root = Path(temporary) / "site"
+            document = root / "bridge/legal/privacy.html"
+            document.parent.mkdir(parents=True)
+            shell = b"<!doctype html><title>Knoxx application</title>"
+            privacy = b"<!doctype html><title>Knoxx Privacy Policy</title>"
+            (root / "index.html").write_bytes(shell)
+            document.write_bytes(privacy)
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1", 0))
+                port = listener.getsockname()[1]
+            config = Path(temporary) / "Caddyfile"
+            source = CONFIG.read_text().replace(":8080 {", f"http://127.0.0.1:{port} {{", 1)
+            config.write_text(source.replace("root * /srv", f"root * {json.dumps(str(root))}"))
+            with subprocess.Popen(
+                [self.binary, "run", "--config", str(config), "--adapter", "caddyfile"],
+                env=self.environment, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            ) as caddy:
+                try:
+                    self.wait_for_listener(caddy, port)
+                    status, headers, body = self.request(port, "GET", "/privacy.html?from=home")
+                    self.assertEqual((status, body), (200, privacy))
+                    self.assertEqual(headers["content-type"].split(";")[0], "text/html")
+                    self.assertNotIn("location", headers)
+                    status, headers, body = self.request(port, "HEAD", "/privacy.html")
+                    self.assertEqual((status, headers["content-length"], body), (200, str(len(privacy)), b""))
+                    for method in ("POST", "OPTIONS"):
+                        with self.subTest(method=method):
+                            status, headers, body = self.request(port, method, "/privacy.html")
+                            self.assertEqual((status, headers["allow"], body), (405, "GET, HEAD", b""))
+
+                    document.unlink()
+                    for method in ("GET", "HEAD"):
+                        with self.subTest(missing_document=method):
+                            status, _, body = self.request(port, method, "/privacy.html")
+                            self.assertEqual((status, body), (404, b""))
+                    for path in ("/", "/privacy.html-other", "/Privacy.html"):
+                        with self.subTest(spa_route=path):
+                            status, _, body = self.request(port, "GET", path)
+                            self.assertEqual((status, body), (200, shell))
+                finally:
+                    caddy.terminate()
+                    try:
+                        caddy.communicate(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        caddy.kill()
+                        caddy.communicate(timeout=5)
+
+    def wait_for_listener(self, caddy, port):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if caddy.poll() is not None:
+                self.fail(caddy.stderr.read().decode(errors="replace"))
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                    return
+            except OSError:
+                time.sleep(0.05)
+        self.fail("Isolated frontend Caddy did not start")
+
+    @staticmethod
+    def request(port, method, path):
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+        try:
+            connection.request(method, path)
+            response = connection.getresponse()
+            headers = {name.lower(): value for name, value in response.getheaders()}
+            return response.status, headers, response.read()
+        finally:
+            connection.close()
 
     def test_private_frontend_keeps_admin_and_automatic_https_off(self):
         self.assertTrue(self.adapted["admin"]["disabled"])
