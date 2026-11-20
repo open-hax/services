@@ -40,6 +40,8 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      # Leave space outside old-generation heap inside the 768 MiB cap.
+      NODE_OPTIONS: "--max-old-space-size=512"
       PROXY_HOST: 0.0.0.0
       PROXY_PORT: "8789"
       PORT: "8789"
