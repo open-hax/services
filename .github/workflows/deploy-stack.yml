@@ -183,7 +183,7 @@ jobs:
       scope: ${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'stack' }}
       # Pin the release source at the production entry point. A manual
       # dispatch may deliberately override this reviewed immutable default.
-      proxx_ref: ${{ inputs.proxx_ref || '3ed25eec53a5bed6dc224f108323ea5d20420a22' }}
+      proxx_ref: ${{ inputs.proxx_ref || 'dee7e44b8c2f4e03d97c367510edd812cc2bada7' }}
       knoxx_ref: ${{ inputs.knoxx_ref }}
       axxium_ref: ${{ inputs.axxium_ref }}
       axxium_recover_interrupted: ${{ inputs.axxium_recover_interrupted || false }}

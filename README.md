@@ -135,11 +135,16 @@ Run **Deploy Stack** on protected Services `main` with `scope: proxx`.
 The proxx host profile verifies Docker/Compose, deploy access to runtime directories,
 and firewall isolation. Java and the host Ollama provisioner remain stack-only
 requirements; proxx uses its Compose PostgreSQL service and configured remote providers.
-The default Proxx source is pinned to `3ed25eec53a5bed6dc224f108323ea5d20420a22`
-([proxx#455](https://github.com/open-hax/proxx/pull/455)). This includes quota
-and spend-limit cooldowns, provider-specific model aliases in catalogue filtering,
-and explicit account re-enable clearing an old cooldown. An override must be a
-full immutable source SHA. No Knoxx candidate is required for this scope.
+The default Proxx source is pinned to deployed revision
+`dee7e44b8c2f4e03d97c367510edd812cc2bada7`. The Proxx-only scope selects the
+recorded Services image for that revision. It passed the capped startup
+rehearsal and the production inference gate. [Proxx #624](https://github.com/open-hax/proxx/pull/624)
+[Production deployment](https://github.com/open-hax/services/actions/runs/44794680242)
+
+To roll back to the previous production source, explicitly select
+`3ed25eec53a5bed6dc224f108323ea5d20420a22` with `proxx_ref`. Source overrides
+require the full immutable SHA. The Proxx-only scope releases independently
+of a Knoxx candidate.
 
 The [reviewed Proxx artifact](digitalocean/qualifications/proxx/production-artifact.json)
 binds one source to a published OCI index and its Linux amd64 manifest and
