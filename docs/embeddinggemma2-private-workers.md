@@ -37,7 +37,11 @@ the model must be
 `embeddinggemma-2`, the vector must have 768 finite numeric values and unit
 norm, and token usage must be positive. Logs are bounded, and verification
 must run promptly after startup before the native GPU log rotates away.
-The gate never creates, restarts, removes or routes a worker.
+The model checksum is read through the actual validated container mount before
+and after the request, with container ID/process identity checked throughout.
+It does not attest the current host source pathname, which can name a different
+inode after atomic replacement. The gate never creates, restarts, removes or
+routes a worker.
 
 The November 20 isolated GPU smoke returned two finite unit vectors in 196 ms,
 with 25/25 layers offloaded, using the same GGUF as Stealth. Cross-host cosine
@@ -45,9 +49,9 @@ similarities were 0.99999594 and 0.99999710. These short synthetic text checks
 do not qualify sustained load, longer contexts, image/audio/video embeddings,
 event backfill, a database migration or production traffic. The final exact
 Compose profile also passed a separate source-bound rehearsal: a native
-768-vector in 159 ms, actual resource/exposure checks, and removal of its sole
+768-vector in 167 ms, actual resource/exposure checks, and removal of its sole
 container and bridge. The unchanged Stealth fallback passed the same gate in
-11 ms. The [sanitized receipt](reports/embeddinggemma2-yoga-profile-rehearsal-20261120.json)
+15 ms. The [sanitized receipt](reports/embeddinggemma2-yoga-reviewed-mount-rehearsal-20261120.json)
 retains source hashes, actual image/model bindings, cleanup and exclusions.
 
 ## Reviewed operator activation

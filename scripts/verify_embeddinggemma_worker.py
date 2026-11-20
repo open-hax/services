@@ -49,7 +49,24 @@ def mounted_model(container, role):
     require(".." not in relative.parts, "Model path escapes its mount")
     if role == "yoga":
         require(str(model) == "/models/model.gguf", "Yoga model mount differs")
-    return Path(mount["Source"]) / relative
+    return str(model)
+
+
+def mounted_model_sha256(container_id, model_path):
+    # A single-file bind can retain an old inode after atomic host-path
+    # replacement. Read through the validated worker mount, never its current
+    # host source pathname. The fixed argv passes no shell or credentials.
+    output = docker("exec", container_id, "sha256sum", "--", model_path)
+    match = re.fullmatch(rb"([0-9a-f]{64}) [ *][^\n]+\n?", output)
+    require(match is not None, "Worker model checksum output is malformed")
+    return match.group(1).decode("ascii")
+
+
+def require_same_container_binding(before, after):
+    require(after["Id"] == before["Id"] and after["State"]["Running"]
+            and after["State"]["Pid"] == before["State"]["Pid"]
+            and after["RestartCount"] == before["RestartCount"],
+            "Worker container identity or process changed during verification")
 
 
 def validate_runtime(container, profile, role, networks):
@@ -106,6 +123,10 @@ def validate_runtime(container, profile, role, networks):
             and bindings[0]["HostIp"] == "127.0.0.1", "Worker host exposure is not loopback-only")
     port = int(bindings[0]["HostPort"])
     require(1024 <= port <= 65535, "Worker loopback port is invalid")
+    effective = container["NetworkSettings"].get("Ports", {})
+    require(effective.get("8081/tcp") == bindings
+            and all(not value for key, value in effective.items() if key != "8081/tcp"),
+            "Worker effective host exposure differs from its requested loopback binding")
     return model, port
 
 
@@ -170,11 +191,9 @@ def verify(container_name, role):
     network_names = list(container["NetworkSettings"]["Networks"])
     networks = json.loads(docker("network", "inspect", *network_names)) if network_names else []
     model, port = validate_runtime(container, profile, role, networks)
-    digest = hashlib.sha256()
-    with model.open("rb") as source:
-        while block := source.read(8 * 1024 * 1024):
-            digest.update(block)
-    require(digest.hexdigest() == profile["model_sha256"], "Actual mounted GGUF checksum differs")
+    digest = mounted_model_sha256(container["Id"], model)
+    require(digest == profile["model_sha256"], "Actual worker-mounted GGUF checksum differs")
+    require_same_container_binding(container, json.loads(docker("inspect", container_name))[0])
     gpu = None
     if role == "yoga":
         logs = subprocess.run(["docker", "logs", container_name], capture_output=True,
@@ -192,9 +211,14 @@ def verify(container_name, role):
         require(logs.returncode == 0, "Yoga post-request log unavailable")
         require(FIXTURE.encode() not in logs.stdout + logs.stderr,
                 "Synthetic embedding input was written to runtime logs")
+    require_same_container_binding(container, json.loads(docker("inspect", container_name))[0])
+    require(mounted_model_sha256(container["Id"], model) == digest,
+            "Worker-mounted GGUF changed during verification")
+    require_same_container_binding(container, json.loads(docker("inspect", container_name))[0])
     return {"status": "passed", "observedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "role": role, "containerId": container["Id"], "imageId": container["Image"],
-            "modelSha256": digest.hexdigest(), "hostPublishedPort": port, "gpu": gpu,
+            "modelSha256": digest, "modelHashedInWorkerNamespace": True,
+            "containerBindingStable": True, "hostPublishedPort": port, "gpu": gpu,
             "probeTransport": "worker-network-namespace" if role == "yoga" else "host-loopback",
             "embedding": {**embedding, "elapsedMs": elapsed},
             "liveConfigurationChanged": False, "crossHostTransportQualified": False,

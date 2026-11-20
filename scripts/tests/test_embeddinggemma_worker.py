@@ -1,8 +1,12 @@
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
+import tempfile
+from types import SimpleNamespace
 
 import yaml
 
@@ -35,6 +39,47 @@ def network():
 
 
 class WorkerBoundaryTests(unittest.TestCase):
+    def test_replaced_host_path_does_not_attest_the_old_running_bind(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory) / "model.gguf"
+            # A running single-file bind can retain the old inode after an
+            # atomic replacement. This path now contains the expected file,
+            # while the actual container namespace still exposes stale bytes.
+            model.write_bytes(b"replacement expected model")
+            expected = hashlib.sha256(model.read_bytes()).hexdigest()
+            stale = hashlib.sha256(b"old container-bound model").hexdigest()
+            profile = {**PROFILE, "model_sha256": expected}
+            profile_file = Path(directory) / "profile.json"
+            profile_file.write_text(json.dumps(profile))
+            value = runtime()
+            value["Id"] = "b"*64
+            value["Mounts"][0]["Source"] = str(model)
+            value["Name"] = "/owned"
+            def docker(*args):
+                if args[0] == "inspect": return json.dumps([value]).encode()
+                if args[:2] == ("network", "inspect"): return json.dumps(network()).encode()
+                if args[0] == "exec": return (stale + "  /models/model.gguf\n").encode()
+                raise AssertionError("Unexpected Docker call")
+            answer = {"model": "embeddinggemma-2", "data": [{"index": 0, "embedding": [1.0] + [0.0]*767}],
+                      "usage": {"prompt_tokens": 10}}
+            logs = SimpleNamespace(returncode=0, stdout=b"RADV REMBRANDT offloaded 25/25 layers to GPU\n", stderr=b"")
+            with patch.object(worker, "PROFILE", profile_file), patch.object(worker, "docker", docker), \
+                 patch.object(worker.subprocess, "run", return_value=logs), \
+                 patch.object(worker, "infer_in_namespace", return_value=(answer, 1)):
+                with self.assertRaises(worker.Refused):
+                    worker.verify("owned", "yoga")
+
+    def test_stealth_effective_port_must_match_requested_loopback_binding(self):
+        value = runtime()
+        value["NetworkSettings"]["Networks"] = {"ai-infra": {"Aliases": ["llamacpp-embed"]}}
+        value["HostConfig"]["PortBindings"] = {"8081/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8081"}]}
+        for effective in ({"8081/tcp": None}, {"8081/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8081"}]},
+                          {"8081/tcp": [{"HostIp": "127.0.0.1", "HostPort": "9090"}]}):
+            with self.subTest(effective=effective):
+                value["NetworkSettings"]["Ports"] = effective
+                with self.assertRaises(worker.Refused):
+                    worker.validate_runtime(value, PROFILE, "stealth", [])
+
     def test_reviewed_compose_matches_pinned_profile_and_has_no_public_listener(self):
         compose = yaml.safe_load((ROOT / "workstations/embeddinggemma2/yoga.compose.yaml").read_text())
         service = compose["services"]["embeddinggemma"]
@@ -52,7 +97,7 @@ class WorkerBoundaryTests(unittest.TestCase):
 
     def test_expected_private_yoga_runtime_is_accepted(self):
         model, port = worker.validate_runtime(runtime(), PROFILE, "yoga", network())
-        self.assertEqual(str(model), "/verified/model.gguf")
+        self.assertEqual(str(model), "/models/model.gguf")
         self.assertIsNone(port)
 
     def test_broad_ipv4_ipv6_and_extra_host_exposure_are_rejected(self):
@@ -115,6 +160,7 @@ class WorkerBoundaryTests(unittest.TestCase):
         value["HostConfig"].update({"NanoCpus": 0, "Memory": 0, "MemorySwap": 0})
         value["HostConfig"]["PortBindings"] = {
             "8081/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8081"}]}
+        value["NetworkSettings"]["Ports"] = copy.deepcopy(value["HostConfig"]["PortBindings"])
         worker.validate_runtime(value, PROFILE, "stealth", [])
         value["NetworkSettings"]["Networks"]["ai-infra"]["Aliases"] = ["other"]
         with self.assertRaises(worker.Refused):
