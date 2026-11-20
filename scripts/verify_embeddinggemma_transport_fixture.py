@@ -82,7 +82,7 @@ def verify():
               "status": "failed", "caddyImageId": CADDY, "syntheticOriginImageId": NODE,
               "productionChanged": False, "hostPublishedPorts": 0, "realModelOrCredentialsUsed": False,
               "tailnetOrServeChanged": False, "modelAdmissionScope": "Synthetic upstream only; Proxx owns real model routing",
-              "tlsNegativeScope": "Wrong server name/CA are direct Python TLS controls; actual Caddy consumer misconfiguration is not qualified",
+              "tlsNegativeScope": "Direct Python TLS controls and actual owned Caddy consumer wrong-name/wrong-CA configuration probes",
               "sourceHashes": {str(p.relative_to(ROOT)): digest(p) for p in [*CONFIG.glob("*.Caddyfile"), CONFIG / "README.md", Path(__file__).resolve()]}, "cases": []}
 
     def container(label, image, args, *, mounts=(), env=(), start=True):
@@ -123,6 +123,7 @@ def verify():
                 (target / dst).chmod(0o600)
         shutil.copyfile(client_ca / "ca.crt", server / "client-ca.crt")
         shutil.copyfile(server_ca / "ca.crt", client / "server-ca.crt")
+        shutil.copyfile(client_ca / "ca.crt", client / "wrong-server-ca.crt")
         # This is a disposable test double, never an installed service or real
         # model gate. Its observations prove transport denial before upstream.
         origin_code = """const http=require('node:http');let rows=[];http.createServer((q,r)=>{if(q.url==='/fixture/observations'){r.setHeader('Content-Type','application/json');return r.end(JSON.stringify(rows));}let parts=[];q.on('data',b=>parts.push(b));q.on('end',()=>{let body;try{body=JSON.parse(Buffer.concat(parts).toString()||'{}')}catch{body={}}rows.push({method:q.method,path:q.url,model:body.model||null,ambientHeaders:['authorization','proxy-authorization','cookie','x-open-hax-bridge-auth'].some(k=>k in q.headers)});r.setHeader('Content-Type','application/json');if(q.url==='/health')return r.end('{\"ok\":true}');if(q.url==='/v1/models')return r.end('{\"data\":[{\"id\":\"embeddinggemma-2\"}]}');if(body.model!=='embeddinggemma-2'){r.statusCode=400;return r.end('{}')}const send=()=>r.end(JSON.stringify({model:'embeddinggemma-2',data:[{index:0,embedding:[1,...Array(767).fill(0)]}],usage:{prompt_tokens:1}}));if(body.input==='fixture-delay')setTimeout(send,1200);else send();});}).listen(8081,'0.0.0.0');"""
@@ -231,6 +232,25 @@ def verify():
             except ssl.SSLError:
                 denied = True
             record(label, denied, True)
+        valid_consumer = consumer_file.read_text()
+        for label, invalid in [
+            ("caddy-consumer-wrong-server-name-denied", valid_consumer.replace(NAME, "different.fixture")),
+            ("caddy-consumer-wrong-server-ca-denied", valid_consumer.replace("/run/tls/server-ca.crt", "/run/tls/wrong-server-ca.crt")),
+        ]:
+            before = len(observations())
+            assert invalid != valid_consumer
+            assert inspect(consumer)["Config"]["Labels"]["codex.owner"] == owner
+            run(["docker", "stop", "--time", "2", consumer])
+            consumer_file.write_text(invalid)
+            run(["docker", "start", consumer])
+            time.sleep(.5)
+            record(label, request("/health")["status"], 502)
+            record(label + "-before-upstream", len(observations()), before)
+        run(["docker", "stop", "--time", "2", consumer])
+        consumer_file.write_text(valid_consumer)
+        run(["docker", "start", consumer])
+        time.sleep(.5)
+        record("caddy-consumer-valid-configuration-restored", request("/health")["status"], 200)
         started = time.monotonic()
         record("upstream-deadline", request("/v1/embeddings", "POST", {"model": "embeddinggemma-2", "input": "fixture-delay"})["status"], 504)
         record("deadline-is-bounded", time.monotonic() - started < 1.0, True)

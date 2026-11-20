@@ -32,11 +32,12 @@ upstream timeout and removal/restoration of only the owned provider. It never
 uses a real model, provider credential, subscription, tailnet listener or shared
 router. Its result qualifies the transport mechanics only.
 
-Wrong-server-name and wrong-server-CA negatives use a direct Python TLS client;
-they are labeled as direct controls. They do not misconfigure the actual Caddy
-consumer. The Caddy consumer's successful verified TLS path is exercised, while
-its wrong-host/wrong-CA configuration negatives remain a live-qualification
-dependency. A synthetic control cannot supply that missing proof.
+Wrong-server-name and wrong-server-CA negatives include labeled direct Python
+TLS controls and actual Caddy-consumer configuration probes. Only the owned
+consumer is stopped, given the wrong name or CA in its task-owned config copy,
+and restarted. Each request must fail before the synthetic origin is reached.
+The exact valid consumer config is restored and its successful path rechecked.
+These native transport checks still do not qualify a real deployment or model.
 
 The live installation still needs a reviewed immutable image pin, exact host
 and service identities, host-local private credentials, boot lifecycle owner,
