@@ -136,6 +136,9 @@ jobs:
       - name: Self-test the Knoxx embedding contract receipt
         run: digitalocean/services/knoxx/test-embedding-contract-receipt.sh
 
+      - name: Test private EmbeddingGemma worker boundaries
+        run: python3 -m unittest scripts.tests.test_embeddinggemma_worker
+
       - name: Self-test the Knoxx event-agent limits
         run: bash digitalocean/services/knoxx/test-event-agent-limits.sh
 

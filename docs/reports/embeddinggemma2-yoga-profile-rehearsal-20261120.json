@@ -1,0 +1,75 @@
+{
+  "baseServicesCommit": "ace46865e994b80efff4ef61d6608d24de000c1e",
+  "cleanup": {
+    "privateHostFilesWritten": false,
+    "remainingOwnedContainerCount": 0,
+    "remainingOwnedNetworkCount": 0
+  },
+  "completedAt": "2026-11-20T16:50:46.892171+00:00",
+  "crossHostTransportOrProxxRouteTested": false,
+  "downExitCode": 0,
+  "loginuid": "1002",
+  "persistentWorkerOrRouteChanged": false,
+  "project": "knoxx-embeddinggemma-rehearsal-2b0c7ed090",
+  "qualified": true,
+  "retainedEarlierFailureClasses": [
+    "internal-only bridge accepted requested publication but exposed no effective host mapping",
+    "native GPU evidence unavailable at ordinary logging verbosity"
+  ],
+  "sourceSha256": {
+    "scripts/verify_embeddinggemma_worker.py": "f1c0d4bc25818b5d6d93efa338135ef3bac1be51c22e0b83f575dfdbef1005bf",
+    "workstations/embeddinggemma2/profile.json": "69a87004bbc681a72e3a8cd80d044b6890a80cee3e3d2eed9fff32e0df666440",
+    "workstations/embeddinggemma2/yoga.compose.yaml": "71bdd36c036bf55192901950646b5208534e4bc0d8666b9f0c9a0a7c32aa4a14"
+  },
+  "startedAt": "2026-11-20T16:50:42.380421+00:00",
+  "stealthFallbackVerification": {
+    "containerId": "64273eff9684bde44ea328cd703d53561daf7a9241bd71c0476957dab00462dd",
+    "crossHostTransportQualified": false,
+    "embedding": {
+      "allFinite": true,
+      "dimensions": 768,
+      "elapsedMs": 11,
+      "float32leSha256": "bf1a5cdf7433be4467985035c8ea1ff20c495be43fda3b0d64a00471b7151764",
+      "l2Norm": 1.0000000285766313,
+      "model": "embeddinggemma-2",
+      "promptTokens": 10
+    },
+    "gpu": null,
+    "hostPublishedPort": 8081,
+    "imageId": "sha256:0c96f07d77d5acb6a46e963d38ae9011623563ff7d1bfa174b2361c085fa86c6",
+    "liveConfigurationChanged": false,
+    "modelSha256": "68bae29d62fb8c7d23e98d21fd4662753ddd636e6b62b8a70dfe059a9844f216",
+    "observedAt": "2026-11-20T16:51:30.310196+00:00",
+    "probeTransport": "host-loopback",
+    "role": "stealth",
+    "sharedProxxRoutingChanged": false,
+    "status": "passed"
+  },
+  "verification": {
+    "containerId": "bfada1c3c022ee51198c74218d830806a88b6e22c6e8bf12d7aeab03a311ae1e",
+    "crossHostTransportQualified": false,
+    "embedding": {
+      "allFinite": true,
+      "dimensions": 768,
+      "elapsedMs": 159,
+      "float32leSha256": "1ae847ca01fc74c911177348eafe669dde9faec3ad7954facbc7b8cc0b8efdef",
+      "l2Norm": 0.9999999863474479,
+      "model": "embeddinggemma-2",
+      "promptTokens": 10
+    },
+    "gpu": {
+      "backend": "Vulkan",
+      "device": "AMD RADV REMBRANDT",
+      "offloadedLayers": 25
+    },
+    "hostPublishedPort": null,
+    "imageId": "sha256:4191e101fa597c39a317ac53a13f6616bdbc5883cd1376422461479f6b808c33",
+    "liveConfigurationChanged": false,
+    "modelSha256": "68bae29d62fb8c7d23e98d21fd4662753ddd636e6b62b8a70dfe059a9844f216",
+    "observedAt": "2026-11-20T16:50:46.511499+00:00",
+    "probeTransport": "worker-network-namespace",
+    "role": "yoga",
+    "sharedProxxRoutingChanged": false,
+    "status": "passed"
+  }
+}
