@@ -83,8 +83,34 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
         or colab.get("uses") != "./.github/workflows/deploy-colab-qualified.yml"
         or colab.get("with", {}).get("caller_holds_production_host_lock") != "true"):
         errors.append("qualified Colab must retain its isolated scope and the enclosing host queue")
-    if chain["jobs"]["build-proxx"].get("if") != "inputs.scope == 'stack' || inputs.scope == 'proxx'":
-        errors.append("Proxx builds must be limited to stack and proxx scopes")
+    if chain["jobs"]["build-proxx"].get("if") != "inputs.scope == 'stack'":
+        errors.append("the stack Proxx build must remain isolated from exact-artifact selection")
+    proxx_select = jobs.get("select-proxx-only", {})
+    proxx_build = jobs.get("build-proxx-only", {})
+    proxx_steps = {step.get("id"): step for step in proxx_select.get("steps", [])}
+    proxx_match = proxx_steps.get("match", {}).get("run", "")
+    proxx_verify_artifact = proxx_steps.get("verify", {})
+    if (proxx_select.get("if") != "inputs.scope == 'proxx'"
+        or proxx_select.get("permissions") != {"contents": "read", "actions": "read", "packages": "read"}
+        or proxx_select.get("outputs") != {
+            "matched": "${{ steps.match.outputs.matched }}", "image": "${{ steps.verify.outputs.image }}",
+        }
+        or not all(required in proxx_match for required in (
+            'test "$CALLER_WORKFLOW" = open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main',
+            'test "$GITHUB_REF" = refs/heads/main', 'test "$CALLER_REF_PROTECTED" = true',
+            'test "$GITHUB_EVENT_NAME" = workflow_dispatch',
+            'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
+            'python3 scripts/select-proxx-production-artifact.py match "$SOURCE"',
+        ))
+        or proxx_verify_artifact.get("if") != "steps.match.outputs.matched == 'true'"
+        or 'python3 scripts/select-proxx-production-artifact.py verify "$SOURCE"'
+        not in proxx_verify_artifact.get("run", "")):
+        errors.append("exact Proxx artifact selection must verify the protected main release evidence")
+    if (proxx_build.get("needs") != "select-proxx-only"
+        or proxx_build.get("if") != "inputs.scope == 'proxx' && needs.select-proxx-only.outputs.matched == 'false'"
+        or proxx_build.get("uses") != "./.github/workflows/build-images.yml"
+        or proxx_build.get("with") != {"service": "proxx", "source_ref": "${{ inputs.proxx_ref }}"}):
+        errors.append("Proxx-only rebuild is allowed only after a successful exact-source non-match")
     proxx_verify = chain["jobs"].get("verify-proxx-host", {})
     proxx_deploy = chain["jobs"].get("deploy-proxx-only", {})
     if (proxx_verify.get("if") != "inputs.scope == 'proxx'"
@@ -93,12 +119,25 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
         or proxx_verify.get("with", {}).get("verification_profile") != "proxx"
         or proxx_verify.get("with", {}).get("caller_holds_production_host_lock") != "true"):
         errors.append("Proxx-only release must verify the existing host under the production lock")
-    if (proxx_deploy.get("if") != "inputs.scope == 'proxx'"
-        or proxx_deploy.get("needs") != ["verify-proxx-host", "build-proxx"]
+    proxx_condition = (
+        "${{ !cancelled() && inputs.scope == 'proxx' "
+        "&& needs.verify-proxx-host.result == 'success' && needs.select-proxx-only.result == 'success' "
+        "&& ((needs.select-proxx-only.outputs.matched == 'true' && needs.select-proxx-only.outputs.image != '' "
+        "&& needs.build-proxx-only.result == 'skipped') "
+        "|| (needs.select-proxx-only.outputs.matched == 'false' && needs.build-proxx-only.result == 'success' "
+        "&& needs.build-proxx-only.outputs.source_sha == inputs.proxx_ref)) }}"
+    )
+    if (" ".join(proxx_deploy.get("if", "").split()) != proxx_condition
+        or proxx_deploy.get("needs") != ["verify-proxx-host", "select-proxx-only", "build-proxx-only"]
         or proxx_deploy.get("uses") != "./.github/workflows/deploy-digitalocean.yml"
-        or proxx_deploy.get("with", {}).get("service") != "proxx"
-        or proxx_deploy.get("with", {}).get("image") != "${{ needs.build-proxx.outputs.image }}@${{ needs.build-proxx.outputs.digest }}"):
-        errors.append("Proxx-only release must deploy the built digest after build and host verification")
+        or proxx_deploy.get("with") != {
+            "service": "proxx",
+            "image": ("${{ needs.select-proxx-only.outputs.matched == 'true' && needs.select-proxx-only.outputs.image"
+                      " || format('{0}@{1}', needs.build-proxx-only.outputs.image, needs.build-proxx-only.outputs.digest) }}"),
+            "source_sha": "${{ inputs.proxx_ref }}",
+            "caller_holds_production_host_lock": "true",
+        }):
+        errors.append("Proxx-only release must deploy the selected digest after source and host verification")
     for name in ("provision-host", "resolve-knoxx", "knoxx-preflight"):
         if jobs[name].get("if") != "inputs.scope == 'stack'":
             errors.append(f"website scope must skip {name}")

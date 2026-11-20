@@ -1,0 +1,13 @@
+{
+  "schema": "proxx-production-artifact/v1",
+  "source": "dee7e44b8c2f4e03d97c367510edd812cc2bada7",
+  "index": "sha256:873afb77de3ae2625a80afda0c57cc468579f49acc4577a02dda1ab1629d7dd2",
+  "amd64_manifest": "sha256:1f1c93b9c61261c048ac161ad2ad9d90f8c810c95223615788378e0f1bbee9d7",
+  "amd64_config": "sha256:2b925ecaae5dda2613650cd2361ef4ea71c025c4a7a3b9eb98387b27c89f90cb",
+  "build": {
+    "controller": "166403d4b500f6cdad69b9bef61741b2e764d652",
+    "run": 44790094744,
+    "job": 136475183665,
+    "attempt": 1
+  }
+}
