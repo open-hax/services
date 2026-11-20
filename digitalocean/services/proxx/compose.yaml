@@ -32,6 +32,9 @@ services:
   proxx:
     image: ${PROXX_IMAGE:?PROXX_IMAGE must be set}
     restart: unless-stopped
+    # Bound cold-start journal replay in the application cgroup.
+    mem_limit: 768m
+    memswap_limit: 768m
     depends_on:
       proxx-db:
         condition: service_healthy
