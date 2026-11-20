@@ -13,9 +13,14 @@ import shutil
 import signal
 import ssl
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
+
+if sys.flags.optimize:
+    print(json.dumps({"status": "refused", "reason": "Run the fixture without Python optimization; guards must remain active", "resourcesCreated": False}))
+    raise SystemExit(1)
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "workstations/embeddinggemma2/transport"
@@ -77,6 +82,7 @@ def verify():
               "status": "failed", "caddyImageId": CADDY, "syntheticOriginImageId": NODE,
               "productionChanged": False, "hostPublishedPorts": 0, "realModelOrCredentialsUsed": False,
               "tailnetOrServeChanged": False, "modelAdmissionScope": "Synthetic upstream only; Proxx owns real model routing",
+              "tlsNegativeScope": "Wrong server name/CA are direct Python TLS controls; actual Caddy consumer misconfiguration is not qualified",
               "sourceHashes": {str(p.relative_to(ROOT)): digest(p) for p in [*CONFIG.glob("*.Caddyfile"), CONFIG / "README.md", Path(__file__).resolve()]}, "cases": []}
 
     def container(label, image, args, *, mounts=(), env=(), start=True):
@@ -215,8 +221,8 @@ def verify():
         record("all-auth-denials-before-upstream", len(observations()), before)
         wrong_ca = ssl.create_default_context(cafile=str(client_ca / "ca.crt"))
         wrong_ca.load_cert_chain(str(client / "client.crt"), str(client / "client.key"))
-        for label, ctx, hostname in [("wrong-server-name-denied", context, "different.fixture"),
-                                     ("wrong-server-ca-denied", wrong_ca, NAME)]:
+        for label, ctx, hostname in [("direct-client-wrong-server-name-denied", context, "different.fixture"),
+                                     ("direct-client-wrong-server-ca-denied", wrong_ca, NAME)]:
             denied = False
             try:
                 with socket.create_connection((addresses[provider], 8443), timeout=2) as sock:
