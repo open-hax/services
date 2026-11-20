@@ -92,18 +92,6 @@ store; see `docs/colab-qualified-production.md`.
 
 ## 2. The service descriptor
 
-### Private hardware-provider profiles
-
-The application deployment lane above remains singular. Services may also own
-an explicitly reviewed, opt-in workstation hardware-provider profile used by
-the existing model router. Such a profile is not a development application
-deployment or a new router. It has no automatic workflow activation, public
-ingress or production admission. Its local worker, resource caps, verification
-and recovery are versioned here; cross-host transport requires its own reviewed
-authentication, source restrictions, lifecycle owner and denial proof before
-activation. The first profile is the
-[private EmbeddingGemma 2 worker](embeddinggemma2-private-workers.md).
-
 A service is one directory under `digitalocean/services/<name>/`, one entry in
 the host's `roles`, and — if it is publicly reachable — one site block in the
 Caddyfile.
@@ -171,6 +159,18 @@ Four fields carry the weight:
 flag that lets a deploy skip a gate, for the same reason `services#47` removed
 `KNOXX_EXPECT_OPENPLANNER_REST`: a skip branch only ever hides the regression
 the check exists to catch.
+
+### Private hardware-provider profiles
+
+The application deployment lane above remains singular. Services may also own
+an explicitly reviewed, opt-in workstation hardware-provider profile used by
+the existing model router. Such a profile is not a development application
+deployment or a new router. It has no automatic workflow activation, public
+ingress or production admission. Its local worker, resource caps, verification
+and recovery are versioned here; cross-host transport requires its own reviewed
+authentication, source restrictions, lifecycle owner and denial proof before
+activation. The first profile is the
+[private EmbeddingGemma 2 worker](embeddinggemma2-private-workers.md).
 
 ## 3. Lifecycle and promotion
 
