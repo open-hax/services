@@ -101,6 +101,9 @@ above to promote a qualified Knoxx revision to production.
 - [`docs/knoxx-ollama-embeddings.md`](docs/knoxx-ollama-embeddings.md) — direct
   host-Ollama routing through `qwen3-embedding:8b` at 1024 dimensions and the
   fail-closed Mongo migration gate for incompatible populated stores
+- [`docs/embeddinggemma2-private-workers.md`](docs/embeddinggemma2-private-workers.md)
+  — opt-in Yoga GPU worker profile with no published ports and read-only verification
+  of the incumbent Stealth fallback; cross-host transport is separately gated
 
 ## Deployment model
 
