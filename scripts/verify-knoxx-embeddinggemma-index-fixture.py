@@ -53,28 +53,51 @@ def read_profile():
     return profile
 
 
+def extract_package(workspace, checkout, revision, package):
+    entries = command("git", "-C", str(checkout), "ls-tree", "-r", "--name-only", revision,
+                      package).stdout.splitlines()
+    for entry in entries:
+        path = entry.removeprefix(package + "/")
+        exact = command("git", "-C", str(checkout), "show", f"{revision}:{entry}")
+        (workspace / path).parent.mkdir(parents=True, exist_ok=True)
+        (workspace / path).write_text(exact.stdout)
+
+
 def prepare_sdk(workspace, checkout, revision):
     node = Path(command("node", "-p", "process.execPath", cwd=checkout).stdout.strip()).resolve(strict=True)
     dependencies = (checkout / "packages/openplanner-sdk/node_modules").resolve(strict=True)
     driver = json.loads((dependencies / "mongodb/package.json").read_text())
     if driver["version"] != "7.2.0":
         raise RuntimeError("The pinned SDK fixture requires MongoDB Node driver 7.2.0")
-    source = workspace / "src"
-    source.mkdir()
-    (workspace / "node_modules").symlink_to(dependencies, target_is_directory=True)
-    (workspace / "package.json").write_text('{"type":"module"}\n')
-    package = "packages/openplanner-sdk/"
-    entries = command("git", "-C", str(checkout), "ls-tree", "-r", "--name-only", revision,
-                      package + "src").stdout.splitlines()
-    for entry in [package + "tsconfig.json", *entries]:
-        path = entry.removeprefix(package)
-        exact = command("git", "-C", str(checkout), "show", f"{revision}:{entry}")
-        (workspace / path).parent.mkdir(parents=True, exist_ok=True)
-        (workspace / path).write_text(exact.stdout)
-    compiler = dependencies / "typescript/bin/tsc"
+    sdk_package = "packages/openplanner-sdk"
+    hydration_package = "packages/stores/document-hydration"
+    hydration = workspace / "stores/document-hydration"
+    extract_package(workspace, checkout, revision, sdk_package)
+    extract_package(hydration, checkout, revision, hydration_package)
+    extract_package(workspace / "stores/cache", checkout, revision, "packages/stores/cache")
+
+    # Keep installed third-party tools available while resolving both local
+    # OpenPlanner dependencies from only the exact temporary source tree.
+    modules = workspace / "node_modules"
+    modules.mkdir()
+    for dependency in dependencies.iterdir():
+        if dependency.name != "@open-hax" and not dependency.name.startswith("."):
+            (modules / dependency.name).symlink_to(dependency.resolve(strict=True), target_is_directory=True)
+    (modules / "@open-hax").mkdir()
+    (modules / "@open-hax/openplanner-document-hydration").symlink_to(hydration, target_is_directory=True)
+    shadow = (checkout / hydration_package / "node_modules/shadow-cljs").resolve(strict=True)
+    if json.loads((shadow / "package.json").read_text())["version"] != "3.4.10":
+        raise RuntimeError("The pinned SDK fixture requires Shadow CLJS 3.4.10")
+    (modules / "shadow-cljs").symlink_to(shadow, target_is_directory=True)
+
+    compiler = modules / "typescript/bin/tsc"
     clean_env = {"PATH": os.environ["PATH"]}
     if command(str(node), str(compiler), "--version", env=clean_env).stdout.strip() != "Version 5.9.3":
         raise RuntimeError("The pinned SDK fixture requires TypeScript 5.9.3")
+    command(str(node), str(shadow / "cli/runner.js"), "release", "lib",
+            cwd=hydration, env=clean_env, timeout=90)
+    if not (hydration / "dist/index.js").is_file():
+        raise RuntimeError("The reviewed hydration build did not produce its runtime entry point")
     command(str(node), str(compiler), "--project", "tsconfig.json", cwd=workspace, env=clean_env, timeout=45)
     return str(node), clean_env
 
@@ -193,6 +216,7 @@ def run_fixture(sdk_checkout, proxx_container, profile):
         return {
             "service": profile["service"], "environment": profile["environment"],
             "sdkRevision": sdk_revision, "databaseImage": MONGO_IMAGE, "memoryLimitMiB": ATLAS_MEMORY_MIB,
+            "hydrationSourceSha": sdk_revision,
             "guard": guard, **evidence,
         }
 
