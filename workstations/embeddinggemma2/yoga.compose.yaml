@@ -1,0 +1,75 @@
+name: knoxx-embeddinggemma-yoga
+
+services:
+  embeddinggemma:
+    image: ghcr.io/ggml-org/llama.cpp@sha256:1b0f1d02bb9077a8a52c2a9951259ac49ed68a5bf564e2ad68cbbffe9274d387
+    pull_policy: never
+    user: "1002:1002"
+    group_add: ["992"]
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128:rwm
+    cpus: "2.0"
+    mem_limit: 4g
+    memswap_limit: 4g
+    pids_limit: 128
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=1002,gid=1002
+    environment:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp
+    volumes:
+      - type: bind
+        source: ${EMBEDDINGGEMMA2_MODEL_FILE:?Set the existing verified BF16 GGUF path}
+        target: /models/model.gguf
+        read_only: true
+        bind:
+          create_host_path: false
+    # No published ports. A separate reviewed private transport owns ingress.
+    networks: [worker]
+    command:
+      - --model
+      - /models/model.gguf
+      - --alias
+      - embeddinggemma-2
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8081"
+      - --embeddings
+      - --pooling
+      - mean
+      - --n-gpu-layers
+      - "999"
+      - --ctx-size
+      - "512"
+      - --batch-size
+      - "512"
+      - --ubatch-size
+      - "256"
+      - --threads
+      - "2"
+      - --threads-batch
+      - "2"
+      - --parallel
+      - "1"
+      - --log-verbosity
+      - "5"
+      - --log-file
+      - /dev/stderr
+      - --log-colors
+      - "off"
+    restart: unless-stopped
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 1m
+        max-file: "2"
+
+networks:
+  worker:
+    internal: true
+    attachable: false

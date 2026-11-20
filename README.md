@@ -101,6 +101,9 @@ above to promote a qualified Knoxx revision to production.
 - [`docs/knoxx-ollama-embeddings.md`](docs/knoxx-ollama-embeddings.md) — direct
   host-Ollama routing through `qwen3-embedding:8b` at 1024 dimensions and the
   fail-closed Mongo migration gate for incompatible populated stores
+- [`docs/embeddinggemma2-private-workers.md`](docs/embeddinggemma2-private-workers.md)
+  — opt-in Yoga GPU worker profile with no published ports and read-only verification
+  of the incumbent Stealth fallback; cross-host transport is separately gated
 
 ## Deployment model
 
@@ -128,7 +131,7 @@ host files at runtime.
 
 ## Proxx-only production release
 
-Run **Deploy Stack** on the reviewed Services revision with `scope: proxx`.
+Run **Deploy Stack** on protected Services `main` with `scope: proxx`.
 The proxx host profile verifies Docker/Compose, deploy access to runtime directories,
 and firewall isolation. Java and the host Ollama provisioner remain stack-only
 requirements; proxx uses its Compose PostgreSQL service and configured remote providers.
@@ -138,9 +141,16 @@ and spend-limit cooldowns, provider-specific model aliases in catalogue filterin
 and explicit account re-enable clearing an old cooldown. An override must be a
 full immutable source SHA. No Knoxx candidate is required for this scope.
 
-The existing production-host lock covers image build, host verification,
-digest-pinned deployment, provider provisioning and the real inference health
-gate. The gate inspects the running container image and probes the compiled
+The [reviewed Proxx artifact](digitalocean/qualifications/proxx/production-artifact.json)
+binds one source to a published OCI index and its Linux amd64 manifest and
+config. Selecting that source verifies the successful Services build and the
+immutable registry bytes before reusing the index in production. Other
+immutable sources use the ordinary build, including the default and rollback.
+A failed verification of the exact pin stops the release.
+
+The existing production-host lock covers image selection or build, host
+verification, digest-pinned deployment, provider provisioning and the real
+inference health gate. The gate inspects the running image and probes the compiled
 credential-failure classifier for all four providers without changing accounts. This scope verifies the existing host and leaves Knoxx and ingress alone.
 Provider credentials remain in the protected production environment and Proxx
 SQL store. Local Stealth policy files and credentials are not copied to production.

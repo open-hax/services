@@ -208,7 +208,7 @@ jobs:
       source_ref: ${{ needs.resolve-knoxx.outputs.source_sha }}
 
   build-proxx:
-    if: inputs.scope == 'stack' || inputs.scope == 'proxx'
+    if: inputs.scope == 'stack'
     uses: ./.github/workflows/build-images.yml
     with:
       service: proxx
@@ -226,6 +226,58 @@ jobs:
 
   # Proxx-only releases verify the existing host without bootstrapping or
   # qualifying/redeploying Knoxx. The caller still holds the production lock.
+  select-proxx-only:
+    if: inputs.scope == 'proxx'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    outputs:
+      matched: ${{ steps.match.outputs.matched }}
+      image: ${{ steps.verify.outputs.image }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Match the reviewed production artifact
+        id: match
+        env:
+          SOURCE: ${{ inputs.proxx_ref }}
+          CALLER_WORKFLOW: ${{ github.workflow_ref }}
+          CALLER_REF_PROTECTED: ${{ github.ref_protected }}
+        run: |
+          set -euo pipefail
+          test "$CALLER_WORKFLOW" = open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main
+          test "$GITHUB_REF" = refs/heads/main
+          test "$CALLER_REF_PROTECTED" = true
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 scripts/select-proxx-production-artifact.py match "$SOURCE" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        if: steps.match.outputs.matched == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Verify the published build and immutable artifact
+        id: verify
+        if: steps.match.outputs.matched == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE: ${{ inputs.proxx_ref }}
+        run: python3 scripts/select-proxx-production-artifact.py verify "$SOURCE" >> "$GITHUB_OUTPUT"
+
+  build-proxx-only:
+    needs: select-proxx-only
+    if: inputs.scope == 'proxx' && needs.select-proxx-only.outputs.matched == 'false'
+    uses: ./.github/workflows/build-images.yml
+    with:
+      service: proxx
+      source_ref: ${{ inputs.proxx_ref }}
+
   verify-proxx-host:
     if: inputs.scope == 'proxx'
     uses: ./.github/workflows/digitalocean-host.yml
@@ -236,13 +288,19 @@ jobs:
     secrets: inherit
 
   deploy-proxx-only:
-    needs: [verify-proxx-host, build-proxx]
-    if: inputs.scope == 'proxx'
+    needs: [verify-proxx-host, select-proxx-only, build-proxx-only]
+    if: >-
+      ${{ !cancelled() && inputs.scope == 'proxx'
+        && needs.verify-proxx-host.result == 'success' && needs.select-proxx-only.result == 'success'
+        && ((needs.select-proxx-only.outputs.matched == 'true' && needs.select-proxx-only.outputs.image != ''
+             && needs.build-proxx-only.result == 'skipped')
+          || (needs.select-proxx-only.outputs.matched == 'false' && needs.build-proxx-only.result == 'success'
+              && needs.build-proxx-only.outputs.source_sha == inputs.proxx_ref)) }}
     uses: ./.github/workflows/deploy-digitalocean.yml
     with:
       service: proxx
-      image: ${{ needs.build-proxx.outputs.image }}@${{ needs.build-proxx.outputs.digest }}
-      source_sha: ${{ needs.build-proxx.outputs.source_sha }}
+      image: ${{ needs.select-proxx-only.outputs.matched == 'true' && needs.select-proxx-only.outputs.image || format('{0}@{1}', needs.build-proxx-only.outputs.image, needs.build-proxx-only.outputs.digest) }}
+      source_sha: ${{ inputs.proxx_ref }}
       caller_holds_production_host_lock: true
     secrets: inherit
 

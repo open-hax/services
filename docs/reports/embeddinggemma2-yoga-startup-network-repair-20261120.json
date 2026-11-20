@@ -1,0 +1,16 @@
+{
+  "affectedReadbackChecksPassed": true,
+  "verifierSourceSha256": "0076713414a1657d2a80e9890158488b2be4420a8f5484691c762962739f628b",
+  "actualContainerId": "3c6cc5dc596af8cd3bb112d4a976250b1466db09cc14498586412022cba038ef",
+  "currentProcessStartedAt": "2026-11-20T17:03:19.200622982Z",
+  "currentProcessOnlyGpuEvidence": true,
+  "freshFinalRuntimeAndNetworkRevalidated": true,
+  "modelHashedThroughWorkerMount": true,
+  "modelSha256": "68bae29d62fb8c7d23e98d21fd4662753ddd636e6b62b8a70dfe059a9844f216",
+  "newEmbeddingOrRouterRequestPerformed": false,
+  "hostFilesWritten": false,
+  "scope": "Affected readback checks only; no new native inference or complete verifier run",
+  "focusedUnitTests": 13,
+  "independentFocusedReview": "Clean exact two-file diff from 30cb987d4544b8e375c02bdb1e970fb6e5de63b5 by separate native context prod_release_path",
+  "historicalFullHardwareEvidenceRetained": true
+}
