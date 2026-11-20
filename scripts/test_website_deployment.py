@@ -141,6 +141,10 @@ class WebsiteDeploymentTests(unittest.TestCase):
             ({}, 0), ({"CALLER_REF": "refs/heads/candidate"}, 2),
             ({"CALLER_REF_PROTECTED": "false"}, 2), ({"KNOXX_SHA": "a" * 40}, 2),
             ({"WEBSITE_REF": "candidate"}, 2), ({"INCLUDE_WEBSITE": "true"}, 2),
+            ({"DEPLOY_SCOPE": "knoxx-policy-preflight"}, 0),
+            ({"DEPLOY_SCOPE": "knoxx-policy-preflight", "PROXX_SHA": "b" * 40}, 2),
+            ({"DEPLOY_SCOPE": "knoxx-policy-preflight", "CALLER_REF_PROTECTED": "false"}, 2),
+            ({"DEPLOY_SCOPE": "knoxx-policy-retire"}, 2),
         ):
             with self.subTest(override=override), tempfile.TemporaryDirectory() as temporary:
                 output = Path(temporary) / "outputs"
@@ -160,6 +164,33 @@ class WebsiteDeploymentTests(unittest.TestCase):
         policy["jobs"]["deploy"]["if"] = "always()"
         self.assertIn("Knoxx policy production access must depend on successful credentialless admission",
                       chain_guard.knoxx_policy_path_errors(self.entry, self.chain, policy))
+
+    def test_knoxx_preflight_requires_the_protected_manual_holder(self):
+        policy = workflow("deploy-knoxx-public-policy.yml")
+        command = next(step["run"] for step in policy["jobs"]["admit"]["steps"] if step.get("id") == "trusted")
+        for overrides, accepted in (
+            ({}, True),
+            ({"CALLER_WORKFLOW": "fork/services/.github/workflows/deploy-stack.yml@refs/heads/main"}, False),
+            ({"CALLER_REF": "refs/heads/candidate"}, False),
+            ({"CALLER_REF_PROTECTED": "false"}, False),
+            ({"CALLER_EVENT": "push"}, False),
+            ({"CALLER_LOCKED": "false"}, False),
+            ({"POLICY_OPERATION": "retire"}, False),
+            ({"POLICY_OPERATION": "restore"}, False),
+        ):
+            with self.subTest(overrides=overrides), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary) / "outputs"
+                env = {**os.environ, "CALLER_WORKFLOW":
+                       "open-hax/services/.github/workflows/deploy-stack.yml@refs/heads/main",
+                       "CALLER_REF": "refs/heads/main", "CALLER_REF_PROTECTED": "true",
+                       "CALLER_EVENT": "workflow_dispatch", "CALLER_LOCKED": "true",
+                       "POLICY_OPERATION": "prepare-retirement", "GITHUB_OUTPUT": str(output), **overrides}
+                result = subprocess.run(["bash", "-c", command], cwd=ROOT, env=env, capture_output=True)
+                self.assertEqual(accepted, result.returncode == 0, result.stderr)
+                if accepted:
+                    self.assertEqual("operation=prepare-retirement\n", output.read_text())
+                else:
+                    self.assertFalse(output.exists())
 
     def test_knoxx_policy_stage_rejects_aliased_ancestors_and_nonprivate_directory(self):
         workflow_step = next(step for step in workflow("deploy-knoxx-public-policy.yml")["jobs"]["deploy"]["steps"]
@@ -199,7 +230,8 @@ class WebsiteDeploymentTests(unittest.TestCase):
                         elif layout == "public parent":
                             parent.mkdir(mode=0o755)
                             parent.chmod(0o755)
-                result = subprocess.run(["sh", "-c", remote, "sh", str(services), str(state), stage_id, "unpack"],
+                result = subprocess.run(["sh", "-c", remote, "sh", str(services), str(state), stage_id, "unpack",
+                                         "activate"],
                                         input=archive.getvalue(), capture_output=True)
                 self.assertEqual(accepted, result.returncode == 0, result.stderr)
                 self.assertEqual([], list(outside.rglob("knoxx_public_policy_release.py")))
@@ -209,6 +241,35 @@ class WebsiteDeploymentTests(unittest.TestCase):
                     self.assertEqual(payload, (stage / member.name).read_bytes())
                 else:
                     self.assertFalse((services / "knoxx" / "public-policy-controllers" / stage_id).exists())
+
+    def test_knoxx_preflight_invokes_only_the_fixed_read_only_flag(self):
+        workflow_step = next(step for step in workflow("deploy-knoxx-public-policy.yml")["jobs"]["deploy"]["steps"]
+                             if step.get("name") == "Install and apply the fixed policy transaction")
+        remote = re.search(r"^stage_command='(.*?)^'$", workflow_step["run"], re.MULTILINE | re.DOTALL).group(1)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            services, state = root / "services", root / "state"
+            state.mkdir()
+            stage_id = "a" * 40 + "-1-1"
+            parent = services / "knoxx" / "public-policy-controllers"
+            stage = parent / stage_id
+            controller = stage / "scripts/knoxx_public_policy_release.py"
+            controller.parent.mkdir(parents=True)
+            parent.chmod(0o700)
+            stage.chmod(0o700)
+            controller.write_text("import json, sys; print(json.dumps(sys.argv[1:]))\n")
+            manifest = (hashlib.sha256(controller.read_bytes()).hexdigest()
+                        + "  scripts/knoxx_public_policy_release.py\n")
+            for operation, flag in (("activate", False), ("prepare-retirement", True), ("retire", None)):
+                with self.subTest(operation=operation):
+                    result = subprocess.run(["sh", "-c", remote, "sh", str(services), str(state), stage_id,
+                                             "apply", operation], input=manifest, text=True, capture_output=True)
+                    if flag is None:
+                        self.assertEqual(2, result.returncode)
+                        self.assertEqual("", result.stdout)
+                    else:
+                        self.assertEqual(0, result.returncode, result.stderr)
+                        self.assertEqual(flag, "--prepare-retirement" in json.loads(result.stdout))
 
     def test_knoxx_policy_admission_binds_ancestry_and_exact_privacy_bytes(self):
         policy = workflow("deploy-knoxx-public-policy.yml")
