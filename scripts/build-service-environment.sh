@@ -27,12 +27,18 @@ else
   test -n "$(find "$source_root/backend/dist/cljs-runtime" -type f -name '*.js' -print -quit)"
   pnpm -C "$source_root/frontend" typecheck
   pnpm -C "$source_root/frontend" build
-  # Stage the application shell used by the production builder, not public/.
+  # Stage the application shell for the environment frontend.
   cp "$source_root/frontend/index.html" "$source_root/frontend/dist/index.html"
   test -f "$source_root/frontend/dist/index.html"
   test -f "$source_root/frontend/dist/app.css"
   test -f "$source_root/frontend/dist/cljs/app.js"
   test -f "$source_root/frontend/dist/bridge/style.css"
+  policy_output="$source_root/frontend/dist/bridge/legal/privacy.html"
+  if [ ! -f "$policy_output" ] || [ -L "$policy_output" ] ||
+     ! cmp -s "$source_root/frontend/public/legal/privacy.html" "$policy_output"; then
+    printf >&2 'Knoxx environment build requires the source privacy policy at dist/bridge/legal/privacy.html\n'
+    exit 1
+  fi
   docker build -t "promethean-knoxx-base:$source_sha" "$source_root/backend"
   pnpm --dir "$workspace_root/openplanner" --filter @open-hax/openplanner-sdk deploy --prod --legacy \
     --config.node-linker=hoisted "$artifact_dir/sdk-deploy"

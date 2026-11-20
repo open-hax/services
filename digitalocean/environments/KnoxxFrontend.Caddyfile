@@ -27,6 +27,12 @@
 	handle /ws* {
 		reverse_proxy backend:8000
 	}
+	@privacy path_regexp ^/privacy[.]html$
+	handle @privacy {
+		root * /srv
+		rewrite * /bridge/legal/privacy.html
+		file_server
+	}
 	handle {
 		root * /srv
 		try_files {path} /index.html

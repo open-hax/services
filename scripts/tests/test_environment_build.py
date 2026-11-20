@@ -68,6 +68,18 @@ elif tool == "pnpm":
         for name in ("app.css", "cljs/app.js", "bridge/style.css"):
             if name != os.environ.get("OMIT_FRONTEND"):
                 put(root / "dist" / name)
+        policy = root / "public/legal/privacy.html"
+        output = root / "dist/bridge/legal/privacy.html"
+        policy_kind = os.environ.get("PRIVACY_OUTPUT", "exact")
+        if policy_kind == "exact":
+            put(output, policy.read_text())
+        elif policy_kind == "different":
+            put(output, "different from source\n")
+        elif policy_kind == "symlink":
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.symlink_to(policy)
+        elif policy_kind != "missing":
+            raise SystemExit("unexpected privacy fixture: " + policy_kind)
     elif "deploy" in command:
         put(Path(command[-1]) / "dist/index.js")
     elif not ("install" in command or command in (["typecheck"], ["test"])
@@ -105,6 +117,7 @@ class EnvironmentBuildTest(unittest.TestCase):
             (self.source / name).mkdir(parents=True)
         (self.source.parent / "openplanner").mkdir()
         self.put(self.source / "frontend/index.html", SHELL)
+        self.put(self.source / "frontend/public/legal/privacy.html", "<!doctype html><title>Privacy</title>\n")
         self.artifact = self.root / "artifact"
         self.trace = self.root / "trace.jsonl"
         bin_dir = self.root / "bin"
@@ -200,6 +213,15 @@ class EnvironmentBuildTest(unittest.TestCase):
 
     def test_missing_bridge_css_is_refused(self):
         self.assert_missing_output_refused(OMIT_FRONTEND="bridge/style.css")
+
+    def test_missing_privacy_policy_is_refused(self):
+        self.assert_missing_output_refused(PRIVACY_OUTPUT="missing")
+
+    def test_changed_privacy_policy_is_refused(self):
+        self.assert_missing_output_refused(PRIVACY_OUTPUT="different")
+
+    def test_privacy_policy_symlink_is_refused(self):
+        self.assert_missing_output_refused(PRIVACY_OUTPUT="symlink")
 
     def test_wrong_source_revision_stops_before_build_tools(self):
         result = self.run_builder(sha="2" * 40)

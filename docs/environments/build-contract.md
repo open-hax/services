@@ -1,8 +1,12 @@
 # Environment image input contract
 
-The environment builder must produce application outputs before Docker packages them. Its Knoxx path follows `.github/workflows/build-images.yml`: invoke `pnpm -C backend exec shadow-cljs compile server`, require `backend/dist/server.js` and `backend/dist/cljs-runtime`, stage `frontend/index.html`, and require the application CSS, CLJS entry point, and bridge CSS. Typechecking and tests are not substitutes for the server build. The `:optimizations :none` server target uses `compile`, not `release`.
+The environment builder must produce application outputs before Docker packages them. Its Knoxx path invokes `pnpm -C backend exec shadow-cljs compile server`, requires `backend/dist/server.js` and `backend/dist/cljs-runtime`, stages `frontend/index.html`, and requires the application CSS, CLJS entry point, and bridge CSS. Typechecking and tests are not substitutes for the server build. The `:optimizations :none` server target uses `compile`, not `release`.
 
 A failed compiler command or missing required output must terminate the builder before its first Docker invocation. The Axxium npm build path, revision check, artifact digest, deployment admission, and production qualification policy are unchanged.
+
+The Knoxx environment builder requires `frontend/dist/bridge/legal/privacy.html` to match the reviewed `frontend/public/legal/privacy.html` byte for byte before packaging. The environment Caddy frontend serves that document at `/privacy.html`. A missing document returns 404 at that route.
+
+The staging receiver holds the backend and frontend image tags immutable by Knoxx source SHA. To stage a packaging or Caddy change after that source has already been staged, use a distinct reviewed Knoxx source revision. Deploy it through Services and verify its exact staging receipt and public route before production qualification.
 
 ## Executable regression contract
 
