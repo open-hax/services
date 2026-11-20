@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "service": "knoxx",
+  "environment": "staging",
+  "openplannerSourceSha": "2c7189b4a5700ad06f0251c99bbb272da765e693",
+  "eventsCollection": "events",
+  "fixtureSourceEventIds": ["shared:event:alpha", "shared:event:beta"],
+  "legacy": {
+    "model": "gte-large-en-v1.5",
+    "dimensions": 1024,
+    "collections": {
+      "hot": "event_chunks",
+      "compact": "compacted_vectors",
+      "summaries": "compacted_memories",
+      "partitions": "vector_partitions",
+      "graph": "graph_node_embeddings"
+    }
+  },
+  "candidate": {
+    "model": "embeddinggemma-2",
+    "dimensions": 768,
+    "collections": {
+      "hot": "event_chunks_embeddinggemma2_768",
+      "compact": "compacted_vectors_embeddinggemma2_768",
+      "summaries": "compacted_memories_embeddinggemma2_768",
+      "partitions": "vector_partitions_embeddinggemma2_768",
+      "graph": "graph_node_embeddings_embeddinggemma2_768"
+    }
+  }
+}
