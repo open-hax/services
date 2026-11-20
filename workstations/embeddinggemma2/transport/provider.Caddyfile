@@ -1,0 +1,44 @@
+{
+	admin off
+	auto_https off
+	servers {
+		timeouts {
+			read_header 5s
+			read_body 5s
+			write 30s
+			idle 30s
+		}
+	}
+}
+
+https://{$EMBEDDING_TLS_NAME}:8443 {
+	bind {$EMBEDDING_BIND}
+	tls /run/tls/server.crt /run/tls/server.key {
+		client_auth {
+			mode require_and_verify
+			trusted_ca_cert_file /run/tls/client-ca.crt
+		}
+	}
+	@consumer remote_ip {$EMBEDDING_APPROVED_SOURCE}
+	handle @consumer {
+		@embedding_api expression `({method} == 'GET' && ({path} == '/health' || {path} == '/v1/models')) || ({method} == 'POST' && {path} == '/v1/embeddings')`
+		handle @embedding_api {
+			request_body {
+				max_size 128KB
+			}
+			reverse_proxy {$EMBEDDING_NATIVE_ORIGIN} {
+				header_up -Authorization
+				header_up -Proxy-Authorization
+				header_up -Cookie
+				header_up -X-Open-Hax-Bridge-Auth
+				transport http {
+					dial_timeout 5s
+					response_header_timeout {$EMBEDDING_UPSTREAM_TIMEOUT}
+					read_timeout {$EMBEDDING_UPSTREAM_TIMEOUT}
+				}
+			}
+		}
+		respond "Denied" 403
+	}
+	respond "Denied" 403
+}
