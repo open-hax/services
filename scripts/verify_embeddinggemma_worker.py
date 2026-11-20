@@ -65,6 +65,7 @@ def mounted_model_sha256(container_id, model_path):
 def require_same_container_binding(before, after):
     require(after["Id"] == before["Id"] and after["State"]["Running"]
             and after["State"]["Pid"] == before["State"]["Pid"]
+            and after["State"]["StartedAt"] == before["State"]["StartedAt"]
             and after["RestartCount"] == before["RestartCount"],
             "Worker container identity or process changed during verification")
 
@@ -196,7 +197,7 @@ def verify(container_name, role):
     require_same_container_binding(container, json.loads(docker("inspect", container_name))[0])
     gpu = None
     if role == "yoga":
-        logs = subprocess.run(["docker", "logs", container_name], capture_output=True,
+        logs = subprocess.run(["docker", "logs", "--since", container["State"]["StartedAt"], container["Id"]], capture_output=True,
                               timeout=15)
         require(logs.returncode == 0, "Yoga startup GPU log unavailable")
         text = (logs.stdout + logs.stderr).decode(errors="replace")
@@ -207,14 +208,19 @@ def verify(container_name, role):
     body, elapsed = infer_in_namespace(container["State"]["Pid"]) if role == "yoga" else infer(port)
     embedding = validate_embedding(body, profile)
     if role == "yoga":
-        logs = subprocess.run(["docker", "logs", container_name], capture_output=True, timeout=15)
+        logs = subprocess.run(["docker", "logs", "--since", container["State"]["StartedAt"], container["Id"]], capture_output=True, timeout=15)
         require(logs.returncode == 0, "Yoga post-request log unavailable")
         require(FIXTURE.encode() not in logs.stdout + logs.stderr,
                 "Synthetic embedding input was written to runtime logs")
     require_same_container_binding(container, json.loads(docker("inspect", container_name))[0])
     require(mounted_model_sha256(container["Id"], model) == digest,
             "Worker-mounted GGUF changed during verification")
-    require_same_container_binding(container, json.loads(docker("inspect", container_name))[0])
+    final = json.loads(docker("inspect", container_name))[0]
+    require_same_container_binding(container, final)
+    final_names = list(final["NetworkSettings"]["Networks"])
+    final_networks = json.loads(docker("network", "inspect", *final_names)) if final_names else []
+    require(validate_runtime(final, profile, role, final_networks) == (model, port),
+            "Worker runtime boundary changed during verification")
     return {"status": "passed", "observedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "role": role, "containerId": container["Id"], "imageId": container["Image"],
             "modelSha256": digest, "modelHashedInWorkerNamespace": True,

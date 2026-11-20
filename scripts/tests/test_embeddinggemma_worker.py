@@ -20,7 +20,8 @@ PROFILE = json.loads((ROOT / "workstations/embeddinggemma2/profile.json").read_t
 def runtime():
     return {
         "Image": PROFILE["vulkan_image_id"], "RestartCount": 0,
-        "State": {"Running": True, "OOMKilled": False, "Pid": 20000},
+        "State": {"Running": True, "OOMKilled": False, "Pid": 20000,
+                  "StartedAt": "2026-11-20T00:00:00Z"},
         "Config": {"Image": PROFILE["vulkan_image"], "User": "1002:1002",
                    "Entrypoint": ["/app/llama-server"], "Cmd": PROFILE["yoga_command"]},
         "HostConfig": {"Privileged": False, "GroupAdd": ["992"], "NanoCpus": 2000000000,
@@ -39,6 +40,48 @@ def network():
 
 
 class WorkerBoundaryTests(unittest.TestCase):
+    def verify_observations(self, *, stale_gpu_only=False, attach_after_probe=False):
+        value = runtime()
+        value["Id"] = "b"*64
+        inspected = 0
+        log_calls = []
+        def docker(*args):
+            nonlocal inspected
+            if args[0] == "inspect":
+                inspected += 1
+                current = copy.deepcopy(value)
+                if attach_after_probe and inspected >= 4:
+                    current["NetworkSettings"]["Networks"]["second_network"] = {}
+                return json.dumps([current]).encode()
+            if args[:2] == ("network", "inspect"):
+                return json.dumps(network() + (network() if "second_network" in args else [])).encode()
+            if args[0] == "exec":
+                return (PROFILE["model_sha256"] + "  /models/model.gguf\n").encode()
+            raise AssertionError("Unexpected Docker readback")
+        def logs(args, **kwargs):
+            log_calls.append(args)
+            data = b"current process CPU-only\n" if stale_gpu_only and "--since" in args else b"RADV REMBRANDT offloaded 25/25 layers to GPU\n"
+            return SimpleNamespace(returncode=0, stdout=data, stderr=b"")
+        answer = {"model": "embeddinggemma-2", "data": [{"index": 0, "embedding": [1.0] + [0.0]*767}],
+                  "usage": {"prompt_tokens": 10}}
+        with patch.object(worker, "docker", docker), patch.object(worker.subprocess, "run", logs), \
+             patch.object(worker, "infer_in_namespace", return_value=(answer, 1)):
+            result = worker.verify("owned", "yoga")
+        return result, log_calls
+
+    def test_old_startup_logs_cannot_attest_current_cpu_only_process(self):
+        with self.assertRaises(worker.Refused):
+            self.verify_observations(stale_gpu_only=True)
+
+    def test_network_added_after_initial_validation_is_refused(self):
+        with self.assertRaises(worker.Refused):
+            self.verify_observations(attach_after_probe=True)
+
+    def test_unchanged_native_observations_still_pass(self):
+        result, log_calls = self.verify_observations()
+        self.assertEqual(result["status"], "passed")
+        self.assertTrue(log_calls)
+
     def test_replaced_host_path_does_not_attest_the_old_running_bind(self):
         with tempfile.TemporaryDirectory() as directory:
             model = Path(directory) / "model.gguf"
