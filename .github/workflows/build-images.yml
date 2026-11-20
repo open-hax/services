@@ -110,11 +110,7 @@ jobs:
           ref: ${{ inputs.source_ref }}
           path: source
           persist-credentials: false
-          # open-hax/openplanner declares a file:/// submodule
-          # (packages/stores/migrations/openplanner-migration-tools) that
-          # cannot be cloned on a hosted runner.
-          #
-          # open-hax/website needs this for a second reason: its .gitmodules is
+          # open-hax/website needs this because its .gitmodules is
           # 62 KB of submodule declarations and none of them are inputs to the
           # build (pnpm-workspace.yaml declares only `.`). services#19 rsynced
           # that entire vendored constellation into a public docroot because its
