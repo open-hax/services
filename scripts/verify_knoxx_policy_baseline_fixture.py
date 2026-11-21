@@ -9,6 +9,7 @@ from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "digitalocean/qualifications/knoxx/public-policy-baseline-20261120.json"
+CAPTURE_SHA256 = "8e85172ce80742048438f09a8e0c8f251f958bb66b97b4b7f4ac55c1347cd055"
 ORIGINAL_RECEIPT = "094b9689b325b7864718634b28c003a0dcbac0c38989c479eb965ad2f81e6a57"
 ORIGINAL_ARTIFACT_SHA256 = "f9aabb7addffd279a208cd19729a1acc35b4c50918da84eefaa4cffc711d6570"
 ORIGINAL_CONFIGS = (
@@ -25,6 +26,12 @@ CURRENT_CONFIGS = {
 }
 KNOXX_SITE_SHA256 = "065e43d874fdeedc7424cbdb612d0057b8064e8a79af29690288f852f007e441"
 MCP_ROUTE_SHA256 = "5fd598184a7fd34971d64432b1c4a523c322ffe0beb94f79d8f6b6efc88eadf6"
+NEIGHBOR_RESPONSES = {
+    "/favicon.svg": (200, "text/html", "79eee6c3247ab9f3201479012d97dc2dac1dd5ef8aac38336e0588db3ecc497d"),
+    "/api/auth/config": (200, "application/json", "27df36fa4e5f30a68337246f1c19877359383b5d1f206492c0ef98c294455b6c"),
+    "/.well-known/oauth-protected-resource": (
+        200, "application/json", "42fdd79246955d0d2e64737fe1183affde739071f3dd1a79ddbf6723c76455f0"),
+}
 SOURCE_FILES = {
     "digitalocean/services/axxium/unified-mailbox-production-plan.json",
     "digitalocean/services/axxium/active-mailbox-upgrade-production-plan.json",
@@ -242,6 +249,10 @@ def verify(certificate, root=ROOT):
         require(public[path] == {"status": 200, "type": "text/html", "sha256": expected}
                 and public["HEAD " + path] == {"status": 200, "type": "text/html", "sha256": digest(b"")},
                 "Public policy bytes differ from the protected bundle")
+    require(all(public.get(path) == {"status": status, "type": kind, "sha256": payload}
+                for path, (status, kind, payload) in NEIGHBOR_RESPONSES.items()),
+            "Captured neighboring public responses differ")
+    require(canonical(certificate) == CAPTURE_SHA256, "The complete canonical capture differs")
     return {"status": "fixture-verified", "original_receipt_sha256": ORIGINAL_RECEIPT,
             "original_receipt_modified": False, "production_hold_cleared": False,
             "live_authorization": False, "native_owner_runs": len(RUNS)}

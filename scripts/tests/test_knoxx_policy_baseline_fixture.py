@@ -8,10 +8,10 @@ class BaselineFixtureTest(unittest.TestCase):
     def setUp(self):
         self.certificate = fixture.read_json(fixture.FIXTURE)
 
-    def refuse(self, change):
+    def refuse(self, change, reason=None):
         candidate = copy.deepcopy(self.certificate)
         change(candidate)
-        with self.assertRaises(fixture.FixtureRefused):
+        with self.assertRaisesRegex(fixture.FixtureRefused, reason or "."):
             fixture.verify(candidate)
 
     def test_exact_captured_fixture_verifies_without_mutating_inputs(self):
@@ -58,6 +58,21 @@ class BaselineFixtureTest(unittest.TestCase):
     def test_current_config_identity_refuses_coordinated_digest_substitution(self):
         self.refuse(lambda c: c["observed_current"]["config_sha256"].update(
             native="a" * 64, active="b" * 64, current="b" * 64, startup="b" * 64, bridge="c" * 64))
+
+    def test_captured_public_neighbors_cannot_disappear(self):
+        def change(c):
+            for path in ("/favicon.svg", "/api/auth/config", "/.well-known/oauth-protected-resource"):
+                del c["public_before_retirement"][path]
+        self.refuse(change, "neighboring public responses")
+
+    def test_captured_public_neighbors_cannot_all_be_replaced(self):
+        def change(c):
+            for path in ("/favicon.svg", "/api/auth/config", "/.well-known/oauth-protected-resource"):
+                c["public_before_retirement"][path].update(status=503, sha256="0" * 64)
+        self.refuse(change, "neighboring public responses")
+
+    def test_complete_historical_capture_rejects_unexamined_field_changes(self):
+        self.refuse(lambda c: c.update(observed_at="2026-11-30T00:00:00Z"), "canonical capture")
 
     def test_artifact_must_match_native_host_receipt(self):
         self.refuse(lambda c: c["native_actions_artifacts"][0].update(canonicalReceiptSha256="a" * 64))
