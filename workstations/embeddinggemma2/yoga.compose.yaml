@@ -29,6 +29,8 @@ services:
           create_host_path: false
     # No published ports. A separate reviewed private transport owns ingress.
     networks: [worker]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "3", "http://127.0.0.1:8081/health"]
     command:
       - --model
       - /models/model.gguf
