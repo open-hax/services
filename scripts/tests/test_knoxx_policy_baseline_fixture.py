@@ -23,6 +23,9 @@ class BaselineFixtureTest(unittest.TestCase):
     def test_v1_seal_cannot_be_replaced(self):
         self.refuse(lambda c: c["original_v1"].update(receipt_sha256="a" * 64))
 
+    def test_original_v1_archive_digest_cannot_be_replaced(self):
+        self.refuse(lambda c: c["original_v1"].update(artifact_sha256="0" * 64))
+
     def test_both_original_hashes_must_be_reconstructed(self):
         self.refuse(lambda c: c["historical_reconstruction"].update(active_config_sha256="a" * 64))
 
@@ -44,6 +47,17 @@ class BaselineFixtureTest(unittest.TestCase):
     def test_mcp_origin_and_handler_must_remain_exact(self):
         self.refuse(lambda c: c.update(public_mcp_origin="https://staging.knoxx.promethean.rest/mcp"))
         self.refuse(lambda c: c["mcp_continuity"].update(current_mcp_route_sha256="a" * 64))
+
+    def test_mcp_continuity_refuses_coordinated_digest_substitution(self):
+        for identity in ("knoxx_site", "mcp_route"):
+            with self.subTest(identity=identity):
+                self.refuse(lambda c: c["mcp_continuity"].update({
+                    f"{moment}_{identity}_sha256": "0" * 64 for moment in ("historical", "current")
+                }))
+
+    def test_current_config_identity_refuses_coordinated_digest_substitution(self):
+        self.refuse(lambda c: c["observed_current"]["config_sha256"].update(
+            native="a" * 64, active="b" * 64, current="b" * 64, startup="b" * 64, bridge="c" * 64))
 
     def test_artifact_must_match_native_host_receipt(self):
         self.refuse(lambda c: c["native_actions_artifacts"][0].update(canonicalReceiptSha256="a" * 64))
@@ -88,6 +102,18 @@ class BaselineFixtureTest(unittest.TestCase):
 
     def test_same_path_metadata_must_match_native_artifact(self):
         self.refuse(lambda c: c["native_actions_artifacts"][0]["receiptMetadata"].update(status="healthy-dark"))
+
+    def test_both_metadata_copies_cannot_substitute_other_status_or_run(self):
+        for substitute in ("other-status", "other-run"):
+            with self.subTest(substitute=substitute):
+                def change(c):
+                    activation, repair = c["native_actions_artifacts"][:2]
+                    host = next(row for row in c["host_receipts"] if row["path"].endswith("/live/active.json"))
+                    replacement = (dict(activation["receiptMetadata"], status="healthy-dark")
+                                   if substitute == "other-status" else repair["receiptMetadata"])
+                    activation["receiptMetadata"] = replacement
+                    host["metadata"] = copy.deepcopy(replacement)
+                self.refuse(change)
 
     def test_protected_run_source_cannot_be_substituted(self):
         self.refuse(lambda c: c["native_actions_artifacts"][0].update(head_sha="a" * 40))
