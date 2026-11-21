@@ -144,6 +144,9 @@ class WebsiteDeploymentTests(unittest.TestCase):
             ({"DEPLOY_SCOPE": "knoxx-policy-preflight"}, 0),
             ({"DEPLOY_SCOPE": "knoxx-policy-preflight", "PROXX_SHA": "b" * 40}, 2),
             ({"DEPLOY_SCOPE": "knoxx-policy-preflight", "CALLER_REF_PROTECTED": "false"}, 2),
+            ({"DEPLOY_SCOPE": "knoxx-policy-reconcile"}, 0),
+            ({"DEPLOY_SCOPE": "knoxx-policy-reconcile", "CALLER_REF_PROTECTED": "false"}, 2),
+            ({"DEPLOY_SCOPE": "knoxx-policy-reconcile", "KNOXX_SHA": "b" * 40}, 2),
             ({"DEPLOY_SCOPE": "knoxx-policy-retire"}, 2),
         ):
             with self.subTest(override=override), tempfile.TemporaryDirectory() as temporary:
@@ -175,6 +178,8 @@ class WebsiteDeploymentTests(unittest.TestCase):
             ({"CALLER_REF_PROTECTED": "false"}, False),
             ({"CALLER_EVENT": "push"}, False),
             ({"CALLER_LOCKED": "false"}, False),
+            ({"POLICY_OPERATION": "reconcile-baseline"}, True),
+            ({"POLICY_OPERATION": "reconcile-baseline", "CALLER_REF_PROTECTED": "false"}, False),
             ({"POLICY_OPERATION": "retire"}, False),
             ({"POLICY_OPERATION": "restore"}, False),
         ):
@@ -188,7 +193,7 @@ class WebsiteDeploymentTests(unittest.TestCase):
                 result = subprocess.run(["bash", "-c", command], cwd=ROOT, env=env, capture_output=True)
                 self.assertEqual(accepted, result.returncode == 0, result.stderr)
                 if accepted:
-                    self.assertEqual("operation=prepare-retirement\n", output.read_text())
+                    self.assertEqual(f"operation={env['POLICY_OPERATION']}\n", output.read_text())
                 else:
                     self.assertFalse(output.exists())
 
@@ -258,18 +263,28 @@ class WebsiteDeploymentTests(unittest.TestCase):
             parent.chmod(0o700)
             stage.chmod(0o700)
             controller.write_text("import json, sys; print(json.dumps(sys.argv[1:]))\n")
-            manifest = (hashlib.sha256(controller.read_bytes()).hexdigest()
-                        + "  scripts/knoxx_public_policy_release.py\n")
-            for operation, flag in (("activate", False), ("prepare-retirement", True), ("retire", None)):
+            reconciler = controller.with_name("knoxx_policy_baseline_reconciliation.py")
+            reconciler.write_text('import json, sys; print(json.dumps(["reconciler", *sys.argv[1:]]))\n')
+            manifest = "".join(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(stage)}\n"
+                               for path in (controller, reconciler))
+            for operation, expected in (("activate", "legacy"), ("prepare-retirement", "preflight"),
+                                        ("reconcile-baseline", "reconcile"), ("retire", None), ("restore", None)):
                 with self.subTest(operation=operation):
                     result = subprocess.run(["sh", "-c", remote, "sh", str(services), str(state), stage_id,
                                              "apply", operation], input=manifest, text=True, capture_output=True)
-                    if flag is None:
+                    if expected is None:
                         self.assertEqual(2, result.returncode)
                         self.assertEqual("", result.stdout)
                     else:
                         self.assertEqual(0, result.returncode, result.stderr)
-                        self.assertEqual(flag, "--prepare-retirement" in json.loads(result.stdout))
+                        args = json.loads(result.stdout)
+                        self.assertEqual(expected == "preflight", "--prepare-retirement" in args)
+                        self.assertEqual(expected == "reconcile", "reconciler" in args)
+            reconciler.write_text("raise Exception('unexpected executable')\n")
+            rejected = subprocess.run(["sh", "-c", remote, "sh", str(services), str(state), stage_id,
+                                       "apply", "reconcile-baseline"], input=manifest, text=True, capture_output=True)
+            self.assertNotEqual(0, rejected.returncode)
+            self.assertEqual("", rejected.stdout)
 
     def test_knoxx_policy_admission_binds_ancestry_and_exact_privacy_bytes(self):
         policy = workflow("deploy-knoxx-public-policy.yml")
@@ -282,6 +297,14 @@ class WebsiteDeploymentTests(unittest.TestCase):
             controller = root / "scripts/knoxx_public_policy_release.py"
             controller.parent.mkdir()
             controller.write_text("fixture controller")
+            for name in policy["env"]["POLICY_RECONCILIATION_FILES"].splitlines():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("reviewed reconciliation payload")
+            reconciler = root / "scripts/knoxx_policy_baseline_reconciliation.py"
+            reconciler.write_text("import os\ndef load_certificate():\n"
+                                  "    if os.environ['FIXTURE_RECONCILIATION'] != 'accept':\n"
+                                  "        raise ValueError('certificate differs')\n")
             (bundle / "homepage.html").write_text("<html>fixture homepage</html>")
             (bundle / "privacy.html").write_text("<html>fixture privacy</html>")
             (bundle / "knoxx-public-policy.caddy").write_text("# fixture snippet")
@@ -309,16 +332,19 @@ esac
 """)
             for executable in (git, curl):
                 executable.chmod(0o700)
-            for status, ancestor, privacy, accepted in (
-                ("ahead", "b" * 40, "<html>fixture privacy</html>", True),
-                ("behind", "c" * 40, "<html>fixture privacy</html>", False),
-                ("ahead", "c" * 40, "<html>fixture privacy</html>", False),
-                ("ahead", "b" * 40, "<html>different privacy</html>", False),
+            for status, ancestor, privacy, operation, certificate, accepted in (
+                ("ahead", "b" * 40, "<html>fixture privacy</html>", "activate", "skip", True),
+                ("behind", "c" * 40, "<html>fixture privacy</html>", "activate", "skip", False),
+                ("ahead", "c" * 40, "<html>fixture privacy</html>", "activate", "skip", False),
+                ("ahead", "b" * 40, "<html>different privacy</html>", "activate", "skip", False),
+                ("ahead", "b" * 40, "<html>fixture privacy</html>", "reconcile-baseline", "accept", True),
+                ("ahead", "b" * 40, "<html>fixture privacy</html>", "reconcile-baseline", "refuse", False),
             ):
-                with self.subTest(status=status, ancestor=ancestor, accepted=accepted):
+                with self.subTest(status=status, ancestor=ancestor, operation=operation, accepted=accepted):
                     output = root / "outputs"
                     output.unlink(missing_ok=True)
                     env = {**os.environ, **policy["env"], "PATH": str(commands) + ":" + os.environ["PATH"],
+                           "POLICY_OPERATION": operation, "FIXTURE_RECONCILIATION": certificate,
                            "GITHUB_SHA": "a" * 40, "GITHUB_OUTPUT": str(output), "RUNNER_TEMP": str(root),
                            "FIXTURE_MAIN": "c" * 40, "FIXTURE_ANCESTOR": ancestor,
                            "FIXTURE_STATUS": status, "FIXTURE_PRIVACY": privacy}

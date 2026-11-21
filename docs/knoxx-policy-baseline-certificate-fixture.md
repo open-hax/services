@@ -63,8 +63,24 @@ config, and OAuth metadata response tuples match the original Actions receipt
 and the retained read-only host comparison. A canonical digest binds the
 complete dated capture. The fixture is inactive and the v1 hold remains in force.
 
-Any future operative consumer needs separate review and exact fresh readback
-under the existing production queue and host lock. It must preserve the original
-receipt and its historical hashes, verify the independently owned additions,
-retain the public `/mcp` connection and journal its forward/reverse lifecycle.
-This fixture must not become an arbitrary-hash or ignore-drift input.
+## Protected read-only reconciliation
+
+Deploy Stack's explicit `knoxx-policy-reconcile` scope uses the existing
+production queue, protected-main admission, pinned SSH trust and host lock.
+It selects this exact certificate by digest. The reader rereads the original
+v1 receipt, the listed route-owner receipts, and the archived Caddyfile under
+the lock. It reproduces the historic Caddy configurations and compares the
+current managed fragments, fresh adaptations, current config and startup
+config to the recorded digests.
+
+The proof also compares the native Knoxx site and MCP handler across the
+historical and current configurations and makes an anonymous request to the
+existing public `/mcp`. The result records the exact 401 challenge and
+fixed public policy digests. It contains digest and status evidence only.
+Keep the source review complete before running this protected scope.
+
+The reconciliation result has its own schema. The existing v1 receipt, default
+preflight, and production hold retain their current authority. The protected
+job stages the hash-verified reader and writes a GitHub Actions artifact.
+Retirement, restoration and a signed-in production MCP run require their own
+qualification.

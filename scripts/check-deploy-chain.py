@@ -42,6 +42,7 @@ def website_path_errors(entry: dict, chain: dict, phases: dict) -> list[str]:
         "axxium-work-pilot", "axxium-work-pilot-activate",
         "axxium-work-pilot-repair-ingress", "axxium-work-pilot-teardown", "axxium-work-pilot-reopen",
         "axxium-work-pilot-close", "colab-stage", "colab", "knoxx-policy", "knoxx-policy-preflight",
+        "knoxx-policy-reconcile",
     ]:
         errors.append("manual scope must retain stack as default and only offer reviewed service scopes")
     jobs = chain["jobs"]
@@ -221,16 +222,19 @@ def knoxx_policy_path_errors(entry: dict, chain: dict, policy: dict) -> list[str
     errors = []
     decide = entry["jobs"]["authorize"]["steps"][0]
     if (decide.get("env", {}).get("CALLER_REF_PROTECTED") != "${{ github.ref_protected }}"
-        or 'if [ "$DEPLOY_SCOPE" = knoxx-policy ] || [ "$DEPLOY_SCOPE" = knoxx-policy-preflight ]; then'
+        or ('if [ "$DEPLOY_SCOPE" = knoxx-policy ] || [ "$DEPLOY_SCOPE" = knoxx-policy-preflight ]'
+            ' || [ "$DEPLOY_SCOPE" = knoxx-policy-reconcile ]; then')
         not in decide.get("run", "")
         or 'Knoxx public policy requires protected main' not in decide.get("run", "")):
         errors.append("Knoxx policy dispatch must require protected main and reject source overrides")
     dispatch = chain["jobs"].get("deploy-knoxx-policy", {})
-    if (dispatch.get("if") != "inputs.scope == 'knoxx-policy' || inputs.scope == 'knoxx-policy-preflight'"
+    if (dispatch.get("if") != ("inputs.scope == 'knoxx-policy' || inputs.scope == 'knoxx-policy-preflight'"
+                              " || inputs.scope == 'knoxx-policy-reconcile'")
         or dispatch.get("uses") != "./.github/workflows/deploy-knoxx-public-policy.yml"
         or dispatch.get("with") != {
             "caller_holds_production_host_lock": "true",
-            "operation": "${{ inputs.scope == 'knoxx-policy-preflight' && 'prepare-retirement' || 'activate' }}",
+            "operation": ("${{ inputs.scope == 'knoxx-policy-reconcile' && 'reconcile-baseline'"
+                          " || inputs.scope == 'knoxx-policy-preflight' && 'prepare-retirement' || 'activate' }}"),
         }
         or dispatch.get("secrets") != {"DIGITALOCEAN_SSH_PRIVATE_KEY":
                                       "${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}"}):
@@ -243,6 +247,17 @@ def knoxx_policy_path_errors(entry: dict, chain: dict, policy: dict) -> list[str
         } or policy.get("env") != {
             "POLICY_BUNDLE": "digitalocean/services/knoxx/public-policy",
             "POLICY_CONTROLLER": "scripts/knoxx_public_policy_release.py",
+            "POLICY_RECONCILIATION_FILES": "\n".join((
+                "digitalocean/qualifications/knoxx/public-policy-baseline-20261120.json",
+                "digitalocean/services/axxium/unified-mailbox-production-plan.json",
+                "digitalocean/services/axxium/active-mailbox-upgrade-production-plan.json",
+                "digitalocean/services/axxium/mailbox-events-production-plan.json",
+                "digitalocean/services/axxium-work-pilot/ingress/active.caddy",
+                "digitalocean/services/axxium-work-pilot/reopen-release-plan.json",
+                "digitalocean/scripts/check-knoxx-public-policy-hold.py",
+                "scripts/verify_knoxx_policy_baseline_fixture.py",
+                "scripts/knoxx_policy_baseline_reconciliation.py", "",
+            )),
         }):
         errors.append("Knoxx policy must have a fixed bundle and no separate entrypoint or lock")
     jobs = policy.get("jobs", {})
@@ -263,11 +278,12 @@ def knoxx_policy_path_errors(entry: dict, chain: dict, policy: dict) -> list[str
         'test "$CALLER_REF_PROTECTED" = true',
         'test "$CALLER_EVENT" = workflow_dispatch',
         'test "$CALLER_LOCKED" = true',
-        'activate|prepare-retirement) ;;',
+        'activate|prepare-retirement|reconcile-baseline) ;;',
         'printf "operation=%s\\n" "$POLICY_OPERATION" >> "$GITHUB_OUTPUT"',
         '.merge_base_commit.sha == $source',
         'contents/frontend/public/legal/privacy.html?ref=$source_sha',
         'cmp -s "$RUNNER_TEMP/reviewed-knoxx-privacy.html" "$POLICY_BUNDLE/privacy.html"',
+        'from scripts.knoxx_policy_baseline_reconciliation import load_certificate; load_certificate()',
     ):
         if clause not in admission:
             errors.append(f"Knoxx policy admission lost required custody check: {clause}")
@@ -281,6 +297,8 @@ def knoxx_policy_path_errors(entry: dict, chain: dict, policy: dict) -> list[str
         errors.append("Knoxx policy must recheck admitted bytes before SSH and host mutation")
     elif (steps[ordered[0]].get("env", {}).get("EXPECTED_BUNDLE")
           != "${{ needs.admit.outputs.bundle_sha256 }}"
+          or steps[ordered[0]].get("env", {}).get("POLICY_OPERATION") != "${{ needs.admit.outputs.operation }}"
+          or 'files+=("${reconciliation[@]}")' not in steps[ordered[0]].get("run", "")
           or "assert_pinned_host_key" not in steps[ordered[1]].get("run", "")
           or any("if" in steps[index] for index in ordered)):
         errors.append("Knoxx policy may not skip bundle verification or pinned host trust")
@@ -288,6 +306,11 @@ def knoxx_policy_path_errors(entry: dict, chain: dict, policy: dict) -> list[str
         apply = steps[ordered[2]]
         if (apply.get("env", {}).get("POLICY_OPERATION") != "${{ needs.admit.outputs.operation }}"
             or 'set -- --prepare-retirement' not in apply.get("run", "")
+            or 'reconcile-baseline) entry=scripts/knoxx_policy_baseline_reconciliation.py ;;' not in apply.get("run", "")
+            or 'cut -c 67- "$RUNNER_TEMP/knoxx-policy-sha256"' not in apply.get("run", "")
+            or '.schema == "knoxx-public-policy-baseline-reconciliation/v1"' not in apply.get("run", "")
+            or '.anonymous_mcp_status == 401 and .mcp_bearer_challenge_verified == true' not in apply.get("run", "")
+            or '.live_authorization == false and .production_hold_cleared == false' not in apply.get("run", "")
             or '.phase == "prepared" and .result == "incumbent_verified"' not in apply.get("run", "")):
             errors.append("Knoxx preflight must select the read-only controller and prepared result")
     if any("secrets." in str(step) for step in admit.get("steps", [])):

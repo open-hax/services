@@ -20,6 +20,16 @@ permissions:
 env:
   POLICY_BUNDLE: digitalocean/services/knoxx/public-policy
   POLICY_CONTROLLER: scripts/knoxx_public_policy_release.py
+  POLICY_RECONCILIATION_FILES: |
+    digitalocean/qualifications/knoxx/public-policy-baseline-20261120.json
+    digitalocean/services/axxium/unified-mailbox-production-plan.json
+    digitalocean/services/axxium/active-mailbox-upgrade-production-plan.json
+    digitalocean/services/axxium/mailbox-events-production-plan.json
+    digitalocean/services/axxium-work-pilot/ingress/active.caddy
+    digitalocean/services/axxium-work-pilot/reopen-release-plan.json
+    digitalocean/scripts/check-knoxx-public-policy-hold.py
+    scripts/verify_knoxx_policy_baseline_fixture.py
+    scripts/knoxx_policy_baseline_reconciliation.py
 
 jobs:
   admit:
@@ -46,7 +56,7 @@ jobs:
           test "$CALLER_EVENT" = workflow_dispatch
           test "$CALLER_LOCKED" = true
           case "$POLICY_OPERATION" in
-            activate|prepare-retirement) ;;
+            activate|prepare-retirement|reconcile-baseline) ;;
             *) exit 2 ;;
           esac
           printf "operation=%s\n" "$POLICY_OPERATION" >> "$GITHUB_OUTPUT"
@@ -56,6 +66,8 @@ jobs:
           persist-credentials: false
       - name: Bind the fixed bundle to reviewed Knoxx main
         id: reviewed
+        env:
+          POLICY_OPERATION: ${{ steps.trusted.outputs.operation }}
         run: |
           set -euo pipefail
           umask 077
@@ -64,6 +76,10 @@ jobs:
           plan="$POLICY_BUNDLE/plan.json"
           files=("$plan" "$POLICY_BUNDLE/homepage.html" "$POLICY_BUNDLE/privacy.html"
                  "$POLICY_BUNDLE/knoxx-public-policy.caddy" "$POLICY_CONTROLLER")
+          if [ "$POLICY_OPERATION" = reconcile-baseline ]; then
+            mapfile -t reconciliation < <(printf '%s' "$POLICY_RECONCILIATION_FILES")
+            files+=("${reconciliation[@]}")
+          fi
           for file in "${files[@]}"; do
             test -f "$file"
             test ! -L "$file"
@@ -101,6 +117,9 @@ jobs:
             echo '::error::The bundle privacy document differs from the exact Knoxx source.' >&2
             exit 1
           fi
+          if [ "$POLICY_OPERATION" = reconcile-baseline ]; then
+            python3 -B -c "from scripts.knoxx_policy_baseline_reconciliation import load_certificate; load_certificate()"
+          fi
           sha256sum "${files[@]}" | sha256sum | cut -d' ' -f1 | sed 's/^/bundle_sha256=/' >> "$GITHUB_OUTPUT"
 
   deploy:
@@ -116,14 +135,19 @@ jobs:
       - name: Recheck admitted controller bytes
         env:
           EXPECTED_BUNDLE: ${{ needs.admit.outputs.bundle_sha256 }}
+          POLICY_OPERATION: ${{ needs.admit.outputs.operation }}
         run: |
           set -euo pipefail
           umask 077
           [[ "$EXPECTED_BUNDLE" =~ ^[0-9a-f]{64}$ ]]
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          sha256sum "$POLICY_BUNDLE/plan.json" "$POLICY_BUNDLE/homepage.html" \
-            "$POLICY_BUNDLE/privacy.html" "$POLICY_BUNDLE/knoxx-public-policy.caddy" \
-            "$POLICY_CONTROLLER" > "$RUNNER_TEMP/knoxx-policy-sha256"
+          files=("$POLICY_BUNDLE/plan.json" "$POLICY_BUNDLE/homepage.html" "$POLICY_BUNDLE/privacy.html"
+                 "$POLICY_BUNDLE/knoxx-public-policy.caddy" "$POLICY_CONTROLLER")
+          if [ "$POLICY_OPERATION" = reconcile-baseline ]; then
+            mapfile -t reconciliation < <(printf '%s' "$POLICY_RECONCILIATION_FILES")
+            files+=("${reconciliation[@]}")
+          fi
+          sha256sum "${files[@]}" > "$RUNNER_TEMP/knoxx-policy-sha256"
           test "$(sha256sum "$RUNNER_TEMP/knoxx-policy-sha256" | cut -d' ' -f1)" = "$EXPECTED_BUNDLE"
       - name: Configure pinned production SSH trust
         env:
@@ -168,7 +192,7 @@ jobs:
           test "$OPEN_HAX_STATE_ROOT" = /srv/open-hax/state
           test "$OPEN_HAX_SSH_USER" = deploy
           case "$POLICY_OPERATION" in
-            activate|prepare-retirement) ;;
+            activate|prepare-retirement|reconcile-baseline) ;;
             *) exit 2 ;;
           esac
           stage_id="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -185,7 +209,7 @@ jobs:
           mode=$4
           operation=$5
           case "$operation" in
-            activate|prepare-retirement) ;;
+            activate|prepare-retirement|reconcile-baseline) ;;
             *) exit 2 ;;
           esac
           printf "%s\n" "$stage_id" | grep -Eq "^[0-9a-f]{40}-[0-9]+-[0-9]+$"
@@ -228,10 +252,12 @@ jobs:
             apply)
               sha256sum --check --status -
               set --
-              if [ "$operation" = prepare-retirement ]; then
-                set -- --prepare-retirement
-              fi
-              exec python3 -B scripts/knoxx_public_policy_release.py \
+              entry=scripts/knoxx_public_policy_release.py
+              case "$operation" in
+                prepare-retirement) set -- --prepare-retirement ;;
+                reconcile-baseline) entry=scripts/knoxx_policy_baseline_reconciliation.py ;;
+              esac
+              exec python3 -B "$entry" \
                 --bundle "$controller/digitalocean/services/knoxx/public-policy" \
                 --services-root "$services" --state-root "$state" \
                 --controller-sha "${stage_id%%-*}" "$@" </dev/null
@@ -244,20 +270,29 @@ jobs:
             # shellcheck disable=SC2029
             "${ssh_target[@]}" "sh -c '$stage_command' sh '$OPEN_HAX_SERVICES_ROOT' '$OPEN_HAX_STATE_ROOT' '$stage_id' '$1' '$POLICY_OPERATION'"
           }
-          tar --mode=u=r,go= -cf - "$POLICY_BUNDLE/plan.json" "$POLICY_BUNDLE/homepage.html" \
-            "$POLICY_BUNDLE/privacy.html" "$POLICY_BUNDLE/knoxx-public-policy.caddy" "$POLICY_CONTROLLER" |
+          cut -c 67- "$RUNNER_TEMP/knoxx-policy-sha256" |
+            tar --verbatim-files-from --mode=u=r,go= -cf - -T - |
             stage unpack
           stage apply < "$RUNNER_TEMP/knoxx-policy-sha256" > knoxx-public-policy-receipt.json
           jq -e 'type == "object"' knoxx-public-policy-receipt.json >/dev/null
-          if [ "$POLICY_OPERATION" = prepare-retirement ]; then
-            jq -e '.version == 2 and .phase == "prepared" and .result == "incumbent_verified"' \
-              knoxx-public-policy-receipt.json >/dev/null
-          fi
+          case "$POLICY_OPERATION" in
+            prepare-retirement)
+              jq -e '.version == 2 and .phase == "prepared" and .result == "incumbent_verified"' \
+                knoxx-public-policy-receipt.json >/dev/null
+              ;;
+            reconcile-baseline)
+              jq -e --arg controller "$GITHUB_SHA" '
+                .schema == "knoxx-public-policy-baseline-reconciliation/v1" and .result == "baseline_reconciled"
+                and .anonymous_mcp_status == 401 and .mcp_bearer_challenge_verified == true
+                and .controller_sha == $controller and .live_authorization == false and .production_hold_cleared == false
+              ' knoxx-public-policy-receipt.json >/dev/null
+              ;;
+          esac
       - name: Preserve sanitized policy receipt
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ${{ needs.admit.outputs.operation == 'prepare-retirement' && 'knoxx-policy-retirement-preflight' || 'knoxx-public-policy-receipt' }}
+          name: ${{ needs.admit.outputs.operation == 'reconcile-baseline' && 'knoxx-policy-baseline-reconciliation' || needs.admit.outputs.operation == 'prepare-retirement' && 'knoxx-policy-retirement-preflight' || 'knoxx-public-policy-receipt' }}
           path: knoxx-public-policy-receipt.json
           if-no-files-found: ignore
       - name: Remove runner SSH credential

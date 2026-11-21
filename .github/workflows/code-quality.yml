@@ -74,7 +74,8 @@ jobs:
         run: |
           shellcheck scripts/verify-knoxx-public-policy.sh
           python3 -m unittest scripts.tests.test_knoxx_public_policy_release \
-            scripts.tests.test_knoxx_public_policy_hold scripts.tests.test_knoxx_public_policy_retirement
+            scripts.tests.test_knoxx_public_policy_hold scripts.tests.test_knoxx_public_policy_retirement \
+            scripts.tests.test_knoxx_policy_baseline_fixture scripts.tests.test_knoxx_policy_baseline_reconciliation
 
       - name: Test service environment admission and receiver boundaries
         run: python3 -m unittest discover -s scripts/tests -p 'test_environment*.py'
