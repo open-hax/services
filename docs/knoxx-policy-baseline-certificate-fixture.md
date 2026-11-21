@@ -58,8 +58,10 @@ archives and original v1 archive were fetched again on November 21, 2026 and
 matched their GitHub artifact digests. For the six owner runs, the archived
 receipt bytes, canonical digests, and selected metadata also matched the
 capture. The offline checker also pins the original v1 archive digest and the
-captured whole-config, Knoxx site, and MCP handler digests. The fixture is
-inactive and the v1 hold remains in force.
+captured whole-config, Knoxx site, and MCP handler digests. The favicon, auth
+config, and OAuth metadata response tuples match the original Actions receipt
+and the retained read-only host comparison. A canonical digest binds the
+complete dated capture. The fixture is inactive and the v1 hold remains in force.
 
 ## Protected read-only reconciliation
 
