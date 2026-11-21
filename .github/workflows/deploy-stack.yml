@@ -13,7 +13,7 @@ on:
         required: false
         default: stack
         type: choice
-        options: [stack, website, proxx, axxium, axxium-at-auth, axxium-mailbox, axxium-work-pilot, axxium-work-pilot-activate, axxium-work-pilot-repair-ingress, axxium-work-pilot-teardown, axxium-work-pilot-reopen, axxium-work-pilot-close, colab-stage, colab, knoxx-policy, knoxx-policy-preflight]
+        options: [stack, website, proxx, axxium, axxium-at-auth, axxium-mailbox, axxium-work-pilot, axxium-work-pilot-activate, axxium-work-pilot-repair-ingress, axxium-work-pilot-teardown, axxium-work-pilot-reopen, axxium-work-pilot-close, colab-stage, colab, knoxx-policy, knoxx-policy-preflight, knoxx-policy-reconcile]
       proxx_ref:
         description: open-hax/proxx ref to deploy; production defaults to the pinned SHA below
         required: false
@@ -102,7 +102,7 @@ jobs:
               exit 2
             fi
             case "$DEPLOY_SCOPE" in
-              stack|website|proxx|axxium|axxium-at-auth|axxium-mailbox|axxium-work-pilot|axxium-work-pilot-activate|axxium-work-pilot-repair-ingress|axxium-work-pilot-teardown|axxium-work-pilot-reopen|axxium-work-pilot-close|colab-stage|colab|knoxx-policy|knoxx-policy-preflight) ;;
+              stack|website|proxx|axxium|axxium-at-auth|axxium-mailbox|axxium-work-pilot|axxium-work-pilot-activate|axxium-work-pilot-repair-ingress|axxium-work-pilot-teardown|axxium-work-pilot-reopen|axxium-work-pilot-close|colab-stage|colab|knoxx-policy|knoxx-policy-preflight|knoxx-policy-reconcile) ;;
               *) echo "unknown deployment scope: $DEPLOY_SCOPE" >&2; exit 2 ;;
             esac
             if [ -n "$WEBSITE_IMAGE" ] && [ "$DEPLOY_SCOPE" != website ]; then
@@ -151,7 +151,7 @@ jobs:
                 exit 2
               fi
             fi
-            if [ "$DEPLOY_SCOPE" = knoxx-policy ] || [ "$DEPLOY_SCOPE" = knoxx-policy-preflight ]; then
+            if [ "$DEPLOY_SCOPE" = knoxx-policy ] || [ "$DEPLOY_SCOPE" = knoxx-policy-preflight ] || [ "$DEPLOY_SCOPE" = knoxx-policy-reconcile ]; then
               if [ "$CALLER_REF" != refs/heads/main ] || [ "$CALLER_REF_PROTECTED" != true ] ||
                  [ "$INCLUDE_WEBSITE" = true ] || [ "${WEBSITE_REF:-main}" != main ] ||
                  [ -n "${PROXX_SHA}${KNOXX_SHA}${AXXIUM_SHA}${COLAB_SHA}${OPENPLANNER_SHA}${WEBSITE_IMAGE}" ]; then

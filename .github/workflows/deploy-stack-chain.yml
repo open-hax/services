@@ -87,10 +87,10 @@ permissions:
 
 jobs:
   deploy-knoxx-policy:
-    if: inputs.scope == 'knoxx-policy' || inputs.scope == 'knoxx-policy-preflight'
+    if: inputs.scope == 'knoxx-policy' || inputs.scope == 'knoxx-policy-preflight' || inputs.scope == 'knoxx-policy-reconcile'
     uses: ./.github/workflows/deploy-knoxx-public-policy.yml
     with:
-      operation: ${{ inputs.scope == 'knoxx-policy-preflight' && 'prepare-retirement' || 'activate' }}
+      operation: ${{ inputs.scope == 'knoxx-policy-reconcile' && 'reconcile-baseline' || inputs.scope == 'knoxx-policy-preflight' && 'prepare-retirement' || 'activate' }}
       caller_holds_production_host_lock: true
     secrets:
       DIGITALOCEAN_SSH_PRIVATE_KEY: ${{ secrets.DIGITALOCEAN_SSH_PRIVATE_KEY }}
