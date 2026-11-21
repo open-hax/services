@@ -86,6 +86,7 @@ class SessionSecretDeploymentTests(unittest.TestCase):
 
     def run_verify(self, key):
         env = dict(self.env)
+        env['KNOXX_DISABLE_EVENT_RUNTIMES'] = 'true'
         if key is not None:
             env['KNOXX_SESSION_SECRET'] = key
         return subprocess.run(['bash', str(ROOT / 'digitalocean/services/knoxx/verify.sh')],

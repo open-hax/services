@@ -97,6 +97,7 @@ services:
       # the OpenAI-compatible required-tool path with reasoning disabled.
       KNOXX_AGENT_MODEL_OVERRIDES: ${KNOXX_AGENT_MODEL_OVERRIDES:?KNOXX_AGENT_MODEL_OVERRIDES must be set}
       KNOXX_AGENT_THINKING_OVERRIDES: ${KNOXX_AGENT_THINKING_OVERRIDES:?KNOXX_AGENT_THINKING_OVERRIDES must be set}
+      KNOXX_DISABLE_EVENT_RUNTIMES: ${KNOXX_DISABLE_EVENT_RUNTIMES:?KNOXX_DISABLE_EVENT_RUNTIMES must be set}
       # Event-triggered turns share a bounded FIFO so an anchor sweep cannot
       # open one Ollama session per emitted translation/draft event.
       KNOXX_EVENT_AGENT_CONCURRENCY: ${KNOXX_EVENT_AGENT_CONCURRENCY:?KNOXX_EVENT_AGENT_CONCURRENCY must be set}
@@ -113,22 +114,18 @@ services:
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI must be set}
       MONGODB_DB: ${MONGODB_DB}
 
-      # General hosted inference goes through Proxx, which owns provider
-      # credentials. The publication translator, post drafter, and in-process
-      # OpenPlanner embedding client are explicit local exceptions: all reach
-      # host Ollama through the dedicated backend-only bridge below.
+      # Proxx serves general hosted inference and the OpenPlanner embeddings.
+      # The publication translator and drafter use host Ollama through the
+      # dedicated backend-only bridge below.
       PROXX_BASE_URL: http://proxx:8789
       PROXX_AUTH_TOKEN: ${PROXY_AUTH_TOKEN:?PROXY_AUTH_TOKEN must be set}
       PROXX_DEFAULT_MODEL: ${PROXX_DEFAULT_MODEL}
 
-      # The SDK sources its own embeddings directly from host Ollama's OpenAI-
-      # compatible /v1/embeddings endpoint. Do not send the Proxx credential to
-      # this local provider.
       KNOXX_OPENPLANNER_CLIENT_MODE: mongo
-      EMBED_PROVIDER_BASE_URL: ${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}
-      EMBED_PROVIDER_API_KEY: ""
-      EMBED_PROVIDER_MODEL: ${EMBED_PROVIDER_MODEL}
-      EMBED_PROVIDER_DIMENSIONS: ${EMBED_PROVIDER_DIMENSIONS}
+      EMBED_PROVIDER_BASE_URL: ${EMBED_PROVIDER_BASE_URL:?EMBED_PROVIDER_BASE_URL must be set}
+      EMBED_PROVIDER_API_KEY: ${PROXY_AUTH_TOKEN:?PROXY_AUTH_TOKEN must be set}
+      EMBED_PROVIDER_MODEL: ${EMBED_PROVIDER_MODEL:?EMBED_PROVIDER_MODEL must be set}
+      EMBED_PROVIDER_DIMENSIONS: ${EMBED_PROVIDER_DIMENSIONS:?EMBED_PROVIDER_DIMENSIONS must be set}
 
       # Off for the demo: background compaction, the NPU rescorer (no such
       # hardware on a Droplet), and audio indexing.

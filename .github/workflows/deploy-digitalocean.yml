@@ -367,16 +367,16 @@ jobs:
           }
           trap cleanup_probe EXIT
           scp rendered.env "${SERVICE_DIR}/probe-embedding-migration.js" \
+            "${SERVICE_DIR}/probe-ollama.js" \
             "${SERVICE_DIR}/embedding-contract-receipt.sh" \
             "${SERVICE_DIR}/mongodb-database-identity.sh" \
             "open-hax-target:${probe_dir}/"
 
           # Inventory runs in the prospective backend image before the new
           # environment or service definition replaces the live deployment.
-          # An unchanged target can redeploy normally. A genuine 1024 -> 768
-          # cutover is permitted only when there is no prior backend contract
-          # and the store is fresh; populated state awaits an authoritative
-          # Knoxx/OpenPlanner migration verifier.
+          # An unchanged target can redeploy after the Proxx route produces a
+          # real vector. Populated state awaits an authoritative migration
+          # verifier before changing the embedding contract.
           ssh open-hax-target \
             "bash -euo pipefail -s -- '$probe_dir' '$SERVICE' '$STATE_PATH'" <<'REMOTE'
           {
@@ -447,6 +447,12 @@ jobs:
             }
             EMBED_SOURCE_MODEL=$(container_env_value EMBED_PROVIDER_MODEL)
             EMBED_SOURCE_DIMENSIONS=$(container_env_value EMBED_PROVIDER_DIMENSIONS)
+            source_embedding_url=$(container_env_value EMBED_PROVIDER_BASE_URL)
+            if [ "${source_embedding_url%/}" != "$EMBED_PROVIDER_BASE_URL" ]; then
+              unset current_environment
+              echo "embedding migration gate refuses a change of the existing gateway" >&2
+              exit 1
+            fi
             source_mongodb_uri=$(container_env_value MONGODB_URI)
             source_mongodb_db=$(container_env_value MONGODB_DB)
             if ! EMBED_SOURCE_DATABASE_FINGERPRINT=$(
@@ -480,8 +486,12 @@ jobs:
           docker rm -f "$probe_container" >/dev/null 2>&1 || true
           timeout --kill-after=5s 90s docker run --rm \
             --name "$probe_container" \
+            --network open-hax \
+            --mount "type=bind,source=$probe_dir/probe-ollama.js,target=/opt/knoxx-deploy/probe-ollama.cjs,readonly" \
             --env MONGODB_URI \
             --env MONGODB_DB \
+            --env PROXY_AUTH_TOKEN \
+            --env EMBED_PROVIDER_BASE_URL \
             --env EMBED_PROVIDER_MODEL \
             --env EMBED_PROVIDER_DIMENSIONS \
             --env EMBED_SOURCE_CONTRACT_PRESENT \
