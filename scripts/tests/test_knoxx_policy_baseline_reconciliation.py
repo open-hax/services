@@ -126,6 +126,7 @@ class ReconciliationTest(unittest.TestCase):
         self.assertNotIn("version", result)
         self.assertFalse(result["production_hold_cleared"])
         self.assertFalse(result["live_authorization"])
+        self.assertTrue(result["mcp_bearer_challenge_verified"])
         self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
 
     def test_legacy_preflight_still_refuses_the_current_whole_config(self):
@@ -133,6 +134,10 @@ class ReconciliationTest(unittest.TestCase):
             policy.prepare_retirement(self.host, self.plan, PLAN_HASH, self.payloads, CONTROLLER)
 
     def test_host_receipt_uses_exact_frozen_bytes_and_rejects_same_content_symlink(self):
+        self.owner.chmod(0o644)
+        with self.assertRaisesRegex(policy.Refused, "unsafe historical"):
+            self.observe()
+        self.owner.chmod(0o600)
         self.owner.write_bytes(b'{"published":true}\n')
         with self.assertRaisesRegex(policy.Refused, "route-owner receipt"):
             self.observe()

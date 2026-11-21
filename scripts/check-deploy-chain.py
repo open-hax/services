@@ -309,6 +309,7 @@ def knoxx_policy_path_errors(entry: dict, chain: dict, policy: dict) -> list[str
             or 'reconcile-baseline) entry=scripts/knoxx_policy_baseline_reconciliation.py ;;' not in apply.get("run", "")
             or 'cut -c 67- "$RUNNER_TEMP/knoxx-policy-sha256"' not in apply.get("run", "")
             or '.schema == "knoxx-public-policy-baseline-reconciliation/v1"' not in apply.get("run", "")
+            or '.anonymous_mcp_status == 401 and .mcp_bearer_challenge_verified == true' not in apply.get("run", "")
             or '.live_authorization == false and .production_hold_cleared == false' not in apply.get("run", "")
             or '.phase == "prepared" and .result == "incumbent_verified"' not in apply.get("run", "")):
             errors.append("Knoxx preflight must select the read-only controller and prepared result")

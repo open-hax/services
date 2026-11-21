@@ -30,10 +30,17 @@ def load_certificate():
 
 def read_private(path):
     policy.directory(path.parent)
-    metadata = path.lstat()
-    policy.require(stat.S_ISREG(metadata.st_mode) and metadata.st_uid == os.geteuid()
-                   and not metadata.st_mode & 0o077, "unsafe historical policy evidence file")
-    return policy.read_file(path)
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        raise policy.Refused("unsafe historical policy evidence file") from None
+    with os.fdopen(descriptor, "rb") as source:
+        metadata = os.fstat(source.fileno())
+        policy.require(stat.S_ISREG(metadata.st_mode) and metadata.st_uid == os.geteuid()
+                       and not metadata.st_mode & 0o077, "unsafe historical policy evidence file")
+        raw = source.read(policy.LIMIT + 1)
+    policy.require(len(raw) <= policy.LIMIT, "historical policy evidence exceeds size limit")
+    return raw
 
 
 def verify_route_owners(certificate):
@@ -156,6 +163,7 @@ def observe(host, plan, plan_hash, artifacts, controller_sha, certificate):
             "certificate_sha256": CERTIFICATE_SHA256, "active_receipt_sha256": original["receipt_sha256"],
             "plan_sha256": plan_hash, "configs": configs, "knoxx_site_sha256": expected[0], "mcp_route_sha256": expected[1],
             "public_mcp_origin": certificate["public_mcp_origin"], "anonymous_mcp_status": 401,
+            "mcp_bearer_challenge_verified": True,
             "live_authorization": False, "production_hold_cleared": False}
 
 

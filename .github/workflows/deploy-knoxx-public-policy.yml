@@ -283,6 +283,7 @@ jobs:
             reconcile-baseline)
               jq -e --arg controller "$GITHUB_SHA" '
                 .schema == "knoxx-public-policy-baseline-reconciliation/v1" and .result == "baseline_reconciled"
+                and .anonymous_mcp_status == 401 and .mcp_bearer_challenge_verified == true
                 and .controller_sha == $controller and .live_authorization == false and .production_hold_cleared == false
               ' knoxx-public-policy-receipt.json >/dev/null
               ;;
