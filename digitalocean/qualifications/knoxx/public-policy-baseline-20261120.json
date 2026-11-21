@@ -1,0 +1,384 @@
+{
+  "schema": "knoxx-public-policy-additive-baseline-fixture/v1",
+  "phase": "source-only-prepared",
+  "production_hold_cleared": false,
+  "live_authorization": false,
+  "observed_at": "2026-11-20T19:34:01.302200+00:00",
+  "host": "knoxx.promethean.rest",
+  "public_mcp_origin": "https://knoxx.promethean.rest/mcp",
+  "original_v1": {
+    "receipt_sha256": "094b9689b325b7864718634b28c003a0dcbac0c38989c479eb965ad2f81e6a57",
+    "version_present": false,
+    "default_version": 1,
+    "phase": "active",
+    "controller_sha": "22da621059a947a4776ae22638bf93416051f1f7",
+    "plan_sha256": "2a2e4c40f4052022b3004e16a79daad79aa7242bafdef4770252c7f7775df46a",
+    "native_config_sha256": "a07aa81b9f91b7252989f4d89f01910117c90cf4e3fe51b4c7450e1b02f414eb",
+    "active_config_sha256": "a5fbff211feb711e203ceee388a224e8601aa1898399d6b6357c6eeecf3415d9",
+    "run_id": 42896505254,
+    "artifact_id": 13801450441,
+    "artifact_sha256": "f9aabb7addffd279a208cd19729a1acc35b4c50918da84eefaa4cffc711d6570",
+    "native_artifact_config_hashes_match": true
+  },
+  "historical_reconstruction": {
+    "archived_host_path": "/srv/open-hax/state/axxium/operations/d2f8dc8425f86f51a8450a0cae0b79a042694c64/incumbent.Caddyfile",
+    "archived_base_sha256": "64dbd966aadd40805f836467a1c9c4c1d3a42569b3688fa68b52245e20fca168",
+    "excluded_managed_names": [
+      "axxium-work-pilot.caddy"
+    ],
+    "native_config_sha256": "a07aa81b9f91b7252989f4d89f01910117c90cf4e3fe51b4c7450e1b02f414eb",
+    "active_config_sha256": "a5fbff211feb711e203ceee388a224e8601aa1898399d6b6357c6eeecf3415d9",
+    "remaining_fragment_changes": []
+  },
+  "observed_current": {
+    "base_sha256": "633c271a867a85a160f2d3d521c33cb8d9f4ce3d0ad5c6bb6e71199b36a9d46c",
+    "managed": [
+      {
+        "name": "axxium-pds-staging.caddy",
+        "sha256": "960671b0b6d5db33a0ea1ce5063d24fe0c64d7518d0aeb8877ff96fdfeb794f4"
+      },
+      {
+        "name": "axxium-work-pilot.caddy",
+        "sha256": "60bf3fcbed50ffe2597a2a321a8d9557cc9f64b5dca757c0c9509b77ae4fc9b7"
+      },
+      {
+        "name": "knoxx-public-policy.caddy",
+        "sha256": "77caeba37a77b577363fb9789d9338dcd5bcd0cb04299ad425ed2873bd8e3360"
+      },
+      {
+        "name": "live-host-routes.caddy",
+        "sha256": "709db4abb60d4cc4ce48b62851fa059d71ce50caa07eb3d62fc0cb94d84e5e9b"
+      },
+      {
+        "name": "orbit-desktop.caddy",
+        "sha256": "3a0c950a3dde50a5f6a42b8012240c4eb869d44497d9b0cf080930b872cd3493"
+      },
+      {
+        "name": "website-staging.caddy",
+        "sha256": "e76137503ee7761754d00ead62f7e91a59026e6666bb403fa8e5c784def23c44"
+      }
+    ],
+    "managed_sha256": "e4ffec1b627fcfa3b98cf33e9813df80ca4a86d65fcd629eb54c00a0fe554648",
+    "config_sha256": {
+      "native": "41fcf4d707554cf008845c184b6d116e6305b898fcb4139860541040b25540bf",
+      "active": "79ebbd17a6cb506658806704e6480f08746241610aa072dac2d0a7b6428cfa55",
+      "bridge": "b22546c22c7ef38b970842f00e7f938ffcf67b04349cd1746450ecfdca22da08",
+      "current": "79ebbd17a6cb506658806704e6480f08746241610aa072dac2d0a7b6428cfa55",
+      "startup": "79ebbd17a6cb506658806704e6480f08746241610aa072dac2d0a7b6428cfa55"
+    },
+    "containers_equal_original_ids_and_images": true,
+    "live_equals_startup": true,
+    "v1_receipt_unchanged": true
+  },
+  "mcp_continuity": {
+    "historical_knoxx_site_sha256": "065e43d874fdeedc7424cbdb612d0057b8064e8a79af29690288f852f007e441",
+    "current_knoxx_site_sha256": "065e43d874fdeedc7424cbdb612d0057b8064e8a79af29690288f852f007e441",
+    "historical_mcp_route_sha256": "5fd598184a7fd34971d64432b1c4a523c322ffe0beb94f79d8f6b6efc88eadf6",
+    "current_mcp_route_sha256": "5fd598184a7fd34971d64432b1c4a523c322ffe0beb94f79d8f6b6efc88eadf6",
+    "anonymous_http_status": 401,
+    "exact_bearer_resource_challenge": true,
+    "grant_or_session_used": false,
+    "credential_or_auth_state_modified": false
+  },
+  "public_before_retirement": {
+    "/": {
+      "status": 200,
+      "type": "text/html",
+      "sha256": "1a7350f17625bc608bc350d08b67c76d0a3eb69a4b0eecd77a37d977d9d75c59"
+    },
+    "/privacy.html": {
+      "status": 200,
+      "type": "text/html",
+      "sha256": "9e77e69efce616bcd60666618ff27073fff69fe6fd5dc075d060b052c3975f7f"
+    },
+    "/favicon.svg": {
+      "status": 200,
+      "type": "text/html",
+      "sha256": "79eee6c3247ab9f3201479012d97dc2dac1dd5ef8aac38336e0588db3ecc497d"
+    },
+    "/api/auth/config": {
+      "status": 200,
+      "type": "application/json",
+      "sha256": "27df36fa4e5f30a68337246f1c19877359383b5d1f206492c0ef98c294455b6c"
+    },
+    "/.well-known/oauth-protected-resource": {
+      "status": 200,
+      "type": "application/json",
+      "sha256": "42fdd79246955d0d2e64737fe1183affde739071f3dd1a79ddbf6723c76455f0"
+    },
+    "HEAD /": {
+      "status": 200,
+      "type": "text/html",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "HEAD /privacy.html": {
+      "status": 200,
+      "type": "text/html",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "protected_repository": {
+    "repository": "open-hax/services",
+    "revision": "c7f21c0c001c14b96b4626b3fd4bf0577f49c352"
+  },
+  "protected_source_files": {
+    "digitalocean/services/axxium/unified-mailbox-production-plan.json": "e00fb46d7be9d3bb833bddab9419e9fb3f4baa517d537f65d7e7122a446344b4",
+    "digitalocean/services/axxium/active-mailbox-upgrade-production-plan.json": "ae9076c680e23fa6020b35ec796cbe8698dec84e00df9fc01d75a4d6641e437e",
+    "digitalocean/services/axxium/mailbox-events-production-plan.json": "9de498fb60dbb10f573d6b9fabef2b46d8ac7366aef95e730a4c139fecdd6b6f",
+    "digitalocean/services/axxium-work-pilot/ingress/active.caddy": "60bf3fcbed50ffe2597a2a321a8d9557cc9f64b5dca757c0c9509b77ae4fc9b7",
+    "digitalocean/services/axxium-work-pilot/reopen-release-plan.json": "789ee8a73aab2dfbe6be7436e398a3f0dd455e61078e36a198f6a5a713643b90",
+    "digitalocean/services/knoxx/public-policy/knoxx-public-policy.caddy": "77caeba37a77b577363fb9789d9338dcd5bcd0cb04299ad425ed2873bd8e3360",
+    "scripts/knoxx_public_policy_release.py": "07dc1d498092447155b290ec5902bc0b93f88239a0de178c7975b6a15de675c5",
+    "digitalocean/scripts/check-knoxx-public-policy-hold.py": "cac9deaeb14d326c8ae4bb5349b2179477a7f3cdcaaadf4c8fcc1cd7a35e2254"
+  },
+  "host_receipts": [
+    {
+      "path": "/srv/open-hax/state/axxium/operations/d2f8dc8425f86f51a8450a0cae0b79a042694c64/deployment.json",
+      "sha256": "d91e9d3bbbf4afe370af7a4b1b0e7b620acd9c3a2f26335c8887859236b28905",
+      "metadata": {
+        "schema": "axxium-unified-mailbox-deployment/v1",
+        "status": "healthy",
+        "source_sha": "d2f8dc8425f86f51a8450a0cae0b79a042694c64",
+        "plan_sha256": "e00fb46d7be9d3bb833bddab9419e9fb3f4baa517d537f65d7e7122a446344b4"
+      }
+    },
+    {
+      "path": "/srv/open-hax/state/axxium/operations/61b1cea021b13fac539232af23d6714f2287f8a4-active-mailbox/deployment.json",
+      "sha256": "62fae1de328f00ffcbe93013686d8d2e3a71eaa4ff2cd2a255c478ce2fa537e3",
+      "metadata": {
+        "schema": "axxium-active-mailbox-deployment/v1",
+        "status": "healthy",
+        "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+        "plan_sha256": "ae9076c680e23fa6020b35ec796cbe8698dec84e00df9fc01d75a4d6641e437e"
+      }
+    },
+    {
+      "path": "/srv/open-hax/state/axxium/operations/61b1cea021b13fac539232af23d6714f2287f8a4-mailbox-events/deployment.json",
+      "sha256": "1dd5c1dba746bdc9ea2ecfef65c08a9e2a67db5c03373e76ee2eab7ff3a2d75b",
+      "metadata": {
+        "schema": "axxium-mailbox-events-deployment/v1",
+        "status": "healthy",
+        "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+        "plan_sha256": "9de498fb60dbb10f573d6b9fabef2b46d8ac7366aef95e730a4c139fecdd6b6f"
+      }
+    },
+    {
+      "path": "/srv/open-hax/services/axxium-work-pilot/live/active.json",
+      "sha256": "385a3ec7ead7641479876352f47e89ebf88ffb8e631b82a584860ef98c1f9349",
+      "metadata": {
+        "schema": "axxium-work-activation-host/v1",
+        "status": "healthy-live",
+        "phase": "complete",
+        "controller_sha": "e09dd8f8f5663833db95099dea6b31835da6f17a",
+        "source_sha": "7daca10cd0e6e83a4c8da626899bf59236a681be",
+        "plan_sha256": "0892d8eb644eaaad58f1c4bd75a34a973912a69a020d10b5ab09d6c0a90ec04f"
+      }
+    },
+    {
+      "path": "/srv/open-hax/services/axxium-work-pilot/live/ingress-repair.json",
+      "sha256": "977ce43ef1eb92bca6a737b6fe7de1edbe6465c1b4ee95967d433ca965de78eb",
+      "metadata": {
+        "schema": "axxium-work-ingress-repair/v1",
+        "status": "ingress-repaired",
+        "phase": "complete",
+        "controller_sha": "9f7fa75e43d235f4e5da82fc3c9c59eeb6f77d37",
+        "source_sha": "7daca10cd0e6e83a4c8da626899bf59236a681be",
+        "previous_route_sha256": "c5370b9431f840efb852391594f450e46a13afde08713581fdb6bd87bfcffc0f",
+        "updated_route_sha256": "60bf3fcbed50ffe2597a2a321a8d9557cc9f64b5dca757c0c9509b77ae4fc9b7"
+      }
+    }
+  ],
+  "host_canonical_receipts": [
+    {
+      "path": "/srv/open-hax/state/axxium/operations/d2f8dc8425f86f51a8450a0cae0b79a042694c64/deployment.json",
+      "fileSha256": "d91e9d3bbbf4afe370af7a4b1b0e7b620acd9c3a2f26335c8887859236b28905",
+      "canonicalReceiptSha256": "dcadd60f1966c51e133c4351a4e9f55620e2b9bd8871aacb97d5598df2501862"
+    },
+    {
+      "path": "/srv/open-hax/state/axxium/operations/61b1cea021b13fac539232af23d6714f2287f8a4-active-mailbox/deployment.json",
+      "fileSha256": "62fae1de328f00ffcbe93013686d8d2e3a71eaa4ff2cd2a255c478ce2fa537e3",
+      "canonicalReceiptSha256": "eb0e9369e1b19f3ccad871fa1e0e1ec5825c9640d8ffc2bce53c3b2abdfa28fb"
+    },
+    {
+      "path": "/srv/open-hax/state/axxium/operations/61b1cea021b13fac539232af23d6714f2287f8a4-mailbox-events/deployment.json",
+      "fileSha256": "1dd5c1dba746bdc9ea2ecfef65c08a9e2a67db5c03373e76ee2eab7ff3a2d75b",
+      "canonicalReceiptSha256": "46b441176b692608f034fa04ef7226a848e10fdeec234578e5a07e46516b7ca5"
+    },
+    {
+      "path": "/srv/open-hax/services/axxium-work-pilot/live/active.json",
+      "fileSha256": "385a3ec7ead7641479876352f47e89ebf88ffb8e631b82a584860ef98c1f9349",
+      "canonicalReceiptSha256": "cd059959386296289eb04fee894641fd8833e3aff629ae8f816bf9845ef76ecc"
+    },
+    {
+      "path": "/srv/open-hax/services/axxium-work-pilot/live/ingress-repair.json",
+      "fileSha256": "977ce43ef1eb92bca6a737b6fe7de1edbe6465c1b4ee95967d433ca965de78eb",
+      "canonicalReceiptSha256": "447b471e04bd53b29ed0c13bea95ce9c2a7b6901b9f43e330802a7d1fdd8214c"
+    }
+  ],
+  "retained_work_reopen": {
+    "sha256": "7cd623f11d3e49f43bdf50cb91d8a4c19f13348853412abaf20ef2b2b2ef37bd",
+    "canonicalReceiptSha256": "2c7df88485fd4b82d99d8a9f4c3473b55b96d2aebc486c0a0f20ec3722e03f4b",
+    "metadata": {
+      "schema": "axxium-work-retained-host/v1",
+      "status": "healthy-live",
+      "phase": "complete",
+      "controller_sha": "8fce0077baa6c2450ddb39d4633354b7e965a9a8",
+      "source_sha": "68aa511626ab28ea3d93684c9c464b8c13edbb17",
+      "plan_sha256": "789ee8a73aab2dfbe6be7436e398a3f0dd455e61078e36a198f6a5a713643b90",
+      "attempt": "attempt-p4iwzmik"
+    },
+    "path": "/srv/open-hax/services/axxium-work-pilot/live/reopen/active.json"
+  },
+  "native_actions_artifacts": [
+    {
+      "runId": 42882186202,
+      "artifactId": 13794247860,
+      "nativeArtifactSha256": "f2161780e1453de458f794273031f3f767fa4cb621231ef14153a9cbff73c893",
+      "artifactZipHashVerified": true,
+      "receiptFileSha256": "385a3ec7ead7641479876352f47e89ebf88ffb8e631b82a584860ef98c1f9349",
+      "canonicalReceiptSha256": "cd059959386296289eb04fee894641fd8833e3aff629ae8f816bf9845ef76ecc",
+      "receiptMetadata": {
+        "schema": "axxium-work-activation-host/v1",
+        "status": "healthy-live",
+        "phase": "complete",
+        "controller_sha": "e09dd8f8f5663833db95099dea6b31835da6f17a",
+        "source_sha": "7daca10cd0e6e83a4c8da626899bf59236a681be",
+        "plan_sha256": "0892d8eb644eaaad58f1c4bd75a34a973912a69a020d10b5ab09d6c0a90ec04f"
+      },
+      "head_sha": "e09dd8f8f5663833db95099dea6b31835da6f17a",
+      "head_branch": "main",
+      "event": "workflow_dispatch",
+      "conclusion": "success",
+      "workflow_path": ".github/workflows/deploy-stack.yml",
+      "attempt": 1,
+      "created_at": "2026-11-10T19:08:01Z",
+      "html_url": "https://github.com/open-hax/services/actions/runs/42882186202"
+    },
+    {
+      "runId": 42885343175,
+      "artifactId": 13794769172,
+      "nativeArtifactSha256": "e457cbb8d46f1cdcff9d0923f42a863d717621b7fb9a6d89a24a14b14a29d8f9",
+      "artifactZipHashVerified": true,
+      "receiptFileSha256": "977ce43ef1eb92bca6a737b6fe7de1edbe6465c1b4ee95967d433ca965de78eb",
+      "canonicalReceiptSha256": "447b471e04bd53b29ed0c13bea95ce9c2a7b6901b9f43e330802a7d1fdd8214c",
+      "receiptMetadata": {
+        "schema": "axxium-work-ingress-repair/v1",
+        "status": "ingress-repaired",
+        "phase": "complete",
+        "controller_sha": "9f7fa75e43d235f4e5da82fc3c9c59eeb6f77d37",
+        "source_sha": "7daca10cd0e6e83a4c8da626899bf59236a681be",
+        "previous_route_sha256": "c5370b9431f840efb852391594f450e46a13afde08713581fdb6bd87bfcffc0f",
+        "updated_route_sha256": "60bf3fcbed50ffe2597a2a321a8d9557cc9f64b5dca757c0c9509b77ae4fc9b7"
+      },
+      "head_sha": "9f7fa75e43d235f4e5da82fc3c9c59eeb6f77d37",
+      "head_branch": "main",
+      "event": "workflow_dispatch",
+      "conclusion": "success",
+      "workflow_path": ".github/workflows/deploy-stack.yml",
+      "attempt": 1,
+      "created_at": "2026-11-10T19:26:50Z",
+      "html_url": "https://github.com/open-hax/services/actions/runs/42885343175"
+    },
+    {
+      "runId": 42887424799,
+      "artifactId": 13796781885,
+      "nativeArtifactSha256": "7661533e2e4aaf6b1642f145fdc7610022979c803e68ddef400068fc5aca3ff2",
+      "artifactZipHashVerified": true,
+      "receiptFileSha256": "a88c6b1fbd74f11dfa238c859038af0a046f43e220edfd1ad61bdc1b63267c3a",
+      "canonicalReceiptSha256": "eacf5baf9118216be05394f1de8b6fdc8e8a7916177940817596ade13ad45c07",
+      "receiptMetadata": {
+        "schema": "axxium-work-activation-host/v1",
+        "status": "healthy-dark",
+        "phase": "complete",
+        "controller_sha": "9f7fa75e43d235f4e5da82fc3c9c59eeb6f77d37",
+        "source_sha": "7daca10cd0e6e83a4c8da626899bf59236a681be"
+      },
+      "head_sha": "9f7fa75e43d235f4e5da82fc3c9c59eeb6f77d37",
+      "head_branch": "main",
+      "event": "workflow_dispatch",
+      "conclusion": "success",
+      "workflow_path": ".github/workflows/deploy-stack.yml",
+      "attempt": 1,
+      "created_at": "2026-11-10T19:39:21Z",
+      "html_url": "https://github.com/open-hax/services/actions/runs/42887424799"
+    },
+    {
+      "runId": 42911424765,
+      "artifactId": 13807691701,
+      "nativeArtifactSha256": "e4d65dc113483b5bb5007f6068d2deab5dfb7c7f217c3592fa73bbaf5af54e14",
+      "artifactZipHashVerified": true,
+      "receiptFileSha256": "7cd623f11d3e49f43bdf50cb91d8a4c19f13348853412abaf20ef2b2b2ef37bd",
+      "canonicalReceiptSha256": "2c7df88485fd4b82d99d8a9f4c3473b55b96d2aebc486c0a0f20ec3722e03f4b",
+      "receiptMetadata": {
+        "schema": "axxium-work-retained-host/v1",
+        "status": "healthy-live",
+        "phase": "complete",
+        "controller_sha": "8fce0077baa6c2450ddb39d4633354b7e965a9a8",
+        "source_sha": "68aa511626ab28ea3d93684c9c464b8c13edbb17",
+        "plan_sha256": "789ee8a73aab2dfbe6be7436e398a3f0dd455e61078e36a198f6a5a713643b90",
+        "attempt": "attempt-p4iwzmik"
+      },
+      "head_sha": "8fce0077baa6c2450ddb39d4633354b7e965a9a8",
+      "head_branch": "main",
+      "event": "workflow_dispatch",
+      "conclusion": "success",
+      "workflow_path": ".github/workflows/deploy-stack.yml",
+      "attempt": 1,
+      "created_at": "2026-11-10T22:06:30Z",
+      "html_url": "https://github.com/open-hax/services/actions/runs/42911424765"
+    },
+    {
+      "runId": 44221313306,
+      "artifactId": 14390094459,
+      "nativeArtifactSha256": "9facb986f3ae80bd247b47c5c768ccf603a0d6bdd8358ee4df4347d5ca684bd9",
+      "artifactZipHashVerified": true,
+      "receiptFileSha256": "854d53abf8d83d4536fa40c6c88d3f7e18a0b2bec6473ec3a39d37cf6177723c",
+      "canonicalReceiptSha256": "eb0e9369e1b19f3ccad871fa1e0e1ec5825c9640d8ffc2bce53c3b2abdfa28fb",
+      "receiptMetadata": {
+        "schema": "axxium-active-mailbox-deployment/v1",
+        "status": "healthy",
+        "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+        "plan_sha256": "ae9076c680e23fa6020b35ec796cbe8698dec84e00df9fc01d75a4d6641e437e",
+        "operation": "/srv/open-hax/state/axxium/operations/61b1cea021b13fac539232af23d6714f2287f8a4-active-mailbox"
+      },
+      "head_sha": "67791fd1fd5f9f113f45f22237e686d3ddc754e7",
+      "head_branch": "main",
+      "event": "workflow_dispatch",
+      "conclusion": "success",
+      "workflow_path": ".github/workflows/deploy-stack.yml",
+      "attempt": 1,
+      "created_at": "2026-11-18T02:10:39Z",
+      "html_url": "https://github.com/open-hax/services/actions/runs/44221313306"
+    },
+    {
+      "runId": 44352129130,
+      "artifactId": 14449935557,
+      "nativeArtifactSha256": "7d55c863363193c8f6f753777bfd3e8fde5e3e7e60bb45b9c07b13c3d0778191",
+      "artifactZipHashVerified": true,
+      "receiptFileSha256": "4426320cc0d51371c48104541be38b84d636df8e29c2503130bc52883dbdc56c",
+      "canonicalReceiptSha256": "46b441176b692608f034fa04ef7226a848e10fdeec234578e5a07e46516b7ca5",
+      "receiptMetadata": {
+        "schema": "axxium-mailbox-events-deployment/v1",
+        "status": "healthy",
+        "source_sha": "61b1cea021b13fac539232af23d6714f2287f8a4",
+        "plan_sha256": "9de498fb60dbb10f573d6b9fabef2b46d8ac7366aef95e730a4c139fecdd6b6f",
+        "operation": "/srv/open-hax/state/axxium/operations/61b1cea021b13fac539232af23d6714f2287f8a4-mailbox-events"
+      },
+      "head_sha": "96408a1c82d318a7ccdbe0e9e143195b0140befe",
+      "head_branch": "main",
+      "event": "workflow_dispatch",
+      "conclusion": "success",
+      "workflow_path": ".github/workflows/deploy-stack.yml",
+      "attempt": 1,
+      "created_at": "2026-11-18T16:51:53Z",
+      "html_url": "https://github.com/open-hax/services/actions/runs/44352129130"
+    }
+  ],
+  "excluded_claims": [
+    "No operational controller consumes this certificate",
+    "Original v1 receipt bytes remain host-local and unchanged",
+    "No hold, route, credential, listener or application changed",
+    "Anonymous401 plus unchanged route is not a fresh authenticated production MCP or provider canary",
+    "Owner evidence qualifies only these exact captured hashes; no general drift waiver"
+  ]
+}
