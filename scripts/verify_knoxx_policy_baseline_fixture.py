@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "digitalocean/qualifications/knoxx/public-policy-baseline-20261120.json"
@@ -23,13 +24,62 @@ SOURCE_FILES = {
     "scripts/knoxx_public_policy_release.py",
     "digitalocean/scripts/check-knoxx-public-policy-hold.py",
 }
+WORK_LIVE = "/srv/open-hax/services/axxium-work-pilot/live/"
+AXXIUM_OPS = "/srv/open-hax/state/axxium/operations/"
+UNIFIED_RECEIPT = AXXIUM_OPS + "d2f8dc8425f86f51a8450a0cae0b79a042694c64/deployment.json"
+REOPEN_RECEIPT = WORK_LIVE + "reopen/active.json"
+
+
+class OwnerArtifact(NamedTuple):
+    controller: str
+    id: int
+    archive_sha256: str
+    receipt_sha256: str
+    canonical_sha256: str
+    host_path: str | None
+    host_sha256: str | None
+
+
+# Each immutable native run owns one artifact and one exact host receipt.
+# The historical teardown has no current selected host receipt.
 RUNS = {
-    42882186202: "e09dd8f8f5663833db95099dea6b31835da6f17a",
-    42885343175: "9f7fa75e43d235f4e5da82fc3c9c59eeb6f77d37",
-    42887424799: "9f7fa75e43d235f4e5da82fc3c9c59eeb6f77d37",
-    42911424765: "8fce0077baa6c2450ddb39d4633354b7e965a9a8",
-    44221313306: "67791fd1fd5f9f113f45f22237e686d3ddc754e7",
-    44352129130: "96408a1c82d318a7ccdbe0e9e143195b0140befe",
+    42882186202: OwnerArtifact(
+        "e09dd8f8f5663833db95099dea6b31835da6f17a", 13794247860,
+        "f2161780e1453de458f794273031f3f767fa4cb621231ef14153a9cbff73c893",
+        "385a3ec7ead7641479876352f47e89ebf88ffb8e631b82a584860ef98c1f9349",
+        "cd059959386296289eb04fee894641fd8833e3aff629ae8f816bf9845ef76ecc",
+        WORK_LIVE + "active.json", "385a3ec7ead7641479876352f47e89ebf88ffb8e631b82a584860ef98c1f9349"),
+    42885343175: OwnerArtifact(
+        "9f7fa75e43d235f4e5da82fc3c9c59eeb6f77d37", 13794769172,
+        "e457cbb8d46f1cdcff9d0923f42a863d717621b7fb9a6d89a24a14b14a29d8f9",
+        "977ce43ef1eb92bca6a737b6fe7de1edbe6465c1b4ee95967d433ca965de78eb",
+        "447b471e04bd53b29ed0c13bea95ce9c2a7b6901b9f43e330802a7d1fdd8214c",
+        WORK_LIVE + "ingress-repair.json", "977ce43ef1eb92bca6a737b6fe7de1edbe6465c1b4ee95967d433ca965de78eb"),
+    42887424799: OwnerArtifact(
+        "9f7fa75e43d235f4e5da82fc3c9c59eeb6f77d37", 13796781885,
+        "7661533e2e4aaf6b1642f145fdc7610022979c803e68ddef400068fc5aca3ff2",
+        "a88c6b1fbd74f11dfa238c859038af0a046f43e220edfd1ad61bdc1b63267c3a",
+        "eacf5baf9118216be05394f1de8b6fdc8e8a7916177940817596ade13ad45c07", None, None),
+    42911424765: OwnerArtifact(
+        "8fce0077baa6c2450ddb39d4633354b7e965a9a8", 13807691701,
+        "e4d65dc113483b5bb5007f6068d2deab5dfb7c7f217c3592fa73bbaf5af54e14",
+        "7cd623f11d3e49f43bdf50cb91d8a4c19f13348853412abaf20ef2b2b2ef37bd",
+        "2c7df88485fd4b82d99d8a9f4c3473b55b96d2aebc486c0a0f20ec3722e03f4b",
+        REOPEN_RECEIPT, "7cd623f11d3e49f43bdf50cb91d8a4c19f13348853412abaf20ef2b2b2ef37bd"),
+    44221313306: OwnerArtifact(
+        "67791fd1fd5f9f113f45f22237e686d3ddc754e7", 14390094459,
+        "9facb986f3ae80bd247b47c5c768ccf603a0d6bdd8358ee4df4347d5ca684bd9",
+        "854d53abf8d83d4536fa40c6c88d3f7e18a0b2bec6473ec3a39d37cf6177723c",
+        "eb0e9369e1b19f3ccad871fa1e0e1ec5825c9640d8ffc2bce53c3b2abdfa28fb",
+        AXXIUM_OPS + "61b1cea021b13fac539232af23d6714f2287f8a4-active-mailbox/deployment.json",
+        "62fae1de328f00ffcbe93013686d8d2e3a71eaa4ff2cd2a255c478ce2fa537e3"),
+    44352129130: OwnerArtifact(
+        "96408a1c82d318a7ccdbe0e9e143195b0140befe", 14449935557,
+        "7d55c863363193c8f6f753777bfd3e8fde5e3e7e60bb45b9c07b13c3d0778191",
+        "4426320cc0d51371c48104541be38b84d636df8e29c2503130bc52883dbdc56c",
+        "46b441176b692608f034fa04ef7226a848e10fdeec234578e5a07e46516b7ca5",
+        AXXIUM_OPS + "61b1cea021b13fac539232af23d6714f2287f8a4-mailbox-events/deployment.json",
+        "1dd5c1dba746bdc9ea2ecfef65c08a9e2a67db5c03373e76ee2eab7ff3a2d75b"),
 }
 
 
@@ -116,27 +166,53 @@ def verify(certificate, root=ROOT):
     require(all(current["base_sha256"] == plan["ingress"]["live"]["root_sha256"]
                 and current["managed_sha256"] == plan["expected"]["managed_caddy_sha256"]
                 for plan in (unified, active, events)), "Current ingress is outside protected owner plans")
-    host_files = {row["sha256"] for row in certificate["host_receipts"]}
-    require(active["incumbent"]["receipt_sha256"] in host_files
-            and events["incumbent"]["receipt_sha256"] in host_files,
-            "Protected owner receipt chain is incomplete")
-
     artifacts = certificate["native_actions_artifacts"]
     require(len(artifacts) == len(RUNS) and {row["runId"] for row in artifacts} == set(RUNS),
             "Native owner run selection changed")
-    host_hashes = {row["canonicalReceiptSha256"] for row in certificate["host_canonical_receipts"]}
-    host_hashes.add(certificate["retained_work_reopen"]["canonicalReceiptSha256"])
+    hosts = {row["path"]: row for row in certificate["host_receipts"]}
+    canonical_hosts = {row["path"]: row for row in certificate["host_canonical_receipts"]}
+    expected_paths = {binding.host_path for binding in RUNS.values()
+                      if binding.host_path not in (None, REOPEN_RECEIPT)} | {UNIFIED_RECEIPT}
+    require(set(hosts) == set(canonical_hosts) == expected_paths
+            and len(hosts) == len(certificate["host_receipts"])
+            and len(canonical_hosts) == len(certificate["host_canonical_receipts"]),
+            "Host receipt paths are ambiguous")
+    for path, row in hosts.items():
+        require(canonical_hosts[path]["fileSha256"] == row["sha256"],
+                "Canonical host receipt was attached to another file")
+    require(hosts[UNIFIED_RECEIPT]["sha256"] == active["incumbent"]["receipt_sha256"]
+            and hosts[RUNS[44221313306].host_path]["sha256"] == events["incumbent"]["receipt_sha256"],
+            "Protected owner receipt chain is incomplete")
+    reopened = certificate["retained_work_reopen"]
+    require(reopened["path"] == REOPEN_RECEIPT, "Retained Work receipt path changed")
+    hosts[REOPEN_RECEIPT] = reopened
+    canonical_hosts[REOPEN_RECEIPT] = reopened
     for row in artifacts:
-        require(row["artifactZipHashVerified"] is True and row["head_sha"] == RUNS[row["runId"]]
+        binding = RUNS[row["runId"]]
+        require(row["artifactZipHashVerified"] is True and row["head_sha"] == binding.controller
+                and row["artifactId"] == binding.id and row["nativeArtifactSha256"] == binding.archive_sha256
+                and row["receiptFileSha256"] == binding.receipt_sha256
+                and row["canonicalReceiptSha256"] == binding.canonical_sha256
                 and row["head_branch"] == "main" and row["event"] == "workflow_dispatch"
                 and row["conclusion"] == "success" and row["attempt"] == 1
                 and row["workflow_path"] == ".github/workflows/deploy-stack.yml",
                 "Native protected owner custody differs")
         # Teardown removed the Work route before v1; its historical artifact
         # is retained, while the host's current selected receipt is reopen.
-        if row["runId"] != 42887424799:
-            require(row["canonicalReceiptSha256"] in host_hashes,
+        if binding.host_path is not None:
+            host_path = binding.host_path
+            require(hosts[host_path]["sha256"] == binding.host_sha256
+                    and canonical_hosts[host_path]["canonicalReceiptSha256"] == binding.canonical_sha256,
                     "Native artifact and host owner receipt differ")
+            metadata = dict(hosts[host_path]["metadata"])
+            if host_path.startswith(AXXIUM_OPS):
+                metadata["operation"] = str(Path(host_path).parent)
+            require(row["receiptMetadata"] == metadata, "Native artifact and same-path host metadata differ")
+        else:
+            require(row["receiptMetadata"] == {
+                        "schema": "axxium-work-activation-host/v1", "status": "healthy-dark", "phase": "complete",
+                        "controller_sha": binding.controller, "source_sha": "7daca10cd0e6e83a4c8da626899bf59236a681be"},
+                    "Historical teardown is not the exact native exception")
     repaired = next(row for row in artifacts if row["runId"] == 42885343175)
     require(repaired["receiptMetadata"]["updated_route_sha256"] == by_name["axxium-work-pilot.caddy"],
             "Work route repair does not bind the current exact fragment")

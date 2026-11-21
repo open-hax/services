@@ -45,11 +45,19 @@ python3 -m unittest scripts.tests.test_knoxx_policy_baseline_fixture
 ```
 
 The checker reads only this captured fixture and the selected repository files.
-It does not refetch GitHub, reread the host or prove freshness. The native
-artifact downloads, digest checks and host observations occurred during the
-dated evidence capture; their immutable identifiers are recorded in the JSON.
-Passing the checker supplies no operational authorization. No existing workflow
-or controller consumes the certificate, and the v1 hold remains in force.
+For each protected run, it pins the controller commit, artifact ID, archive
+digest, and the receipt's raw and canonical digests. It binds the host receipt's
+path and raw digest where a corresponding host receipt exists. The Axxium
+artifacts serialize the same canonical receipt with different raw bytes, so both
+raw digests are recorded. The historical teardown is anchored to its Actions
+artifact alone.
+
+The dated capture supplies the underlying host observations. The six native
+archives and original v1 archive were fetched again on November 21, 2026 and
+matched their GitHub artifact digests. For the six owner runs, the archived
+receipt bytes, canonical digests, and selected metadata also matched the
+capture. The offline checker uses that historical evidence. The fixture is
+inactive and the v1 hold remains in force.
 
 Any future operative consumer needs separate review and exact fresh readback
 under the existing production queue and host lock. It must preserve the original

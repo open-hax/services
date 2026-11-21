@@ -226,7 +226,8 @@
       "source_sha": "68aa511626ab28ea3d93684c9c464b8c13edbb17",
       "plan_sha256": "789ee8a73aab2dfbe6be7436e398a3f0dd455e61078e36a198f6a5a713643b90",
       "attempt": "attempt-p4iwzmik"
-    }
+    },
+    "path": "/srv/open-hax/services/axxium-work-pilot/live/reopen/active.json"
   },
   "native_actions_artifacts": [
     {

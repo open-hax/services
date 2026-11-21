@@ -48,6 +48,47 @@ class BaselineFixtureTest(unittest.TestCase):
     def test_artifact_must_match_native_host_receipt(self):
         self.refuse(lambda c: c["native_actions_artifacts"][0].update(canonicalReceiptSha256="a" * 64))
 
+    def test_one_owner_receipt_cannot_satisfy_another_run(self):
+        def change(c):
+            c["native_actions_artifacts"][0]["canonicalReceiptSha256"] = c["native_actions_artifacts"][1]["canonicalReceiptSha256"]
+        self.refuse(change)
+
+    def test_artifact_id_is_bound_to_its_exact_run(self):
+        def change(c):
+            c["native_actions_artifacts"][0]["artifactId"] = c["native_actions_artifacts"][1]["artifactId"]
+        self.refuse(change)
+
+    def test_archive_digest_is_bound_to_its_exact_artifact(self):
+        def change(c):
+            c["native_actions_artifacts"][0]["nativeArtifactSha256"] = c["native_actions_artifacts"][1]["nativeArtifactSha256"]
+        self.refuse(change)
+
+    def test_native_receipt_digests_remain_pinned_if_both_copies_change(self):
+        def change(c):
+            artifact = c["native_actions_artifacts"][0]
+            host = next(row for row in c["host_canonical_receipts"]
+                        if row["canonicalReceiptSha256"] == artifact["canonicalReceiptSha256"])
+            artifact["canonicalReceiptSha256"] = host["canonicalReceiptSha256"] = "a" * 64
+        self.refuse(change)
+
+    def test_artifact_receipt_byte_digest_cannot_be_substituted(self):
+        self.refuse(lambda c: c["native_actions_artifacts"][0].update(receiptFileSha256="a" * 64))
+
+    def test_canonical_host_hash_is_bound_to_same_file_path(self):
+        self.refuse(lambda c: c["host_canonical_receipts"][0].update(fileSha256="a" * 64))
+
+    def test_host_receipt_byte_digest_remains_pinned_if_both_copies_change(self):
+        def change(c):
+            artifact = c["native_actions_artifacts"][0]
+            canonical_host = next(row for row in c["host_canonical_receipts"]
+                                  if row["canonicalReceiptSha256"] == artifact["canonicalReceiptSha256"])
+            host = next(row for row in c["host_receipts"] if row["path"] == canonical_host["path"])
+            canonical_host["fileSha256"] = host["sha256"] = "a" * 64
+        self.refuse(change)
+
+    def test_same_path_metadata_must_match_native_artifact(self):
+        self.refuse(lambda c: c["native_actions_artifacts"][0]["receiptMetadata"].update(status="healthy-dark"))
+
     def test_protected_run_source_cannot_be_substituted(self):
         self.refuse(lambda c: c["native_actions_artifacts"][0].update(head_sha="a" * 40))
 
