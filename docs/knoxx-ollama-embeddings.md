@@ -1,4 +1,4 @@
-# Knoxx host-Ollama embedding deployment
+# Knoxx publication inference and embedding deployment
 
 > Status: **deployment contract and fail-closed migration gate.** Services owns the
 > runtime route and deploy gate described here. OpenPlanner owns vector schema,
@@ -12,15 +12,13 @@ bridge. Its network namespace is the only one attached to `knoxx-ollama`, at
 
 ```text
 publication_translator ──── gemma4:e2b ─────────────┐
-publication_post_drafter ─ gemma4:e2b ─────────────┼──> host Ollama :11434
-OpenPlanner SDK ────── qwen3-embedding:8b, 1024 dims ┘
-                         POST /v1/embeddings
+publication_post_drafter ─ gemma4:e2b ─────────────┴──> host Ollama :11434
+OpenPlanner SDK ────────── gte-large-en-v1.5, 1024 ───> Proxx :8789
 ```
 
-`OLLAMA_BASE_URL` is the single deployed endpoint. Compose passes that value to
-the OpenPlanner SDK as `EMBED_PROVIDER_BASE_URL`; it does not route embeddings
-through Proxx and does not send the Proxx bearer token to Ollama. Proxx remains
-the provider for general hosted inference.
+`OLLAMA_BASE_URL` names the host publication inference endpoint. The
+OpenPlanner SDK uses `EMBED_PROVIDER_BASE_URL=http://proxx:8789` and the
+existing Proxx bearer credential, which is sent only to Proxx.
 
 The fixed production values are:
 
@@ -30,15 +28,21 @@ KNOXX_AGENT_THINKING_OVERRIDES=publication_translator=off,publication_post_draft
 KNOXX_EVENT_AGENT_CONCURRENCY=1
 KNOXX_EVENT_AGENT_QUEUE_LIMIT=256
 KNOXX_EVENT_AGENT_TURN_TIMEOUT_MS=300000
-EMBED_PROVIDER_MODEL=qwen3-embedding:8b
+KNOXX_DISABLE_EVENT_RUNTIMES=true
+EMBED_PROVIDER_MODEL=gte-large-en-v1.5
 EMBED_PROVIDER_DIMENSIONS=1024
 ```
 
-## Why qwen3-embedding:8b at 1024 dimensions
+The install-only rollout keeps Knoxx event runtimes disabled while the local
+social consumer remains active. The deployment still checks Ollama translation
+and draft tool behavior with synthetic inputs. It records deferred publication
+admission and leaves the one-shot admission for an enabled release.
 
-The embedding model is pinned to `qwen3-embedding:8b` truncated to 1024
-dimensions through Matryoshka representation learning, rather than to its
-native 4096.
+## Candidate migration to qwen3-embedding:8b
+
+The proposed embedding model is `qwen3-embedding:8b` truncated to 1024
+dimensions via Matryoshka representation learning. The host provisioning pin
+retains this model for future qualification.
 
 Two properties decided it. First, the same model is reachable two ways — local
 Ollama and `nebius/Qwen/Qwen3-Embedding-8B` through Requesty — and the vectors
@@ -146,8 +150,8 @@ ollama pull gemma4:e2b
 ollama pull qwen3-embedding:8b
 ```
 
-The deploy verifier's container-originated catalog and embedding calls are the
-authoritative reachability check; a successful host-local `curl` is not.
+The deploy verifier checks the Ollama catalog for publication inference and
+issues a separate authenticated Proxx embedding request from the backend.
 
 ## What the deployment gates prove
 
@@ -156,7 +160,7 @@ the deployment runs `probe-embedding-migration.js` inside the prospective Knoxx
 backend image. The gate accepts only three states:
 
 - the existing Knoxx project container, whether running or stopped, records
-  `qwen3-embedding:8b` with 1024 dimensions against the same database contract
+  Proxx with `gte-large-en-v1.5` and 1024 dimensions against the same database contract
   (compared only by a SHA-256 fingerprint of URI scheme, normalized seed hosts,
   the endpoint-selecting SRV service name, an explicitly selected replica set,
   and `MONGODB_DB`), so recovery and ordinary redeployment are not changing the
@@ -169,13 +173,10 @@ backend image. The gate accepts only three states:
   empty, and the `graph_node_embeddings.embedding_vector` Atlas search index is
   absent.
 
-Connection, permission, timeout, malformed-inventory, malformed or symlinked
-receipt, and search-index listing failures all block the deployment. The check
-is read-only and passes only the Mongo and embedding settings into the
-short-lived candidate container. A stopped incompatible project container or a
-stale receipt also blocks instead of being mistaken for a new installation. A
-populated 1024-dimensional deployment remains on its current containers; the
-new environment is never synced or activated.
+The pre-cutover check also requires a successful Proxx embedding request for a
+synthetic input and a finite 1024-vector. It runs before replacing the
+current Knoxx service definition. A gateway failure, Mongo inventory failure,
+incompatible stopped container, or stale receipt stops the deployment.
 
 After the bounded probe approves the target, the deploy writes the
 credential-free receipt as a mode-`0600` same-directory temporary file and
@@ -194,13 +195,13 @@ credential-free fingerprint is computed. Unix-socket authorities and ambiguous
 legacy/whitespace option spellings fail closed instead of being normalized into
 a potentially different TCP or DNS endpoint.
 
-`digitalocean/services/knoxx/verify.sh` runs from inside `knoxx-backend`, after
-the backend health endpoint is green. Its Ollama probe:
+`digitalocean/services/knoxx/verify.sh` runs on the host and probes through
+`knoxx-backend`.
 
 1. requires `/health` to report host Ollama configured and reachable;
 2. requires both publication agents, the event-agent limiter, and the exact
    translation and embedding configuration above;
-3. checks `/api/tags` for both `gemma4:e2b` and `qwen3-embedding:8b`;
+3. checks Ollama `/api/tags` for `gemma4:e2b`;
 4. completes one native `/api/chat` translation against the same strict schema
    used by Knoxx's fail-closed translation recovery path;
 5. forces exactly one `save_publication_draft` call through
@@ -212,7 +213,7 @@ the backend health endpoint is green. Its Ollama probe:
    declaration in place;
 6. rejects prose, malformed or blank draft arguments, extra fields, multiple
    calls, or any returned reasoning;
-7. posts a real request to Ollama's OpenAI-compatible `/v1/embeddings` endpoint
+7. posts a real request to Proxx's authenticated `/v1/embeddings` endpoint
    and accepts only a nonempty vector of exactly 1024 finite numbers.
 
 The later MCP `semantic_query` probe still exercises Knoxx and the in-process
@@ -220,7 +221,7 @@ OpenPlanner data plane end to end. Neither check publishes content.
 
 ## Migration warning: existing 1024-dimensional state
 
-Production previously configured `gte-large-en-v1.5` through Proxx with 1024
+Production is configured for `gte-large-en-v1.5` through Proxx with 1024
 dimensions. Changing environment variables to `qwen3-embedding:8b` and 1024
 dimensions does **not** migrate existing Mongo data. The dimension is
 unchanged, so the Atlas index keeps its shape, but the vectors themselves are
@@ -243,9 +244,9 @@ Deployment admission is idempotent by source revision. Replaying an already
 recorded anchor is not, by itself, a request to re-embed every existing event or
 graph node.
 
-The live Ollama probe consequently proves that **new** 1024-dimensional
-embeddings can be generated. It does not prove that stored vectors or Atlas
-search-index definitions have been migrated.
+An Ollama probe using the proposed model can establish whether it generates
+new 1024-dimensional vectors. A migration additionally needs stored vector and
+Atlas search-index proof.
 
 ## Populated-database migration remains blocked
 

@@ -18,6 +18,20 @@ require_knoxx_session_secret
 
 FRONTEND=http://127.0.0.1:8080
 
+case "${KNOXX_DISABLE_EVENT_RUNTIMES:-}" in
+  true|false) ;;
+  *) echo 'knoxx: event runtime state must be explicitly true or false' >&2; exit 1 ;;
+esac
+docker compose --project-name knoxx --env-file .env \
+    exec -T -e KNOXX_EXPECTED_DISABLED_RUNTIMES="$KNOXX_DISABLE_EVENT_RUNTIMES" \
+    knoxx-backend node -e 'process.exit(Number(
+      process.env.KNOXX_DISABLE_EVENT_RUNTIMES !== process.env.KNOXX_EXPECTED_DISABLED_RUNTIMES
+    ))' </dev/null || {
+  result=$?
+  echo 'knoxx: running event runtime setting does not match the deployment' >&2
+  exit "$result"
+}
+
 # The backend is not published to the host; reach it on the compose network.
 #
 # Every `exec -T` closes its stdin explicitly. It does not need one, and it
@@ -103,13 +117,10 @@ backend_json_request() {
     " </dev/null
 }
 
-# Exercise host Ollama from the same backend container that runs both the
-# translation agent and the in-process OpenPlanner SDK. The helper checks both
-# required model ids, makes a bounded native structured Gemma translation,
-# forces one tool call through the OpenAI-compatible agent transport with
-# reasoning disabled, and makes a real embedding request. Catalog-only checks
-# cannot prove these paths run or that the embedding model returns 1024
-# dimensions.
+# Exercise host Ollama translation and the OpenPlanner SDK's Proxx embedding
+# route from the same backend container. The helper makes a bounded structured
+# Gemma translation, forces one tool call with reasoning disabled, and verifies
+# that the actual authenticated embedding route returns a 1024-vector.
 ollama_runtime_probe() {
   local translation_model=$1 embedding_model=$2 embedding_dimensions=$3
   docker compose --project-name knoxx --env-file .env \
@@ -146,7 +157,7 @@ transport=$(printf '%s' "$body" | jq -r '.dependencies.openplanner.detail.transp
 [ "$ollama_ok" = "true" ] || { echo "knoxx: host Ollama is unreachable" >&2; exit 1; }
 
 translation_model=gemma4:e2b
-embedding_model=qwen3-embedding:8b
+embedding_model=gte-large-en-v1.5
 embedding_dimensions=1024
 for publication_agent in publication_translator publication_post_drafter; do
   case ",${KNOXX_AGENT_MODEL_OVERRIDES:-}," in
@@ -768,15 +779,15 @@ esac
 ollama_probe=$(ollama_runtime_probe "$translation_model" "$embedding_model" "$embedding_dimensions")
 ollama_probe_ok=$(printf '%s' "$ollama_probe" | jq -r '.ok // false')
 if [ "$ollama_probe_ok" != "true" ]; then
-  echo "knoxx: required host Ollama translation/embedding runtime is unavailable" >&2
+  echo "knoxx: required host Ollama translation or Proxx embedding route is unavailable" >&2
   printf '%s\n' "$ollama_probe" \
     | jq -c '{reason, routing, catalog, translation, agentToolCall, embedding}' >&2 \
     || printf '%s\n' "$ollama_probe" >&2
   exit 1
 fi
 
-echo "knoxx: host Ollama models ${translation_model} and ${embedding_model} are available"
+echo "knoxx: host Ollama model ${translation_model} is available"
 echo "knoxx: ${translation_model} returned strict structured translation output"
-echo "knoxx: ${embedding_model} returned a nonempty ${embedding_dimensions}-dimensional vector"
+echo "knoxx: Proxx ${embedding_model} returned a nonempty ${embedding_dimensions}-dimensional vector"
 
 echo "knoxx: healthy; proxx + host Ollama reachable, openplanner data plane in-process (${transport}), auth enforced"

@@ -634,6 +634,9 @@ def main() -> int:
     migration_run = migration.get("run", "")
     required_migration_gate = (
         "probe-embedding-migration.js",
+        "probe-ollama.cjs,readonly",
+        "--network open-hax",
+        "--env PROXY_AUTH_TOKEN",
         "embedding-contract-receipt.sh",
         "docker ps --all",
         "EMBED_SOURCE_CONTRACT_PRESENT",

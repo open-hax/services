@@ -6,6 +6,14 @@ set -euo pipefail
 # and event persistence. Services only asks for that behavior after the new
 # application, contracts, and source files have passed their readiness gate.
 
+# An install-only release leaves the event consumers with their existing owner.
+# The deployment verifier has already read back this state from the backend.
+case "${KNOXX_DISABLE_EVENT_RUNTIMES:-false}" in
+  true) echo 'knoxx: publication admission deferred while event runtimes are disabled'; exit 0 ;;
+  false) ;;
+  *) echo 'knoxx: event runtime state must be explicitly true or false' >&2; exit 1 ;;
+esac
+
 docker_bin=${KNOXX_DOCKER_BIN:-docker}
 timeout_ms=${KNOXX_POST_DEPLOY_TIMEOUT_MS:-120000}
 request_body='{"anchors":true,"generateDrafts":true}'

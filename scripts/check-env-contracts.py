@@ -586,11 +586,11 @@ def main() -> int:
             knoxx_verify,
             "translation_model=gemma4:e2b",
         ),
-        "host Ollama embedding-model precondition": (
+        "existing production embedding-model precondition": (
             knoxx_verify,
-            "embedding_model=qwen3-embedding:8b",
+            "embedding_model=gte-large-en-v1.5",
         ),
-        "host Ollama embedding-dimension precondition": (
+        "existing production embedding dimension": (
             knoxx_verify,
             "embedding_dimensions=1024",
         ),
@@ -690,17 +690,21 @@ def main() -> int:
             knoxx_verify,
             "there is no autonomous retry timer",
         ),
-        "direct host Ollama embedding binding": (
+        "explicit Proxx embedding binding": (
             knoxx_compose,
-            "EMBED_PROVIDER_BASE_URL: ${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}",
+            "EMBED_PROVIDER_BASE_URL: ${EMBED_PROVIDER_BASE_URL:?EMBED_PROVIDER_BASE_URL must be set}",
         ),
-        "credential-free host Ollama embedding binding": (
+        "existing Proxx credential binding": (
             knoxx_compose,
-            'EMBED_PROVIDER_API_KEY: ""',
+            "EMBED_PROVIDER_API_KEY: ${PROXY_AUTH_TOKEN:?PROXY_AUTH_TOKEN must be set}",
+        ),
+        "pinned internal embedding gateway": (
+            knoxx_template,
+            "EMBED_PROVIDER_BASE_URL='http://proxx:8789'",
         ),
         "pinned embedding model": (
             knoxx_template,
-            "EMBED_PROVIDER_MODEL='qwen3-embedding:8b'",
+            "EMBED_PROVIDER_MODEL='gte-large-en-v1.5'",
         ),
         "1024-dimensional embedding contract": (
             knoxx_template,
@@ -708,7 +712,7 @@ def main() -> int:
         ),
         "embedding migration target model": (
             knoxx_embedding_migration_probe,
-            'const TARGET_MODEL = "qwen3-embedding:8b";',
+            'const TARGET_MODEL = "gte-large-en-v1.5";',
         ),
         "embedding migration target dimensions": (
             knoxx_embedding_migration_probe,
@@ -798,9 +802,9 @@ def main() -> int:
             code_quality_text,
             "node digitalocean/services/knoxx/probe-embedding-migration.js",
         ),
-        "OpenAI-compatible Ollama embedding request": (
+        "authenticated internal Proxx embedding request": (
             knoxx_ollama_probe,
-            "`${embedBaseUrl}/v1/embeddings`",
+            "`${baseUrl}/v1/embeddings`",
         ),
         "required Gemma inference model": (
             knoxx_ollama_probe,
@@ -885,11 +889,23 @@ def main() -> int:
         ),
         "nonempty finite embedding-vector assertion": (
             knoxx_ollama_probe,
-            "nonemptyFiniteVector: vectorFinite",
+            "vector.every((value) => typeof value === 'number' && Number.isFinite(value))",
         ),
         "exact embedding-dimension assertion": (
             knoxx_ollama_probe,
-            "dimensionsMatch = vector.length === expectedDimensions",
+            "dimensionsMatch = vector.length === dimensions",
+        ),
+        "install-only event runtime setting": (
+            knoxx_template,
+            "KNOXX_DISABLE_EVENT_RUNTIMES='true'",
+        ),
+        "install-only container event runtime readback": (
+            knoxx_verify,
+            "process.env.KNOXX_DISABLE_EVENT_RUNTIMES !== process.env.KNOXX_EXPECTED_DISABLED_RUNTIMES",
+        ),
+        "install-only publication effects remain deferred": (
+            knoxx_post_deploy,
+            "publication admission deferred while event runtimes are disabled",
         ),
         "configured embedding-dimension input": (
             knoxx_ollama_probe,
@@ -1288,14 +1304,24 @@ def main() -> int:
                 f"{untrusted_service} is attached to the backend-only Ollama bridge"
             )
     expected_ollama_binding = "${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}"
-    if knoxx_environment.get("EMBED_PROVIDER_BASE_URL") != expected_ollama_binding:
+    if knoxx_environment.get("OLLAMA_BASE_URL") != expected_ollama_binding:
+        failures.append("Knoxx publication inference has no required Ollama binding")
+    expected_proxx_binding = "${EMBED_PROVIDER_BASE_URL:?EMBED_PROVIDER_BASE_URL must be set}"
+    if knoxx_environment.get("EMBED_PROVIDER_BASE_URL") != expected_proxx_binding:
         failures.append(
-            "Knoxx OpenPlanner embeddings are not routed directly from OLLAMA_BASE_URL"
+            "Knoxx OpenPlanner embeddings lack the production gateway binding"
         )
-    if knoxx_environment.get("EMBED_PROVIDER_API_KEY") != "":
+    if (
+        knoxx_environment.get("EMBED_PROVIDER_API_KEY")
+        != knoxx_environment.get("PROXX_AUTH_TOKEN")
+    ):
         failures.append(
-            "Knoxx sends an unnecessary provider credential to host Ollama"
+            "Knoxx embeddings do not use the same credential as Proxx"
         )
+    if knoxx_environment.get("KNOXX_DISABLE_EVENT_RUNTIMES") != (
+        "${KNOXX_DISABLE_EVENT_RUNTIMES:?KNOXX_DISABLE_EVENT_RUNTIMES must be set}"
+    ):
+        failures.append("Knoxx deployment must explicitly bind its event runtime state")
     if knoxx_environment.get("KNOXX_TRANSLATION_RUNNER") != "agent":
         failures.append(
             "Knoxx publication translations do not use the in-process agent runner"
@@ -1315,7 +1341,7 @@ def main() -> int:
         print("\n".join(f"environment contract error: {failure}" for failure in failures), file=sys.stderr)
         return 1
     print("all active service placeholders have deployment-time providers")
-    print("Knoxx host-Ollama inference and embedding probes are fail closed")
+    print("Knoxx Ollama publication inference and Proxx embedding probes are fail closed")
     print("Knoxx embedding cutover requires an unchanged target or fresh store")
     print("Knoxx post-drafter contracts and runtime trigger/agent/tool proof are wired")
     print("Knoxx deployed document inventory uses one shared real-EDN ownership validator")

@@ -63,6 +63,7 @@ fail() {
 run_hook() {
   (
     cd "$fixture_root"
+    KNOXX_DISABLE_EVENT_RUNTIMES="${2:-false}" \
     KNOXX_DOCKER_BIN="$self" \
     KNOXX_POST_DEPLOY_FAKE_DOCKER=1 \
     KNOXX_POST_DEPLOY_FIXTURE_DOCUMENTS="$fixture_root/contracts/documents" \
@@ -70,6 +71,12 @@ run_hook() {
       "$hook"
   )
 }
+
+deferred_output=$(run_hook '' true) || fail 'install-only deployment attempted admission'
+case "$deferred_output" in
+  *'publication admission deferred'*) ;;
+  *) fail 'install-only deployment did not report deferred admission' ;;
+esac
 
 expect_failure() {
   local label=$1 response=$2 expected=$3 output

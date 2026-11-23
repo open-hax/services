@@ -8,7 +8,8 @@
 // migration belongs upstream in Knoxx/OpenPlanner and must provide stronger
 // source-to-vector coverage evidence before this gate can accept it.
 
-const TARGET_MODEL = "qwen3-embedding:8b";
+const TARGET_BASE_URL = "http://proxx:8789";
+const TARGET_MODEL = "gte-large-en-v1.5";
 const TARGET_DIMENSIONS = "1024";
 const OWNED_COLLECTIONS = [
   "event_chunks",
@@ -26,6 +27,7 @@ function clean(value) {
 function validateEnvironment(env) {
   const targetModel = clean(env.EMBED_PROVIDER_MODEL);
   const targetDimensions = clean(env.EMBED_PROVIDER_DIMENSIONS);
+  const targetBaseUrl = clean(env.EMBED_PROVIDER_BASE_URL);
   const sourceModel = clean(env.EMBED_SOURCE_MODEL);
   const sourceDimensions = clean(env.EMBED_SOURCE_DIMENSIONS);
   const sourceContractFlag = clean(env.EMBED_SOURCE_CONTRACT_PRESENT);
@@ -35,7 +37,8 @@ function validateEnvironment(env) {
   const sourceContractPresent = sourceContractFlag === "1";
   const writerActive = writerFlag === "1";
 
-  if (targetModel !== TARGET_MODEL || targetDimensions !== TARGET_DIMENSIONS) {
+  if (targetBaseUrl !== TARGET_BASE_URL
+      || targetModel !== TARGET_MODEL || targetDimensions !== TARGET_DIMENSIONS) {
     return {
       ok: false,
       reason: "unexpected-target",
@@ -227,6 +230,7 @@ function fakeClient({ counts = {}, graphIndexes = [], failAt = "" } = {}) {
 
 async function selfTest() {
   const base = {
+    EMBED_PROVIDER_BASE_URL: TARGET_BASE_URL,
     EMBED_PROVIDER_MODEL: TARGET_MODEL,
     EMBED_PROVIDER_DIMENSIONS: TARGET_DIMENSIONS,
     EMBED_SOURCE_CONTRACT_PRESENT: "0",
@@ -272,7 +276,7 @@ async function selfTest() {
 
   result = await probe(
     { ...base, EMBED_SOURCE_CONTRACT_PRESENT: "1", EMBED_SOURCE_WRITER_ACTIVE: "1",
-      EMBED_SOURCE_MODEL: "gte-large-en-v1.5",
+      EMBED_SOURCE_MODEL: "qwen3-embedding:8b",
       EMBED_SOURCE_DIMENSIONS: "1024" },
     () => fakeClient(),
   );
@@ -281,7 +285,7 @@ async function selfTest() {
 
   result = await probe(
     { ...base, EMBED_SOURCE_CONTRACT_PRESENT: "1",
-      EMBED_SOURCE_MODEL: "gte-large-en-v1.5", EMBED_SOURCE_DIMENSIONS: "1024",
+      EMBED_SOURCE_MODEL: "qwen3-embedding:8b", EMBED_SOURCE_DIMENSIONS: "1024",
       EMBED_SOURCE_DATABASE_FINGERPRINT: base.EMBED_TARGET_DATABASE_FINGERPRINT },
     () => { throw new Error("incompatible stopped contract queried Mongo"); },
   );
@@ -301,10 +305,12 @@ async function selfTest() {
   expect(!result.ok && result.reason === "populated-store-requires-authoritative-migration",
     "existing graph index was accepted");
 
-  // The target is qwen3-embedding:8b truncated to 1024. Its untruncated native
-  // width is the realistic misconfiguration, so that is what this rejects.
-  result = await probe({ ...base, EMBED_PROVIDER_DIMENSIONS: "4096" }, () => fakeClient());
+  result = await probe({ ...base, EMBED_PROVIDER_DIMENSIONS: "768" }, () => fakeClient());
   expect(!result.ok && result.reason === "unexpected-target", "wrong target was accepted");
+
+  result = await probe({ ...base, EMBED_PROVIDER_BASE_URL: "http://172.30.114.1:11434" },
+    () => fakeClient());
+  expect(!result.ok && result.reason === "unexpected-target", "wrong gateway was accepted");
 
   result = await probe({ ...base, EMBED_SOURCE_WRITER_ACTIVE: "maybe" }, () => fakeClient());
   expect(!result.ok && result.reason === "invalid-cutover-context",
@@ -344,6 +350,19 @@ async function main() {
       socketTimeoutMS: 15_000,
     }),
   );
+  if (result.ok) {
+    const { probeProxxEmbedding } = require("/opt/knoxx-deploy/probe-ollama.cjs");
+    const embedding = await probeProxxEmbedding({
+      baseUrl: TARGET_BASE_URL,
+      key: process.env.PROXY_AUTH_TOKEN,
+      model: TARGET_MODEL,
+      dimensions: Number(TARGET_DIMENSIONS),
+      timeoutMs: 15_000,
+    });
+    result.embedding = embedding;
+    result.ok = embedding.ok;
+    if (!embedding.ok) result.reason = "existing-embedding-route-unavailable";
+  }
   process.stdout.write(`${JSON.stringify(result)}\n`);
   if (!result.ok) process.exitCode = 1;
 }
