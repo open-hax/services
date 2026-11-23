@@ -49,9 +49,9 @@ on:
         required: false
         type: string
       include_ingress:
-        description: Stack-only Caddy deployment. Axxium uses its fixed OIDC route transaction.
+        description: Stack-only Caddy deployment for hosts without an incumbent production Axxium proxy dependency.
         required: false
-        default: true
+        default: false
         type: boolean
       include_website:
         description: >-
@@ -194,7 +194,7 @@ jobs:
       website_ref: ${{ github.event_name == 'workflow_dispatch' && inputs.website_ref || 'main' }}
       website_image: ${{ github.event_name == 'workflow_dispatch' && inputs.website_image || '' }}
       # The manual caller can leave existing ingress unchanged.
-      include_ingress: ${{ github.event_name != 'workflow_dispatch' || inputs.include_ingress }}
+      include_ingress: ${{ inputs.include_ingress }}
       # Stack opt-in is rejected in authorize;
       # explicit website scope enters its staging/qualification body.
       include_website: ${{ github.event_name == 'workflow_dispatch' && inputs.include_website }}
